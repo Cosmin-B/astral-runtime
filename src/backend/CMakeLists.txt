@@ -13,13 +13,16 @@
 #
 # Preferred layout (submodule): `astral/external/llama.cpp`
 # Fallback layout (sibling): `../llama.cpp`
-set(_LLAMA_CPP_DIR_DEFAULT "${CMAKE_SOURCE_DIR}/external/llama.cpp")
+get_filename_component(_ASTRAL_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
+set(_LLAMA_CPP_DIR_DEFAULT "${_ASTRAL_ROOT_DIR}/external/llama.cpp")
 if(NOT EXISTS "${_LLAMA_CPP_DIR_DEFAULT}/CMakeLists.txt")
-    set(_LLAMA_CPP_DIR_DEFAULT "${CMAKE_SOURCE_DIR}/../llama.cpp")
+    set(_LLAMA_CPP_DIR_DEFAULT "${_ASTRAL_ROOT_DIR}/../llama.cpp")
 endif()
 
 set(LLAMA_CPP_DIR "${_LLAMA_CPP_DIR_DEFAULT}" CACHE PATH "llama.cpp source directory")
 unset(_LLAMA_CPP_DIR_DEFAULT)
+unset(_ASTRAL_ROOT_DIR)
 
 # Check if llama.cpp directory exists
 if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
