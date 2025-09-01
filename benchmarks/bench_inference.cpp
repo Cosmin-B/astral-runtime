@@ -23,6 +23,20 @@ struct InferenceBenchResult {
     uint64_t bytes;
 };
 
+static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
+    const char* v = std::getenv(key);
+    if (v == nullptr || v[0] == '\0') {
+        return fallback;
+    }
+
+    char* end = nullptr;
+    unsigned long x = std::strtoul(v, &end, 10);
+    if (end == v) {
+        return fallback;
+    }
+    return static_cast<uint32_t>(x);
+}
+
 static bool file_is_large_enough(const char* path, uint64_t min_bytes) {
     if (path == nullptr || path[0] == '\0') {
         return false;
@@ -203,7 +217,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
 
     AstralInit cfg{};
     cfg.reserve_bytes = 2ull << 30; // 2GB address space (virtual reserve).
-    cfg.thread_count = 0;           // auto
+    cfg.thread_count = parse_u32_env("ASTRAL_BENCH_THREADS", 0);
     cfg.numa_node = 0xFFFFFFFFu;    // any
     cfg.enable_hugepages = 0;
 
@@ -221,7 +235,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     // Let the backend pick a safe/default context size for the model.
     model_desc.n_ctx = 0;
     model_desc.n_batch = 0;
-    model_desc.n_threads = 0;
+    model_desc.n_threads = parse_u32_env("ASTRAL_BENCH_THREADS", 0);
     model_desc.gpu_layers = 0;
 
     AstralHandle model = 0;

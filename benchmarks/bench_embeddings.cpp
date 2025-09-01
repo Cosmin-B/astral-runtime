@@ -23,6 +23,20 @@ struct EmbedBenchResult {
     uint32_t dim;
 };
 
+static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
+    const char* v = std::getenv(key);
+    if (v == nullptr || v[0] == '\0') {
+        return fallback;
+    }
+
+    char* end = nullptr;
+    unsigned long x = std::strtoul(v, &end, 10);
+    if (end == v) {
+        return fallback;
+    }
+    return static_cast<uint32_t>(x);
+}
+
 static void try_load_default_toy_plugin() {
 #if defined(__linux__)
     char exe_path[1024];
@@ -163,7 +177,7 @@ void bench_embeddings_print(uint32_t dim_override, uint64_t iters) {
 
     AstralInit cfg{};
     cfg.reserve_bytes = 512ull << 20;
-    cfg.thread_count = 0;
+    cfg.thread_count = parse_u32_env("ASTRAL_BENCH_THREADS", 0);
     cfg.numa_node = 0xFFFFFFFFu;
     cfg.enable_hugepages = 0;
 
@@ -179,7 +193,7 @@ void bench_embeddings_print(uint32_t dim_override, uint64_t iters) {
     model_desc.embeddings_only = 1;
     model_desc.n_ctx = 256;
     model_desc.n_batch = 128;
-    model_desc.n_threads = 0;
+    model_desc.n_threads = parse_u32_env("ASTRAL_BENCH_THREADS", 0);
     model_desc.gpu_layers = 0;
 
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
