@@ -1,0 +1,281 @@
+# Astral Validation Scripts
+
+This directory contains validation and testing scripts for the Astral runtime.
+
+## Memory Validation Scripts
+
+### Prerequisites
+
+Install Valgrind:
+```bash
+# Ubuntu/Debian
+sudo apt-get install valgrind
+
+# RHEL/CentOS
+sudo yum install valgrind
+
+# macOS
+brew install valgrind
+```
+
+### Usage
+
+#### 1. AddressSanitizer (Recommended First)
+**Fastest validation tool** - runs at near-native speed with 2x slowdown.
+
+```bash
+./scripts/run_asan.sh
+```
+
+**Detects**:
+- Buffer overflows
+- Use-after-free
+- Stack corruption
+- Integer overflows
+- Undefined behavior
+
+**Output**: Console output only (errors shown inline)
+
+---
+
+#### 2. Valgrind Memcheck (Comprehensive)
+**Most thorough leak detection** - runs 10-20x slower.
+
+```bash
+./scripts/run_valgrind.sh
+```
+
+**Detects**:
+- Memory leaks (definitely lost, possibly lost, still reachable)
+- Invalid reads/writes
+- Use-after-free
+- Uninitialized values
+- Double frees
+
+**Output**: `valgrind_memcheck.log`
+
+**View Results**:
+```bash
+# Quick summary
+grep "ERROR SUMMARY\|LEAK SUMMARY" valgrind_memcheck.log
+
+# Detailed leak report
+grep -A 20 "LEAK SUMMARY" valgrind_memcheck.log
+
+# Full report
+cat valgrind_memcheck.log
+```
+
+---
+
+#### 3. Valgrind Massif (Heap Profiler)
+**Heap growth analysis** - critical for detecting allocations in hot paths.
+
+```bash
+./scripts/run_massif.sh
+```
+
+**Detects**:
+- Peak memory usage
+- Heap growth over time
+- Allocation hotspots
+
+**Output**: `massif.out`, `massif_report.txt`
+
+**View Results**:
+```bash
+# Quick summary
+grep "peak" massif_report.txt
+
+# Full timeline
+cat massif_report.txt
+
+# Visual graph (if ms_print supports it)
+ms_print massif.out
+```
+
+**Critical Check**:
+Look for flat heap during decode iterations. Any growth indicates allocations in hot path (FAILURE per MASTER_SPEC).
+
+---
+
+## Running All Validations
+
+```bash
+# Run in order (fastest to slowest):
+./scripts/run_asan.sh          # ~2x slowdown, 1 minute
+./scripts/run_valgrind.sh      # ~15x slowdown, 5-10 minutes
+./scripts/run_massif.sh        # ~20x slowdown, 10-15 minutes
+```
+
+---
+
+## Interpreting Results
+
+### PASS Criteria (per MASTER_SPEC § Performance Targets)
+
+1. **No Memory Leaks**
+   - Valgrind: "definitely lost: 0 bytes"
+   - ASAN: Exit code 0
+
+2. **Zero Hot Path Allocations**
+   - Custom allocator: "Decode hot path: ZERO allocations"
+   - Massif: Flat heap during decode iterations
+
+3. **No Memory Errors**
+   - Valgrind: "ERROR SUMMARY: 0 errors"
+   - ASAN: No error output
+
+4. **No Undefined Behavior**
+   - UBSAN: No warnings
+
+### FAIL Indicators
+
+**Immediate Failures**:
+- ASAN detects heap-buffer-overflow
+- Valgrind reports "definitely lost" bytes
+- Test reports non-zero allocations in hot path
+
+**Performance Failures** (violate MASTER_SPEC):
+- Massif shows heap growth during decode loop
+- More than 10 syscalls in hot path (`strace` check)
+- Allocations detected in decode/stream/sample loops
+
+---
+
+## Embedded / Edge Validation
+
+These helpers target the “embedded/robotics” profile and are designed to be runnable on a developer machine (host build) as well as in CI (cross-compile + QEMU smoke).
+
+### run_embedded_smoke.sh
+
+Builds the `embedded-x86_64` preset and runs the embedded CLI sample.
+
+```bash
+./scripts/run_embedded_smoke.sh
+```
+
+### run_embedded_validation.sh
+
+Runs release validation gates and then runs the embedded smoke:
+- `gate_allocations`
+- `gate_io_syscalls`
+- `gate_rss_cap` (Linux-only; configurable via `ASTRAL_RSS_MAX_MB`)
+
+```bash
+./scripts/run_embedded_validation.sh
+```
+
+## Troubleshooting
+
+### Valgrind Not Found
+```bash
+# Install Valgrind
+sudo apt-get install valgrind
+
+# Verify installation
+valgrind --version
+```
+
+### ASAN/UBSAN Errors During Build
+ASAN is disabled by default for Valgrind compatibility. The `run_asan.sh` script builds with ASAN flags in a separate directory (`build/asan`).
+
+### Test Binary Not Found
+```bash
+# Build test first
+cmake --preset dev
+cmake --build build/dev --target test_memory_validation -j8
+```
+
+### Slow Execution
+This is expected with Valgrind (10-20x slowdown). For faster validation:
+1. Run ASAN first (only 2x slowdown)
+2. Run Valgrind only if ASAN passes
+3. Use release builds for benchmarks (not validation)
+
+---
+
+## Script Details
+
+### run_asan.sh
+- Creates separate build directory: `build/asan`
+- Compiles with: `-fsanitize=address -fsanitize=undefined`
+- Runs test with: `ASAN_OPTIONS=detect_leaks=1:check_initialization_order=1`
+- Exit code: 0 (pass), non-zero (fail)
+
+### run_valgrind.sh
+- Uses existing build: `build/dev`
+- Runs with: `--tool=memcheck --leak-check=full --track-origins=yes`
+- Log file: `valgrind_memcheck.log`
+- Reports: Errors, leaks, invalid accesses
+
+### run_massif.sh
+- Uses existing build: `build/dev`
+- Runs with: `--tool=massif --detailed-freq=1`
+- Output files: `massif.out`, `massif_report.txt`
+- Reports: Peak heap, heap timeline, allocation hotspots
+
+---
+
+## Integration with CI/CD
+
+### GitHub Actions Example
+
+```yaml
+name: Memory Validation
+
+on: [push, pull_request]
+
+jobs:
+  asan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: sudo apt-get install -y build-essential cmake
+      - name: Run ASAN
+        run: ./scripts/run_asan.sh
+
+  valgrind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: sudo apt-get install -y valgrind cmake
+      - name: Run Valgrind
+        run: ./scripts/run_valgrind.sh
+```
+
+---
+
+## Future Enhancements
+
+- [ ] Add `strace` wrapper to count syscalls in hot path
+- [ ] Add `perf stat` wrapper for CPU metrics
+- [ ] Add automated regression testing
+- [ ] Add HTML report generation
+- [ ] Add benchmark comparison (before/after)
+- [ ] Add thread sanitizer (TSan) for concurrency validation
+
+---
+
+## References
+
+**Astral Documentation**:
+- `/home/user/workspace/astral/tests/MEMORY_VALIDATION.md` - Full validation report
+- `/home/user/workspace/astral/docs/MASTER_SPEC.md` - Performance targets
+- `/home/user/workspace/astral/docs/rules/CODING_STANDARDS.md` - Memory rules
+
+**Valgrind Documentation**:
+- https://valgrind.org/docs/manual/manual.html
+- https://valgrind.org/docs/manual/mc-manual.html (Memcheck)
+- https://valgrind.org/docs/manual/ms-manual.html (Massif)
+
+**Sanitizer Documentation**:
+- https://github.com/google/sanitizers/wiki/AddressSanitizer
+- https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
+
+---
+
+**Last Updated**: 2025-10-21
+**Maintained By**: Astral Team

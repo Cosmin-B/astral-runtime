@@ -1,0 +1,34 @@
+{
+  "name": "com.astral.runtime",
+  "version": "0.1.0",
+  "displayName": "Astral Runtime",
+  "description": "High-performance LLM inference for Unity. Zero GC allocations, Burst-compatible, IL2CPP safe. CPU/GPU backends for LLaMA-class models.",
+  "unity": "2021.3",
+  "unityRelease": "0f1",
+  "documentationUrl": "https://github.com/astral-runtime/astral",
+  "changelogUrl": "https://github.com/astral-runtime/astral/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/astral-runtime/astral/blob/main/LICENSE",
+  "keywords": [
+    "llm",
+    "inference",
+    "ai",
+    "machine learning",
+    "llama",
+    "gguf",
+    "native",
+    "high-performance"
+  ],
+  "author": {
+    "name": "Astral Runtime Contributors"
+  },
+  "dependencies": {
+    "com.unity.collections": "1.2.4"
+  },
+  "samples": [
+    {
+      "displayName": "Basic Inference Example",
+      "description": "Simple example demonstrating model loading and inference",
+      "path": "Samples~/BasicInference"
+    }
+  ]
+}

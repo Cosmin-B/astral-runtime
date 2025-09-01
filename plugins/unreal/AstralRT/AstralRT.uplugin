@@ -1,0 +1,32 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "Astral Runtime",
+  "Description": "High-performance LLM inference for Unreal Engine",
+  "Category": "AI",
+  "CreatedBy": "Astral",
+  "CreatedByURL": "",
+  "DocsURL": "",
+  "MarketplaceURL": "",
+  "SupportURL": "",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "IsExperimentalVersion": false,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "AstralRT",
+      "Type": "Runtime",
+      "LoadingPhase": "PreDefault",
+      "PlatformAllowList": [
+        "Win64",
+        "Linux",
+        "Mac",
+        "Android",
+        "IOS"
+      ]
+    }
+  ]
+}
+

@@ -1,0 +1,767 @@
+# Unity Integration Specification
+
+## Goals
+
+1. **Zero GC Allocations**: No managed heap allocations during token streaming (steady state)
+2. **Burst Compatibility**: All hot-path data structures compatible with Burst compiler
+3. **IL2CPP Safety**: No reflection, no dynamic code generation
+4. **Platform Coverage**: Windows, macOS, Linux, Android (armv7/arm64), iOS (arm64)
+5. **Native Allocator Passthrough**: Use Unity's `Allocator.Persistent` for session-local allocations
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Unity (C#)                                                   │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ AstralSession (MonoBehaviour or pure C# wrapper)        │ │
+│ │   ├─ NativeArray<byte> prompt buffer (persistent)      │ │
+│ │   ├─ NativeArray<byte> token buffer (persistent)       │ │
+│ │   └─ Job/Thread: Poll astral_stream_read()             │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ AstralNative (static class, P/Invoke)                   │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                           │ P/Invoke
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Native (C/C++)                                               │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ astral_rt.{dll,so,dylib}                                │ │
+│ │   ├─ astral_init()                                      │ │
+│ │   ├─ astral_model_load()                                │ │
+│ │   ├─ astral_session_create()                            │ │
+│ │   ├─ astral_session_feed()                              │ │
+│ │   ├─ astral_session_decode()                            │ │
+│ │   └─ astral_stream_read()                               │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Plugin Structure
+
+```
+astral/plugins/unity/
+├── Runtime/
+│   ├── AstralNative.cs        # P/Invoke declarations
+│   ├── AstralNativeArray.cs   # NativeArray ↔ span helpers
+│   ├── AstralRuntime.cs       # Runtime initialization/shutdown + config
+│   ├── AstralModel.cs         # Model wrapper
+│   ├── AstralSession.cs       # Session wrapper + streaming
+│   ├── AstralAllocator.cs     # Unity allocator bridge
+│   ├── AstralLogging.cs       # Logging bridge
+│   ├── AstralJobSystem.cs     # Jobs integration
+│   └── Astral.Runtime.asmdef  # Assembly definition
+├── README.md
+├── IMPLEMENTATION.md
+├── ALLOCATOR_INTEGRATION.md
+└── package.json
+```
+
+## P/Invoke Layer (`AstralNative.cs`)
+
+```csharp
+using System;
+using System.Runtime.InteropServices;
+using Unity.Collections.LowLevel.Unsafe;
+
+namespace Astral
+{
+    /// <summary>
+    /// Low-level P/Invoke bindings to astral_rt native library.
+    /// Do not use directly; use AstralSession instead.
+    /// </summary>
+    public static class AstralNative
+    {
+        #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+            private const string DLL_NAME = "astral_rt";
+        #elif UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX || UNITY_IOS
+            private const string DLL_NAME = "libastral_rt";
+        #elif UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX || UNITY_ANDROID
+            private const string DLL_NAME = "libastral_rt";
+        #else
+            private const string DLL_NAME = "astral_rt";
+        #endif
+
+        // ====== Common Types ======
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralSpanU8
+        {
+            public IntPtr data;
+            public uint len;
+#if UNITY_64 || UNITY_EDITOR_64
+            public uint _padding; // 64-bit explicit padding (16B total)
+#endif
+
+            public unsafe AstralSpanU8(byte* ptr, int length)
+            {
+                data = (IntPtr)ptr;
+                len = (uint)length;
+            }
+
+            public static unsafe AstralSpanU8 FromNativeArray<T>(Unity.Collections.NativeArray<T> array) where T : unmanaged
+            {
+                return new AstralSpanU8(
+                    (byte*)array.GetUnsafeReadOnlyPtr(),
+                    array.Length * UnsafeUtility.SizeOf<T>()
+                );
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMutSpanU8
+        {
+            public IntPtr data;
+            public uint len;
+#if UNITY_64 || UNITY_EDITOR_64
+            public uint _padding; // 64-bit explicit padding (16B total)
+#endif
+
+            public unsafe AstralMutSpanU8(byte* ptr, int length)
+            {
+                data = (IntPtr)ptr;
+                len = (uint)length;
+            }
+
+            public static unsafe AstralMutSpanU8 FromNativeArray<T>(Unity.Collections.NativeArray<T> array) where T : unmanaged
+            {
+                return new AstralMutSpanU8(
+                    (byte*)array.GetUnsafePtr(),
+                    array.Length * UnsafeUtility.SizeOf<T>()
+                );
+            }
+        }
+
+        // 64-bit tagged handle (0 = invalid)
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralHandle
+        {
+            public ulong value;
+        }
+
+        public enum AstralErr : int
+        {
+            OK = 0,
+            Invalid = -1,
+            NoMem = -2,
+            Busy = -3,
+            Timeout = -4,
+            State = -5,
+            Backend = -6,
+            Canceled = -7,
+            Unsupported = -8,
+        }
+
+        // ====== Allocator ======
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate IntPtr AllocFn(IntPtr user, UIntPtr size, UIntPtr align);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void FreeFn(IntPtr user, IntPtr ptr, UIntPtr size, UIntPtr align);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAllocator
+        {
+            public IntPtr alloc; // AllocFn
+            public IntPtr free;  // FreeFn
+            public IntPtr user;
+        }
+
+        // ====== Logging ======
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void LogFn(IntPtr user, int level, AstralSpanU8 msg);
+
+        // ====== Init ======
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralInit
+        {
+            public AstralAllocator sys_alloc;
+            public IntPtr log_cb;    // LogFn
+            public IntPtr log_user;
+            public ulong reserve_bytes;
+            public uint thread_count;
+            public uint numa_node;
+            public byte enable_hugepages;
+        }
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_init(ref AstralInit cfg);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_shutdown();
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_version(out uint major, out uint minor, out uint patch);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr astral_error_string(AstralErr err);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr astral_last_error();
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_clear_last_error();
+
+        // ====== Model ======
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralModelDesc
+        {
+            public AstralSpanU8 model_path;
+            public AstralSpanU8 backend_name; // optional override ("cpu", "mock", ...)
+            public uint gpu_layers;
+            public uint n_ctx;
+            public uint n_batch;
+            public uint n_threads;
+            public byte embeddings_only;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralModelInfo
+        {
+            public uint vocab_size;
+            public uint ctx_size;
+            public int token_bos;
+            public int token_eos;
+        }
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_model_load(ref AstralModelDesc desc, out AstralHandle out_model);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_model_release(AstralHandle model);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_model_info(AstralHandle model, out AstralModelInfo out_info);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_model_embedding_dim(AstralHandle model, out uint out_dim);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe AstralErr astral_tokenize(
+            AstralHandle model,
+            AstralSpanU8 text,
+            int* out_tokens,
+            uint max_tokens,
+            byte add_special,
+            byte parse_special,
+            out uint out_count);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe AstralErr astral_detokenize(
+            AstralHandle model,
+            int* tokens,
+            uint count,
+            AstralMutSpanU8 out_text,
+            out uint out_len);
+
+        // ====== Session ======
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralSessionDesc
+        {
+            public AstralHandle model;
+            public uint max_tokens;
+            public float temperature;
+            public uint top_k;
+            public float top_p;
+            public byte stream_enabled;
+            public uint seed; // 0 = auto
+        }
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_session_create(ref AstralSessionDesc desc, out AstralHandle out_session);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_session_destroy(AstralHandle session);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_session_feed(AstralHandle session, AstralSpanU8 prompt_chunk, byte finalize);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_session_decode(AstralHandle session);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_session_cancel(AstralHandle session);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_session_state(AstralHandle session, out uint out_state);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_session_wait(AstralHandle session, uint timeout_ms);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_session_reset(AstralHandle session, ref AstralSessionDesc desc);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_stream_read(AstralHandle session, AstralMutSpanU8 out_buf, uint timeout_ms);
+
+        // ====== Embeddings ======
+        // Load the model with `embeddings_only = 1` and size `out_vector` to `out_dim * sizeof(float)`.
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_embed_create(AstralHandle model, out AstralHandle out_embedder);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_embed_destroy(AstralHandle emb);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_embed_enqueue(AstralHandle emb, AstralSpanU8 text, out ulong out_ticket);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_embed_collect(AstralHandle emb, ulong ticket, AstralMutSpanU8 out_vector);
+
+        // ====== Stats ======
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralStats
+        {
+            public double t_init_ms;
+            public double t_first_token_ms;
+            public double tok_per_s;
+            public ulong bytes_committed;
+            public ulong bytes_reserved;
+        }
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_session_stats(AstralHandle session, out AstralStats out_stats);
+    }
+}
+```
+
+## Stream and lifecycle semantics
+
+- `astral_stream_read(session, out_buf, timeout_ms)` returns:
+  - `> 0`: UTF-8 bytes for one token piece (written into `out_buf`)
+  - `0`: end-of-stream (session is terminal and no buffered data remains)
+  - `< 0`: error code (`ASTRAL_E_TIMEOUT` means “no data yet”)
+- Always call `astral_session_wait(session, timeout_ms)` to determine the final outcome:
+  - `ASTRAL_OK`: completed successfully
+  - `ASTRAL_E_CANCELED`: completed due to cancellation
+  - other `< 0`: decode failed
+- Reset/reuse: call `astral_session_reset(session, &desc)` only when the session is not decoding (cancel + wait first).
+
+## High-Level C# Wrapper (`AstralSession.cs`)
+
+```csharp
+using System;
+using System.Text;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+
+namespace Astral
+{
+    /// <summary>
+    /// High-level C# wrapper for Astral inference session.
+    /// Manages native resources via IDisposable pattern.
+    /// </summary>
+    public class AstralSession : IDisposable
+    {
+        private AstralNative.AstralHandle sessionHandle;
+        private NativeArray<byte> tokenBuffer;
+        private bool disposed;
+
+        public bool IsValid => sessionHandle.value != 0;
+
+        public AstralSession(
+            AstralNative.AstralHandle modelHandle,
+            uint maxTokens = 512,
+            float temperature = 0.7f,
+            uint topK = 40,
+            float topP = 0.95f,
+            bool streamEnabled = true)
+        {
+            var desc = new AstralNative.AstralSessionDesc
+            {
+                model = modelHandle,
+                max_tokens = maxTokens,
+                temperature = temperature,
+                top_k = topK,
+                top_p = topP,
+                stream_enabled = (byte)(streamEnabled ? 1 : 0)
+            };
+
+            var err = AstralNative.astral_session_create(ref desc, out sessionHandle);
+            if (err != AstralNative.AstralErr.OK)
+            {
+                throw new AstralException($"Failed to create session: {err}");
+            }
+
+            // Pre-allocate token buffer (no GC allocations during streaming)
+            tokenBuffer = new NativeArray<byte>(4096, Allocator.Persistent);
+        }
+
+        /// <summary>
+        /// Feed a prompt chunk. Call with finalize=true on the last chunk.
+        /// </summary>
+        public unsafe void Feed(string prompt, bool finalize = true)
+        {
+            byte[] utf8 = Encoding.UTF8.GetBytes(prompt);
+            fixed (byte* ptr = utf8)
+            {
+                var span = new AstralNative.AstralSpanU8(ptr, utf8.Length);
+                var err = AstralNative.astral_session_feed(sessionHandle, span, (byte)(finalize ? 1 : 0));
+                if (err != AstralNative.AstralErr.OK)
+                {
+                    throw new AstralException($"Feed failed: {err}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Feed a prompt from NativeArray (zero-copy).
+        /// </summary>
+        public unsafe void FeedNative(NativeArray<byte> utf8Prompt, bool finalize = true)
+        {
+            var span = AstralNative.AstralSpanU8.FromNativeArray(utf8Prompt);
+            var err = AstralNative.astral_session_feed(sessionHandle, span, (byte)(finalize ? 1 : 0));
+            if (err != AstralNative.AstralErr.OK)
+            {
+                throw new AstralException($"Feed failed: {err}");
+            }
+        }
+
+        /// <summary>
+        /// Start decoding (non-blocking).
+        /// </summary>
+        public void Decode()
+        {
+            var err = AstralNative.astral_session_decode(sessionHandle);
+            if (err != AstralNative.AstralErr.OK)
+            {
+                throw new AstralException($"Decode failed: {err}");
+            }
+        }
+
+        /// <summary>
+        /// Read tokens from stream. Returns number of bytes read (0 if none available).
+        /// Timeout in milliseconds.
+        /// </summary>
+        public unsafe int StreamRead(NativeArray<byte> outBuffer, uint timeoutMs = 100)
+        {
+            var span = AstralNative.AstralMutSpanU8.FromNativeArray(outBuffer);
+            int bytesRead = AstralNative.astral_stream_read(sessionHandle, span, timeoutMs);
+            if (bytesRead < 0)
+            {
+                var err = (AstralNative.AstralErr)bytesRead;
+                if (err == AstralNative.AstralErr.Timeout)
+                {
+                    return 0; // No data yet
+                }
+                throw new AstralException($"StreamRead failed: {err}");
+            }
+            return bytesRead;
+        }
+
+        /// <summary>
+        /// Helper: Read tokens as UTF-8 string (allocates managed string).
+        /// </summary>
+        public string StreamReadString(uint timeoutMs = 100)
+        {
+            int bytesRead = StreamRead(tokenBuffer, timeoutMs);
+            if (bytesRead == 0) return string.Empty;
+
+            unsafe
+            {
+                return Encoding.UTF8.GetString((byte*)tokenBuffer.GetUnsafeReadOnlyPtr(), bytesRead);
+            }
+        }
+
+        /// <summary>
+        /// Get session statistics.
+        /// </summary>
+        public AstralNative.AstralStats GetStats()
+        {
+            var err = AstralNative.astral_session_stats(sessionHandle, out var stats);
+            if (err != AstralNative.AstralErr.OK)
+            {
+                throw new AstralException($"GetStats failed: {err}");
+            }
+            return stats;
+        }
+
+        public void Dispose()
+        {
+            if (disposed) return;
+
+            if (sessionHandle.value != 0)
+            {
+                AstralNative.astral_session_destroy(sessionHandle);
+                sessionHandle.value = 0;
+            }
+
+            if (tokenBuffer.IsCreated)
+            {
+                tokenBuffer.Dispose();
+            }
+
+            disposed = true;
+        }
+    }
+
+    public class AstralException : Exception
+    {
+        public AstralException(string message) : base(message) { }
+    }
+}
+```
+
+## Unity Allocator Adapter (`AstralAllocator.cs`)
+
+```csharp
+using System;
+using System.Runtime.InteropServices;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+
+namespace Astral
+{
+    /// <summary>
+    /// Adapts Unity's native allocators to Astral's C allocator interface.
+    /// </summary>
+    public static class AstralAllocatorAdapter
+    {
+        // Keep delegates alive (GC root)
+        private static AstralNative.AllocFn allocDelegate;
+        private static AstralNative.FreeFn freeDelegate;
+
+        public static AstralNative.AstralAllocator CreatePersistent()
+        {
+            allocDelegate = UnityAlloc;
+            freeDelegate = UnityFree;
+
+            return new AstralNative.AstralAllocator
+            {
+                alloc = Marshal.GetFunctionPointerForDelegate(allocDelegate),
+                free = Marshal.GetFunctionPointerForDelegate(freeDelegate),
+                user = IntPtr.Zero
+            };
+        }
+
+        [AOT.MonoPInvokeCallback(typeof(AstralNative.AllocFn))]
+        private static IntPtr UnityAlloc(IntPtr user, UIntPtr size, UIntPtr align)
+        {
+            unsafe
+            {
+                // Use Unity's persistent allocator
+                void* ptr = UnsafeUtility.Malloc(
+                    (long)size,
+                    (int)align,
+                    Allocator.Persistent
+                );
+                return (IntPtr)ptr;
+            }
+        }
+
+        [AOT.MonoPInvokeCallback(typeof(AstralNative.FreeFn))]
+        private static void UnityFree(IntPtr user, IntPtr ptr, UIntPtr size, UIntPtr align)
+        {
+            unsafe
+            {
+                UnsafeUtility.Free((void*)ptr, Allocator.Persistent);
+            }
+        }
+    }
+}
+```
+
+## Usage Example (`BasicChatExample.cs`)
+
+```csharp
+using UnityEngine;
+using Astral;
+using Unity.Collections;
+
+public class BasicChatExample : MonoBehaviour
+{
+    private AstralNative.AstralHandle modelHandle;
+    private AstralSession session;
+
+    void Start()
+    {
+        // Initialize Astral runtime
+        var initCfg = new AstralNative.AstralInit
+        {
+            sys_alloc = AstralAllocatorAdapter.CreatePersistent(),
+            log_cb = IntPtr.Zero, // Optional: implement logging
+            log_user = IntPtr.Zero,
+            reserve_bytes = 2UL << 30, // 2 GB
+            thread_count = 0, // Auto
+            numa_node = 0xFFFFFFFF, // Any
+            enable_hugepages = 0
+        };
+
+        var err = AstralNative.astral_init(ref initCfg);
+        if (err != AstralNative.AstralErr.OK)
+        {
+            Debug.LogError($"Astral init failed: {err}");
+            return;
+        }
+
+        // Load model
+        string modelPath = Application.streamingAssetsPath + "/models/llama-7b-q4.gguf";
+        byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(modelPath);
+
+        unsafe
+        {
+            fixed (byte* pathPtr = pathBytes)
+            {
+                var modelDesc = new AstralNative.AstralModelDesc
+                {
+                    model_path = new AstralNative.AstralSpanU8(pathPtr, pathBytes.Length),
+                    gpu_layers = 0,
+                    n_ctx = 2048,
+                    n_batch = 512,
+                    n_threads = 0,
+                    embeddings_only = 0
+                };
+
+                err = AstralNative.astral_model_load(ref modelDesc, out modelHandle);
+                if (err != AstralNative.AstralErr.OK)
+                {
+                    Debug.LogError($"Model load failed: {err}");
+                    return;
+                }
+            }
+        }
+
+        // Create session
+        session = new AstralSession(modelHandle, maxTokens: 512, temperature: 0.7f);
+
+        // Feed prompt
+        session.Feed("Once upon a time", finalize: true);
+
+        // Start decode
+        session.Decode();
+
+        // Poll for tokens in Update
+        Debug.Log("Inference started");
+    }
+
+    void Update()
+    {
+        if (session == null || !session.IsValid) return;
+
+        // Read tokens (no GC allocation)
+        string token = session.StreamReadString(timeoutMs: 10);
+        if (!string.IsNullOrEmpty(token))
+        {
+            Debug.Log(token);
+        }
+    }
+
+    void OnDestroy()
+    {
+        session?.Dispose();
+        if (modelHandle.value != 0)
+        {
+            AstralNative.astral_model_release(modelHandle);
+        }
+        AstralNative.astral_shutdown();
+    }
+}
+```
+
+## Burst-Compatible Job (Advanced)
+
+```csharp
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
+
+[BurstCompile]
+public struct StreamReadJob : IJob
+{
+    public AstralNative.AstralHandle sessionHandle;
+    public NativeArray<byte> outBuffer;
+    public uint timeoutMs;
+
+    [WriteOnly]
+    public NativeArray<int> bytesRead;
+
+    public unsafe void Execute()
+    {
+        var span = AstralNative.AstralMutSpanU8.FromNativeArray(outBuffer);
+        int result = AstralNative.astral_stream_read(sessionHandle, span, timeoutMs);
+        bytesRead[0] = result;
+    }
+}
+
+// Usage
+var job = new StreamReadJob
+{
+    sessionHandle = session.Handle, // Expose handle in AstralSession
+    outBuffer = tokenBuffer,
+    timeoutMs = 10,
+    bytesRead = new NativeArray<int>(1, Allocator.TempJob)
+};
+
+var handle = job.Schedule();
+handle.Complete();
+int bytes = job.bytesRead[0];
+job.bytesRead.Dispose();
+```
+
+## Platform-Specific Notes
+
+### Android
+
+- **IL2CPP**: Always use IL2CPP (not Mono) for ARM targets
+- **Native Lib**: Build `libastral_rt.so` for `armeabi-v7a` and `arm64-v8a`
+- **Threading**: Use `pthread` backend; avoid JNI calls from native threads
+- **Memory**: Reserve smaller amount (512MB) due to device constraints
+
+### iOS
+
+- **IL2CPP**: Required for App Store
+- **Bitcode**: Disable bitcode or provide bitcode-enabled lib
+- **Memory**: Use `mmap` via POSIX; avoid `vm_allocate` (restricted)
+- **Entitlements**: No special entitlements needed for inference
+
+### WebGL
+
+- **Not Supported**: WebAssembly lacks threading (SharedArrayBuffer optional); defer to server-side inference
+
+## Performance Best Practices
+
+1. **Pre-allocate Buffers**: Create all `NativeArray<byte>` at init, not per-frame
+2. **Avoid `StreamReadString()`**: Use `StreamRead()` with `NativeArray` for zero-copy
+3. **Burst Compile Jobs**: Use `StreamReadJob` for maximum throughput
+4. **Profile Allocations**: Use Unity Profiler → Memory Profiler → GC.Alloc to verify zero allocations
+5. **Thread Affinity**: Pin decode thread to performance cores on mobile (optional)
+
+## Troubleshooting
+
+### DLL Not Found
+
+- **Windows**: Ensure `astral_rt.dll` is in `Plugins/x86_64/`
+- **macOS**: Disable Gatekeeper for unsigned libs: `sudo spctl --master-disable`
+- **Linux**: Check `libastral_rt.so` has execute permissions
+
+### GC Allocations
+
+- Use `StreamRead()` with persistent `NativeArray`, not `StreamReadString()`
+- Avoid `string.Format()` in hot path; use `StringBuilder` or `UnsafeUtility.WriteArrayElement`
+
+### Crashes on iOS
+
+- Enable "Enable Exceptions" in Player Settings → Other Settings
+- Disable Bitcode or rebuild native lib with Bitcode
+
+### Slow Inference
+
+- Increase `n_batch` (512 → 2048) for throughput
+- Enable GPU layers if Metal/OpenCL backend available
+- Profile with Unity Profiler → Deep Profile to find hot spots
+
+## Future Enhancements
+
+- **Jobs System Integration**: Full Burst-compiled decode path
+- **Async/Await**: C# async wrappers for `Decode()` and `StreamRead()`
+- **Scriptable Objects**: Config via `AstralModelAsset` and `AstralSessionAsset`
+- **Editor Tools**: Model inspector, tokenizer visualizer, benchmark runner

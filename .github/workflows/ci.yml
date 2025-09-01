@@ -1,0 +1,116 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Download small GGUF for integration
+        run: |
+          ./tests/model_downloader.sh
+
+      - name: Configure
+        run: |
+          cmake --preset dev
+
+      - name: Build
+        run: |
+          cmake --build --preset dev -j
+
+      - name: Test
+        run: |
+          ctest --preset dev -j
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install cross toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++-aarch64-linux-gnu g++-arm-linux-gnueabihf qemu-user
+
+      - name: Configure arm64 (examples)
+        run: |
+          cmake --preset embedded-arm64-cross
+
+      - name: Build arm64 (examples)
+        run: |
+          cmake --build --preset embedded-arm64-cross -j
+
+      - name: QEMU smoke (arm64, mock backend)
+        run: |
+          BIN="build/embedded-arm64/examples/embedded/astral_embedded_cli"
+          test -x "${BIN}"
+          qemu-aarch64 -L /usr/aarch64-linux-gnu "${BIN}" --backend mock --prompt "hi" --tokens 16 --sink none --reset
+          BIN2="build/embedded-arm64/examples/embedded/astral_concurrency_contract"
+          test -x "${BIN2}"
+          qemu-aarch64 -L /usr/aarch64-linux-gnu "${BIN2}"
+
+      - name: Configure arm64 (gates)
+        run: |
+          cmake --preset embedded-arm64-ci
+
+      - name: Build arm64 (gates)
+        run: |
+          cmake --build --preset embedded-arm64-ci -j
+
+      - name: QEMU gates (arm64, mock)
+        run: |
+          BIN="build/embedded-arm64-ci/tests/gate_allocations"
+          test -x "${BIN}"
+          qemu-aarch64 -L /usr/aarch64-linux-gnu "${BIN}"
+          BIN2="build/embedded-arm64-ci/tests/gate_io_syscalls"
+          test -x "${BIN2}"
+          qemu-aarch64 -L /usr/aarch64-linux-gnu "${BIN2}"
+
+      - name: Configure armv7 (examples)
+        run: |
+          cmake --preset embedded-armv7-cross
+
+      - name: Build armv7 (examples)
+        run: |
+          cmake --build --preset embedded-armv7-cross -j
+
+      - name: QEMU smoke (armv7, mock backend)
+        run: |
+          BIN="build/embedded-armv7/examples/embedded/astral_embedded_cli"
+          test -x "${BIN}"
+          qemu-arm -L /usr/arm-linux-gnueabihf "${BIN}" --backend mock --prompt "hi" --tokens 16 --sink none --reset
+          BIN2="build/embedded-armv7/examples/embedded/astral_concurrency_contract"
+          test -x "${BIN2}"
+          qemu-arm -L /usr/arm-linux-gnueabihf "${BIN2}"
+
+      - name: Configure armv7 (gates)
+        run: |
+          cmake --preset embedded-armv7-ci
+
+      - name: Build armv7 (gates)
+        run: |
+          cmake --build --preset embedded-armv7-ci -j
+
+      - name: QEMU gates (armv7, mock)
+        run: |
+          BIN="build/embedded-armv7-ci/tests/gate_allocations"
+          test -x "${BIN}"
+          qemu-arm -L /usr/arm-linux-gnueabihf "${BIN}"
+          BIN2="build/embedded-armv7-ci/tests/gate_io_syscalls"
+          test -x "${BIN2}"
+          qemu-arm -L /usr/arm-linux-gnueabihf "${BIN2}"

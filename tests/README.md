@@ -1,0 +1,45 @@
+# Astral Tests
+
+This directory contains the native unit tests, integration tests, and hard validation gates for Astral.
+
+## Running
+
+```bash
+cmake --preset dev
+cmake --build --preset dev -j
+ctest --preset dev -j8
+```
+
+Release validation:
+
+```bash
+cmake --preset release-with-tests
+cmake --build --preset release-with-tests -j
+ctest --preset release-with-tests -j8
+```
+
+## Integration model
+
+`test_integration` runs real end-to-end inference when a GGUF model is available.
+
+Model selection order:
+1. `ASTRAL_TEST_MODEL=/abs/path/to/model.gguf`
+2. `astral/tests/models/gpt2.Q2_K.gguf` (default downloader output, if present)
+3. `astral/tests/models/tinyllama-1.1b-chat-v1.0.Q2_K.gguf` (legacy filename, if present)
+4. `astral/tests/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf` (legacy filename, if present)
+
+If no model is found, the test prints a `[SKIP]` message and continues. If a model path is found but the load fails, the test fails.
+
+### Downloading a small model
+
+```bash
+bash astral/tests/model_downloader.sh
+export ASTRAL_TEST_MODEL="$PWD/astral/tests/models/gpt2.Q2_K.gguf"
+```
+
+The downloader supports overrides via `--url/--file/--min-bytes` and env vars (`ASTRAL_TEST_MODEL_URL`, `ASTRAL_TEST_MODEL_FILE`, `ASTRAL_MODEL_MIN_BYTES`).
+
+## What the gates cover
+
+- `gate_source_scans`: repo-wide source scan that enforces hard rules (no compare-and-swap ops in sources/docs, and no suspicious full-vocab logits copies).
+- `gate_allocations`: best-effort heap allocation interposition gate for steady-state decode/stream (runs mock always; CPU is opt-in via `ASTRAL_GATE_CPU_ALLOC=1`).

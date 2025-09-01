@@ -1,0 +1,47 @@
+# Build directories
+build/
+build-*/
+cmake-build-*/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Compiled objects
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# CMake cache
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+
+# Executables
+astral_tests
+astral_tests_tsan
+astral_microbench
+astral_e2e_bench
+astral_debug_bench
+
+# Platform-specific
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
+*.tmp
+
+# Downloaded models (do not commit)
+tests/models/*.gguf
+tests/models/*.bin
+tests/models/*.safetensors

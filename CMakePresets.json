@@ -1,0 +1,214 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Development Build",
+      "description": "Debug build with tests and benchmarks enabled",
+      "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ASTRAL_BUILD_TESTS": "ON",
+        "ASTRAL_BUILD_BENCHMARKS": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release Build",
+      "description": "Optimized release build without tests",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF"
+      }
+    },
+    {
+      "name": "release-with-tests",
+      "displayName": "Release Build with Tests",
+      "description": "Optimized release build with tests for validation",
+      "binaryDir": "${sourceDir}/build/release-test",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ASTRAL_BUILD_TESTS": "ON",
+        "ASTRAL_BUILD_BENCHMARKS": "ON"
+      }
+    },
+    {
+      "name": "unity-plugin",
+      "displayName": "Unity Plugin Build",
+      "description": "Build Unity native plugin",
+      "binaryDir": "${sourceDir}/build/unity",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_UNITY_PLUGIN": "ON"
+      }
+    },
+    {
+      "name": "unreal-plugin",
+      "displayName": "Unreal Plugin Build",
+      "description": "Build Unreal Engine plugin",
+      "binaryDir": "${sourceDir}/build/unreal",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_UNREAL_PLUGIN": "ON"
+      }
+    },
+    {
+      "name": "embedded-x86_64",
+      "displayName": "Embedded Profile (Host x86_64)",
+      "description": "Build examples with embedded-friendly defaults on the host",
+      "binaryDir": "${sourceDir}/build/embedded-x86_64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "embedded-native",
+      "displayName": "Embedded Profile (Native)",
+      "description": "Native build for an embedded Linux device",
+      "binaryDir": "${sourceDir}/build/embedded-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "embedded-arm64-cross",
+      "displayName": "Embedded Profile (Linux arm64 cross)",
+      "description": "Cross-compile embedded example + library for Linux arm64",
+      "binaryDir": "${sourceDir}/build/embedded-arm64",
+      "toolchainFile": "${sourceDir}/toolchains/linux-arm64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GGML_NATIVE": "OFF",
+        "GGML_OPENMP": "OFF",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "embedded-arm64-ci",
+      "displayName": "Embedded CI (Linux arm64 cross)",
+      "description": "Cross-compile embedded examples + selected test gates for QEMU",
+      "binaryDir": "${sourceDir}/build/embedded-arm64-ci",
+      "toolchainFile": "${sourceDir}/toolchains/linux-arm64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GGML_NATIVE": "OFF",
+        "GGML_OPENMP": "OFF",
+        "ASTRAL_BUILD_TESTS": "ON",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "embedded-armv7-cross",
+      "displayName": "Embedded Profile (Linux armv7 cross)",
+      "description": "Cross-compile embedded example + library for Linux armv7",
+      "binaryDir": "${sourceDir}/build/embedded-armv7",
+      "toolchainFile": "${sourceDir}/toolchains/linux-armv7.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GGML_NATIVE": "OFF",
+        "GGML_OPENMP": "OFF",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "embedded-armv7-ci",
+      "displayName": "Embedded CI (Linux armv7 cross)",
+      "description": "Cross-compile embedded examples + selected test gates for QEMU",
+      "binaryDir": "${sourceDir}/build/embedded-armv7-ci",
+      "toolchainFile": "${sourceDir}/toolchains/linux-armv7.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GGML_NATIVE": "OFF",
+        "GGML_OPENMP": "OFF",
+        "ASTRAL_BUILD_TESTS": "ON",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_EXAMPLES": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "release-with-tests",
+      "configurePreset": "release-with-tests"
+    },
+    {
+      "name": "unity-plugin",
+      "configurePreset": "unity-plugin"
+    },
+    {
+      "name": "unreal-plugin",
+      "configurePreset": "unreal-plugin"
+    },
+    {
+      "name": "embedded-x86_64",
+      "configurePreset": "embedded-x86_64"
+    },
+    {
+      "name": "embedded-native",
+      "configurePreset": "embedded-native"
+    },
+    {
+      "name": "embedded-arm64-cross",
+      "configurePreset": "embedded-arm64-cross"
+    },
+    {
+      "name": "embedded-arm64-ci",
+      "configurePreset": "embedded-arm64-ci"
+    },
+    {
+      "name": "embedded-armv7-cross",
+      "configurePreset": "embedded-armv7-cross"
+    }
+    ,
+    {
+      "name": "embedded-armv7-ci",
+      "configurePreset": "embedded-armv7-ci"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-with-tests",
+      "configurePreset": "release-with-tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

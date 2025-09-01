@@ -1,0 +1,14 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.0",
+  "Category": "Tests",
+  "Description": "Minimal project scaffold for AstralRT Automation tests",
+  "Modules": [],
+  "Plugins": [
+    {
+      "Name": "AstralRT",
+      "Enabled": true
+    }
+  ]
+}
+

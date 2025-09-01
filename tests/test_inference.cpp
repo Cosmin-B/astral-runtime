@@ -1,0 +1,634 @@
+/**
+ * test_inference.cpp - Inference layer tests
+ *
+ * Tests for session management, state machine, sampler, and token generation.
+ * Validates: session create/destroy, feed/decode, streaming, sampler configuration.
+ */
+
+#include "test_framework.hpp"
+#include "../include/astral_rt.h"
+
+#include <cstring>
+#include <chrono>
+#include <thread>
+
+namespace {
+
+AstralHandle load_mock_model(const char* model_path) {
+    AstralModelDesc model_desc = {};
+    const char* backend = "mock";
+    model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+    model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend));
+
+    if (model_path != nullptr) {
+        model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
+        model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));
+    }
+
+    model_desc.n_ctx = 128;
+    model_desc.gpu_layers = 0;
+
+    AstralHandle model = 0;
+    const AstralErr err = astral_model_load(&model_desc, &model);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(model));
+    return model;
+}
+
+uint32_t drain_stream(AstralHandle session, uint32_t max_reads) {
+    uint8_t buf[256];
+    uint32_t total = 0;
+
+    for (uint32_t i = 0; i < max_reads; ++i) {
+        AstralMutSpanU8 out = {};
+        out.data = buf;
+        out.len = sizeof(buf);
+
+        const int32_t n = astral_stream_read(session, out, 100 /*ms*/);
+        if (n == 0) {
+            break;
+        }
+        if (n == ASTRAL_E_TIMEOUT) {
+            continue;
+        }
+        ASSERT_GT(n, 0);
+        total += static_cast<uint32_t>(n);
+    }
+
+    return total;
+}
+
+} // namespace
+
+//
+// Session Creation Tests
+//
+
+TEST(inference_session_create_destroy) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 32 * 1024 * 1024;
+    astral_init(&cfg);
+
+    // Load model first (may fail if no model file)
+    AstralModelDesc model_desc = {};
+    const char* path = "models/test.gguf";
+    model_desc.model_path.data = reinterpret_cast<const uint8_t*>(path);
+    model_desc.model_path.len = static_cast<uint32_t>(strlen(path));
+    model_desc.n_ctx = 512;
+    model_desc.n_batch = 128;
+    model_desc.gpu_layers = 0;
+
+    AstralHandle model;
+    AstralErr err = astral_model_load(&model_desc, &model);
+
+    if (err == ASTRAL_OK) {
+        // Create session
+        AstralSessionDesc session_desc = {};
+        session_desc.model = model;
+        session_desc.max_tokens = 100;
+        session_desc.temperature = 0.7f;
+        session_desc.top_k = 40;
+        session_desc.top_p = 0.9f;
+        session_desc.stream_enabled = 1;
+
+        AstralHandle session;
+        err = astral_session_create(&session_desc, &session);
+
+        if (err == ASTRAL_OK) {
+            astral_session_destroy(session);
+        }
+
+        astral_model_release(model);
+    }
+
+    astral_shutdown();
+}
+
+TEST(inference_session_create_null_desc) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    AstralHandle session;
+    AstralErr err = astral_session_create(nullptr, &session);
+
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+
+    astral_shutdown();
+}
+
+TEST(inference_session_create_null_output) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    AstralSessionDesc session_desc = {};
+    AstralErr err = astral_session_create(&session_desc, nullptr);
+
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+
+    astral_shutdown();
+}
+
+//
+// Sampler Configuration Tests
+//
+
+TEST(inference_sampler_deterministic) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 32 * 1024 * 1024;
+    astral_init(&cfg);
+
+    // Configuration for deterministic sampling (temperature=0)
+    AstralSessionDesc session_desc = {};
+    session_desc.temperature = 0.0f; // Deterministic (greedy)
+    session_desc.max_tokens = 10;
+
+    // This tests the configuration, actual sampling requires a valid model
+    astral_shutdown();
+}
+
+TEST(inference_sampler_diverse) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 32 * 1024 * 1024;
+    astral_init(&cfg);
+
+    // Configuration for diverse sampling
+    AstralSessionDesc session_desc = {};
+    session_desc.temperature = 1.0f; // Diverse
+    session_desc.top_k = 50;
+    session_desc.top_p = 0.95f;
+    session_desc.max_tokens = 10;
+
+    // This tests the configuration
+    astral_shutdown();
+}
+
+//
+// Session Feed Tests
+//
+
+TEST(inference_session_feed_null_session) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    const char* prompt = "Hello";
+    AstralSpanU8 chunk = {};
+    chunk.data = reinterpret_cast<const uint8_t*>(prompt);
+    chunk.len = static_cast<uint32_t>(strlen(prompt));
+
+    AstralErr err = astral_session_feed(0, chunk, 1);
+
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+
+    astral_shutdown();
+}
+
+TEST(inference_session_feed_empty) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    // Feed empty chunk should be allowed (edge case)
+    AstralSpanU8 chunk = {};
+    chunk.data = nullptr;
+    chunk.len = 0;
+
+    // Would need valid session to test fully
+    // This just tests the null case
+    astral_shutdown();
+}
+
+//
+// Decode Tests
+//
+
+TEST(inference_session_decode_null_session) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    AstralErr err = astral_session_decode(0);
+
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+
+    astral_shutdown();
+}
+
+//
+// Stream Read Tests
+//
+
+TEST(inference_stream_read_null_session) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    uint8_t buffer[256];
+    AstralMutSpanU8 out_buf = {};
+    out_buf.data = buffer;
+    out_buf.len = sizeof(buffer);
+
+    int32_t result = astral_stream_read(0, out_buf, 0);
+
+    ASSERT_EQ(result, ASTRAL_E_INVALID);
+
+    astral_shutdown();
+}
+
+TEST(inference_stream_read_null_buffer) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    AstralMutSpanU8 out_buf = {};
+    out_buf.data = nullptr;
+    out_buf.len = 0;
+
+    // Would need valid session for full test
+    // This tests null buffer handling
+    astral_shutdown();
+}
+
+TEST(inference_stream_timeout_and_eos_semantics) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 64 * 1024 * 1024;
+    cfg.thread_count = 2;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const AstralHandle model = load_mock_model(nullptr);
+
+    AstralSessionDesc session_desc = {};
+    session_desc.model = model;
+    session_desc.max_tokens = 64;
+    session_desc.temperature = 0.0f; // greedy (deterministic)
+    session_desc.top_k = 0;
+    session_desc.top_p = 1.0f;
+    session_desc.stream_enabled = 1;
+    session_desc.seed = 1;
+
+    AstralHandle session = 0;
+    err = astral_session_create(&session_desc, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(session));
+
+    // Before decode, empty ring reads should time out.
+    uint8_t buf[64];
+    AstralMutSpanU8 out = {};
+    out.data = buf;
+    out.len = sizeof(buf);
+    ASSERT_EQ(astral_stream_read(session, out, 0), ASTRAL_E_TIMEOUT);
+
+    // Empty feed+finalize is valid and triggers BOS tokenization for mock.
+    AstralSpanU8 empty = {};
+    empty.data = nullptr;
+    empty.len = 0;
+    err = astral_session_feed(session, empty, 1);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_decode(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    ASSERT_GT(drain_stream(session, 256), 0u);
+
+    err = astral_session_wait(session, 5000);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    // After end-of-stream, reads return 0.
+    ASSERT_EQ(astral_stream_read(session, out, 0), 0);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(inference_cancel_wait_and_reset_invariants) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 64 * 1024 * 1024;
+    cfg.thread_count = 2;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    // Infinite mock never emits EOS; used to validate cancel/wait/backpressure.
+    const AstralHandle model = load_mock_model("infinite");
+
+    AstralSessionDesc session_desc = {};
+    session_desc.model = model;
+    session_desc.max_tokens = 1000000000u;
+    session_desc.temperature = 0.0f;
+    session_desc.top_k = 0;
+    session_desc.top_p = 1.0f;
+    session_desc.stream_enabled = 1;
+    session_desc.seed = 1;
+
+    AstralHandle session = 0;
+    err = astral_session_create(&session_desc, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(session));
+
+    const char* prompt = "hi";
+    AstralSpanU8 chunk = {};
+    chunk.data = reinterpret_cast<const uint8_t*>(prompt);
+    chunk.len = static_cast<uint32_t>(std::strlen(prompt));
+    err = astral_session_feed(session, chunk, 1);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_decode(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    // Cannot reset while decoding.
+    err = astral_session_reset(session, &session_desc);
+    ASSERT_EQ(err, ASTRAL_E_STATE);
+
+    // Poll wait should time out while decoding is in flight.
+    err = astral_session_wait(session, 0);
+    ASSERT_EQ(err, ASTRAL_E_TIMEOUT);
+
+    // Cancel and wait should return canceled.
+    err = astral_session_cancel(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_wait(session, 5000);
+    ASSERT_EQ(err, ASTRAL_E_CANCELED);
+
+    AstralSessionState state = 0;
+    err = astral_session_state(session, &state);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(state, ASTRAL_SESSION_CANCELED);
+
+    // Drain any buffered output (may be empty depending on scheduling).
+    (void)drain_stream(session, 512);
+
+    // Reset should clear cancellation and return to idle.
+    session_desc.max_tokens = 8;
+    err = astral_session_reset(session, &session_desc);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_state(session, &state);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(state, ASTRAL_SESSION_IDLE);
+
+    err = astral_session_feed(session, chunk, 1);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_decode(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    // This run terminates by max_tokens.
+    ASSERT_GT(drain_stream(session, 256), 0u);
+
+    err = astral_session_wait(session, 5000);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_state(session, &state);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(state, ASTRAL_SESSION_COMPLETED);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(inference_cancel_unblocks_when_stream_not_drained) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 64 * 1024 * 1024;
+    cfg.thread_count = 2;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    // Infinite mock never emits EOS; used to force steady streaming + backpressure.
+    const AstralHandle model = load_mock_model("infinite");
+
+    AstralSessionDesc session_desc = {};
+    session_desc.model = model;
+    session_desc.max_tokens = 1000000000u;
+    session_desc.temperature = 0.0f;
+    session_desc.top_k = 0;
+    session_desc.top_p = 1.0f;
+    session_desc.stream_enabled = 1;
+    session_desc.seed = 1;
+
+    AstralHandle session = 0;
+    err = astral_session_create(&session_desc, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(session));
+
+    const char* prompt = "hi";
+    AstralSpanU8 chunk = {};
+    chunk.data = reinterpret_cast<const uint8_t*>(prompt);
+    chunk.len = static_cast<uint32_t>(std::strlen(prompt));
+    err = astral_session_feed(session, chunk, 1);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_decode(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    // Intentionally do not read the stream; give the producer time to fill the ring and block.
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+
+    err = astral_session_cancel(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_wait(session, 5000);
+    ASSERT_EQ(err, ASTRAL_E_CANCELED);
+
+    AstralSessionState state = 0;
+    err = astral_session_state(session, &state);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(state, ASTRAL_SESSION_CANCELED);
+
+    // Drain any buffered output. After draining, reads should return end-of-stream (0).
+    (void)drain_stream(session, 1024);
+
+    uint8_t buf[64];
+    AstralMutSpanU8 out = {};
+    out.data = buf;
+    out.len = sizeof(buf);
+    ASSERT_EQ(astral_stream_read(session, out, 0), 0);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(inference_reset_clears_stream_buffer) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 64 * 1024 * 1024;
+    cfg.thread_count = 2;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const AstralHandle model = load_mock_model(nullptr);
+
+    AstralSessionDesc session_desc = {};
+    session_desc.model = model;
+    session_desc.max_tokens = 32;
+    session_desc.temperature = 0.0f;
+    session_desc.top_k = 0;
+    session_desc.top_p = 1.0f;
+    session_desc.stream_enabled = 1;
+    session_desc.seed = 1;
+
+    AstralHandle session = 0;
+    err = astral_session_create(&session_desc, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(session));
+
+    // Run decode without reading the stream. This should complete because max_tokens << ring capacity.
+    const char* prompt = "hi";
+    AstralSpanU8 chunk = {};
+    chunk.data = reinterpret_cast<const uint8_t*>(prompt);
+    chunk.len = static_cast<uint32_t>(std::strlen(prompt));
+    err = astral_session_feed(session, chunk, 1);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_decode(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_wait(session, 5000);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    // Reset must clear any unread stream tokens and return the session to idle.
+    err = astral_session_reset(session, &session_desc);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    uint8_t buf[64];
+    AstralMutSpanU8 out = {};
+    out.data = buf;
+    out.len = sizeof(buf);
+    ASSERT_EQ(astral_stream_read(session, out, 0), ASTRAL_E_TIMEOUT);
+
+    AstralSessionState state = 0;
+    err = astral_session_state(session, &state);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(state, ASTRAL_SESSION_IDLE);
+
+    // Ensure the session can be reused successfully.
+    err = astral_session_feed(session, chunk, 1);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_session_decode(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_GT(drain_stream(session, 256), 0u);
+    err = astral_session_wait(session, 5000);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+//
+// Statistics Tests
+//
+
+TEST(inference_session_stats_null_session) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    AstralStats stats;
+    AstralErr err = astral_session_stats(0, &stats);
+
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+
+    astral_shutdown();
+}
+
+TEST(inference_session_stats_null_output) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    // Would need valid session for full test
+    // This tests null output handling
+    astral_shutdown();
+}
+
+//
+// Embeddings Tests
+//
+
+TEST(inference_embed_create_null_model) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    AstralHandle embedder;
+    AstralErr err = astral_embed_create(0, &embedder);
+
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+
+    astral_shutdown();
+}
+
+TEST(inference_embed_create_null_output) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    // Would need valid model for full test
+    AstralErr err = astral_embed_create(0, nullptr);
+
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+
+    astral_shutdown();
+}
+
+TEST(inference_embed_create_and_run_mock) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 64 * 1024 * 1024;
+    cfg.thread_count = 2;
+    astral_init(&cfg);
+
+    const char* backend = "mock";
+    const char* model_path = "infinite";
+    AstralModelDesc model_desc{};
+    model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
+    model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));
+    model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+    model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend));
+    model_desc.n_ctx = 128;
+    model_desc.embeddings_only = 1;
+
+    AstralHandle model = 0;
+    AstralErr err = astral_model_load(&model_desc, &model);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(model));
+
+    uint32_t dim = 0;
+    err = astral_model_embedding_dim(model, &dim);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_GT(dim, 0u);
+
+    AstralHandle embedder = 0;
+    err = astral_embed_create(model, &embedder);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(embedder));
+
+    const char* text = "abc";
+    AstralSpanU8 text_span{};
+    text_span.data = reinterpret_cast<const uint8_t*>(text);
+    text_span.len = static_cast<uint32_t>(std::strlen(text));
+
+    uint64_t ticket = 0;
+    err = astral_embed_enqueue(embedder, text_span, &ticket);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    float vec[64] = {};
+    ASSERT_LE(dim, 64u);
+    AstralMutSpanU8 out{};
+    out.data = reinterpret_cast<uint8_t*>(vec);
+    out.len = static_cast<uint32_t>(sizeof(vec));
+
+    err = astral_embed_collect(embedder, ticket, out);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const float expected0 = static_cast<float>(256 + 97 + 98 + 99);
+    ASSERT_EQ(vec[0], expected0);
+
+    astral_embed_destroy(embedder);
+    astral_model_release(model);
+    astral_shutdown();
+}

@@ -1,0 +1,47 @@
+# Model Sources (GGUF) for Tests/Bench
+
+Astral tests and benchmarks use GGUF models downloaded from Hugging Face. The helper script is `astral/tests/model_downloader.sh`.
+
+## Default (inference smoke)
+- Preset: `gpt2-q2k`
+- Notes: small generative GGUF (good for CI and quick local runs).
+
+## Embeddings models (small)
+These are encoder/embedding GGUFs (typically 384-dim class):
+- Preset: `embed-minilm-q2k`
+  - Repo: `second-state/All-MiniLM-L6-v2-Embedding-GGUF`
+  - File: `all-MiniLM-L6-v2-Q2_K.gguf`
+- Preset: `embed-bge-small-q4km`
+  - Repo: `CompendiumLabs/bge-small-en-v1.5-gguf`
+  - File: `bge-small-en-v1.5-q4_k_m.gguf`
+- Preset: `embed-nomic-v1-5-q2k`
+  - Repo: `nomic-ai/nomic-embed-text-v1.5-GGUF`
+  - File: `nomic-embed-text-v1.5.Q2_K.gguf`
+
+## LiquidAI (generative)
+These are “small” relative to multi-billions, but still much larger than GPT-2:
+- Preset: `liquid-lfm2-350m-q4km`
+  - Repo: `LiquidAI/LFM2-350M-GGUF`
+  - File: `LFM2-350M-Q4_K_M.gguf`
+
+## Downloader usage
+
+### Presets (recommended)
+- `./tests/model_downloader.sh --preset gpt2-q2k`
+- `./tests/model_downloader.sh --preset embed-minilm-q2k`
+
+### Environment variables
+Astral uses a single model for decode/stream gates and (optionally) a different model for embeddings tests:
+- `ASTRAL_TEST_DECODE_MODEL`: decode/stream gates + CPU provider harness (expects a generative/decode-capable GGUF)
+- `ASTRAL_TEST_EMBED_MODEL`: embeddings tests (can be an encoder-only GGUF like MiniLM/BGE)
+- `ASTRAL_TEST_MODEL`: legacy fallback used when the specific variable is not set
+
+### Hugging Face repo + file
+- `./tests/model_downloader.sh --hf-repo second-state/All-MiniLM-L6-v2-Embedding-GGUF --hf-file all-MiniLM-L6-v2-Q2_K.gguf`
+
+### Direct URL
+- `./tests/model_downloader.sh --url <hf-resolve-url> --file <name.gguf>`
+
+### Private/gated repos
+- `export HF_TOKEN=...`
+- Then run the same commands; the script sends an `Authorization: Bearer` header when `HF_TOKEN` is set.

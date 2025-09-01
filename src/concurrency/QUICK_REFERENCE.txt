@@ -1,0 +1,197 @@
+ASTRAL CONCURRENCY PRIMITIVES - QUICK REFERENCE
+===============================================
+
+CHOOSING THE RIGHT PRIMITIVE
+-----------------------------
+
+Use MpmcQueue when:
+- Multiple threads need to produce work items
+- Multiple threads need to consume work items
+- Work scheduling, task distribution
+- Example: Thread pool work queue
+
+Use SpscRing when:
+- Single producer, single consumer only
+- Highest performance needed (no contention)
+- Token streaming, pipeline stages
+- Example: Decode thread -> Engine callback thread
+
+Use EpochManager when:
+- Need to defer deletion of shared objects
+- Lock-free data structures with node recycling
+- Cannot use hazard pointers (too much overhead)
+- Example: Retired callback entries, work item nodes
+
+MEMORY ORDERING CHEAT SHEET
+----------------------------
+
+memory_order_acquire:
+- Use on LOADS that need to synchronize with releases
+- Ensures all prior writes from releasing thread are visible
+- Example: Loading tail to see consumer progress
+
+memory_order_release:
+- Use on STORES that publish data to other threads
+- Ensures all prior writes are visible before store
+- Example: Storing head after writing item to ring
+
+memory_order_acq_rel:
+- Use on read-modify-write (fetch_add, fetch_sub, exchange)
+- Combines acquire (read) + release (write)
+- Example: Epoch/global counters, ticket allocators
+
+memory_order_relaxed:
+- No synchronization, only atomicity
+- Use ONLY for statistics/counters
+- Example: size() approximation
+
+memory_order_seq_cst:
+- Sequential consistency (strongest)
+- Avoid unless proven necessary (slow)
+- Example: Global epoch increment in EpochManager
+
+COMMON PATTERNS
+---------------
+
+Pattern 1: MPMC Producer
+{
+    WorkItem work = create_work();
+    queue.enqueue_wait(work); // blocks until space is available
+}
+
+Pattern 2: MPMC Consumer
+{
+    WorkItem work;
+    queue.dequeue_wait(&work); // blocks until an item is available
+    process_work(work);
+}
+
+Pattern 3: SPSC Token Streaming
+// Producer thread (decode)
+{
+    StreamToken token = decode_token();
+    while (!token_ring.push(token)) {
+        // Ring full, apply backpressure (spin-then-wait)
+        pause_or_wait();
+    }
+}
+
+// Consumer thread (engine callback)
+{
+    StreamToken token;
+    if (token_ring.pop(&token)) {
+        engine_callback(token);
+    }
+}
+
+Pattern 4: Epoch-Protected Access
+{
+    EpochManager epoch_mgr;
+    int32_t tid = epoch_mgr.register_thread();
+
+    {
+        EpochGuard guard(epoch_mgr, tid);
+        Node* node = lock_free_structure.access();
+        // Use node safely
+    }
+    // Node guaranteed valid until epoch advances
+
+    epoch_mgr.unregister_thread(tid);
+}
+
+Pattern 5: Deferred Deletion
+{
+    Node* old_node = retire_from_structure();
+    epoch_mgr.defer_delete(old_node);
+    // Will be freed after 3 epochs
+}
+
+PERFORMANCE TIPS
+----------------
+
+1. Cache-Line Alignment
+   - Head/tail atomics are 64-byte aligned (automatic)
+   - Prevents false sharing between producer/consumer
+   - CRITICAL for performance on multi-core systems
+
+2. Power-of-2 Sizes
+   - Always use power-of-2 capacities (enforced at compile-time)
+   - Enables fast modulo via bitwise AND (x & (N-1))
+   - ~10x faster than integer division
+
+3. Exponential Backoff
+   - Spin briefly, then use a low-power wait when available
+   - Reduces cache thrashing under load
+
+4. Trivially Copyable Types
+   - All data types MUST be trivially copyable (enforced)
+   - Enables memcpy optimization (single instruction)
+   - 10-20% speedup for bulk operations
+
+5. Batching
+   - Process multiple items per loop iteration when possible
+   - Amortizes synchronization overhead
+   - Example: Dequeue 32 items at once instead of 1x32
+
+DEBUGGING TIPS
+--------------
+
+1. Check Return Values
+   - MpmcQueue uses blocking `enqueue_wait`/`dequeue_wait` (no return value)
+   - SpscRing `push`/`pop` return false on full/empty
+   - ALWAYS check `push`/`pop` return values!
+
+2. Verify Power-of-2
+   - Compile-time error if capacity is not power-of-2
+   - Use 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, etc.
+
+3. Verify Trivially Copyable
+   - Compile-time error if type is not trivially copyable
+   - Use static_assert(std::is_trivially_copyable_v<T>)
+
+4. ThreadSanitizer
+   - Compile with -fsanitize=thread to detect data races
+   - All primitives are TSan-clean
+
+5. AddressSanitizer
+   - Compile with -fsanitize=address to detect memory errors
+   - All primitives are ASan-clean
+
+COMPILE FLAGS
+-------------
+
+Debug build:
+    g++ -std=c++20 -g -O0 -fsanitize=thread,address -Wall -Wextra -Werror
+
+Release build:
+    g++ -std=c++20 -O3 -DNDEBUG -march=native -Wall -Wextra -Werror
+
+Cross-compile for ARM:
+    aarch64-linux-gnu-g++ -std=c++20 -O3 -march=armv8-a+fp+simd
+
+COMMON MISTAKES
+---------------
+
+MISTAKE: Assuming seq_cst everywhere
+FIX: Use acquire/release explicitly
+
+MISTAKE: Using non-power-of-2 capacity
+FIX: Use 1024 instead of 1000
+
+MISTAKE: Passing non-trivially-copyable types
+FIX: Use POD structs only (no std::string, std::vector)
+
+MISTAKE: Calling SPSC from multiple threads
+FIX: Use MPMC for multi-threaded access
+
+MISTAKE: Not checking return values
+FIX: Always check push/pop results (SPSC); MPMC ops block
+
+MISTAKE: Using size() for synchronization
+FIX: size() is approximate; use push/pop results or a higher-level protocol instead
+
+CONTACT
+-------
+
+Questions about memory ordering? See CODING_STANDARDS.md § Concurrency Rules
+Questions about design? See MASTER_SPEC.md § Concurrency Primitives
