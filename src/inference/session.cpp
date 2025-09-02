@@ -6,7 +6,6 @@
 #include <cstring>
 #include <new>
 #include <chrono>
-#include <thread>
 
 namespace astral::inference {
 
@@ -773,13 +772,8 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
                 platform::cpu_pause();
             } else {
                 platform::cpu_wait_for_event();
-#if !defined(__aarch64__) && !defined(_M_ARM64) && !defined(__arm__) && !defined(_M_ARM)
                 // On non-ARM platforms `cpu_wait_for_event()` is a light hint (not a true event wait).
-                // Yield periodically to avoid starving the decode thread while blocking.
-                if ((spins & 0xFFu) == 0u) {
-                    std::this_thread::yield();
-                }
-#endif
+                // Keep this path syscall-free: avoid `sched_yield()` here and rely on pause/backoff.
             }
             if (spins < 1024) {
                 ++spins;

@@ -41,6 +41,10 @@ Thumbs.db
 *.log
 *.tmp
 
+# perf artifacts
+perf.data
+perf.data.*
+
 # Downloaded models (do not commit)
 tests/models/*.gguf
 tests/models/*.bin
