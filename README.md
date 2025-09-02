@@ -95,6 +95,58 @@ cmake --build --preset release-with-tests -j
 
 To keep output quiet (llama.cpp can be verbose), set `ASTRAL_LLAMA_LOG=none` (or `error|warn|info|debug`).
 
+#### Models (tests/models)
+
+Astral’s integration tests/benches use GGUF models on disk. Download small defaults via:
+
+```bash
+./tests/model_downloader.sh --preset gpt2-q2k
+./tests/model_downloader.sh --preset embed-minilm-q2k
+```
+
+#### Threading knobs (benchmarks)
+
+The benchmark runner has two independent thread controls:
+
+- `ASTRAL_BENCH_RUNTIME_THREADS`: Astral runtime worker pool size (default: `1` for benchmarks).
+- `ASTRAL_BENCH_MODEL_THREADS`: backend/model thread count (plumbed to `AstralModelDesc.n_threads`; default: `0` = auto).
+- `ASTRAL_BENCH_THREADS`: compatibility alias for `ASTRAL_BENCH_MODEL_THREADS` (model threads only).
+
+For single-core profiling runs (e.g. `taskset -c 0`), set both runtime and model threads to `1` to avoid oversubscription.
+
+#### Profiling (CPU)
+
+Hotspot profile (call stacks):
+
+```bash
+sudo sysctl -w kernel.perf_event_paranoid=1
+
+taskset -c 0 env ASTRAL_LLAMA_LOG=none \
+  ASTRAL_BENCH_RUNTIME_THREADS=1 \
+  ASTRAL_BENCH_MODEL_THREADS=1 \
+  perf record -F 999 -g -- \
+  ./build/release-test/benchmarks/astral_benchmarks --only infer --infer-warmup 16 --infer-tokens 256
+
+perf report
+```
+
+Bound-ness approximation (IPC + miss rates):
+
+```bash
+sudo sysctl -w kernel.perf_event_paranoid=1
+
+taskset -c 0 env ASTRAL_LLAMA_LOG=none \
+  ASTRAL_BENCH_RUNTIME_THREADS=1 \
+  ASTRAL_BENCH_MODEL_THREADS=1 \
+  perf stat -r 1 \
+    -e cycles,instructions,branches,branch-misses,cache-references,cache-misses \
+  -- ./build/release-test/benchmarks/astral_benchmarks --only infer --infer-warmup 16 --infer-tokens 256
+```
+
+Notes:
+- Start with `perf stat -r 1` (it repeats the full command `N` times).
+- `perf stat --topdown` is only available when your kernel/PMU exposes Topdown/TMA metric groups.
+
 ## Usage Example (C API)
 
 ```c
