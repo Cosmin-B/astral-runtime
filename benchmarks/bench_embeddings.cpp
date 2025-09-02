@@ -37,6 +37,22 @@ static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
     return static_cast<uint32_t>(x);
 }
 
+static uint32_t bench_runtime_threads() {
+    // The benchmark only needs a small worker pool to run the decode/embed job.
+    // Default to 1 to avoid idle worker oversubscription affecting model scaling.
+    return parse_u32_env("ASTRAL_BENCH_RUNTIME_THREADS", 1);
+}
+
+static uint32_t bench_model_threads() {
+    // Prefer an explicit model-thread override, but accept the older ASTRAL_BENCH_THREADS
+    // as a compatibility alias.
+    const uint32_t explicit_model = parse_u32_env("ASTRAL_BENCH_MODEL_THREADS", 0);
+    if (explicit_model != 0) {
+        return explicit_model;
+    }
+    return parse_u32_env("ASTRAL_BENCH_THREADS", 0);
+}
+
 static void try_load_default_toy_plugin() {
 #if defined(__linux__)
     char exe_path[1024];
@@ -177,7 +193,7 @@ void bench_embeddings_print(uint32_t dim_override, uint64_t iters) {
 
     AstralInit cfg{};
     cfg.reserve_bytes = 512ull << 20;
-    cfg.thread_count = parse_u32_env("ASTRAL_BENCH_THREADS", 0);
+    cfg.thread_count = bench_runtime_threads();
     cfg.numa_node = 0xFFFFFFFFu;
     cfg.enable_hugepages = 0;
 
@@ -193,7 +209,7 @@ void bench_embeddings_print(uint32_t dim_override, uint64_t iters) {
     model_desc.embeddings_only = 1;
     model_desc.n_ctx = 256;
     model_desc.n_batch = 128;
-    model_desc.n_threads = parse_u32_env("ASTRAL_BENCH_THREADS", 0);
+    model_desc.n_threads = bench_model_threads();
     model_desc.gpu_layers = 0;
 
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);

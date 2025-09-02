@@ -37,6 +37,22 @@ static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
     return static_cast<uint32_t>(x);
 }
 
+static uint32_t bench_runtime_threads() {
+    // The benchmark only needs a small worker pool to run the decode job.
+    // Default to 1 to avoid idle worker oversubscription affecting model scaling.
+    return parse_u32_env("ASTRAL_BENCH_RUNTIME_THREADS", 1);
+}
+
+static uint32_t bench_model_threads() {
+    // Prefer an explicit model-thread override, but accept the older ASTRAL_BENCH_THREADS
+    // as a compatibility alias.
+    const uint32_t explicit_model = parse_u32_env("ASTRAL_BENCH_MODEL_THREADS", 0);
+    if (explicit_model != 0) {
+        return explicit_model;
+    }
+    return parse_u32_env("ASTRAL_BENCH_THREADS", 0);
+}
+
 static bool file_is_large_enough(const char* path, uint64_t min_bytes) {
     if (path == nullptr || path[0] == '\0') {
         return false;
@@ -217,7 +233,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
 
     AstralInit cfg{};
     cfg.reserve_bytes = 2ull << 30; // 2GB address space (virtual reserve).
-    cfg.thread_count = parse_u32_env("ASTRAL_BENCH_THREADS", 0);
+    cfg.thread_count = bench_runtime_threads();
     cfg.numa_node = 0xFFFFFFFFu;    // any
     cfg.enable_hugepages = 0;
 
@@ -235,7 +251,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     // Let the backend pick a safe/default context size for the model.
     model_desc.n_ctx = 0;
     model_desc.n_batch = 0;
-    model_desc.n_threads = parse_u32_env("ASTRAL_BENCH_THREADS", 0);
+    model_desc.n_threads = bench_model_threads();
     model_desc.gpu_layers = 0;
 
     AstralHandle model = 0;
