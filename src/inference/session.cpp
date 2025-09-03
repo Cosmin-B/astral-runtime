@@ -741,6 +741,7 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
     if (timeout_ms > 0) {
         uint64_t start_ns = get_time_ns();
         uint64_t timeout_ns = static_cast<uint64_t>(timeout_ms) * 1000000ULL;
+        const uint64_t deadline_ns = start_ns + timeout_ns;
         uint32_t spins = 0;
 
         while (true) {
@@ -761,10 +762,13 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
                 return 0;
             }
 
-            // Check timeout
-            uint64_t now_ns = get_time_ns();
-            if (now_ns - start_ns >= timeout_ns) {
-                return ASTRAL_E_TIMEOUT;
+            // Check timeout (throttle time reads; steady_clock::now() can be non-trivial).
+            // We check every N spins and on the slow wait path to keep overhead low.
+            if ((spins & 31u) == 0u) {
+                const uint64_t now_ns = get_time_ns();
+                if (now_ns >= deadline_ns) {
+                    return ASTRAL_E_TIMEOUT;
+                }
             }
 
             // Wait for producer to push (SPSC ring signals on empty->non-empty).
@@ -774,6 +778,10 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
                 platform::cpu_wait_for_event();
                 // On non-ARM platforms `cpu_wait_for_event()` is a light hint (not a true event wait).
                 // Keep this path syscall-free: avoid `sched_yield()` here and rely on pause/backoff.
+                const uint64_t now_ns = get_time_ns();
+                if (now_ns >= deadline_ns) {
+                    return ASTRAL_E_TIMEOUT;
+                }
             }
             if (spins < 1024) {
                 ++spins;
