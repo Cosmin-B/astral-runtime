@@ -89,6 +89,9 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
 
     // Initialize token ring using placement new
     new (&session->token_ring) concurrency::SpscRing<concurrency::StreamToken, 256>();
+    std::memset(session->pending_utf8, 0, sizeof(session->pending_utf8));
+    session->pending_len = 0;
+    session->pending_off = 0;
 
     // Allocate prompt buffer (initial capacity: 8K tokens)
     session->prompt_capacity = 8192;
@@ -481,6 +484,8 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     session->final_err.store(ASTRAL_OK, std::memory_order_release);
     session->prompt_count = 0;
     session->token_ring.reset();
+    session->pending_len = 0;
+    session->pending_off = 0;
 
     session->total_tokens = 0;
     session->t_start_ns = 0;
@@ -715,19 +720,58 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
         return ASTRAL_E_INVALID;
     }
 
-    // Try to read from token ring
-    concurrency::StreamToken token;
-    bool success = session->token_ring.pop(&token);
+    if (out_buf.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
 
-    if (success) {
-        // Copy UTF-8 data to output buffer
-        uint32_t bytes_to_copy = token.utf8_len;
-        if (bytes_to_copy > out_buf.len) {
-            bytes_to_copy = out_buf.len;
+    // Consume any remainder from a previous partial-token read.
+    if (session->pending_len > session->pending_off) {
+        const uint32_t avail = static_cast<uint32_t>(session->pending_len - session->pending_off);
+        const uint32_t n = (avail > out_buf.len) ? out_buf.len : avail;
+        std::memcpy(out_buf.data, session->pending_utf8 + session->pending_off, n);
+        session->pending_off = static_cast<uint8_t>(session->pending_off + n);
+        if (session->pending_off >= session->pending_len) {
+            session->pending_len = 0;
+            session->pending_off = 0;
+        }
+        return static_cast<int32_t>(n);
+    }
+
+    // Try to read from token ring (fast path).
+    concurrency::StreamToken token{};
+    if (session->token_ring.pop(&token)) {
+        uint8_t* dst = out_buf.data;
+        uint32_t remaining = out_buf.len;
+        uint32_t total = 0;
+
+        for (;;) {
+            const uint32_t tok_len = token.utf8_len;
+            if (tok_len > 0) {
+                if (tok_len <= remaining) {
+                    std::memcpy(dst, token.utf8_data, tok_len);
+                    dst += tok_len;
+                    remaining -= tok_len;
+                    total += tok_len;
+                } else {
+                    // Partial token: copy what we can and store the remainder.
+                    std::memcpy(dst, token.utf8_data, remaining);
+                    std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
+                    session->pending_len = static_cast<uint8_t>(tok_len);
+                    session->pending_off = static_cast<uint8_t>(remaining);
+                    total += remaining;
+                    return static_cast<int32_t>(total);
+                }
+            }
+
+            if (remaining == 0) {
+                break;
+            }
+            if (!session->token_ring.pop(&token)) {
+                break;
+            }
         }
 
-        std::memcpy(out_buf.data, token.utf8_data, bytes_to_copy);
-        return static_cast<int32_t>(bytes_to_copy);
+        return static_cast<int32_t>(total);
     }
 
     // Ring is empty; check if decoding is complete
@@ -747,13 +791,37 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
         while (true) {
             // Try to pop again
             if (session->token_ring.pop(&token)) {
-                uint32_t bytes_to_copy = token.utf8_len;
-                if (bytes_to_copy > out_buf.len) {
-                    bytes_to_copy = out_buf.len;
+                uint8_t* dst = out_buf.data;
+                uint32_t remaining = out_buf.len;
+                uint32_t total = 0;
+
+                for (;;) {
+                    const uint32_t tok_len = token.utf8_len;
+                    if (tok_len > 0) {
+                        if (tok_len <= remaining) {
+                            std::memcpy(dst, token.utf8_data, tok_len);
+                            dst += tok_len;
+                            remaining -= tok_len;
+                            total += tok_len;
+                        } else {
+                            std::memcpy(dst, token.utf8_data, remaining);
+                            std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
+                            session->pending_len = static_cast<uint8_t>(tok_len);
+                            session->pending_off = static_cast<uint8_t>(remaining);
+                            total += remaining;
+                            return static_cast<int32_t>(total);
+                        }
+                    }
+
+                    if (remaining == 0) {
+                        break;
+                    }
+                    if (!session->token_ring.pop(&token)) {
+                        break;
+                    }
                 }
 
-                std::memcpy(out_buf.data, token.utf8_data, bytes_to_copy);
-                return static_cast<int32_t>(bytes_to_copy);
+                return static_cast<int32_t>(total);
             }
 
             // Check if completed

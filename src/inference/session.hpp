@@ -65,6 +65,11 @@ struct Session {
 
     // Token streaming ring (decode thread -> consumer)
     concurrency::SpscRing<concurrency::StreamToken, 256> token_ring;
+    // If `astral_stream_read()` is called with a small buffer, a single token can be split
+    // across multiple reads without losing bytes.
+    uint8_t pending_utf8[32];
+    uint8_t pending_len;
+    uint8_t pending_off;
 
     // Prompt buffer (tokenized prompt)
     int32_t* prompt_tokens;
