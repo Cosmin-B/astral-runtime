@@ -319,6 +319,8 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
 
     std::printf("\nInference benchmark (ticks: %s)\n", clock_info().name);
     std::printf("Model: %s\n", model_path);
+    std::printf("Runtime threads (requested): %u\n", cfg.thread_count);
+    std::printf("Model threads (requested):   %u\n", model_desc.n_threads);
 
     if (r.ttft_ns > 0) {
         std::printf("TTFT:  %.2f ms  (%llu ticks)\n",

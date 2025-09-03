@@ -262,6 +262,8 @@ void bench_embeddings_print(uint32_t dim_override, uint64_t iters) {
     std::printf("\nEmbeddings benchmark (ticks: %s)\n", clock_info().name);
     std::printf("Backend: %s\n", backend);
     std::printf("Model:   %s\n", model_path);
+    std::printf("Runtime threads (requested): %u\n", cfg.thread_count);
+    std::printf("Model threads (requested):   %u\n", model_desc.n_threads);
     std::printf("Dim:     %u\n", dim);
     std::printf("Iters:   %llu\n", static_cast<unsigned long long>(iters));
     std::printf("Tokens/embed: %llu\n", static_cast<unsigned long long>(r.tokens_per_embed));
