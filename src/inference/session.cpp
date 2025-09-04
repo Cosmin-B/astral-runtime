@@ -638,75 +638,77 @@ void decode_loop(Session* session) {
             break;
         }
 
-        // Detokenize to UTF-8
-        concurrency::StreamToken stream_token;
-        stream_token.token_id = static_cast<uint32_t>(next_token);
-
-        AstralMutSpanU8 out_buf;
-        out_buf.data = stream_token.utf8_data;
-        out_buf.len = sizeof(stream_token.utf8_data);
-
-        uint32_t utf8_len = 0;
-        err = ops->detokenize(
-            model->backend_model_ctx,
-            &next_token,
-            1,
-            out_buf,
-            &utf8_len
-        );
-
-        if (err != ASTRAL_OK) {
-            // Detokenization failed
-            final_state = SessionState::Failed;
-            final_err = err;
-            break;
-        }
-
-        stream_token.utf8_len = static_cast<uint16_t>(utf8_len);
-
-        // Push to token ring (with backpressure)
-        bool pushed = false;
-        uint32_t spins = 0;
-        while (!pushed) {
-            if (session->token_ring.push(stream_token)) {
-                pushed = true;
-                break;
-            }
-
-            // Ring is full; wait for consumer to drain.
-            // Use a short spin, then WFE on ARM for low overhead.
-            if (spins < 64) {
-                platform::cpu_pause();
-            } else {
-                platform::cpu_wait_for_event();
-            }
-            if (spins < 1024) {
-                ++spins;
-            }
-
-            // Respect cancellation even if consumer isn't draining.
-            if (session->cancel_requested.load(std::memory_order_acquire)) {
-                final_state = SessionState::Canceled;
-                final_err = ASTRAL_E_CANCELED;
-                break;
-            }
-        }
-
-        if (final_state == SessionState::Canceled) {
-            break;
-        }
-
-        if (!pushed) {
-            // Ring still full after retries; abort
-            final_state = SessionState::Failed;
-            final_err = ASTRAL_E_BACKEND;
-            break;
-        }
-
-        // Update statistics
+        // Update statistics (for both streaming and non-streaming sessions).
         session->total_tokens++;
         if (session->total_tokens == 1) {
             session->t_first_token_ns = get_time_ns();
+        }
+
+        if (session->desc.stream_enabled) {
+            // Detokenize to UTF-8
+            concurrency::StreamToken stream_token;
+            stream_token.token_id = static_cast<uint32_t>(next_token);
+
+            AstralMutSpanU8 out_buf;
+            out_buf.data = stream_token.utf8_data;
+            out_buf.len = sizeof(stream_token.utf8_data);
+
+            uint32_t utf8_len = 0;
+            err = ops->detokenize(
+                model->backend_model_ctx,
+                &next_token,
+                1,
+                out_buf,
+                &utf8_len
+            );
+
+            if (err != ASTRAL_OK) {
+                // Detokenization failed
+                final_state = SessionState::Failed;
+                final_err = err;
+                break;
+            }
+
+            stream_token.utf8_len = static_cast<uint16_t>(utf8_len);
+
+            // Push to token ring (with backpressure)
+            bool pushed = false;
+            uint32_t spins = 0;
+            while (!pushed) {
+                if (session->token_ring.push(stream_token)) {
+                    pushed = true;
+                    break;
+                }
+
+                // Ring is full; wait for consumer to drain.
+                // Use a short spin, then WFE on ARM for low overhead.
+                if (spins < 64) {
+                    platform::cpu_pause();
+                } else {
+                    platform::cpu_wait_for_event();
+                }
+                if (spins < 1024) {
+                    ++spins;
+                }
+
+                // Respect cancellation even if consumer isn't draining.
+                if (session->cancel_requested.load(std::memory_order_acquire)) {
+                    final_state = SessionState::Canceled;
+                    final_err = ASTRAL_E_CANCELED;
+                    break;
+                }
+            }
+
+            if (final_state == SessionState::Canceled) {
+                break;
+            }
+
+            if (!pushed) {
+                // Ring still full after retries; abort
+                final_state = SessionState::Failed;
+                final_err = ASTRAL_E_BACKEND;
+                break;
+            }
         }
     }
 
