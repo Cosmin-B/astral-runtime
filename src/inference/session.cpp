@@ -752,21 +752,21 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
 
         for (;;) {
             const uint32_t tok_len = token.utf8_len;
-            if (tok_len > 0) {
-                if (tok_len <= remaining) {
-                    std::memcpy(dst, token.utf8_data, tok_len);
-                    dst += tok_len;
-                    remaining -= tok_len;
-                    total += tok_len;
-                } else {
-                    // Partial token: copy what we can and store the remainder.
-                    std::memcpy(dst, token.utf8_data, remaining);
-                    std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
-                    session->pending_len = static_cast<uint8_t>(tok_len);
-                    session->pending_off = static_cast<uint8_t>(remaining);
-                    total += remaining;
-                    return static_cast<int32_t>(total);
-                }
+            if (tok_len == 0) {
+                // Skip empty tokens (e.g. BOS/EOS detokenize to empty). Returning 0 is reserved for EOF.
+            } else if (tok_len <= remaining) {
+                std::memcpy(dst, token.utf8_data, tok_len);
+                dst += tok_len;
+                remaining -= tok_len;
+                total += tok_len;
+            } else {
+                // Partial token: copy what we can and store the remainder.
+                std::memcpy(dst, token.utf8_data, remaining);
+                std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
+                session->pending_len = static_cast<uint8_t>(tok_len);
+                session->pending_off = static_cast<uint8_t>(remaining);
+                total += remaining;
+                return static_cast<int32_t>(total);
             }
 
             if (remaining == 0) {
@@ -777,7 +777,10 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
             }
         }
 
-        return static_cast<int32_t>(total);
+        if (total > 0) {
+            return static_cast<int32_t>(total);
+        }
+        // Only empty tokens were available; fall through to the regular empty-ring behavior.
     }
 
     // Ring is empty; check if decoding is complete
@@ -803,20 +806,20 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
 
                 for (;;) {
                     const uint32_t tok_len = token.utf8_len;
-                    if (tok_len > 0) {
-                        if (tok_len <= remaining) {
-                            std::memcpy(dst, token.utf8_data, tok_len);
-                            dst += tok_len;
-                            remaining -= tok_len;
-                            total += tok_len;
-                        } else {
-                            std::memcpy(dst, token.utf8_data, remaining);
-                            std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
-                            session->pending_len = static_cast<uint8_t>(tok_len);
-                            session->pending_off = static_cast<uint8_t>(remaining);
-                            total += remaining;
-                            return static_cast<int32_t>(total);
-                        }
+                    if (tok_len == 0) {
+                        // Skip empty tokens (e.g. BOS/EOS detokenize to empty). Returning 0 is reserved for EOF.
+                    } else if (tok_len <= remaining) {
+                        std::memcpy(dst, token.utf8_data, tok_len);
+                        dst += tok_len;
+                        remaining -= tok_len;
+                        total += tok_len;
+                    } else {
+                        std::memcpy(dst, token.utf8_data, remaining);
+                        std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
+                        session->pending_len = static_cast<uint8_t>(tok_len);
+                        session->pending_off = static_cast<uint8_t>(remaining);
+                        total += remaining;
+                        return static_cast<int32_t>(total);
                     }
 
                     if (remaining == 0) {
@@ -827,7 +830,11 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
                     }
                 }
 
-                return static_cast<int32_t>(total);
+                if (total > 0) {
+                    return static_cast<int32_t>(total);
+                }
+                // Only empty tokens were available; continue waiting.
+                continue;
             }
 
             // Check if completed

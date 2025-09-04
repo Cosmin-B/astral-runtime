@@ -224,6 +224,22 @@ static InferenceBenchResult run_streamed_decode(AstralHandle session) {
 
 } // namespace
 
+static bool parse_bool_env(const char* key, bool fallback) {
+    const char* v = std::getenv(key);
+    if (v == nullptr || v[0] == '\0') {
+        return fallback;
+    }
+    if (v[0] == '1' && v[1] == '\0') return true;
+    if (v[0] == '0' && v[1] == '\0') return false;
+    if (std::strcmp(v, "true") == 0) return true;
+    if (std::strcmp(v, "TRUE") == 0) return true;
+    if (std::strcmp(v, "yes") == 0) return true;
+    if (std::strcmp(v, "YES") == 0) return true;
+    if (std::strcmp(v, "on") == 0) return true;
+    if (std::strcmp(v, "ON") == 0) return true;
+    return fallback;
+}
+
 void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     const char* model_path = find_bench_model_path();
     if (model_path == nullptr) {
@@ -270,7 +286,8 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     session_desc.temperature = 0.8f;
     session_desc.top_k = 40;
     session_desc.top_p = 0.95f;
-    session_desc.stream_enabled = 1;
+    const bool want_stream = parse_bool_env("ASTRAL_BENCH_INFER_STREAM", true);
+    session_desc.stream_enabled = want_stream ? 1 : 0;
     session_desc.seed = 1;
 
     AstralHandle session = 0;
@@ -286,7 +303,12 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
 
     // Warm up (allows provider to allocate internal caches before measurement).
     if (warmup_tokens > 0) {
-        (void)run_streamed_decode(session);
+        if (want_stream) {
+            (void)run_streamed_decode(session);
+        } else {
+            (void)astral_session_decode(session);
+            (void)astral_session_wait(session, 60000);
+        }
     }
 
     session_desc.max_tokens = measure_tokens;
@@ -302,7 +324,38 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
         return;
     }
 
-    const InferenceBenchResult r = run_streamed_decode(session);
+    InferenceBenchResult r{};
+    r.name = want_stream ? "CPU inference (streamed)" : "CPU inference (no-stream)";
+    if (want_stream) {
+        r = run_streamed_decode(session);
+    } else {
+        const uint64_t t0 = ticks_now();
+        const uint64_t n0 = ns_now();
+
+        AstralErr dec_err = astral_session_decode(session);
+        if (dec_err != ASTRAL_OK) {
+            std::fprintf(stderr, "[bench] astral_session_decode failed: %s (%s)\n",
+                         astral_error_string(dec_err),
+                         astral_last_error());
+        } else {
+            (void)astral_session_wait(session, 60000);
+        }
+
+        const uint64_t t1 = ticks_now();
+        const uint64_t n1 = ns_now();
+        r.total_ticks = t1 - t0;
+        r.total_ns = n1 - n0;
+
+        AstralStats stats{};
+        const AstralErr st_err = astral_session_stats(session, &stats);
+        if (st_err == ASTRAL_OK) {
+            r.tokens = measure_tokens;
+            r.ttft_ns = static_cast<uint64_t>(stats.t_first_token_ms * 1e6);
+            r.ttft_ticks = 0;
+        } else {
+            r.tokens = 0;
+        }
+    }
 
     if (r.tokens == 0 || r.total_ns == 0) {
         std::printf("[bench] Inference: FAILED (no tokens)\n");
