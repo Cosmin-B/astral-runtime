@@ -114,6 +114,11 @@ The benchmark runner has two independent thread controls:
 
 For single-core profiling runs (e.g. `taskset -c 0`), set both runtime and model threads to `1` to avoid oversubscription.
 
+#### Inference bench mode
+
+- `ASTRAL_BENCH_INFER_STREAM=1` (default): measure streamed decode (includes detokenize + stream overhead).
+- `ASTRAL_BENCH_INFER_STREAM=0`: measure decode without streaming (skips detokenize + stream backpressure; useful for CPU kernel profiling).
+
 #### Profiling (CPU)
 
 Hotspot profile (call stacks):
