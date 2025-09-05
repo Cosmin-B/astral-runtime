@@ -414,6 +414,11 @@ AstralErr session_wait(Session* session, uint32_t timeout_ms) {
     const uint64_t start_ns = get_time_ns();
     const uint64_t timeout_ns = static_cast<uint64_t>(timeout_ms) * 1000000ULL;
     const uint64_t deadline_ns = start_ns + timeout_ns;
+    const uint32_t check_mask =
+        timeout_ms <= 1u   ? 31u :
+        timeout_ms <= 10u  ? 255u :
+        timeout_ms <= 100u ? 4095u :
+                             65535u;
     uint32_t spins = 0;
 
     while (true) {
@@ -426,7 +431,7 @@ AstralErr session_wait(Session* session, uint32_t timeout_ms) {
         }
 
         // Check timeout (throttle time reads; steady_clock::now() can be non-trivial).
-        if ((spins & 1023u) == 0u) {
+        if ((spins & check_mask) == 0u) {
             const uint64_t now_ns = get_time_ns();
             if (now_ns >= deadline_ns) {
                 return ASTRAL_E_TIMEOUT;
@@ -795,6 +800,11 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
         uint64_t start_ns = get_time_ns();
         uint64_t timeout_ns = static_cast<uint64_t>(timeout_ms) * 1000000ULL;
         const uint64_t deadline_ns = start_ns + timeout_ns;
+        const uint32_t check_mask =
+            timeout_ms <= 1u   ? 31u :
+            timeout_ms <= 10u  ? 255u :
+            timeout_ms <= 100u ? 4095u :
+                                 65535u;
         uint32_t spins = 0;
 
         while (true) {
@@ -844,8 +854,7 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
             }
 
             // Check timeout (throttle time reads; steady_clock::now() can be non-trivial).
-            // Checking too frequently can dominate profiles when the consumer is faster than the producer.
-            if ((spins & 1023u) == 0u) {
+            if ((spins & check_mask) == 0u) {
                 const uint64_t now_ns = get_time_ns();
                 if (now_ns >= deadline_ns) {
                     return ASTRAL_E_TIMEOUT;

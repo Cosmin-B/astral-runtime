@@ -224,6 +224,21 @@ static InferenceBenchResult run_streamed_decode(AstralHandle session) {
 
 } // namespace
 
+static bool feed_default_prompt(AstralHandle session) {
+    const char* prompt = "Once upon a time";
+    AstralSpanU8 prompt_span{};
+    prompt_span.data = reinterpret_cast<const uint8_t*>(prompt);
+    prompt_span.len = static_cast<uint32_t>(std::strlen(prompt));
+    const AstralErr err = astral_session_feed(session, prompt_span, 1);
+    if (err != ASTRAL_OK) {
+        std::fprintf(stderr, "[bench] astral_session_feed failed: %s (%s)\n",
+                     astral_error_string(err),
+                     astral_last_error());
+        return false;
+    }
+    return true;
+}
+
 static bool parse_bool_env(const char* key, bool fallback) {
     const char* v = std::getenv(key);
     if (v == nullptr || v[0] == '\0') {
@@ -306,6 +321,12 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
         if (want_stream) {
             (void)run_streamed_decode(session);
         } else {
+            if (!feed_default_prompt(session)) {
+                astral_session_destroy(session);
+                astral_model_release(model);
+                astral_shutdown();
+                return;
+            }
             (void)astral_session_decode(session);
             (void)astral_session_wait(session, 60000);
         }
@@ -329,6 +350,12 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     if (want_stream) {
         r = run_streamed_decode(session);
     } else {
+        if (!feed_default_prompt(session)) {
+            astral_session_destroy(session);
+            astral_model_release(model);
+            astral_shutdown();
+            return;
+        }
         const uint64_t t0 = ticks_now();
         const uint64_t n0 = ns_now();
 
