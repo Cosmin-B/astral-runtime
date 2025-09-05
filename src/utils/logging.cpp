@@ -6,10 +6,10 @@
  */
 
 #include "logging.hpp"
+#include "../platform/time.h"
 #include <atomic>
 #include <cstdio>
 #include <cstring>
-#include <chrono>
 
 namespace astral::logging {
 
@@ -38,10 +38,7 @@ constexpr uint64_t kMaxCallbackNanos = 10'000'000; // 10ms
  * Used to detect slow callbacks.
  */
 inline uint64_t monotonic_now_ns() {
-    auto now = std::chrono::steady_clock::now();
-    return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count()
-    );
+    return astral::platform::monotonic_time_ns();
 }
 
 } // anonymous namespace

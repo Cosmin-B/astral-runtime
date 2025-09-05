@@ -3,9 +3,9 @@
 #include "../core/runtime_state.hpp"
 #include "../platform/vm.h"
 #include "../platform/atomics.h"
+#include "../platform/time.h"
 #include <cstring>
 #include <new>
-#include <chrono>
 
 namespace astral::inference {
 
@@ -15,9 +15,7 @@ namespace {
 
 /// Get current time in nanoseconds (monotonic clock).
 uint64_t get_time_ns() {
-    auto now = std::chrono::steady_clock::now();
-    auto duration = now.time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+    return platform::monotonic_time_ns();
 }
 
 /// Default allocator capacity per session (2MB).
