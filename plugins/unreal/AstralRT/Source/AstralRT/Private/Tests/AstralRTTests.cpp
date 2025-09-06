@@ -154,5 +154,77 @@ bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
     return true;
 }
 
-#endif // WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTMockEmbeddingsTest,
+    "AstralRT.Mock.Embeddings",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
 
+bool FAstralRTMockEmbeddingsTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return true;
+    }
+
+    AstralModelDesc model_desc{};
+    const char* backend = "mock";
+    model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+    model_desc.backend_name.len = static_cast<uint32_t>(FCStringAnsi::Strlen(backend));
+    model_desc.n_ctx = 128;
+    model_desc.embeddings_only = 1;
+
+    AstralHandle model = 0;
+    AstralErr err = astral_model_load(&model_desc, &model);
+    TestEqual(TEXT("astral_model_load"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+    if (err != ASTRAL_OK || model == 0) {
+        return false;
+    }
+
+    uint32_t dim = 0;
+    err = astral_model_embedding_dim(model, &dim);
+    TestEqual(TEXT("astral_model_embedding_dim"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+    TestEqual(TEXT("mock dim"), static_cast<int32>(dim), 8);
+
+    AstralHandle emb = 0;
+    err = astral_embed_create(model, &emb);
+    TestEqual(TEXT("astral_embed_create"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+    if (err != ASTRAL_OK || emb == 0) {
+        astral_model_release(model);
+        return false;
+    }
+
+    const char* text = "abc";
+    AstralSpanU8 text_span{};
+    text_span.data = reinterpret_cast<const uint8_t*>(text);
+    text_span.len = static_cast<uint32_t>(FCStringAnsi::Strlen(text));
+
+    uint64_t ticket = 0;
+    err = astral_embed_enqueue(emb, text_span, &ticket);
+    TestEqual(TEXT("astral_embed_enqueue"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+    if (err != ASTRAL_OK) {
+        astral_embed_destroy(emb);
+        astral_model_release(model);
+        return false;
+    }
+
+    TArray<float> vec;
+    vec.SetNumUninitialized(static_cast<int32>(dim));
+
+    AstralMutSpanU8 out{};
+    out.data = reinterpret_cast<uint8_t*>(vec.GetData());
+    out.len = static_cast<uint32_t>(vec.Num() * sizeof(float));
+
+    err = astral_embed_collect(emb, ticket, out);
+    TestEqual(TEXT("astral_embed_collect"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+
+    // mock embedder: sum(tokens incl BOS=256) + i, so for "abc": 256 + 97 + 98 + 99 = 550.
+    TestEqual(TEXT("vec[0]"), vec[0], 550.0f);
+    TestEqual(TEXT("vec[1]"), vec[1], 551.0f);
+    TestEqual(TEXT("vec[7]"), vec[7], 557.0f);
+
+    astral_embed_destroy(emb);
+    astral_model_release(model);
+    return true;
+}
+
+#endif // WITH_DEV_AUTOMATION_TESTS

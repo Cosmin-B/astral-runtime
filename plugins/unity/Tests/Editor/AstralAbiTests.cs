@@ -137,6 +137,91 @@ namespace Astral.Runtime.Tests
             }
         }
 
+        [Test]
+        public void MockBackend_Embeddings_Works()
+        {
+            RequireNative();
+
+            var cfg = new AstralNative.AstralInit
+            {
+                reserve_bytes = 256UL << 20,
+                thread_count = 1,
+                numa_node = 0xFFFFFFFFu,
+                enable_hugepages = 0
+            };
+
+            int err = AstralNative.astral_init(ref cfg);
+            Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+
+            AstralNative.AstralHandle model = AstralNative.AstralHandle.Invalid;
+            AstralNative.AstralHandle emb = AstralNative.AstralHandle.Invalid;
+
+            try
+            {
+                using var backendNameBytes = new NativeArray<byte>(
+                    Encoding.UTF8.GetBytes("mock"),
+                    Allocator.Temp
+                );
+
+                var modelDesc = new AstralNative.AstralModelDesc
+                {
+                    model_path = new AstralNative.AstralSpanU8 { data = IntPtr.Zero, len = 0 },
+                    backend_name = AstralNative.AstralSpanU8.FromNativeArray(backendNameBytes),
+                    gpu_layers = 0,
+                    n_ctx = 0,
+                    n_batch = 0,
+                    n_threads = 0,
+                    embeddings_only = 1
+                };
+
+                err = AstralNative.astral_model_load(ref modelDesc, out model);
+                Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+                Assert.True(model.IsValid);
+
+                err = AstralNative.astral_model_embedding_dim(model, out uint dim);
+                Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+                Assert.AreEqual(8u, dim);
+
+                err = AstralNative.astral_embed_create(model, out emb);
+                Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+                Assert.True(emb.IsValid);
+
+                using var textBytes = new NativeArray<byte>(Encoding.UTF8.GetBytes("abc"), Allocator.Temp);
+                var textSpan = AstralNative.AstralSpanU8.FromNativeArray(textBytes);
+                err = AstralNative.astral_embed_enqueue(emb, textSpan, out ulong ticket);
+                Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+
+                using var outVec = new NativeArray<float>((int)dim, Allocator.Temp);
+                unsafe
+                {
+                    var outSpan = new AstralNative.AstralMutSpanU8
+                    {
+                        data = (IntPtr)Unity.Collections.LowLevel.Unsafe.NativeArrayUnsafeUtility.GetUnsafePtr(outVec),
+                        len = (uint)(outVec.Length * sizeof(float))
+                    };
+                    err = AstralNative.astral_embed_collect(emb, ticket, outSpan);
+                    Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+                }
+
+                // mock embedder: sum(tokens incl BOS=256) + i, so for "abc": 256 + 97 + 98 + 99 = 550.
+                Assert.AreEqual(550.0f, outVec[0]);
+                Assert.AreEqual(551.0f, outVec[1]);
+                Assert.AreEqual(557.0f, outVec[7]);
+            }
+            finally
+            {
+                if (emb.IsValid)
+                {
+                    AstralNative.astral_embed_destroy(emb);
+                }
+                if (model.IsValid)
+                {
+                    AstralNative.astral_model_release(model);
+                }
+                AstralNative.astral_shutdown();
+            }
+        }
+
         private static string RunMockOnce(AstralNative.AstralHandle session)
         {
             int err = AstralNative.astral_session_feed(
@@ -182,4 +267,3 @@ namespace Astral.Runtime.Tests
         }
     }
 }
-

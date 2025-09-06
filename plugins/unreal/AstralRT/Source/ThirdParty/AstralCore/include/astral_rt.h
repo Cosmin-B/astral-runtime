@@ -539,7 +539,6 @@ ASTRAL_API int32_t ASTRAL_CALL astral_stream_read(AstralHandle session, AstralMu
 /**
  * Create an embeddings handle.
  *
- * NOTE: v0.1 currently returns ASTRAL_E_UNSUPPORTED (embeddings not implemented yet).
  * Thread-safety: Safe to call from multiple threads.
  *
  * @param model Model handle (must be loaded with embeddings_only=1; must not be NULL)
