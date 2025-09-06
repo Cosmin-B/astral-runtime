@@ -18,6 +18,7 @@
 #include "../concurrency/mpmc_queue.hpp"
 #include "../memory/frame_allocator.hpp"
 #include "../utils/logging.hpp"
+#include "../platform/time.h"
 #include "handles.hpp"
 #include "work_queue.hpp"
 #include "runtime_state.hpp"
@@ -304,6 +305,9 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init(const AstralInit* cfg) {
          reserve_size / (1024 * 1024),
          initial_commit / (1024 * 1024),
          g_runtime.thread_count);
+
+    // Prime monotonic tick calibration so hot/wait paths don't pay first-use costs.
+    (void)astral::platform::tick_clock();
 
     return ASTRAL_OK;
 }

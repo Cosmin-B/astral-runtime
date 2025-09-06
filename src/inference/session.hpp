@@ -92,9 +92,9 @@ struct Session {
 
     // Statistics
     uint64_t total_tokens;       // Total tokens generated
-    uint64_t t_start_ns;         // Start time (nanoseconds)
-    uint64_t t_first_token_ns;   // Time to first token (nanoseconds)
-    uint64_t t_end_ns;           // End time (nanoseconds; 0 if still running)
+    uint64_t t_start_ticks;       // Start time (ticks)
+    uint64_t t_first_token_ticks; // Time to first token (ticks)
+    uint64_t t_end_ticks;         // End time (ticks; 0 if still running)
 
     // Current generation position
     uint32_t n_past;             // Number of tokens processed so far

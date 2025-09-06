@@ -13,9 +13,8 @@ void decode_loop(Session* session);
 
 namespace {
 
-/// Get current time in nanoseconds (monotonic clock).
-uint64_t get_time_ns() {
-    return platform::monotonic_time_ns();
+inline uint64_t get_ticks() {
+    return platform::ticks_now();
 }
 
 /// Default allocator capacity per session (2MB).
@@ -194,7 +193,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     session->sampler_cfg.top_k = desc->top_k;
     session->sampler_cfg.top_p = desc->top_p;
     session->sampler_cfg.seed =
-        desc->seed != 0 ? desc->seed : static_cast<uint32_t>(get_time_ns() & 0xFFFFFFFF);
+        desc->seed != 0 ? desc->seed : static_cast<uint32_t>(get_ticks() & 0xFFFFFFFF);
     session->rng_state = session->sampler_cfg.seed;
 
     // Initialize state atomics using placement new
@@ -204,9 +203,9 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
 
     // Initialize statistics
     session->total_tokens = 0;
-    session->t_start_ns = 0;
-    session->t_first_token_ns = 0;
-    session->t_end_ns = 0;
+    session->t_start_ticks = 0;
+    session->t_first_token_ticks = 0;
+    session->t_end_ticks = 0;
     session->n_past = 0;
 
     const AstralHandle handle = core::register_handle(core::HandleKind::Session, session);
@@ -360,8 +359,8 @@ AstralErr session_decode(Session* session) {
     session->state.store(SessionState::Decoding, std::memory_order_release);
 
     // Record start time
-    session->t_start_ns = get_time_ns();
-    session->t_end_ns = 0;
+    session->t_start_ticks = get_ticks();
+    session->t_end_ticks = 0;
 
     // Submit decode work to runtime worker pool.
     const AstralErr submit_err = ::astral::core::submit_work(decode_work, session);
@@ -409,9 +408,10 @@ AstralErr session_wait(Session* session, uint32_t timeout_ms) {
         return ASTRAL_E_TIMEOUT;
     }
 
-    const uint64_t start_ns = get_time_ns();
+    const uint64_t start_ticks = get_ticks();
     const uint64_t timeout_ns = static_cast<uint64_t>(timeout_ms) * 1000000ULL;
-    const uint64_t deadline_ns = start_ns + timeout_ns;
+    const uint64_t timeout_ticks = platform::ticks_from_ns(timeout_ns);
+    const uint64_t deadline_ticks = start_ticks + timeout_ticks;
     const uint32_t check_mask =
         timeout_ms <= 1u   ? 31u :
         timeout_ms <= 10u  ? 255u :
@@ -428,10 +428,10 @@ AstralErr session_wait(Session* session, uint32_t timeout_ms) {
             return final_err != 0 ? static_cast<AstralErr>(final_err) : ASTRAL_E_BACKEND;
         }
 
-        // Check timeout (throttle time reads; steady_clock::now() can be non-trivial).
+        // Check timeout (tick source is platform-dependent; on x86 we use TSC, avoiding syscalls).
         if ((spins & check_mask) == 0u) {
-            const uint64_t now_ns = get_time_ns();
-            if (now_ns >= deadline_ns) {
+            const uint64_t now_ticks = get_ticks();
+            if (now_ticks >= deadline_ticks) {
                 return ASTRAL_E_TIMEOUT;
             }
         }
@@ -483,7 +483,7 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     session->sampler_cfg.top_k = session->desc.top_k;
     session->sampler_cfg.top_p = session->desc.top_p;
     session->sampler_cfg.seed =
-        session->desc.seed != 0 ? session->desc.seed : static_cast<uint32_t>(get_time_ns() & 0xFFFFFFFF);
+        session->desc.seed != 0 ? session->desc.seed : static_cast<uint32_t>(get_ticks() & 0xFFFFFFFF);
     session->rng_state = session->sampler_cfg.seed;
 
     // Clear core state (not thread-safe; caller must ensure no concurrent stream reads).
@@ -495,9 +495,9 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     session->pending_off = 0;
 
     session->total_tokens = 0;
-    session->t_start_ns = 0;
-    session->t_first_token_ns = 0;
-    session->t_end_ns = 0;
+    session->t_start_ticks = 0;
+    session->t_first_token_ticks = 0;
+    session->t_end_ticks = 0;
     session->n_past = 0;
 
     // Reset backend session state (KV/cache). Fall back to destroy+create if unsupported.
@@ -540,19 +540,21 @@ AstralErr session_stats(Session* session, AstralStats* out_stats) {
         return ASTRAL_E_STATE;
     }
 
-    const uint64_t t_start_ns = session->t_start_ns;
-    if (t_start_ns == 0) {
+    const uint64_t t_start_ticks = session->t_start_ticks;
+    if (t_start_ticks == 0) {
         return ASTRAL_E_STATE;
     }
 
-    const uint64_t end_ns = session->t_end_ns != 0 ? session->t_end_ns : get_time_ns();
+    const uint64_t end_ticks = session->t_end_ticks != 0 ? session->t_end_ticks : get_ticks();
 
-    const uint64_t elapsed_ns = end_ns > t_start_ns ? (end_ns - t_start_ns) : 0;
+    const uint64_t elapsed_ticks = end_ticks > t_start_ticks ? (end_ticks - t_start_ticks) : 0;
+    const uint64_t elapsed_ns = platform::ticks_to_ns(elapsed_ticks);
     const double elapsed_s = elapsed_ns > 0 ? static_cast<double>(elapsed_ns) / 1e9 : 0.0;
 
     double ttft_ms = 0.0;
-    if (session->t_first_token_ns > 0 && session->t_first_token_ns >= t_start_ns) {
-        ttft_ms = static_cast<double>(session->t_first_token_ns - t_start_ns) / 1e6;
+    if (session->t_first_token_ticks > 0 && session->t_first_token_ticks >= t_start_ticks) {
+        const uint64_t ttft_ticks = session->t_first_token_ticks - t_start_ticks;
+        ttft_ms = static_cast<double>(platform::ticks_to_ns(ttft_ticks)) / 1e6;
     }
 
     const uint64_t total_tokens = session->total_tokens;
@@ -644,7 +646,7 @@ void decode_loop(Session* session) {
         // Update statistics (for both streaming and non-streaming sessions).
         session->total_tokens++;
         if (session->total_tokens == 1) {
-            session->t_first_token_ns = get_time_ns();
+            session->t_first_token_ticks = get_ticks();
         }
 
         if (session->desc.stream_enabled) {
@@ -717,7 +719,7 @@ void decode_loop(Session* session) {
 
 finish:
     // Transition to terminal state.
-    session->t_end_ns = get_time_ns();
+    session->t_end_ticks = get_ticks();
     session->final_err.store(static_cast<int32_t>(final_err), std::memory_order_release);
     session->state.store(final_state, std::memory_order_release);
     platform::cpu_signal_event();
@@ -795,9 +797,10 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
 
     // Wait for data (if timeout > 0)
     if (timeout_ms > 0) {
-        uint64_t start_ns = get_time_ns();
-        uint64_t timeout_ns = static_cast<uint64_t>(timeout_ms) * 1000000ULL;
-        const uint64_t deadline_ns = start_ns + timeout_ns;
+        const uint64_t start_ticks = get_ticks();
+        const uint64_t timeout_ns = static_cast<uint64_t>(timeout_ms) * 1000000ULL;
+        const uint64_t timeout_ticks = platform::ticks_from_ns(timeout_ns);
+        const uint64_t deadline_ticks = start_ticks + timeout_ticks;
         const uint32_t check_mask =
             timeout_ms <= 1u   ? 31u :
             timeout_ms <= 10u  ? 255u :
@@ -851,10 +854,10 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
                 return 0;
             }
 
-            // Check timeout (throttle time reads; steady_clock::now() can be non-trivial).
+            // Check timeout (tick source is platform-dependent; on x86 we use TSC, avoiding syscalls).
             if ((spins & check_mask) == 0u) {
-                const uint64_t now_ns = get_time_ns();
-                if (now_ns >= deadline_ns) {
+                const uint64_t now_ticks = get_ticks();
+                if (now_ticks >= deadline_ticks) {
                     return ASTRAL_E_TIMEOUT;
                 }
             }
