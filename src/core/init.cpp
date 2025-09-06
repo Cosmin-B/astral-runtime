@@ -257,10 +257,9 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init(const AstralInit* cfg) {
     // Determine thread count
     g_runtime.thread_count = cfg->thread_count;
     if (g_runtime.thread_count == 0) {
-        // Auto-detect: Use hardware_concurrency()
-        // For now, default to 4
-        // Production code should query std::thread::hardware_concurrency()
-        g_runtime.thread_count = 4;
+        // Auto-detect: Use hardware_concurrency(); fall back to 4.
+        const uint32_t hw = std::thread::hardware_concurrency();
+        g_runtime.thread_count = hw > 0 ? hw : 4;
     }
 
     // Reset work queue state (tests may init/shutdown multiple times in one process).

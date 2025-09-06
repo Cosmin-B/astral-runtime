@@ -160,7 +160,7 @@ static InferenceBenchResult run_streamed_decode(AstralHandle session) {
     uint64_t first_ticks = 0;
     uint64_t first_ns = 0;
 
-    uint64_t tokens = 0;
+    uint64_t reads = 0;
     uint64_t bytes = 0;
     uint8_t buf[64];
 
@@ -195,7 +195,7 @@ static InferenceBenchResult run_streamed_decode(AstralHandle session) {
             saw_first = true;
         }
 
-        ++tokens;
+        ++reads;
         bytes += static_cast<uint64_t>(n);
     }
 
@@ -216,7 +216,9 @@ static InferenceBenchResult run_streamed_decode(AstralHandle session) {
     }
     r.total_ticks = t1 - t0;
     r.total_ns = n1 - n0;
-    r.tokens = tokens;
+    // Note: `astral_stream_read()` returns bytes, not tokens. We record read count for debug only;
+    // throughput should come from `astral_session_stats()` to avoid dependence on consumer buffer sizing.
+    r.tokens = reads;
     r.bytes = bytes;
 
     return r;
@@ -392,10 +394,17 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
         return;
     }
 
+    AstralStats stats{};
+    const AstralErr stats_err = astral_session_stats(session, &stats);
+    if (stats_err != ASTRAL_OK) {
+        std::fprintf(stderr, "[bench] astral_session_stats failed: %s (%s)\n",
+                     astral_error_string(stats_err),
+                     astral_last_error());
+    }
+
     const double total_s = static_cast<double>(r.total_ns) * 1e-9;
-    const double tok_per_s = total_s > 0.0 ? static_cast<double>(r.tokens) / total_s : 0.0;
-    const double ticks_per_tok = r.tokens > 0 ? static_cast<double>(r.total_ticks) / static_cast<double>(r.tokens)
-                                              : 0.0;
+    const double ticks_per_read = r.tokens > 0 ? static_cast<double>(r.total_ticks) / static_cast<double>(r.tokens)
+                                               : 0.0;
 
     std::printf("\nInference benchmark (ticks: %s)\n", clock_info().name);
     std::printf("Model: %s\n", model_path);
@@ -413,10 +422,15 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     std::printf("Total: %.2f ms  (%llu ticks)\n",
                 static_cast<double>(r.total_ns) / 1e6,
                 static_cast<unsigned long long>(r.total_ticks));
-    std::printf("Tok/s: %.2f  (%.2f ticks/token)\n", tok_per_s, ticks_per_tok);
-    std::printf("Tokens: %llu, bytes: %llu\n\n",
+    if (stats_err == ASTRAL_OK) {
+        std::printf("Tok/s: %.2f  (ttft: %.2f ms)\n", stats.tok_per_s, stats.t_first_token_ms);
+    } else {
+        std::printf("Tok/s: n/a\n");
+    }
+    std::printf("Stream: %llu reads, %llu bytes  (%.2f ticks/read)\n\n",
                 static_cast<unsigned long long>(r.tokens),
-                static_cast<unsigned long long>(r.bytes));
+                static_cast<unsigned long long>(r.bytes),
+                ticks_per_read);
 
     astral_session_destroy(session);
     astral_model_release(model);
