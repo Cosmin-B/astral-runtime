@@ -30,6 +30,7 @@ struct TickClock {
     enum class Kind : uint8_t {
         Tsc,
         MachAbsolute,
+        ArmVct,
         MonotonicNs,
     };
 
@@ -80,6 +81,16 @@ inline uint64_t ticks_now() {
   #else
     return monotonic_time_ns();
   #endif
+#elif defined(__aarch64__) || defined(_M_ARM64)
+  #if defined(__GNUC__) || defined(__clang__)
+    uint64_t t = 0;
+    __asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(t));
+    return t;
+  #elif defined(_MSC_VER)
+    return monotonic_time_ns();
+  #else
+    return monotonic_time_ns();
+  #endif
 #else
     return monotonic_time_ns();
 #endif
@@ -114,6 +125,18 @@ inline TickClock tick_clock() {
         const double tick_to_ns = (dt_t != 0 && dt_ns != 0) ? (static_cast<double>(dt_ns) / static_cast<double>(dt_t))
                                                             : 1.0;
         return TickClock{TickClock::Kind::Tsc, tick_to_ns};
+    }();
+    return c;
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    static TickClock c = []() {
+  #if defined(__GNUC__) || defined(__clang__)
+        uint64_t freq = 0;
+        __asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(freq));
+        const double tick_to_ns = (freq > 0) ? (1000000000.0 / static_cast<double>(freq)) : 1.0;
+        return TickClock{TickClock::Kind::ArmVct, tick_to_ns};
+  #else
+        return TickClock{TickClock::Kind::MonotonicNs, 1.0};
+  #endif
     }();
     return c;
 #else
