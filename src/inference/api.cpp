@@ -105,6 +105,62 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_info(AstralHandle model, AstralMod
     return ASTRAL_OK;
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_caps(AstralHandle model, AstralCaps* out_caps) {
+    if (model == 0 || out_caps == nullptr) {
+        set_err_invalid("model/out_caps");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* m = static_cast<astral::inference::Model*>(astral::core::lookup_handle(model, astral::core::HandleKind::Model));
+    if (m == nullptr) {
+        set_err_invalid("model (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    AstralCaps caps = 0;
+    caps |= ASTRAL_CAP_SAMPLER_EXT;
+    caps |= ASTRAL_CAP_STOP_SEQS;
+
+    if (m->backend != nullptr && m->backend->ops != nullptr) {
+        if (m->backend->ops->embedder_create != nullptr && m->backend->ops->embedder_embed != nullptr) {
+            caps |= ASTRAL_CAP_EMBEDDINGS;
+        }
+        if (m->backend->supports_gpu) {
+            caps |= ASTRAL_CAP_GPU_OFFLOAD;
+        }
+    }
+
+    *out_caps = caps;
+    return ASTRAL_OK;
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_limits(AstralHandle model, AstralModelLimits* out_limits) {
+    if (model == 0 || out_limits == nullptr) {
+        set_err_invalid("model/out_limits");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* m = static_cast<astral::inference::Model*>(astral::core::lookup_handle(model, astral::core::HandleKind::Model));
+    if (m == nullptr) {
+        set_err_invalid("model (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    uint32_t vocab_size = 0;
+    uint32_t ctx_size = 0;
+    const AstralErr err = m->backend->ops->model_info(m->backend_model_ctx, &vocab_size, &ctx_size);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+        return err;
+    }
+
+    out_limits->vocab_size = vocab_size;
+    out_limits->ctx_size = ctx_size;
+    out_limits->max_batch = 0;
+    out_limits->max_slots = 0;
+    return ASTRAL_OK;
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_embedding_dim(AstralHandle model, uint32_t* out_dim) {
     if (model == 0 || out_dim == nullptr) {
         set_err_invalid("model/out_dim");
@@ -253,6 +309,66 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed(
         prompt_chunk,
         finalize
     );
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_sampler(AstralHandle session, const AstralSamplerDesc* desc) {
+    if (session == 0 || desc == nullptr) {
+        set_err_invalid("session/desc");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* s =
+        static_cast<astral::inference::Session*>(astral::core::lookup_handle(session, astral::core::HandleKind::Session));
+    if (s == nullptr) {
+        set_err_invalid("session (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::session_set_sampler(s, desc);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_clear(AstralHandle session) {
+    if (session == 0) {
+        set_err_invalid("session");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* s =
+        static_cast<astral::inference::Session*>(astral::core::lookup_handle(session, astral::core::HandleKind::Session));
+    if (s == nullptr) {
+        set_err_invalid("session (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::session_stop_clear(s);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_add_utf8(AstralHandle session, AstralSpanU8 utf8) {
+    if (session == 0) {
+        set_err_invalid("session");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* s =
+        static_cast<astral::inference::Session*>(astral::core::lookup_handle(session, astral::core::HandleKind::Session));
+    if (s == nullptr) {
+        set_err_invalid("session (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::session_stop_add_utf8(s, utf8);
     if (err != ASTRAL_OK) {
         set_err_code(err);
     }

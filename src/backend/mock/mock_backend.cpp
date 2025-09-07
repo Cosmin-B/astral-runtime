@@ -27,6 +27,7 @@ struct MockModel {
     int32_t token_bos;
     int32_t token_eos;
     bool infinite;
+    bool sampler_mode;
 };
 
 struct MockSession {
@@ -79,7 +80,8 @@ void* mock_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
     model->emb_dim = kMockEmbDim;
     model->token_bos = kMockTokenBos;
     model->infinite = span_equals_ascii(desc->model_path, "infinite");
-    model->token_eos = model->infinite ? -1 : kMockTokenEos;
+    model->sampler_mode = span_equals_ascii(desc->model_path, "sampler");
+    model->token_eos = (model->infinite || model->sampler_mode) ? -1 : kMockTokenEos;
 
     *out_err = ASTRAL_OK;
     return model;
@@ -257,16 +259,24 @@ AstralErr mock_session_logits(void* session_ctx, BackendLogitsView* out_view) {
         session->logits[i] = -1000.0f;
     }
 
-    const size_t msg_len = std::strlen(kMockMessage);
-    int32_t next = kMockTokenEos;
-    if (msg_len > 0 && session->model != nullptr && session->model->infinite) {
-        next = static_cast<int32_t>(static_cast<uint8_t>(kMockMessage[session->step % msg_len]));
-    } else if (session->step < msg_len) {
-        next = static_cast<int32_t>(static_cast<uint8_t>(kMockMessage[session->step]));
-    }
+    if (session->model != nullptr && session->model->sampler_mode) {
+        // Deterministic 2-token distribution for sampler tests.
+        const uint32_t a = static_cast<uint32_t>('a');
+        const uint32_t b = static_cast<uint32_t>('b');
+        if (a < session->model->vocab_size) session->logits[a] = 10.0f;
+        if (b < session->model->vocab_size) session->logits[b] = 10.0f;
+    } else {
+        const size_t msg_len = std::strlen(kMockMessage);
+        int32_t next = kMockTokenEos;
+        if (msg_len > 0 && session->model != nullptr && session->model->infinite) {
+            next = static_cast<int32_t>(static_cast<uint8_t>(kMockMessage[session->step % msg_len]));
+        } else if (session->step < msg_len) {
+            next = static_cast<int32_t>(static_cast<uint8_t>(kMockMessage[session->step]));
+        }
 
-    if (next >= 0 && static_cast<uint32_t>(next) < session->model->vocab_size) {
-        session->logits[static_cast<uint32_t>(next)] = 10.0f;
+        if (next >= 0 && static_cast<uint32_t>(next) < session->model->vocab_size) {
+            session->logits[static_cast<uint32_t>(next)] = 10.0f;
+        }
     }
 
     out_view->logits = session->logits;

@@ -12,6 +12,14 @@ struct SamplerConfig {
     float temperature; // 0.0 = greedy
     uint32_t top_k;    // 0 = disabled
     float top_p;       // <=0 or >=1 = disabled
+    float min_p;       // 0.0 = disabled
+    float typical_p;   // 1.0 = disabled
+    float repeat_penalty;    // 1.0 = disabled
+    int32_t repeat_last_n;   // 0 = disabled, -1 = ctx size (treated as clamp)
+    uint8_t penalize_nl;     // 1 = penalize newline token
+    uint8_t _padding0[3];
+    float presence_penalty;  // 0.0 = disabled
+    float frequency_penalty; // 0.0 = disabled
     uint32_t seed;     // Initial seed (captured for diagnostics; session owns rng_state)
 };
 
@@ -31,10 +39,11 @@ uint32_t sample_token(const float* logits,
                       size_t vocab_size,
                       const SamplerConfig& cfg,
                       uint32_t* rng_state,
+                      const uint16_t* token_counts,
+                      int32_t token_nl,
                       uint32_t* scratch_ids,
                       float* scratch_vals,
                       uint32_t scratch_capacity,
                       uint32_t* indices_buffer);
 
 } // namespace astral::inference
-

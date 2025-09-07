@@ -33,6 +33,10 @@
 #include <new>
 #include <sys/stat.h>
 
+#if defined(_WIN32)
+  #include <malloc.h>
+#endif
+
 namespace {
 
 // Allocation counters (count calls, not bytes-only).
@@ -381,6 +385,12 @@ void operator delete(void* ptr) noexcept {
     std::free(ptr);
 }
 
+// Sized delete overloads are required on some toolchains/configs (C++14+).
+// Without these, deallocations can bypass our hooks and/or trigger mismatches.
+void operator delete(void* ptr, std::size_t) noexcept {
+    std::free(ptr);
+}
+
 void* operator new[](std::size_t size) {
     if (g_tracking_enabled.load(std::memory_order_relaxed)) {
         g_new_calls.fetch_add(1, std::memory_order_relaxed);
@@ -397,6 +407,90 @@ void* operator new[](std::size_t size) {
 void operator delete[](void* ptr) noexcept {
     std::free(ptr);
 }
+
+void operator delete[](void* ptr, std::size_t) noexcept {
+    std::free(ptr);
+}
+
+#if defined(__cpp_aligned_new)
+
+void* operator new(std::size_t size, std::align_val_t align) {
+    if (g_tracking_enabled.load(std::memory_order_relaxed)) {
+        g_new_calls.fetch_add(1, std::memory_order_relaxed);
+        g_new_bytes.fetch_add(static_cast<uint64_t>(size), std::memory_order_relaxed);
+    }
+
+    const std::size_t a = static_cast<std::size_t>(align);
+#if defined(_WIN32)
+    void* p = _aligned_malloc(size == 0 ? 1 : size, a);
+    if (p != nullptr) {
+        return p;
+    }
+    throw std::bad_alloc();
+#else
+    void* p = nullptr;
+    if (posix_memalign(&p, a, size == 0 ? 1 : size) == 0 && p != nullptr) {
+        return p;
+    }
+    throw std::bad_alloc();
+#endif
+}
+
+void operator delete(void* ptr, std::align_val_t) noexcept {
+#if defined(_WIN32)
+    _aligned_free(ptr);
+#else
+    std::free(ptr);
+#endif
+}
+
+void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept {
+#if defined(_WIN32)
+    _aligned_free(ptr);
+#else
+    std::free(ptr);
+#endif
+}
+
+void* operator new[](std::size_t size, std::align_val_t align) {
+    if (g_tracking_enabled.load(std::memory_order_relaxed)) {
+        g_new_calls.fetch_add(1, std::memory_order_relaxed);
+        g_new_bytes.fetch_add(static_cast<uint64_t>(size), std::memory_order_relaxed);
+    }
+
+    const std::size_t a = static_cast<std::size_t>(align);
+#if defined(_WIN32)
+    void* p = _aligned_malloc(size == 0 ? 1 : size, a);
+    if (p != nullptr) {
+        return p;
+    }
+    throw std::bad_alloc();
+#else
+    void* p = nullptr;
+    if (posix_memalign(&p, a, size == 0 ? 1 : size) == 0 && p != nullptr) {
+        return p;
+    }
+    throw std::bad_alloc();
+#endif
+}
+
+void operator delete[](void* ptr, std::align_val_t) noexcept {
+#if defined(_WIN32)
+    _aligned_free(ptr);
+#else
+    std::free(ptr);
+#endif
+}
+
+void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept {
+#if defined(_WIN32)
+    _aligned_free(ptr);
+#else
+    std::free(ptr);
+#endif
+}
+
+#endif
 
 #if defined(ASTRAL_ALLOC_WRAP)
 

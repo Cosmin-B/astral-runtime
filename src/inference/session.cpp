@@ -6,10 +6,58 @@
 #include "../platform/time.h"
 #include <cstring>
 #include <new>
+#include <cstdlib>
 
 namespace astral::inference {
 
 void decode_loop(Session* session);
+
+Session::Session(Model* model_,
+                 void* allocator_memory_,
+                 size_t allocator_capacity_,
+                 const AstralSessionDesc& desc_) noexcept
+    : handle(0)
+    , model(model_)
+    , backend_session_ctx(nullptr)
+    , desc(desc_)
+    , allocator(allocator_memory_, allocator_capacity_)
+    , allocator_memory(allocator_memory_)
+    , allocator_capacity(allocator_capacity_)
+    , token_ring()
+    , pending_utf8{}
+    , pending_len(0)
+    , pending_off(0)
+    , prompt_tokens(nullptr)
+    , prompt_count(0)
+    , prompt_capacity(0)
+    , state(SessionState::Idle)
+    , cancel_requested(false)
+    , final_err(ASTRAL_OK)
+    , vocab_size(0)
+    , ctx_size(0)
+    , indices_buffer(nullptr)
+    , sample_ids(nullptr)
+    , sample_logits(nullptr)
+    , sample_capacity(0)
+    , sampler_cfg{}
+    , rng_state(0)
+    , token_counts(nullptr)
+    , recent_tokens(nullptr)
+    , recent_capacity(0)
+    , recent_pos(0)
+    , recent_size(0)
+    , token_nl(-1)
+    , total_tokens(0)
+    , t_start_ticks(0)
+    , t_first_token_ticks(0)
+    , t_end_ticks(0)
+    , n_past(0)
+    , token_bos(-1)
+    , token_eos(-1)
+    , stop_seq_count(0)
+    , stop_seq_lens{}
+    , stop_seq_tokens{}
+    , stop_max_len(0) {}
 
 namespace {
 
@@ -28,6 +76,147 @@ constexpr size_t kDefaultAllocatorCapacity = 2 * 1024 * 1024;
 
 void decode_work(void* user) {
     decode_loop(static_cast<Session*>(user));
+}
+
+inline uint32_t clamp_repeat_last_n(int32_t v, uint32_t ctx_size) {
+    if (v == 0) {
+        return 0;
+    }
+    if (v < 0) {
+        return ctx_size;
+    }
+    return static_cast<uint32_t>(v);
+}
+
+inline bool sampler_needs_counts(const SamplerConfig& cfg) {
+    if (cfg.repeat_last_n == 0) {
+        return false;
+    }
+    if (cfg.repeat_penalty != 1.0f) return true;
+    if (cfg.presence_penalty != 0.0f) return true;
+    if (cfg.frequency_penalty != 0.0f) return true;
+    return false;
+}
+
+AstralErr ensure_penalty_state(Session* session) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    if (!sampler_needs_counts(session->sampler_cfg)) {
+        return ASTRAL_OK;
+    }
+
+    const uint32_t ctx_size = session->ctx_size != 0 ? session->ctx_size : 2048;
+    const uint32_t repeat_last_n = clamp_repeat_last_n(session->sampler_cfg.repeat_last_n, ctx_size);
+    if (repeat_last_n == 0) {
+        return ASTRAL_OK;
+    }
+
+    if (session->token_counts == nullptr) {
+        session->token_counts = static_cast<uint16_t*>(
+            session->allocator.alloc(session->vocab_size * sizeof(uint16_t), alignof(uint16_t))
+        );
+        if (session->token_counts == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+        std::memset(session->token_counts, 0, session->vocab_size * sizeof(uint16_t));
+    }
+
+    if (session->recent_capacity != repeat_last_n || session->recent_tokens == nullptr) {
+        session->recent_tokens = static_cast<uint32_t*>(
+            session->allocator.alloc(static_cast<size_t>(repeat_last_n) * sizeof(uint32_t), alignof(uint32_t))
+        );
+        if (session->recent_tokens == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+        session->recent_capacity = repeat_last_n;
+        session->recent_pos = 0;
+        session->recent_size = 0;
+    }
+
+    if (session->token_nl < 0 && session->model != nullptr && session->model->backend != nullptr &&
+        session->model->backend->ops != nullptr) {
+        // Best-effort: resolve a single-token "\\n".
+        int32_t tok = -1;
+        uint32_t out_count = 0;
+        const uint8_t nl = static_cast<uint8_t>('\n');
+        AstralSpanU8 text{};
+        text.data = &nl;
+        text.len = 1;
+        const AstralErr err = session->model->backend->ops->tokenize(
+            session->model->backend_model_ctx, text, &tok, 1, 0, 0, &out_count
+        );
+        if (err == ASTRAL_OK && out_count == 1) {
+            session->token_nl = tok;
+        } else {
+            session->token_nl = -1;
+        }
+    }
+
+    return ASTRAL_OK;
+}
+
+inline void penalty_state_clear(Session* session) {
+    if (session == nullptr || session->token_counts == nullptr) {
+        return;
+    }
+    std::memset(session->token_counts, 0, session->vocab_size * sizeof(uint16_t));
+    session->recent_pos = 0;
+    session->recent_size = 0;
+}
+
+inline void penalty_state_push(Session* session, uint32_t token_id) {
+    if (session == nullptr || session->token_counts == nullptr || session->recent_tokens == nullptr ||
+        session->recent_capacity == 0) {
+        return;
+    }
+    if (token_id >= session->vocab_size) {
+        return;
+    }
+
+    if (session->recent_size == session->recent_capacity) {
+        const uint32_t old = session->recent_tokens[session->recent_pos];
+        if (old < session->vocab_size) {
+            uint16_t& c = session->token_counts[old];
+            if (c > 0) {
+                --c;
+            }
+        }
+    } else {
+        ++session->recent_size;
+    }
+
+    session->recent_tokens[session->recent_pos] = token_id;
+    session->recent_pos = (session->recent_pos + 1u) % session->recent_capacity;
+
+    uint16_t& c = session->token_counts[token_id];
+    if (c != 0xFFFFu) {
+        ++c;
+    }
+}
+
+inline void* session_alloc_mem() {
+#if defined(__cpp_aligned_new)
+    return ::operator new(sizeof(Session), std::align_val_t(alignof(Session)), std::nothrow);
+#else
+    void* p = nullptr;
+    if (::posix_memalign(&p, alignof(Session), sizeof(Session)) != 0) {
+        return nullptr;
+    }
+    return p;
+#endif
+}
+
+inline void session_free_mem(void* p) noexcept {
+    if (p == nullptr) {
+        return;
+    }
+#if defined(__cpp_aligned_new)
+    ::operator delete(p, std::align_val_t(alignof(Session)));
+#else
+    std::free(p);
+#endif
 }
 
 } // namespace
@@ -58,37 +247,14 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
 
     // Allocate session struct on heap
     // Use malloc instead of new to avoid default constructor issues
-    void* session_mem = ::operator new(sizeof(Session), std::nothrow);
+    void* session_mem = session_alloc_mem();
     if (session_mem == nullptr) {
         platform::vm_release(allocator_memory, allocator_capacity);
         return ASTRAL_E_NOMEM;
     }
 
-    // Construct Session using placement new
-    // Initialize all members explicitly
-    Session* session = static_cast<Session*>(session_mem);
-
-    // Store model reference and config
-    session->handle = 0;
-    session->model = model;
-    session->backend_session_ctx = nullptr;
-    session->desc = *desc;
-
-    // Store allocator memory info
-    session->allocator_memory = allocator_memory;
-    session->allocator_capacity = allocator_capacity;
-
-    // Initialize frame allocator using placement new
-    new (&session->allocator) memory::FrameAllocator(
-        allocator_memory,
-        allocator_capacity
-    );
-
-    // Initialize token ring using placement new
-    new (&session->token_ring) concurrency::SpscRing<concurrency::StreamToken, 256>();
-    std::memset(session->pending_utf8, 0, sizeof(session->pending_utf8));
-    session->pending_len = 0;
-    session->pending_off = 0;
+    // Construct session object (starts lifetime; avoids UB in release builds).
+    Session* session = new (session_mem) Session(model, allocator_memory, allocator_capacity, *desc);
 
     // Allocate prompt buffer (initial capacity: 8K tokens)
     session->prompt_capacity = 8192;
@@ -100,7 +266,8 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     if (session->prompt_tokens == nullptr) {
         model_release(model);
         platform::vm_release(allocator_memory, allocator_capacity);
-        ::operator delete(session_mem);
+        session->~Session();
+        session_free_mem(session_mem);
         return ASTRAL_E_NOMEM;
     }
 
@@ -112,7 +279,8 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     if (info_err != ASTRAL_OK || vocab_size == 0) {
         model_release(model);
         platform::vm_release(allocator_memory, allocator_capacity);
-        ::operator delete(session_mem);
+        session->~Session();
+        session_free_mem(session_mem);
         return info_err != ASTRAL_OK ? info_err : ASTRAL_E_BACKEND;
     }
 
@@ -123,12 +291,14 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     if (backend_session_ctx == nullptr) {
         model_release(model);
         platform::vm_release(allocator_memory, allocator_capacity);
-        ::operator delete(session_mem);
+        session->~Session();
+        session_free_mem(session_mem);
         return backend_err != ASTRAL_OK ? backend_err : ASTRAL_E_BACKEND;
     }
     session->backend_session_ctx = backend_session_ctx;
 
     session->vocab_size = vocab_size;
+    session->ctx_size = ctx_size;
 
     // Cache special tokens (used for stop conditions).
     int32_t token_bos = -1;
@@ -141,7 +311,8 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
             session->backend_session_ctx = nullptr;
             model_release(model);
             platform::vm_release(allocator_memory, allocator_capacity);
-            ::operator delete(session_mem);
+            session->~Session();
+            session_free_mem(session_mem);
             return tok_err;
         }
     }
@@ -176,6 +347,20 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
                                  session->allocator.alloc(sample_capacity * sizeof(float), alignof(float)))
                                                  : nullptr;
 
+    // Penalty state (allocated lazily when needed; never in steady-state decode).
+    session->token_counts = nullptr;
+    session->recent_tokens = nullptr;
+    session->recent_capacity = 0;
+    session->recent_pos = 0;
+    session->recent_size = 0;
+    session->token_nl = -1;
+
+    // Stop sequences (none by default).
+    session->stop_seq_count = 0;
+    std::memset(session->stop_seq_lens, 0, sizeof(session->stop_seq_lens));
+    std::memset(session->stop_seq_tokens, 0, sizeof(session->stop_seq_tokens));
+    session->stop_max_len = 0;
+
     if (session->indices_buffer == nullptr || (sample_capacity > 0 && (session->sample_ids == nullptr ||
                                                                       session->sample_logits == nullptr))) {
         if (session->backend_session_ctx != nullptr && model->backend != nullptr) {
@@ -184,7 +369,8 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
         }
         model_release(model);
         platform::vm_release(allocator_memory, allocator_capacity);
-        ::operator delete(session_mem);
+        session->~Session();
+        session_free_mem(session_mem);
         return ASTRAL_E_NOMEM;
     }
 
@@ -192,21 +378,16 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     session->sampler_cfg.temperature = desc->temperature;
     session->sampler_cfg.top_k = desc->top_k;
     session->sampler_cfg.top_p = desc->top_p;
+    session->sampler_cfg.min_p = 0.0f;
+    session->sampler_cfg.typical_p = 1.0f;
+    session->sampler_cfg.repeat_penalty = 1.0f;
+    session->sampler_cfg.repeat_last_n = 0;
+    session->sampler_cfg.penalize_nl = 0;
+    session->sampler_cfg.presence_penalty = 0.0f;
+    session->sampler_cfg.frequency_penalty = 0.0f;
     session->sampler_cfg.seed =
         desc->seed != 0 ? desc->seed : static_cast<uint32_t>(get_ticks() & 0xFFFFFFFF);
     session->rng_state = session->sampler_cfg.seed;
-
-    // Initialize state atomics using placement new
-    new (&session->state) std::atomic<SessionState>(SessionState::Idle);
-    new (&session->cancel_requested) std::atomic<bool>(false);
-    new (&session->final_err) std::atomic<int32_t>(ASTRAL_OK);
-
-    // Initialize statistics
-    session->total_tokens = 0;
-    session->t_start_ticks = 0;
-    session->t_first_token_ticks = 0;
-    session->t_end_ticks = 0;
-    session->n_past = 0;
 
     const AstralHandle handle = core::register_handle(core::HandleKind::Session, session);
     if (handle == 0) {
@@ -214,7 +395,8 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
         session->backend_session_ctx = nullptr;
         model_release(model);
         platform::vm_release(allocator_memory, allocator_capacity);
-        ::operator delete(session_mem);
+        session->~Session();
+        session_free_mem(session_mem);
         return ASTRAL_E_BUSY;
     }
     session->handle = handle;
@@ -267,19 +449,13 @@ void session_destroy(Session* session) {
         session->backend_session_ctx = nullptr;
     }
 
-    // Manually destroy non-trivial members (atomics, allocator, ring)
-    session->state.~atomic();
-    session->cancel_requested.~atomic();
-    session->final_err.~atomic();
-    session->allocator.~FrameAllocator();
-    session->token_ring.~SpscRing();
-
     // Release model reference (session holds one ref).
     model_release(session->model);
     session->model = nullptr;
 
-    // Free session memory
-    ::operator delete(session);
+    // Destroy and free session memory.
+    session->~Session();
+    session_free_mem(session);
 }
 
 AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t finalize) {
@@ -500,6 +676,8 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     session->t_end_ticks = 0;
     session->n_past = 0;
 
+    penalty_state_clear(session);
+
     // Reset backend session state (KV/cache). Fall back to destroy+create if unsupported.
     if (session->backend_session_ctx == nullptr) {
         return ASTRAL_E_STATE;
@@ -527,6 +705,97 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     // Back to Idle for the next prompt.
     session->state.store(SessionState::Idle, std::memory_order_release);
     platform::cpu_signal_event();
+    return ASTRAL_OK;
+}
+
+AstralErr session_set_sampler(Session* session, const AstralSamplerDesc* desc) {
+    if (session == nullptr || desc == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->size != sizeof(AstralSamplerDesc)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    // Keep scratch capacity invariant.
+    if (desc->top_k > 0 && desc->top_k > session->sample_capacity) {
+        return ASTRAL_E_INVALID;
+    }
+
+    session->sampler_cfg.temperature = desc->temperature;
+    session->sampler_cfg.top_k = desc->top_k;
+    session->sampler_cfg.top_p = desc->top_p;
+    session->sampler_cfg.min_p = desc->min_p;
+    session->sampler_cfg.typical_p = desc->typical_p;
+    session->sampler_cfg.repeat_penalty = desc->repeat_penalty;
+    session->sampler_cfg.repeat_last_n = desc->repeat_last_n;
+    session->sampler_cfg.penalize_nl = desc->penalize_nl;
+    session->sampler_cfg.presence_penalty = desc->presence_penalty;
+    session->sampler_cfg.frequency_penalty = desc->frequency_penalty;
+
+    // mirostat is not implemented in v0.1; ignore for now (kept in ABI for forward compat).
+    (void)desc->mirostat;
+    (void)desc->mirostat_tau;
+    (void)desc->mirostat_eta;
+
+    return ensure_penalty_state(session);
+}
+
+AstralErr session_stop_clear(Session* session) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    session->stop_seq_count = 0;
+    std::memset(session->stop_seq_lens, 0, sizeof(session->stop_seq_lens));
+    std::memset(session->stop_seq_tokens, 0, sizeof(session->stop_seq_tokens));
+    session->stop_max_len = 0;
+    return ASTRAL_OK;
+}
+
+AstralErr session_stop_add_utf8(Session* session, AstralSpanU8 utf8) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (utf8.data == nullptr || utf8.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    if (session->stop_seq_count >= 16) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    int32_t tokens[32];
+    uint32_t out_count = 0;
+    const AstralErr err = session->model->backend->ops->tokenize(
+        session->model->backend_model_ctx, utf8, tokens, 32, 0, 0, &out_count
+    );
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+    if (out_count == 0 || out_count > 32) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const uint32_t idx = session->stop_seq_count++;
+    session->stop_seq_lens[idx] = static_cast<uint8_t>(out_count);
+    for (uint32_t i = 0; i < out_count; ++i) {
+        session->stop_seq_tokens[idx][i] = tokens[i];
+    }
+    if (out_count > session->stop_max_len) {
+        session->stop_max_len = out_count;
+    }
     return ASTRAL_OK;
 }
 
@@ -600,8 +869,128 @@ void decode_loop(Session* session) {
         // Feed failed; transition to Failed
         final_state = SessionState::Failed;
         final_err = err;
-        goto finish;
-    }
+    } else {
+        // Initialize penalty state from prompt once (not a hot path).
+        if (ensure_penalty_state(session) == ASTRAL_OK) {
+            penalty_state_clear(session);
+            for (uint32_t i = 0; i < session->prompt_count; ++i) {
+                const int32_t t = session->prompt_tokens[i];
+                if (t >= 0) {
+                    penalty_state_push(session, static_cast<uint32_t>(t));
+                }
+            }
+        }
+
+        // Stop tail (token ids only; small fixed buffer).
+        int32_t stop_tail[32];
+        uint32_t stop_tail_len = 0;
+
+        // Streaming hold buffer for stop suppression (enabled only if stop sequences are configured).
+        constexpr uint32_t kHoldCap = 64;
+        concurrency::StreamToken hold[kHoldCap];
+        uint32_t hold_head = 0;
+        uint32_t hold_count = 0;
+        const uint32_t stop_hold =
+            (session->stop_max_len > 0 && session->stop_max_len <= 32) ? session->stop_max_len : 0;
+
+        auto flush_one = [&](const concurrency::StreamToken& tok) -> bool {
+            bool pushed = false;
+            uint32_t spins = 0;
+            while (!pushed) {
+                if (session->token_ring.push(tok)) {
+                    pushed = true;
+                    break;
+                }
+
+                if (spins < 64) {
+                    platform::cpu_pause();
+                } else {
+                    platform::cpu_wait_for_event();
+                }
+                if (spins < 1024) {
+                    ++spins;
+                }
+
+                if (session->cancel_requested.load(std::memory_order_acquire)) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+    auto hold_push = [&](const concurrency::StreamToken& tok) -> bool {
+        if (stop_hold == 0) {
+            return flush_one(tok);
+        }
+
+        // Append at tail.
+        const uint32_t tail = (hold_head + hold_count) % kHoldCap;
+        hold[tail] = tok;
+        if (hold_count < kHoldCap) {
+            ++hold_count;
+        } else {
+            // Should not happen given stop_hold <= 32, but keep safe behavior.
+            if (!flush_one(hold[hold_head])) {
+                return false;
+            }
+            hold_head = (hold_head + 1) % kHoldCap;
+        }
+
+        // Keep at most stop_hold tokens buffered (flush oldest).
+        while (hold_count > stop_hold) {
+            if (!flush_one(hold[hold_head])) {
+                return false;
+            }
+            hold_head = (hold_head + 1) % kHoldCap;
+            --hold_count;
+        }
+        return true;
+    };
+
+    auto hold_flush_all = [&]() -> bool {
+        while (hold_count > 0) {
+            if (!flush_one(hold[hold_head])) {
+                return false;
+            }
+            hold_head = (hold_head + 1) % kHoldCap;
+            --hold_count;
+        }
+        return true;
+    };
+
+    auto stop_check = [&](int32_t token, uint32_t* out_match_len) -> bool {
+        if (session->stop_seq_count == 0 || token < 0) {
+            return false;
+        }
+
+        if (stop_tail_len < 32) {
+            stop_tail[stop_tail_len++] = token;
+        } else {
+            std::memmove(stop_tail, stop_tail + 1, (32 - 1) * sizeof(int32_t));
+            stop_tail[31] = token;
+        }
+
+        for (uint32_t i = 0; i < session->stop_seq_count; ++i) {
+            const uint32_t len = session->stop_seq_lens[i];
+            if (len == 0 || len > stop_tail_len) {
+                continue;
+            }
+            bool match = true;
+            for (uint32_t j = 0; j < len; ++j) {
+                if (stop_tail[stop_tail_len - len + j] != session->stop_seq_tokens[i][j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                if (out_match_len) {
+                    *out_match_len = len;
+                }
+                return true;
+            }
+        }
+        return false;
+    };
 
     // Generation loop
     for (uint32_t i = 0; i < max_tokens; ++i) {
@@ -626,6 +1015,8 @@ void decode_loop(Session* session) {
             logits_view.vocab_size,
             session->sampler_cfg,
             &session->rng_state,
+            session->token_counts,
+            session->token_nl,
             session->sample_ids,
             session->sample_logits,
             session->sample_capacity,
@@ -639,6 +1030,10 @@ void decode_loop(Session* session) {
             break;
         }
 
+        if (next_token >= 0) {
+            penalty_state_push(session, static_cast<uint32_t>(next_token));
+        }
+
         if (session->token_eos >= 0 && next_token == session->token_eos) {
             break;
         }
@@ -648,6 +1043,9 @@ void decode_loop(Session* session) {
         if (session->total_tokens == 1) {
             session->t_first_token_ticks = get_ticks();
         }
+
+        uint32_t stop_len = 0;
+        const bool stop_hit = stop_check(next_token, &stop_len);
 
         if (session->desc.stream_enabled) {
             // Detokenize to UTF-8
@@ -676,48 +1074,39 @@ void decode_loop(Session* session) {
 
             stream_token.utf8_len = static_cast<uint16_t>(utf8_len);
 
-            // Push to token ring (with backpressure)
-            bool pushed = false;
-            uint32_t spins = 0;
-            while (!pushed) {
-                if (session->token_ring.push(stream_token)) {
-                    pushed = true;
-                    break;
-                }
-
-                // Ring is full; wait for consumer to drain.
-                // Use a short spin, then WFE on ARM for low overhead.
-                if (spins < 64) {
-                    platform::cpu_pause();
-                } else {
-                    platform::cpu_wait_for_event();
-                }
-                if (spins < 1024) {
-                    ++spins;
-                }
-
-                // Respect cancellation even if consumer isn't draining.
-                if (session->cancel_requested.load(std::memory_order_acquire)) {
-                    final_state = SessionState::Canceled;
-                    final_err = ASTRAL_E_CANCELED;
-                    break;
-                }
-            }
-
-            if (final_state == SessionState::Canceled) {
-                break;
-            }
-
-            if (!pushed) {
-                // Ring still full after retries; abort
-                final_state = SessionState::Failed;
-                final_err = ASTRAL_E_BACKEND;
+            if (!hold_push(stream_token)) {
+                final_state = SessionState::Canceled;
+                final_err = ASTRAL_E_CANCELED;
                 break;
             }
         }
+
+        if (stop_hit) {
+            if (session->desc.stream_enabled && stop_hold > 0 && stop_len > 0) {
+                // Drop stop tokens from the end of the hold buffer.
+                if (stop_len >= hold_count) {
+                    hold_count = 0;
+                } else {
+                    hold_count -= stop_len;
+                }
+                if (!hold_flush_all()) {
+                    final_state = SessionState::Canceled;
+                    final_err = ASTRAL_E_CANCELED;
+                }
+            }
+            break;
+        }
     }
 
-finish:
+    // Flush any remaining buffered tokens (normal completion/EOS/max_tokens).
+    if (final_state == SessionState::Completed && session->desc.stream_enabled && hold_count > 0) {
+        if (!hold_flush_all()) {
+            final_state = SessionState::Canceled;
+            final_err = ASTRAL_E_CANCELED;
+        }
+    }
+    } // feed_ok
+
     // Transition to terminal state.
     session->t_end_ticks = get_ticks();
     session->final_err.store(static_cast<int32_t>(final_err), std::memory_order_release);

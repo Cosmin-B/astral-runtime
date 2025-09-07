@@ -24,6 +24,33 @@ inline float sanitize_top_p(float p) {
     return (p > 0.0f && p < 1.0f) ? p : 1.0f;
 }
 
+inline float sanitize_min_p(float p) {
+    return (p > 0.0f && p < 1.0f) ? p : 0.0f;
+}
+
+inline float sanitize_typical_p(float p) {
+    return (p > 0.0f && p < 1.0f) ? p : 1.0f;
+}
+
+inline float sanitize_repeat_penalty(float p) {
+    return (p > 0.0f) ? p : 1.0f;
+}
+
+inline float apply_repeat_penalty(float logit, float penalty) {
+    if (penalty == 1.0f) {
+        return logit;
+    }
+    // Common convention: negative logits are multiplied, positive are divided.
+    return logit < 0.0f ? (logit * penalty) : (logit / penalty);
+}
+
+inline float apply_presence_frequency_penalties(float logit, uint16_t count, float presence, float frequency) {
+    if (count == 0) {
+        return logit;
+    }
+    return logit - presence - (frequency * static_cast<float>(count));
+}
+
 inline uint32_t argmax(const float* logits, size_t n) {
     size_t best = 0;
     float best_val = logits[0];
@@ -180,12 +207,34 @@ inline uint32_t sample_from_weights_sorted_desc(const uint32_t* ids,
     return ids[cutoff > 0 ? cutoff - 1 : 0];
 }
 
+inline uint32_t sample_from_weights_unsorted(const uint32_t* ids, const float* weights, size_t count, uint32_t* rng) {
+    double sum = 0.0;
+    for (size_t i = 0; i < count; ++i) {
+        sum += static_cast<double>(weights[i]);
+    }
+    if (!(sum > 0.0)) {
+        return ids[0];
+    }
+
+    const double target = static_cast<double>(uniform01(rng)) * sum;
+    double cum = 0.0;
+    for (size_t i = 0; i < count; ++i) {
+        cum += static_cast<double>(weights[i]);
+        if (cum >= target) {
+            return ids[i];
+        }
+    }
+    return ids[count - 1];
+}
+
 } // namespace
 
 uint32_t sample_token(const float* logits,
                       size_t vocab_size,
                       const SamplerConfig& cfg,
                       uint32_t* rng_state,
+                      const uint16_t* token_counts,
+                      int32_t token_nl,
                       uint32_t* scratch_ids,
                       float* scratch_vals,
                       uint32_t scratch_capacity,
@@ -194,12 +243,51 @@ uint32_t sample_token(const float* logits,
         return 0;
     }
 
+    const float repeat_penalty = sanitize_repeat_penalty(cfg.repeat_penalty);
+    const float presence_penalty = cfg.presence_penalty;
+    const float frequency_penalty = cfg.frequency_penalty;
+    const bool penalize_nl = (cfg.penalize_nl != 0) && (token_nl >= 0);
+    const bool use_penalties = token_counts != nullptr &&
+                               ((repeat_penalty != 1.0f) || (presence_penalty != 0.0f) || (frequency_penalty != 0.0f));
+
+    auto adjusted_logit = [&](size_t token_id, float base) -> float {
+        if (!use_penalties) {
+            return base;
+        }
+        if (!penalize_nl && static_cast<int32_t>(token_id) == token_nl) {
+            // NL excluded from penalties unless explicitly enabled.
+            return base;
+        }
+        const uint16_t count = token_id < vocab_size ? token_counts[token_id] : 0;
+        float v = base;
+        if (count > 0) {
+            if (repeat_penalty != 1.0f) {
+                v = apply_repeat_penalty(v, repeat_penalty);
+            }
+            if (presence_penalty != 0.0f || frequency_penalty != 0.0f) {
+                v = apply_presence_frequency_penalties(v, count, presence_penalty, frequency_penalty);
+            }
+        }
+        return v;
+    };
+
     // Greedy path.
     if (cfg.temperature <= 0.0f) {
-        return argmax(logits, vocab_size);
+        size_t best = 0;
+        float best_val = adjusted_logit(0, logits[0]);
+        for (size_t i = 1; i < vocab_size; ++i) {
+            const float v = adjusted_logit(i, logits[i]);
+            if (v > best_val) {
+                best_val = v;
+                best = i;
+            }
+        }
+        return static_cast<uint32_t>(best);
     }
 
     const float top_p = sanitize_top_p(cfg.top_p);
+    const float min_p = sanitize_min_p(cfg.min_p);
+    const float typical_p = sanitize_typical_p(cfg.typical_p);
 
     uint32_t top_k = cfg.top_k;
     if (top_k > 0 && top_k > vocab_size) {
@@ -218,7 +306,7 @@ uint32_t sample_token(const float* logits,
         // Compute max and full partition function (no storage).
         float max_scaled = -std::numeric_limits<float>::infinity();
         for (size_t i = 0; i < vocab_size; ++i) {
-            const float v = logits[i] * inv_temp;
+            const float v = adjusted_logit(i, logits[i]) * inv_temp;
             if (v > max_scaled) {
                 max_scaled = v;
             }
@@ -226,7 +314,7 @@ uint32_t sample_token(const float* logits,
 
         double sum_all = 0.0;
         for (size_t i = 0; i < vocab_size; ++i) {
-            sum_all += static_cast<double>(std::exp(logits[i] * inv_temp - max_scaled));
+            sum_all += static_cast<double>(std::exp(adjusted_logit(i, logits[i]) * inv_temp - max_scaled));
         }
 
         if (!(sum_all > 0.0)) {
@@ -247,7 +335,7 @@ uint32_t sample_token(const float* logits,
         size_t selected = 0;
         while (heap_size > 0) {
             const uint32_t id = heap_pop_max(indices_buffer, &heap_size, logits);
-            nucleus_sum += static_cast<double>(std::exp(logits[id] * inv_temp - max_scaled));
+            nucleus_sum += static_cast<double>(std::exp(adjusted_logit(id, logits[id]) * inv_temp - max_scaled));
             ++selected;
             if (nucleus_sum >= threshold) {
                 break;
@@ -265,7 +353,7 @@ uint32_t sample_token(const float* logits,
         // indices_buffer[vocab_size - 1] is the first (largest) popped token.
         for (size_t i = 0; i < selected; ++i) {
             const uint32_t id = indices_buffer[vocab_size - 1 - i];
-            cum += static_cast<double>(std::exp(logits[id] * inv_temp - max_scaled));
+            cum += static_cast<double>(std::exp(adjusted_logit(id, logits[id]) * inv_temp - max_scaled));
             if (cum >= target) {
                 return id;
             }
@@ -280,7 +368,7 @@ uint32_t sample_token(const float* logits,
 
         float max_scaled = -std::numeric_limits<float>::infinity();
         for (size_t i = 0; i < vocab_size; ++i) {
-            const float v = logits[i] * inv_temp;
+            const float v = adjusted_logit(i, logits[i]) * inv_temp;
             if (v > max_scaled) {
                 max_scaled = v;
             }
@@ -288,7 +376,7 @@ uint32_t sample_token(const float* logits,
 
         double sum = 0.0;
         for (size_t i = 0; i < vocab_size; ++i) {
-            sum += static_cast<double>(std::exp(logits[i] * inv_temp - max_scaled));
+            sum += static_cast<double>(std::exp(adjusted_logit(i, logits[i]) * inv_temp - max_scaled));
         }
         if (!(sum > 0.0)) {
             return argmax(logits, vocab_size);
@@ -297,7 +385,7 @@ uint32_t sample_token(const float* logits,
         const double target = static_cast<double>(uniform01(rng_state)) * sum;
         double cum = 0.0;
         for (size_t i = 0; i < vocab_size; ++i) {
-            cum += static_cast<double>(std::exp(logits[i] * inv_temp - max_scaled));
+            cum += static_cast<double>(std::exp(adjusted_logit(i, logits[i]) * inv_temp - max_scaled));
             if (cum >= target) {
                 return static_cast<uint32_t>(i);
             }
@@ -318,7 +406,7 @@ uint32_t sample_token(const float* logits,
     const size_t k = static_cast<size_t>(top_k);
 
     for (size_t i = 0; i < vocab_size; ++i) {
-        const float v = logits[i];
+        const float v = adjusted_logit(i, logits[i]);
 
         if (heap_size < k) {
             scratch_ids[heap_size] = static_cast<uint32_t>(i);
@@ -348,7 +436,81 @@ uint32_t sample_token(const float* logits,
         scratch_vals[i] = static_cast<float>(std::exp(scratch_vals[i] * inv_temp - max_scaled));
     }
 
-    return sample_from_weights_sorted_desc(scratch_ids, scratch_vals, heap_size, top_p, rng_state);
+    size_t count = heap_size;
+
+    // min_p filter within candidate set: p_i >= min_p * p_max  <=> w_i >= min_p * w_max.
+    if (min_p > 0.0f && count > 0) {
+        const float w_max = scratch_vals[0];
+        const float cutoff = min_p * w_max;
+        size_t kept = 0;
+        for (size_t i = 0; i < count; ++i) {
+            if (scratch_vals[i] >= cutoff) {
+                scratch_ids[kept] = scratch_ids[i];
+                scratch_vals[kept] = scratch_vals[i];
+                ++kept;
+            }
+        }
+        if (kept > 0) {
+            count = kept;
+        }
+    }
+
+    // typical sampling within the candidate set. For now we treat typical_p as mutually exclusive with top_p.
+    // (This keeps the implementation simple and avoids extra sorting passes in v0.1.)
+    if (typical_p < 1.0f && count > 1 && count <= 256) {
+        double sum = 0.0;
+        for (size_t i = 0; i < count; ++i) {
+            sum += static_cast<double>(scratch_vals[i]);
+        }
+        if (sum > 0.0) {
+            const double inv_sum = 1.0 / sum;
+            double entropy = 0.0;
+            for (size_t i = 0; i < count; ++i) {
+                const double p = static_cast<double>(scratch_vals[i]) * inv_sum;
+                if (p > 0.0) {
+                    entropy += -p * std::log(p);
+                }
+            }
+
+            float dist[256];
+            for (size_t i = 0; i < count; ++i) {
+                const double p = static_cast<double>(scratch_vals[i]) * inv_sum;
+                const double neg_logp = (p > 0.0) ? -std::log(p) : 1e30;
+                dist[i] = static_cast<float>(std::fabs(neg_logp - entropy));
+            }
+
+            // Insertion sort by dist ascending (count <= 256).
+            for (size_t i = 1; i < count; ++i) {
+                const float d = dist[i];
+                const uint32_t id = scratch_ids[i];
+                const float w = scratch_vals[i];
+                size_t j = i;
+                while (j > 0 && dist[j - 1] > d) {
+                    dist[j] = dist[j - 1];
+                    scratch_ids[j] = scratch_ids[j - 1];
+                    scratch_vals[j] = scratch_vals[j - 1];
+                    --j;
+                }
+                dist[j] = d;
+                scratch_ids[j] = id;
+                scratch_vals[j] = w;
+            }
+
+            double cum_p = 0.0;
+            size_t cutoff = count;
+            for (size_t i = 0; i < count; ++i) {
+                cum_p += static_cast<double>(scratch_vals[i]) * inv_sum;
+                if (cum_p >= static_cast<double>(typical_p)) {
+                    cutoff = i + 1;
+                    break;
+                }
+            }
+
+            return sample_from_weights_unsorted(scratch_ids, scratch_vals, cutoff, rng_state);
+        }
+    }
+
+    return sample_from_weights_sorted_desc(scratch_ids, scratch_vals, count, top_p, rng_state);
 }
 
 } // namespace astral::inference

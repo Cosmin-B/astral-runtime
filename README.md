@@ -135,6 +135,22 @@ taskset -c 0 env ASTRAL_LLAMA_LOG=none \
 perf report
 ```
 
+Embeddings hotspot profile:
+
+```bash
+sudo sysctl -w kernel.perf_event_paranoid=1
+
+taskset -c 0 env ASTRAL_LLAMA_LOG=none \
+  ASTRAL_BENCH_RUNTIME_THREADS=1 \
+  ASTRAL_BENCH_MODEL_THREADS=1 \
+  ASTRAL_BENCH_EMB_BACKEND=cpu \
+  ASTRAL_BENCH_EMB_MODEL=tests/models/all-MiniLM-L6-v2-Q2_K.gguf \
+  perf record -F 999 -g -- \
+  ./build/release-test/benchmarks/astral_benchmarks --only embed --embed-iters 2000
+
+perf report
+```
+
 Bound-ness approximation (IPC + miss rates):
 
 ```bash
@@ -150,7 +166,8 @@ taskset -c 0 env ASTRAL_LLAMA_LOG=none \
 
 Notes:
 - Start with `perf stat -r 1` (it repeats the full command `N` times).
-- `perf stat --topdown` is only available when your kernel/PMU exposes Topdown/TMA metric groups.
+- `perf stat --topdown` is only available when your kernel/PMU exposes Topdown/TMA metric groups (common on Intel; often missing on AMD).
+- Check availability with `perf list metricgroup | rg -i 'topdown|tma'`.
 
 ## Usage Example (C API)
 

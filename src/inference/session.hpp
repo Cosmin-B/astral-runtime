@@ -49,6 +49,11 @@ enum class SessionState : uint32_t {
 /// - stream_read() may be called from different thread (consumer thread)
 /// - Internal state is atomic where needed
 struct Session {
+    Session(Model* model_,
+            void* allocator_memory_,
+            size_t allocator_capacity_,
+            const AstralSessionDesc& desc_) noexcept;
+
     AstralHandle handle; // Public handle (type/index/generation)
 
     // Model reference
@@ -83,12 +88,21 @@ struct Session {
 
     // Sampling buffers (allocated from allocator)
     uint32_t vocab_size;         // Cached vocabulary size
+    uint32_t ctx_size;           // Cached context size (tokens)
     uint32_t* indices_buffer;    // Size: vocab_size (used for full-vocab top-p fallback)
     uint32_t* sample_ids;        // Size: sample_capacity (top-k candidates)
     float* sample_logits;        // Size: sample_capacity (top-k candidate logits / weights)
     uint32_t sample_capacity;    // Candidate capacity for top-k sampling
     SamplerConfig sampler_cfg;
     uint32_t rng_state;          // Mutable RNG state for sampling
+
+    // Sampling penalties state (allocated lazily; not a hot-path allocation)
+    uint16_t* token_counts;      // Size: vocab_size (counts within repeat_last_n window)
+    uint32_t* recent_tokens;     // Size: recent_capacity (ring of last N tokens)
+    uint32_t recent_capacity;    // Effective repeat_last_n
+    uint32_t recent_pos;         // Ring write position
+    uint32_t recent_size;        // Number of valid entries (<= recent_capacity)
+    int32_t token_nl;            // Token id for "\\n" if resolvable, else -1
 
     // Statistics
     uint64_t total_tokens;       // Total tokens generated
@@ -102,6 +116,12 @@ struct Session {
     // Special tokens (cached from backend)
     int32_t token_bos;
     int32_t token_eos;
+
+    // Stop sequences (tokenized; fixed-size storage for embedded-friendliness).
+    uint32_t stop_seq_count;
+    uint8_t stop_seq_lens[16];
+    int32_t stop_seq_tokens[16][32];
+    uint32_t stop_max_len; // max(stop_seq_lens)
 };
 
 /// Create an inference session.
@@ -200,6 +220,15 @@ AstralErr session_stats(Session* session, AstralStats* out_stats);
 ///                If provided, new_desc->model must match the session model handle.
 /// @return ASTRAL_OK on success, error code on failure
 AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc);
+
+/// Configure sampler controls for a session (extended v0.2 surface).
+AstralErr session_set_sampler(Session* session, const AstralSamplerDesc* desc);
+
+/// Stop sequences: clear all.
+AstralErr session_stop_clear(Session* session);
+
+/// Stop sequences: add UTF-8 text (tokenized once).
+AstralErr session_stop_add_utf8(Session* session, AstralSpanU8 utf8);
 
 /// Read tokens from stream.
 ///

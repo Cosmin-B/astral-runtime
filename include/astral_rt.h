@@ -327,11 +327,53 @@ typedef struct AstralModelInfo {
     int32_t token_eos;     /** EOS token id (or <0 if none) */
 } AstralModelInfo;
 
+// ============================================================================
+// Capabilities / Limits
+// ============================================================================
+
+typedef uint64_t AstralCaps;
+enum {
+    ASTRAL_CAP_NONE = 0,
+
+    // Core features (provider-agnostic).
+    ASTRAL_CAP_SAMPLER_EXT = 1ull << 0,   // Extended sampler controls via AstralSamplerDesc
+    ASTRAL_CAP_STOP_SEQS   = 1ull << 1,   // Stop sequence support (tokenized; core-owned)
+
+    // Optional features (provider-dependent).
+    ASTRAL_CAP_EMBEDDINGS  = 1ull << 16,  // Embeddings API supported for this model
+    ASTRAL_CAP_GPU_OFFLOAD = 1ull << 17,  // Build/provider supports GPU offload
+    ASTRAL_CAP_LORA        = 1ull << 18,  // LoRA/adapters supported (not yet implemented in v0.1)
+    ASTRAL_CAP_GRAMMAR     = 1ull << 19,  // Grammar-constrained decoding supported (not yet implemented in v0.1)
+    ASTRAL_CAP_LOGPROBS    = 1ull << 20,  // Per-token metadata/logprobs supported (not yet implemented in v0.1)
+    ASTRAL_CAP_KV_STATE    = 1ull << 21,  // Session KV save/load supported (not yet implemented in v0.1)
+};
+
+typedef struct AstralModelLimits {
+    uint32_t vocab_size;
+    uint32_t ctx_size;
+    uint32_t max_batch;  // 0 if unknown/unreported
+    uint32_t max_slots;  // 0 if not applicable
+} AstralModelLimits;
+
 /**
  * Get model metadata.
  * Thread-safety: Safe to call from multiple threads.
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_info(AstralHandle model, AstralModelInfo* out_info);
+
+/**
+ * Query capability bits for a model.
+ *
+ * Thread-safety: Safe to call from multiple threads.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_caps(AstralHandle model, AstralCaps* out_caps);
+
+/**
+ * Query model limits (best-effort; fields may be 0 if unknown).
+ *
+ * Thread-safety: Safe to call from multiple threads.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_limits(AstralHandle model, AstralModelLimits* out_limits);
 
 /**
  * Get embedding vector dimension for a model.
@@ -406,6 +448,32 @@ typedef struct AstralSessionDesc {
     uint32_t seed;             /** RNG seed for sampling (0 = auto) */
 } AstralSessionDesc;
 
+/**
+ * Extended sampler controls (v0.2+).
+ *
+ * Notes:
+ * - `size` must be set to sizeof(AstralSamplerDesc).
+ * - Any fields not supported by the current build/provider will be clamped/ignored
+ *   (and capabilities should be checked via `astral_model_caps()`).
+ */
+typedef struct AstralSamplerDesc {
+    uint32_t size;              // sizeof(AstralSamplerDesc)
+    float temperature;          // 0.0 = greedy
+    uint32_t top_k;             // 0 = disabled
+    float top_p;                // <=0 or >=1 = disabled
+    float min_p;                // 0.0 = disabled
+    float typical_p;            // 1.0 = disabled
+    float repeat_penalty;       // 1.0 = disabled
+    int32_t repeat_last_n;      // 0 = disabled, -1 = use ctx size (treated as a clamp)
+    uint8_t penalize_nl;        // 1 = penalize newline tokens
+    uint8_t _padding0[3];
+    float presence_penalty;     // 0.0 = disabled
+    float frequency_penalty;    // 0.0 = disabled
+    uint32_t mirostat;          // 0 = disabled (not yet implemented in v0.1)
+    float mirostat_tau;         // (not yet implemented in v0.1)
+    float mirostat_eta;         // (not yet implemented in v0.1)
+} AstralSamplerDesc;
+
 // Compile-time layout validation for configs.
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 64, "AstralInit must be 64 bytes on 64-bit");
@@ -470,6 +538,39 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_wait(AstralHandle session, uint3
  *             session's original capacity returns ASTRAL_E_INVALID.
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_reset(AstralHandle session, const AstralSessionDesc* desc);
+
+/**
+ * Configure sampler controls for a session.
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ *
+ * Thread-safety: Not thread-safe; single-threaded access per session.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_sampler(AstralHandle session, const AstralSamplerDesc* desc);
+
+/**
+ * Clear all stop sequences for a session.
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ *
+ * Thread-safety: Not thread-safe; single-threaded access per session.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_clear(AstralHandle session);
+
+/**
+ * Add a stop sequence (UTF-8). The text is tokenized once and matched by tokens.
+ *
+ * Stop sequences are not emitted to the UTF-8 stream; streaming may delay output by up to
+ * the maximum stop sequence length to preserve this guarantee.
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ *
+ * Thread-safety: Not thread-safe; single-threaded access per session.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_add_utf8(AstralHandle session, AstralSpanU8 utf8);
 
 /**
  * Create an inference session.
