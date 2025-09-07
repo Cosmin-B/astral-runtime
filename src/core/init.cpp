@@ -84,6 +84,9 @@ struct AstralRuntime {
     // NUMA configuration
     uint32_t numa_node;
 
+    // Memory policy
+    bool enable_hugepages;
+
     AstralRuntime()
         : initialized(false)
         , vm_base(nullptr)
@@ -94,7 +97,8 @@ struct AstralRuntime {
         , log_user(nullptr)
         , thread_count(0)
         , workers(nullptr)
-        , numa_node(0xFFFFFFFF) {}
+        , numa_node(0xFFFFFFFF)
+        , enable_hugepages(false) {}
 };
 
 // Global runtime singleton
@@ -194,6 +198,10 @@ void runtime_memory_stats(uint64_t* out_committed, uint64_t* out_reserved) {
     }
 }
 
+bool runtime_hugepages_enabled() {
+    return g_runtime.enable_hugepages;
+}
+
 } // namespace astral::core
 
 // ============================================================================
@@ -253,6 +261,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init(const AstralInit* cfg) {
     g_runtime.log_cb = cfg->log_cb;
     g_runtime.log_user = cfg->log_user;
     g_runtime.numa_node = cfg->numa_node;
+    g_runtime.enable_hugepages = (cfg->enable_hugepages != 0);
 
     // Determine thread count
     g_runtime.thread_count = cfg->thread_count;

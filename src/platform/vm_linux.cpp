@@ -116,17 +116,6 @@ bool vm_try_hugepages(void* addr, size_t size) {
     return false;
   }
 
-  // Check alignment requirements
-  // Huge pages require 2MB alignment on x86-64/aarch64
-  const uintptr_t addr_int = reinterpret_cast<uintptr_t>(addr);
-  if (addr_int % kHugePageSize != 0) {
-    return false; // Not aligned to huge page boundary
-  }
-
-  if (size % kHugePageSize != 0) {
-    return false; // Size not multiple of huge page size
-  }
-
   // Try to use transparent huge pages (THP)
   // MADV_HUGEPAGE: advise kernel to use huge pages for this region
   //
@@ -144,6 +133,8 @@ bool vm_try_hugepages(void* addr, size_t size) {
     // This is not fatal; we fall back to regular pages
     return false;
   }
+
+  (void)kHugePageSize;
 
   // Alternative: use hugetlbfs or MAP_HUGETLB flag in mmap
   // For now, we rely on THP which is more portable and doesn't require

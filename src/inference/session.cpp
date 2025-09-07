@@ -244,6 +244,10 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
 
     // Pre-commit all memory ( avoid page faults in hot path)
     platform::vm_commit(allocator_memory, allocator_capacity);
+    if (::astral::core::runtime_hugepages_enabled()) {
+        // Best-effort: ignore failure.
+        platform::vm_try_hugepages(allocator_memory, allocator_capacity);
+    }
 
     // Allocate session struct on heap
     // Use malloc instead of new to avoid default constructor issues
