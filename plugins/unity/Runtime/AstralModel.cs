@@ -51,6 +51,46 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Query model capability bits (provider-agnostic fast path for wrappers).
+        /// Thread-safety: Safe to call from multiple threads.
+        /// </summary>
+        public ulong GetCaps()
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            int err = AstralNative.astral_model_caps(m_handle, out ulong caps);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_model_caps failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+
+            return caps;
+        }
+
+        /// <summary>
+        /// Query model limits (best-effort; fields may be 0 if unknown).
+        /// Thread-safety: Safe to call from multiple threads.
+        /// </summary>
+        public AstralNative.AstralModelLimits GetLimits()
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            int err = AstralNative.astral_model_limits(m_handle, out var limits);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_model_limits failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+
+            return limits;
+        }
+
+        /// <summary>
         /// Load a GGUF model.
         /// Thread-safety: Safe to call from multiple threads.
         /// </summary>

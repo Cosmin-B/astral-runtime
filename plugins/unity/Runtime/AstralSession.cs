@@ -7,6 +7,7 @@
 using System;
 using System.Collections;
 using System.Text;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using Unity.Collections;
 
@@ -215,6 +216,96 @@ namespace Astral.Runtime
             }
 
             m_config = config;
+        }
+
+        /// <summary>
+        /// Configure extended sampler controls (v0.2+).
+        /// Preconditions: Must not be decoding (Cancel + Wait first).
+        /// </summary>
+        public void SetSampler(ref AstralNative.AstralSamplerDesc desc)
+        {
+            if (m_disposed)
+            {
+                throw new ObjectDisposedException(nameof(AstralSession));
+            }
+
+            if (desc.size == 0)
+            {
+                desc.size = (uint)Marshal.SizeOf<AstralNative.AstralSamplerDesc>();
+            }
+
+            int err = AstralNative.astral_session_set_sampler(m_handle, ref desc);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"Failed to set sampler: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
+        /// Clear all stop sequences for this session.
+        /// Preconditions: Must not be decoding (Cancel + Wait first).
+        /// </summary>
+        public void StopClear()
+        {
+            if (m_disposed)
+            {
+                throw new ObjectDisposedException(nameof(AstralSession));
+            }
+
+            int err = AstralNative.astral_session_stop_clear(m_handle);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"Failed to clear stop sequences: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
+        /// Add a UTF-8 stop sequence (tokenized once; matched by tokens).
+        /// Preconditions: Must not be decoding (Cancel + Wait first).
+        /// </summary>
+        public void StopAdd(string utf8)
+        {
+            if (m_disposed)
+            {
+                throw new ObjectDisposedException(nameof(AstralSession));
+            }
+
+            NativeArray<byte> tmp;
+            var span = AstralNative.AstralSpanU8.FromString(utf8, out tmp);
+            try
+            {
+                int err = AstralNative.astral_session_stop_add_utf8(m_handle, span);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"Failed to add stop sequence: {AstralRuntime.GetErrorString(err)}", err);
+                }
+            }
+            finally
+            {
+                if (tmp.IsCreated)
+                {
+                    tmp.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Add a UTF-8 stop sequence (zero-copy).
+        /// Preconditions: Must not be decoding (Cancel + Wait first).
+        /// </summary>
+        public void StopAdd(NativeArray<byte> utf8)
+        {
+            if (m_disposed)
+            {
+                throw new ObjectDisposedException(nameof(AstralSession));
+            }
+
+            var span = AstralNative.AstralSpanU8.FromNativeArray(utf8);
+            int err = AstralNative.astral_session_stop_add_utf8(m_handle, span);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"Failed to add stop sequence: {AstralRuntime.GetErrorString(err)}", err);
+            }
         }
 
         /// <summary>

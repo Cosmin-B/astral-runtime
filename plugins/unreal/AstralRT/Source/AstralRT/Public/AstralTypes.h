@@ -70,6 +70,61 @@ struct ASTRALRT_API FAstralSessionDesc
 };
 
 USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralSamplerDesc
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    float Temperature = 0.7f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 TopK = 40;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    float TopP = 0.95f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    float MinP = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    float TypicalP = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    float RepeatPenalty = 1.0f;
+
+    // 0 = disabled, -1 = use ctx size.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    int32 RepeatLastN = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    bool bPenalizeNewline = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    float PresencePenalty = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    float FrequencyPenalty = 0.0f;
+};
+
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralModelLimits
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    uint32 VocabSize = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    uint32 ContextSize = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    uint32 MaxBatch = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    uint32 MaxSlots = 0;
+};
+
+USTRUCT(BlueprintType)
 struct ASTRALRT_API FAstralStats
 {
     GENERATED_BODY()
@@ -89,4 +144,3 @@ struct ASTRALRT_API FAstralStats
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
     uint64 BytesReserved = 0;
 };
-

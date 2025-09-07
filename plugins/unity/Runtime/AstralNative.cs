@@ -255,8 +255,35 @@ namespace Astral.Runtime
             public int token_eos;
         }
 
+        // Mirrors native typedef: `typedef uint64_t AstralCaps;`
+        public const ulong ASTRAL_CAP_NONE = 0;
+        public const ulong ASTRAL_CAP_SAMPLER_EXT = 1UL << 0;
+        public const ulong ASTRAL_CAP_STOP_SEQS = 1UL << 1;
+
+        public const ulong ASTRAL_CAP_EMBEDDINGS = 1UL << 16;
+        public const ulong ASTRAL_CAP_GPU_OFFLOAD = 1UL << 17;
+        public const ulong ASTRAL_CAP_LORA = 1UL << 18;
+        public const ulong ASTRAL_CAP_GRAMMAR = 1UL << 19;
+        public const ulong ASTRAL_CAP_LOGPROBS = 1UL << 20;
+        public const ulong ASTRAL_CAP_KV_STATE = 1UL << 21;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralModelLimits
+        {
+            public uint vocab_size;
+            public uint ctx_size;
+            public uint max_batch;
+            public uint max_slots;
+        }
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_model_info(AstralHandle model, out AstralModelInfo out_info);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_caps(AstralHandle model, out ulong out_caps);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_limits(AstralHandle model, out AstralModelLimits out_limits);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_model_embedding_dim(AstralHandle model, out uint out_dim);
@@ -293,6 +320,52 @@ namespace Astral.Runtime
             public float top_p;              // Top-P (nucleus) sampling
             public byte stream_enabled;      // Enable token streaming
             public uint seed;                // RNG seed (0 = auto)
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralSamplerDesc
+        {
+            public uint size;
+            public float temperature;
+            public uint top_k;
+            public float top_p;
+            public float min_p;
+            public float typical_p;
+            public float repeat_penalty;
+            public int repeat_last_n;
+            public byte penalize_nl;
+            public byte _padding0;
+            public byte _padding1;
+            public byte _padding2;
+            public float presence_penalty;
+            public float frequency_penalty;
+            public uint mirostat;
+            public float mirostat_tau;
+            public float mirostat_eta;
+
+            public static AstralSamplerDesc DefaultFromSession(in AstralSessionDesc session)
+            {
+                return new AstralSamplerDesc
+                {
+                    size = (uint)Marshal.SizeOf<AstralSamplerDesc>(),
+                    temperature = session.temperature,
+                    top_k = session.top_k,
+                    top_p = session.top_p,
+                    min_p = 0.0f,
+                    typical_p = 1.0f,
+                    repeat_penalty = 1.0f,
+                    repeat_last_n = 0,
+                    penalize_nl = 0,
+                    _padding0 = 0,
+                    _padding1 = 0,
+                    _padding2 = 0,
+                    presence_penalty = 0.0f,
+                    frequency_penalty = 0.0f,
+                    mirostat = 0,
+                    mirostat_tau = 0.0f,
+                    mirostat_eta = 0.0f,
+                };
+            }
         }
 
         /// <summary>
@@ -334,6 +407,15 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_reset(AstralHandle session, ref AstralSessionDesc desc);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_set_sampler(AstralHandle session, ref AstralSamplerDesc desc);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_stop_clear(AstralHandle session);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_stop_add_utf8(AstralHandle session, AstralSpanU8 utf8);
 
         /// <summary>
         /// Read tokens from stream.

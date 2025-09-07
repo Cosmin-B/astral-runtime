@@ -48,6 +48,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Reset(const FAstralSessionDesc& Desc);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool SetSampler(const FAstralSamplerDesc& Desc);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool StopClear();
+
+    bool StopAddUtf8Bytes(TConstArrayView<uint8> Utf8Data);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool StopAddString(const FString& Utf8Text);
+
     int32 StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs = 0);
 
     UFUNCTION(BlueprintCallable, Category = "Astral")

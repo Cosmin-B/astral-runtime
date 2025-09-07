@@ -26,6 +26,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool GetEmbeddingDim(int32& OutDim) const;
 
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool GetCaps(uint64& OutCaps) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool GetLimits(FAstralModelLimits& OutLimits) const;
+
     uint64 GetHandle() const { return ModelHandle; }
 
     virtual void BeginDestroy() override;

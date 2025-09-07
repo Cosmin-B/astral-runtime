@@ -72,6 +72,12 @@ bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
         return false;
     }
 
+    AstralCaps caps = 0;
+    err = astral_model_caps(model, &caps);
+    TestEqual(TEXT("astral_model_caps"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+    TestTrue(TEXT("mock caps include stop seqs"), (caps & ASTRAL_CAP_STOP_SEQS) != 0);
+    TestTrue(TEXT("mock caps include sampler ext"), (caps & ASTRAL_CAP_SAMPLER_EXT) != 0);
+
     AstralSessionDesc session_desc{};
     session_desc.model = model;
     session_desc.max_tokens = 32;
@@ -138,6 +144,20 @@ bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
 
     err = astral_session_reset(session, &session_desc);
     TestEqual(TEXT("astral_session_reset"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+
+    err = astral_session_stop_clear(session);
+    TestEqual(TEXT("astral_session_stop_clear"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+    const char* stop = "backend";
+    AstralSpanU8 stop_span{};
+    stop_span.data = reinterpret_cast<const uint8_t*>(stop);
+    stop_span.len = static_cast<uint32_t>(FCStringAnsi::Strlen(stop));
+    err = astral_session_stop_add_utf8(session, stop_span);
+    TestEqual(TEXT("astral_session_stop_add_utf8"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+
+    TArray<uint8> out2;
+    const bool ok2 = run_once(out2);
+    TestTrue(TEXT("second decode ok"), ok2);
+    TestTrue(TEXT("stop suppresses backend suffix"), bytes_equal_ascii(out2, "mock-"));
     if (err != ASTRAL_OK) {
         astral_session_destroy(session);
         astral_model_release(model);

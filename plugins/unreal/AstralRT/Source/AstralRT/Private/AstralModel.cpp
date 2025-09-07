@@ -79,6 +79,47 @@ bool UAstralModel::GetEmbeddingDim(int32& OutDim) const
     return true;
 }
 
+bool UAstralModel::GetCaps(uint64& OutCaps) const
+{
+    OutCaps = 0;
+    if (ModelHandle == 0)
+    {
+        return false;
+    }
+
+    AstralCaps Caps = 0;
+    const AstralErr Err = astral_model_caps(static_cast<AstralHandle>(ModelHandle), &Caps);
+    if (Err != ASTRAL_OK)
+    {
+        return false;
+    }
+
+    OutCaps = static_cast<uint64>(Caps);
+    return true;
+}
+
+bool UAstralModel::GetLimits(FAstralModelLimits& OutLimits) const
+{
+    OutLimits = FAstralModelLimits{};
+    if (ModelHandle == 0)
+    {
+        return false;
+    }
+
+    AstralModelLimits Native{};
+    const AstralErr Err = astral_model_limits(static_cast<AstralHandle>(ModelHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return false;
+    }
+
+    OutLimits.VocabSize = Native.vocab_size;
+    OutLimits.ContextSize = Native.ctx_size;
+    OutLimits.MaxBatch = Native.max_batch;
+    OutLimits.MaxSlots = Native.max_slots;
+    return true;
+}
+
 void UAstralModel::Release()
 {
     if (ModelHandle == 0)

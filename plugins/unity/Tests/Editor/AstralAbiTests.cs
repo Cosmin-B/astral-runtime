@@ -37,6 +37,7 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(expectedSpan, Marshal.SizeOf<AstralNative.AstralMutSpanU8>());
 
             Assert.AreEqual(8, Marshal.SizeOf<AstralNative.AstralHandle>());
+            Assert.AreEqual(8, Marshal.SizeOf<ulong>()); // AstralCaps
 
             int expectedInit = IntPtr.Size == 8 ? 64 : 48;
             Assert.AreEqual(expectedInit, Marshal.SizeOf<AstralNative.AstralInit>());
@@ -45,6 +46,8 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(expectedModelDesc, Marshal.SizeOf<AstralNative.AstralModelDesc>());
 
             Assert.AreEqual(32, Marshal.SizeOf<AstralNative.AstralSessionDesc>());
+            Assert.AreEqual(16, Marshal.SizeOf<AstralNative.AstralModelLimits>());
+            Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralSamplerDesc>());
             Assert.AreEqual(40, Marshal.SizeOf<AstralNative.AstralStats>());
         }
 
@@ -122,6 +125,87 @@ namespace Astral.Runtime.Tests
 
                 string second = RunMockOnce(session);
                 Assert.AreEqual("mock-backend", second);
+            }
+            finally
+            {
+                if (session.IsValid)
+                {
+                    AstralNative.astral_session_destroy(session);
+                }
+                if (model.IsValid)
+                {
+                    AstralNative.astral_model_release(model);
+                }
+                AstralNative.astral_shutdown();
+            }
+        }
+
+        [Test]
+        public void MockBackend_StopSequences_SuppressOutput_Works()
+        {
+            RequireNative();
+
+            var cfg = new AstralNative.AstralInit
+            {
+                reserve_bytes = 256UL << 20,
+                thread_count = 1,
+                numa_node = 0xFFFFFFFFu,
+                enable_hugepages = 0
+            };
+
+            int err = AstralNative.astral_init(ref cfg);
+            Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+
+            AstralNative.AstralHandle model = AstralNative.AstralHandle.Invalid;
+            AstralNative.AstralHandle session = AstralNative.AstralHandle.Invalid;
+
+            try
+            {
+                using var backendNameBytes = new NativeArray<byte>(
+                    Encoding.UTF8.GetBytes("mock"),
+                    Allocator.Temp
+                );
+
+                var modelDesc = new AstralNative.AstralModelDesc
+                {
+                    model_path = new AstralNative.AstralSpanU8 { data = IntPtr.Zero, len = 0 },
+                    backend_name = AstralNative.AstralSpanU8.FromNativeArray(backendNameBytes),
+                    gpu_layers = 0,
+                    n_ctx = 0,
+                    n_batch = 0,
+                    n_threads = 0,
+                    embeddings_only = 0
+                };
+
+                err = AstralNative.astral_model_load(ref modelDesc, out model);
+                Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+                Assert.True(model.IsValid);
+
+                var sessionDesc = new AstralNative.AstralSessionDesc
+                {
+                    model = model,
+                    max_tokens = 64,
+                    temperature = 0.0f,
+                    top_k = 0,
+                    top_p = 1.0f,
+                    stream_enabled = 1,
+                    seed = 1
+                };
+
+                err = AstralNative.astral_session_create(ref sessionDesc, out session);
+                Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+                Assert.True(session.IsValid);
+
+                err = AstralNative.astral_session_stop_clear(session);
+                Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+
+                using var stopBytes = new NativeArray<byte>(Encoding.UTF8.GetBytes("backend"), Allocator.Temp);
+                var stopSpan = AstralNative.AstralSpanU8.FromNativeArray(stopBytes);
+                err = AstralNative.astral_session_stop_add_utf8(session, stopSpan);
+                Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+
+                string outText = RunMockOnce(session);
+                Assert.AreEqual("mock-", outText);
             }
             finally
             {

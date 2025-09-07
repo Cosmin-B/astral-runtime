@@ -171,6 +171,63 @@ bool UAstralSession::Reset(const FAstralSessionDesc& Desc)
     return true;
 }
 
+bool UAstralSession::SetSampler(const FAstralSamplerDesc& Desc)
+{
+    if (SessionHandle == 0)
+    {
+        return false;
+    }
+
+    AstralSamplerDesc Native{};
+    Native.size = sizeof(AstralSamplerDesc);
+    Native.temperature = Desc.Temperature;
+    Native.top_k = Desc.TopK;
+    Native.top_p = Desc.TopP;
+    Native.min_p = Desc.MinP;
+    Native.typical_p = Desc.TypicalP;
+    Native.repeat_penalty = Desc.RepeatPenalty;
+    Native.repeat_last_n = Desc.RepeatLastN;
+    Native.penalize_nl = Desc.bPenalizeNewline ? 1 : 0;
+    Native.presence_penalty = Desc.PresencePenalty;
+    Native.frequency_penalty = Desc.FrequencyPenalty;
+    Native.mirostat = 0;
+    Native.mirostat_tau = 0.0f;
+    Native.mirostat_eta = 0.0f;
+
+    const AstralErr Err = astral_session_set_sampler(static_cast<AstralHandle>(SessionHandle), &Native);
+    return Err == ASTRAL_OK;
+}
+
+bool UAstralSession::StopClear()
+{
+    if (SessionHandle == 0)
+    {
+        return false;
+    }
+    const AstralErr Err = astral_session_stop_clear(static_cast<AstralHandle>(SessionHandle));
+    return Err == ASTRAL_OK;
+}
+
+bool UAstralSession::StopAddUtf8Bytes(TConstArrayView<uint8> Utf8Data)
+{
+    if (SessionHandle == 0)
+    {
+        return false;
+    }
+
+    AstralSpanU8 Span{};
+    Span.data = Utf8Data.GetData();
+    Span.len = static_cast<uint32_t>(Utf8Data.Num());
+    const AstralErr Err = astral_session_stop_add_utf8(static_cast<AstralHandle>(SessionHandle), Span);
+    return Err == ASTRAL_OK;
+}
+
+bool UAstralSession::StopAddString(const FString& Utf8Text)
+{
+    FTCHARToUTF8 Utf8(*Utf8Text);
+    return StopAddUtf8Bytes(TConstArrayView<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()));
+}
+
 int32 UAstralSession::StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs)
 {
     if (SessionHandle == 0)
