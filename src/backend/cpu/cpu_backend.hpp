@@ -17,6 +17,7 @@
 struct llama_model;
 struct llama_context;
 struct llama_vocab;
+struct llama_sampler;
 
 namespace astral::backend {
 
@@ -47,7 +48,22 @@ struct CpuSession {
     llama_context* ctx; // Per-session inference context (KV cache)
 
     uint32_t n_batch;
-    bool has_logits; // True once prompt has been fed and logits are available.
+    uint32_t n_slots;     // Number of supported slots (llama n_seq_max)
+    uint32_t active_slot; // Currently selected slot
+
+    // Per-slot state
+    int32_t slot_pos[32];
+    bool slot_has_logits[32];
+
+    // Optional generation controls (per-slot; stateful)
+    ::llama_sampler* grammar[32]; // nullptr if no grammar for this slot
+
+    // Preallocated llama_batch buffers (no allocations in hot paths)
+    int32_t* batch_pos;
+    int32_t* batch_n_seq_id;
+    int32_t* batch_seq_id_storage;
+    int32_t** batch_seq_id_ptrs;
+    int8_t* batch_logits;
 };
 
 /// CPU backend embedder context (opaque handle returned by embedder_create()).

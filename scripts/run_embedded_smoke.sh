@@ -25,3 +25,6 @@ echo "[INFO] Running embedded CLI smoke..."
   --sink none \
   --tokens 64 \
   --reset
+
+echo "[INFO] Running embedded concurrency contract..."
+"${ROOT_DIR}/build/embedded-x86_64/examples/embedded/astral_concurrency_contract"

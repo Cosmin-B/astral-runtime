@@ -39,6 +39,11 @@ if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
     # Configure llama.cpp build options
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
     set(GGML_STATIC ON CACHE BOOL "Build static library" FORCE)
+    # Needed for JSON schema -> GBNF conversion helper (common/json-schema-to-grammar.*).
+    set(LLAMA_BUILD_COMMON ON CACHE BOOL "Enable llama.cpp common library" FORCE)
+    # Keep llama.cpp common dependency-light (we don't use downloader codepaths).
+    set(LLAMA_CURL OFF CACHE BOOL "Disable llama.cpp curl support" FORCE)
+    set(LLAMA_HTTPLIB OFF CACHE BOOL "Disable llama.cpp httplib support" FORCE)
     set(LLAMA_BUILD_TESTS OFF CACHE BOOL "Disable llama.cpp tests" FORCE)
     set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "Disable llama.cpp examples" FORCE)
     set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Disable llama.cpp server" FORCE)

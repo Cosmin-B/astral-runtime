@@ -358,23 +358,43 @@ AstralErr ASTRAL_CALL sample_embedder_embed(void* embedder_ctx, const int32_t* t
 }
 
 static const AstralBackendOps kOps = {
-    /*model_load=*/sample_model_load,
-    /*model_unload=*/sample_model_unload,
-    /*tokenize=*/sample_tokenize,
-    /*detokenize=*/sample_detokenize,
-    /*model_info=*/sample_model_info,
-    /*model_special_tokens=*/sample_model_special_tokens,
-    /*model_embedding_dim=*/sample_model_embedding_dim,
-    /*session_create=*/sample_session_create,
-    /*session_destroy=*/sample_session_destroy,
-    /*session_reset=*/sample_session_reset,
-    /*session_feed=*/sample_session_feed,
-    /*session_logits=*/sample_session_logits,
-    /*session_accept=*/sample_session_accept,
-    /*embedder_create=*/sample_embedder_create,
-    /*embedder_destroy=*/sample_embedder_destroy,
-    /*embedder_reset=*/sample_embedder_reset,
-    /*embedder_embed=*/sample_embedder_embed,
+    .model_load = sample_model_load,
+    .model_unload = sample_model_unload,
+
+    .tokenize = sample_tokenize,
+    .detokenize = sample_detokenize,
+
+    .model_info = sample_model_info,
+    .model_special_tokens = sample_model_special_tokens,
+    .model_embedding_dim = sample_model_embedding_dim,
+
+    .session_create = sample_session_create,
+    .session_destroy = sample_session_destroy,
+    .session_reset = sample_session_reset,
+    .session_feed = sample_session_feed,
+    .session_logits = sample_session_logits,
+    .session_accept = sample_session_accept,
+
+    .embedder_create = sample_embedder_create,
+    .embedder_destroy = sample_embedder_destroy,
+    .embedder_reset = sample_embedder_reset,
+    .embedder_embed = sample_embedder_embed,
+
+    .session_grammar_set_gbnf = nullptr,
+    .session_grammar_set_json_schema = nullptr,
+    .session_grammar_clear = nullptr,
+    .session_apply_grammar = nullptr,
+
+    .session_state_size = nullptr,
+    .session_state_save = nullptr,
+    .session_state_load = nullptr,
+
+    .model_adapter_load = nullptr,
+    .model_adapter_unload = nullptr,
+    .session_adapter_clear = nullptr,
+    .session_adapter_add = nullptr,
+
+    .session_set_slot = nullptr,
 };
 
 static const AstralBackendProvider kProvider = {

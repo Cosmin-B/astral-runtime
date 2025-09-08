@@ -79,6 +79,38 @@ typedef struct AstralBackendOps {
                                              uint32_t count,
                                              float* out_vec,
                                              uint32_t vec_dim);
+
+    // --------------------------------------------------------------------
+    // Generation controls (optional, provider-specific support)
+    // --------------------------------------------------------------------
+
+    // Grammar (GBNF) support.
+    // The provider owns the grammar object; it is associated with a single session.
+    // Providers that don't support grammar should set these to NULL.
+    AstralErr (ASTRAL_CALL * session_grammar_set_gbnf)(void* session_ctx, AstralSpanU8 gbnf, AstralSpanU8 root);
+    // Optional: JSON schema grammar. Providers may compile this to an internal grammar representation.
+    // Providers that don't support JSON schema should set this to NULL.
+    AstralErr (ASTRAL_CALL * session_grammar_set_json_schema)(void* session_ctx, AstralSpanU8 json_schema);
+    AstralErr (ASTRAL_CALL * session_grammar_clear)(void* session_ctx);
+    // Apply grammar constraints to a candidate list (in-place).
+    // `tokens[i]` corresponds to `logits[i]` (logits are mutable scratch; set -inf for disallowed).
+    AstralErr (ASTRAL_CALL * session_apply_grammar)(void* session_ctx, uint32_t* tokens, float* logits, uint32_t count);
+
+    // KV/session state (save/load) support.
+    // Providers should return ASTRAL_E_UNSUPPORTED if not implemented.
+    AstralErr (ASTRAL_CALL * session_state_size)(void* session_ctx, uint64_t* out_bytes);
+    AstralErr (ASTRAL_CALL * session_state_save)(void* session_ctx, uint8_t* out_bytes, uint64_t capacity, uint64_t* out_written);
+    AstralErr (ASTRAL_CALL * session_state_load)(void* session_ctx, const uint8_t* bytes, uint64_t size);
+
+    // LoRA/adapters support.
+    // Adapter lifetime is model-scoped (the adapter references the model).
+    void* (ASTRAL_CALL * model_adapter_load)(void* model_ctx, AstralSpanU8 path, AstralErr* out_err);
+    void (ASTRAL_CALL * model_adapter_unload)(void* model_ctx, void* adapter_ctx);
+    AstralErr (ASTRAL_CALL * session_adapter_clear)(void* session_ctx);
+    AstralErr (ASTRAL_CALL * session_adapter_add)(void* session_ctx, void* adapter_ctx, float scale);
+
+    // Slots (parallel prompts) support.
+    AstralErr (ASTRAL_CALL * session_set_slot)(void* session_ctx, uint32_t slot_id);
 } AstralBackendOps;
 
 /// Static backend provider descriptor.

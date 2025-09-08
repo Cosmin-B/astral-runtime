@@ -15,6 +15,7 @@
 
 #include <new>
 #include <cstring>
+#include <limits>
 
 namespace astral::backend {
 
@@ -33,6 +34,10 @@ struct MockModel {
 struct MockSession {
     MockModel* model;
     uint32_t step;
+    uint32_t slot_id;
+    uint32_t adapter_count;
+    uint32_t grammar_enabled;
+    uint32_t grammar_allow_token; // 0..255, or 0xFFFFFFFF for none
     bool has_logits;
     float* logits;
 };
@@ -203,6 +208,10 @@ void* mock_session_create(void* model_ctx, const AstralSessionDesc* desc, Astral
 
     session->model = model;
     session->step = 0;
+    session->slot_id = 0;
+    session->adapter_count = 0;
+    session->grammar_enabled = 0;
+    session->grammar_allow_token = 0xFFFFFFFFu;
     session->has_logits = false;
 
     *out_err = ASTRAL_OK;
@@ -226,6 +235,7 @@ AstralErr mock_session_reset(void* session_ctx) {
 
     MockSession* session = static_cast<MockSession*>(session_ctx);
     session->step = 0;
+    session->adapter_count = 0;
     session->has_logits = false;
     return ASTRAL_OK;
 }
@@ -300,6 +310,205 @@ AstralErr mock_session_accept(void* session_ctx, int32_t token) {
     return ASTRAL_OK;
 }
 
+// -----------------------------------------------------------------------------
+// Optional generation controls
+// -----------------------------------------------------------------------------
+
+struct MockAdapter {
+    uint32_t id;
+};
+
+static inline bool parse_u32_dec(AstralSpanU8 s, uint32_t* out) {
+    if (out == nullptr || s.data == nullptr || s.len == 0) {
+        return false;
+    }
+    uint32_t v = 0;
+    for (uint32_t i = 0; i < s.len; ++i) {
+        const uint8_t c = s.data[i];
+        if (c < '0' || c > '9') {
+            return false;
+        }
+        const uint32_t d = static_cast<uint32_t>(c - '0');
+        const uint32_t nv = v * 10u + d;
+        if (nv < v) {
+            return false;
+        }
+        v = nv;
+    }
+    *out = v;
+    return true;
+}
+
+AstralErr mock_session_grammar_set_gbnf(void* session_ctx, AstralSpanU8 gbnf, AstralSpanU8 root) {
+    (void)root;
+    if (session_ctx == nullptr || gbnf.data == nullptr || gbnf.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    MockSession* s = static_cast<MockSession*>(session_ctx);
+
+    // Mock grammar format:
+    // - "allow=<single ascii char>"
+    // - "allow_byte=<0..255>"
+    if (gbnf.len >= 6 && std::memcmp(gbnf.data, "allow=", 6) == 0) {
+        if (gbnf.len != 7) {
+            return ASTRAL_E_INVALID;
+        }
+        const uint8_t ch = gbnf.data[6];
+        s->grammar_allow_token = static_cast<uint32_t>(ch);
+        s->grammar_enabled = 1;
+        return ASTRAL_OK;
+    }
+
+    if (gbnf.len >= 11 && std::memcmp(gbnf.data, "allow_byte=", 11) == 0) {
+        AstralSpanU8 num{};
+        num.data = gbnf.data + 11;
+        num.len = gbnf.len - 11;
+        uint32_t v = 0;
+        if (!parse_u32_dec(num, &v) || v > 255u) {
+            return ASTRAL_E_INVALID;
+        }
+        s->grammar_allow_token = v;
+        s->grammar_enabled = 1;
+        return ASTRAL_OK;
+    }
+
+    return ASTRAL_E_INVALID;
+}
+
+[[maybe_unused]] AstralErr mock_session_grammar_set_json_schema(void* session_ctx, AstralSpanU8 json_schema) {
+    (void)session_ctx;
+    (void)json_schema;
+    return ASTRAL_E_UNSUPPORTED;
+}
+
+AstralErr mock_session_grammar_clear(void* session_ctx) {
+    if (session_ctx == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    MockSession* s = static_cast<MockSession*>(session_ctx);
+    s->grammar_enabled = 0;
+    s->grammar_allow_token = 0xFFFFFFFFu;
+    return ASTRAL_OK;
+}
+
+AstralErr mock_session_apply_grammar(void* session_ctx, uint32_t* tokens, float* logits, uint32_t count) {
+    if (session_ctx == nullptr || tokens == nullptr || logits == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    MockSession* s = static_cast<MockSession*>(session_ctx);
+    if (s->grammar_enabled == 0 || s->grammar_allow_token > 255u) {
+        return ASTRAL_OK;
+    }
+    const uint32_t allowed = s->grammar_allow_token;
+    const float neg_inf = -std::numeric_limits<float>::infinity();
+    for (uint32_t i = 0; i < count; ++i) {
+        if (tokens[i] != allowed) {
+            logits[i] = neg_inf;
+        }
+    }
+    return ASTRAL_OK;
+}
+
+AstralErr mock_session_state_size(void* session_ctx, uint64_t* out_bytes) {
+    if (session_ctx == nullptr || out_bytes == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    *out_bytes = 16;
+    return ASTRAL_OK;
+}
+
+AstralErr mock_session_state_save(void* session_ctx, uint8_t* out_bytes, uint64_t capacity, uint64_t* out_written) {
+    if (session_ctx == nullptr || out_bytes == nullptr || out_written == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (capacity < 16) {
+        return ASTRAL_E_NOMEM;
+    }
+    const MockSession* s = static_cast<const MockSession*>(session_ctx);
+    std::memcpy(out_bytes + 0, &s->step, 4);
+    std::memcpy(out_bytes + 4, &s->slot_id, 4);
+    std::memcpy(out_bytes + 8, &s->grammar_allow_token, 4);
+    std::memcpy(out_bytes + 12, &s->adapter_count, 4);
+    *out_written = 16;
+    return ASTRAL_OK;
+}
+
+AstralErr mock_session_state_load(void* session_ctx, const uint8_t* bytes, uint64_t size) {
+    if (session_ctx == nullptr || bytes == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (size < 16) {
+        return ASTRAL_E_INVALID;
+    }
+    MockSession* s = static_cast<MockSession*>(session_ctx);
+    std::memcpy(&s->step, bytes + 0, 4);
+    std::memcpy(&s->slot_id, bytes + 4, 4);
+    std::memcpy(&s->grammar_allow_token, bytes + 8, 4);
+    std::memcpy(&s->adapter_count, bytes + 12, 4);
+    s->grammar_enabled = (s->grammar_allow_token <= 255u) ? 1u : 0u;
+    s->has_logits = true;
+    return ASTRAL_OK;
+}
+
+void* mock_model_adapter_load(void* model_ctx, AstralSpanU8 path, AstralErr* out_err) {
+    (void)model_ctx;
+    if (out_err == nullptr) {
+        return nullptr;
+    }
+    if (path.data == nullptr || path.len == 0) {
+        *out_err = ASTRAL_E_INVALID;
+        return nullptr;
+    }
+
+    uint32_t h = 2166136261u;
+    for (uint32_t i = 0; i < path.len; ++i) {
+        h ^= static_cast<uint32_t>(path.data[i]);
+        h *= 16777619u;
+    }
+
+    MockAdapter* a = new (std::nothrow) MockAdapter{};
+    if (a == nullptr) {
+        *out_err = ASTRAL_E_NOMEM;
+        return nullptr;
+    }
+    a->id = h;
+    *out_err = ASTRAL_OK;
+    return a;
+}
+
+void mock_model_adapter_unload(void* model_ctx, void* adapter_ctx) {
+    (void)model_ctx;
+    delete static_cast<MockAdapter*>(adapter_ctx);
+}
+
+AstralErr mock_session_adapter_clear(void* session_ctx) {
+    if (session_ctx == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    MockSession* s = static_cast<MockSession*>(session_ctx);
+    s->adapter_count = 0;
+    return ASTRAL_OK;
+}
+
+AstralErr mock_session_adapter_add(void* session_ctx, void* adapter_ctx, float scale) {
+    (void)scale;
+    if (session_ctx == nullptr || adapter_ctx == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    MockSession* s = static_cast<MockSession*>(session_ctx);
+    s->adapter_count++;
+    return ASTRAL_OK;
+}
+
+AstralErr mock_session_set_slot(void* session_ctx, uint32_t slot_id) {
+    if (session_ctx == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    MockSession* s = static_cast<MockSession*>(session_ctx);
+    s->slot_id = slot_id;
+    return ASTRAL_OK;
+}
+
 void* mock_embedder_create(void* model_ctx, AstralErr* out_err) {
     if (out_err == nullptr) {
         return nullptr;
@@ -364,23 +573,43 @@ AstralErr mock_embedder_embed(void* embedder_ctx, const int32_t* tokens, uint32_
 }
 
 static const BackendOps kMockBackendOps = {
-    /*model_load=*/mock_model_load,
-    /*model_unload=*/mock_model_unload,
-    /*tokenize=*/mock_tokenize,
-    /*detokenize=*/mock_detokenize,
-    /*model_info=*/mock_model_info,
-    /*model_special_tokens=*/mock_model_special_tokens,
-    /*model_embedding_dim=*/mock_model_embedding_dim,
-    /*session_create=*/mock_session_create,
-    /*session_destroy=*/mock_session_destroy,
-    /*session_reset=*/mock_session_reset,
-    /*session_feed=*/mock_session_feed,
-    /*session_logits=*/mock_session_logits,
-    /*session_accept=*/mock_session_accept,
-    /*embedder_create=*/mock_embedder_create,
-    /*embedder_destroy=*/mock_embedder_destroy,
-    /*embedder_reset=*/mock_embedder_reset,
-    /*embedder_embed=*/mock_embedder_embed,
+    .model_load = mock_model_load,
+    .model_unload = mock_model_unload,
+
+    .tokenize = mock_tokenize,
+    .detokenize = mock_detokenize,
+
+    .model_info = mock_model_info,
+    .model_special_tokens = mock_model_special_tokens,
+    .model_embedding_dim = mock_model_embedding_dim,
+
+    .session_create = mock_session_create,
+    .session_destroy = mock_session_destroy,
+    .session_reset = mock_session_reset,
+    .session_feed = mock_session_feed,
+    .session_logits = mock_session_logits,
+    .session_accept = mock_session_accept,
+
+    .embedder_create = mock_embedder_create,
+    .embedder_destroy = mock_embedder_destroy,
+    .embedder_reset = mock_embedder_reset,
+    .embedder_embed = mock_embedder_embed,
+
+    .session_grammar_set_gbnf = mock_session_grammar_set_gbnf,
+    .session_grammar_set_json_schema = nullptr,
+    .session_grammar_clear = mock_session_grammar_clear,
+    .session_apply_grammar = mock_session_apply_grammar,
+
+    .session_state_size = mock_session_state_size,
+    .session_state_save = mock_session_state_save,
+    .session_state_load = mock_session_state_load,
+
+    .model_adapter_load = mock_model_adapter_load,
+    .model_adapter_unload = mock_model_adapter_unload,
+    .session_adapter_clear = mock_session_adapter_clear,
+    .session_adapter_add = mock_session_adapter_add,
+
+    .session_set_slot = mock_session_set_slot,
 };
 
 static const BackendProvider kMockBackendProvider = {

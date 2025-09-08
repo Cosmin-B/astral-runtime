@@ -41,7 +41,11 @@ Session::Session(Model* model_,
     , sample_capacity(0)
     , sampler_cfg{}
     , rng_state(0)
+    , mirostat_mu(0.0f)
+    , logprobs_n(0)
+    , meta_ring()
     , token_counts(nullptr)
+    , token_counts_base(nullptr)
     , recent_tokens(nullptr)
     , recent_capacity(0)
     , recent_pos(0)
@@ -57,7 +61,11 @@ Session::Session(Model* model_,
     , stop_seq_count(0)
     , stop_seq_lens{}
     , stop_seq_tokens{}
-    , stop_max_len(0) {}
+    , stop_max_len(0)
+    , adapter_count(0)
+    , adapter_handles{}
+    , adapter_scales{}
+    , slot_id(0) {}
 
 namespace {
 
@@ -89,9 +97,6 @@ inline uint32_t clamp_repeat_last_n(int32_t v, uint32_t ctx_size) {
 }
 
 inline bool sampler_needs_counts(const SamplerConfig& cfg) {
-    if (cfg.repeat_last_n == 0) {
-        return false;
-    }
     if (cfg.repeat_penalty != 1.0f) return true;
     if (cfg.presence_penalty != 0.0f) return true;
     if (cfg.frequency_penalty != 0.0f) return true;
@@ -109,34 +114,33 @@ AstralErr ensure_penalty_state(Session* session) {
 
     const uint32_t ctx_size = session->ctx_size != 0 ? session->ctx_size : 2048;
     const uint32_t repeat_last_n = clamp_repeat_last_n(session->sampler_cfg.repeat_last_n, ctx_size);
-    if (repeat_last_n == 0) {
-        return ASTRAL_OK;
-    }
 
-    if (session->token_counts == nullptr) {
-        session->token_counts = static_cast<uint16_t*>(
-            session->allocator.alloc(session->vocab_size * sizeof(uint16_t), alignof(uint16_t))
-        );
+    if (repeat_last_n != 0) {
         if (session->token_counts == nullptr) {
-            return ASTRAL_E_NOMEM;
+            session->token_counts = static_cast<uint16_t*>(
+                session->allocator.alloc(session->vocab_size * sizeof(uint16_t), alignof(uint16_t))
+            );
+            if (session->token_counts == nullptr) {
+                return ASTRAL_E_NOMEM;
+            }
+            std::memset(session->token_counts, 0, session->vocab_size * sizeof(uint16_t));
         }
-        std::memset(session->token_counts, 0, session->vocab_size * sizeof(uint16_t));
+
+        if (session->recent_capacity != repeat_last_n || session->recent_tokens == nullptr) {
+            session->recent_tokens = static_cast<uint32_t*>(
+                session->allocator.alloc(static_cast<size_t>(repeat_last_n) * sizeof(uint32_t), alignof(uint32_t))
+            );
+            if (session->recent_tokens == nullptr) {
+                return ASTRAL_E_NOMEM;
+            }
+            session->recent_capacity = repeat_last_n;
+            session->recent_pos = 0;
+            session->recent_size = 0;
+        }
     }
 
-    if (session->recent_capacity != repeat_last_n || session->recent_tokens == nullptr) {
-        session->recent_tokens = static_cast<uint32_t*>(
-            session->allocator.alloc(static_cast<size_t>(repeat_last_n) * sizeof(uint32_t), alignof(uint32_t))
-        );
-        if (session->recent_tokens == nullptr) {
-            return ASTRAL_E_NOMEM;
-        }
-        session->recent_capacity = repeat_last_n;
-        session->recent_pos = 0;
-        session->recent_size = 0;
-    }
-
-    if (session->token_nl < 0 && session->model != nullptr && session->model->backend != nullptr &&
-        session->model->backend->ops != nullptr) {
+    if (session->sampler_cfg.penalize_nl != 0 && session->token_nl < 0 && session->model != nullptr &&
+        session->model->backend != nullptr && session->model->backend->ops != nullptr) {
         // Best-effort: resolve a single-token "\\n".
         int32_t tok = -1;
         uint32_t out_count = 0;
@@ -358,6 +362,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
 
     // Penalty state (allocated lazily when needed; never in steady-state decode).
     session->token_counts = nullptr;
+    session->token_counts_base = nullptr;
     session->recent_tokens = nullptr;
     session->recent_capacity = 0;
     session->recent_pos = 0;
@@ -369,6 +374,19 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     std::memset(session->stop_seq_lens, 0, sizeof(session->stop_seq_lens));
     std::memset(session->stop_seq_tokens, 0, sizeof(session->stop_seq_tokens));
     session->stop_max_len = 0;
+
+    // Logprobs meta stream disabled by default.
+    session->logprobs_n = 0;
+    session->mirostat_mu = 0.0f;
+    session->meta_ring.reset();
+
+    // Adapters.
+    session->adapter_count = 0;
+    std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
+    std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
+
+    // Slot id.
+    session->slot_id = 0;
 
     if (session->indices_buffer == nullptr || (sample_capacity > 0 && (session->sample_ids == nullptr ||
                                                                       session->sample_logits == nullptr))) {
@@ -663,19 +681,24 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
         session->desc = *new_desc;
     }
 
-    // Re-seed RNG. If seed==0, auto-seed each reset.
+    // Update sampler parameters that are still part of the legacy SessionDesc.
+    // Extended sampler controls are configured via `session_set_sampler()` and are preserved across reset.
     session->sampler_cfg.temperature = session->desc.temperature;
     session->sampler_cfg.top_k = session->desc.top_k;
     session->sampler_cfg.top_p = session->desc.top_p;
+
+    // Re-seed RNG. If seed==0, auto-seed each reset.
     session->sampler_cfg.seed =
         session->desc.seed != 0 ? session->desc.seed : static_cast<uint32_t>(get_ticks() & 0xFFFFFFFF);
     session->rng_state = session->sampler_cfg.seed;
+    session->mirostat_mu = 0.0f;
 
     // Clear core state (not thread-safe; caller must ensure no concurrent stream reads).
     session->cancel_requested.store(false, std::memory_order_release);
     session->final_err.store(ASTRAL_OK, std::memory_order_release);
     session->prompt_count = 0;
     session->token_ring.reset();
+    session->meta_ring.reset();
     session->pending_len = 0;
     session->pending_off = 0;
 
@@ -709,6 +732,21 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
         }
     } else if (err != ASTRAL_OK) {
         return err;
+    }
+
+    // Re-apply session-scoped generation controls that are provider-owned.
+    if (ops->session_adapter_clear != nullptr && ops->session_adapter_add != nullptr) {
+        (void)ops->session_adapter_clear(session->backend_session_ctx);
+        for (uint32_t i = 0; i < session->adapter_count; ++i) {
+            auto* a = static_cast<Adapter*>(core::lookup_handle(session->adapter_handles[i], core::HandleKind::Adapter));
+            if (a != nullptr && a->backend_adapter_ctx != nullptr) {
+                (void)ops->session_adapter_add(session->backend_session_ctx, a->backend_adapter_ctx, session->adapter_scales[i]);
+            }
+        }
+    }
+
+    if (ops->session_set_slot != nullptr && session->slot_id != 0) {
+        (void)ops->session_set_slot(session->backend_session_ctx, session->slot_id);
     }
 
     // Back to Idle for the next prompt.
@@ -746,10 +784,55 @@ AstralErr session_set_sampler(Session* session, const AstralSamplerDesc* desc) {
     session->sampler_cfg.presence_penalty = desc->presence_penalty;
     session->sampler_cfg.frequency_penalty = desc->frequency_penalty;
 
-    // mirostat is not implemented in v0.1; ignore for now (kept in ABI for forward compat).
-    (void)desc->mirostat;
-    (void)desc->mirostat_tau;
-    (void)desc->mirostat_eta;
+    session->sampler_cfg.mirostat = desc->mirostat;
+    session->sampler_cfg.mirostat_tau = desc->mirostat_tau;
+    session->sampler_cfg.mirostat_eta = desc->mirostat_eta;
+
+    // Keep legacy session desc knobs in sync so reset/reuse preserves the expected values.
+    session->desc.temperature = desc->temperature;
+    session->desc.top_k = desc->top_k;
+    session->desc.top_p = desc->top_p;
+
+    return ensure_penalty_state(session);
+}
+
+AstralErr session_penalty_prompt_set_tokens(Session* session, const int32_t* tokens, uint32_t count) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (count > 0 && tokens == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    if (session->token_counts_base == nullptr) {
+        session->token_counts_base = static_cast<uint16_t*>(
+            session->allocator.alloc(session->vocab_size * sizeof(uint16_t), alignof(uint16_t))
+        );
+        if (session->token_counts_base == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+    }
+
+    std::memset(session->token_counts_base, 0, session->vocab_size * sizeof(uint16_t));
+
+    for (uint32_t i = 0; i < count; ++i) {
+        const int32_t t = tokens[i];
+        if (t < 0) {
+            continue;
+        }
+        const uint32_t id = static_cast<uint32_t>(t);
+        if (id >= session->vocab_size) {
+            continue;
+        }
+        uint16_t& c = session->token_counts_base[id];
+        if (c != 0xFFFFu) {
+            c = static_cast<uint16_t>(c + 1u);
+        }
+    }
 
     return ensure_penalty_state(session);
 }
@@ -806,6 +889,265 @@ AstralErr session_stop_add_utf8(Session* session, AstralSpanU8 utf8) {
         session->stop_max_len = out_count;
     }
     return ASTRAL_OK;
+}
+
+AstralErr session_stop_set_utf8(Session* session, const AstralSpanU8* seqs, uint32_t count) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (count > 0 && seqs == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (count > 16) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    AstralErr err = session_stop_clear(session);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        err = session_stop_add_utf8(session, seqs[i]);
+        if (err != ASTRAL_OK) {
+            return err;
+        }
+    }
+    return ASTRAL_OK;
+}
+
+AstralErr session_set_logprobs(Session* session, uint32_t n_probs) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    if (n_probs > ASTRAL_LOGPROBS_MAX) {
+        n_probs = ASTRAL_LOGPROBS_MAX;
+    }
+    session->logprobs_n = n_probs;
+    session->meta_ring.reset();
+    return ASTRAL_OK;
+}
+
+AstralErr session_state_size(Session* session, uint64_t* out_bytes) {
+    if (session == nullptr || out_bytes == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_state_size == nullptr || ops->session_state_save == nullptr || ops->session_state_load == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    return ops->session_state_size(session->backend_session_ctx, out_bytes);
+}
+
+AstralErr session_state_save(Session* session, AstralMutSpanU8 out_buf, uint64_t* out_written) {
+    if (session == nullptr || out_written == nullptr || out_buf.data == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_state_size == nullptr || ops->session_state_save == nullptr || ops->session_state_load == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    uint64_t written = 0;
+    const AstralErr err = ops->session_state_save(session->backend_session_ctx, out_buf.data, out_buf.len, &written);
+    if (err == ASTRAL_OK) {
+        *out_written = written;
+    }
+    return err;
+}
+
+AstralErr session_state_load(Session* session, AstralSpanU8 state_bytes) {
+    if (session == nullptr || state_bytes.data == nullptr || state_bytes.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_state_size == nullptr || ops->session_state_save == nullptr || ops->session_state_load == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    return ops->session_state_load(session->backend_session_ctx, state_bytes.data, state_bytes.len);
+}
+
+AstralErr session_adapters_clear(Session* session) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_adapter_clear == nullptr || ops->session_adapter_add == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+
+    const AstralErr err = ops->session_adapter_clear(session->backend_session_ctx);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    for (uint32_t i = 0; i < session->adapter_count; ++i) {
+        auto* a = static_cast<Adapter*>(core::lookup_handle(session->adapter_handles[i], core::HandleKind::Adapter));
+        if (a != nullptr) {
+            adapter_release(a);
+        }
+    }
+    session->adapter_count = 0;
+    std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
+    std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
+    return ASTRAL_OK;
+}
+
+AstralErr session_adapters_add(Session* session, AstralHandle adapter, float scale) {
+    if (session == nullptr || adapter == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->adapter_count >= 8) {
+        return ASTRAL_E_NOMEM;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_adapter_clear == nullptr || ops->session_adapter_add == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+
+    auto* a = static_cast<Adapter*>(core::lookup_handle(adapter, core::HandleKind::Adapter));
+    if (a == nullptr || a->model != session->model || a->backend_adapter_ctx == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    adapter_retain(a);
+
+    const AstralErr err = ops->session_adapter_add(session->backend_session_ctx, a->backend_adapter_ctx, scale);
+    if (err != ASTRAL_OK) {
+        adapter_release(a);
+        return err;
+    }
+
+    const uint32_t idx = session->adapter_count++;
+    session->adapter_handles[idx] = adapter;
+    session->adapter_scales[idx] = scale;
+    return ASTRAL_OK;
+}
+
+AstralErr session_set_grammar_gbnf(Session* session, AstralSpanU8 gbnf, AstralSpanU8 root) {
+    if (session == nullptr || gbnf.data == nullptr || gbnf.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_grammar_set_gbnf == nullptr || ops->session_grammar_clear == nullptr ||
+        ops->session_apply_grammar == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+
+    if (root.data == nullptr || root.len == 0) {
+        static constexpr uint8_t kRoot[] = {'r','o','o','t'};
+        root.data = kRoot;
+        root.len = 4;
+    }
+    return ops->session_grammar_set_gbnf(session->backend_session_ctx, gbnf, root);
+}
+
+AstralErr session_set_grammar_json_schema(Session* session, AstralSpanU8 json_schema) {
+    if (session == nullptr || json_schema.data == nullptr || json_schema.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_grammar_set_json_schema == nullptr || ops->session_grammar_clear == nullptr ||
+        ops->session_apply_grammar == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    return ops->session_grammar_set_json_schema(session->backend_session_ctx, json_schema);
+}
+
+AstralErr session_clear_grammar(Session* session) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_grammar_clear == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    return ops->session_grammar_clear(session->backend_session_ctx);
+}
+
+AstralErr session_set_slot(Session* session, uint32_t slot_id) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_set_slot == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    const AstralErr err = ops->session_set_slot(session->backend_session_ctx, slot_id);
+    if (err == ASTRAL_OK) {
+        session->slot_id = slot_id;
+    }
+    return err;
 }
 
 AstralErr session_stats(Session* session, AstralStats* out_stats) {
@@ -1019,16 +1361,25 @@ void decode_loop(Session* session) {
             break;
         }
 
+        SamplerMeta meta{};
+        SamplerMeta* meta_ptr = (session->logprobs_n > 0) ? &meta : nullptr;
+
         const int32_t next_token = static_cast<int32_t>(sample_token(
             logits_view.logits,
             logits_view.vocab_size,
             session->sampler_cfg,
             &session->rng_state,
             session->token_counts,
+            session->token_counts_base,
             session->token_nl,
+            &session->mirostat_mu,
+            session->logprobs_n,
+            meta_ptr,
             session->sample_ids,
             session->sample_logits,
             session->sample_capacity,
+            backend_session_ctx,
+            ops->session_apply_grammar,
             session->indices_buffer
         ));
 
@@ -1041,6 +1392,18 @@ void decode_loop(Session* session) {
 
         if (next_token >= 0) {
             penalty_state_push(session, static_cast<uint32_t>(next_token));
+        }
+
+        if (meta_ptr != nullptr) {
+            AstralTokenMeta ev{};
+            ev.token_id = meta_ptr->token_id;
+            ev.logprob = meta_ptr->logprob;
+            ev.top_n = meta_ptr->top_n;
+            for (uint32_t j = 0; j < meta_ptr->top_n && j < ASTRAL_LOGPROBS_MAX; ++j) {
+                ev.top_token_ids[j] = meta_ptr->top_ids[j];
+                ev.top_logprobs[j] = meta_ptr->top_logprobs[j];
+            }
+            (void)session->meta_ring.push(ev);
         }
 
         if (session->token_eos >= 0 && next_token == session->token_eos) {
@@ -1276,6 +1639,74 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
 
     // Non-blocking and no data available
     return ASTRAL_E_TIMEOUT;
+}
+
+int32_t stream_read_meta(Session* session, AstralTokenMeta* out_events, uint32_t capacity, uint32_t timeout_ms) {
+    if (session == nullptr || out_events == nullptr || capacity == 0) {
+        return ASTRAL_E_INVALID;
+    }
+
+    AstralTokenMeta ev{};
+    if (session->meta_ring.pop(&ev)) {
+        uint32_t n = 0;
+        out_events[n++] = ev;
+        while (n < capacity && session->meta_ring.pop(&ev)) {
+            out_events[n++] = ev;
+        }
+        return static_cast<int32_t>(n);
+    }
+
+    SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Completed || state == SessionState::Canceled || state == SessionState::Failed) {
+        return 0;
+    }
+
+    if (timeout_ms == 0) {
+        return ASTRAL_E_TIMEOUT;
+    }
+
+    const uint64_t start_ticks = get_ticks();
+    const uint64_t timeout_ns = static_cast<uint64_t>(timeout_ms) * 1000000ULL;
+    const uint64_t timeout_ticks = platform::ticks_from_ns(timeout_ns);
+    const uint64_t deadline_ticks = start_ticks + timeout_ticks;
+    const uint32_t check_mask =
+        timeout_ms <= 1u   ? 31u :
+        timeout_ms <= 10u  ? 255u :
+        timeout_ms <= 100u ? 4095u :
+                             65535u;
+    uint32_t spins = 0;
+
+    while (true) {
+        if (session->meta_ring.pop(&ev)) {
+            uint32_t n = 0;
+            out_events[n++] = ev;
+            while (n < capacity && session->meta_ring.pop(&ev)) {
+                out_events[n++] = ev;
+            }
+            return static_cast<int32_t>(n);
+        }
+
+        state = session->state.load(std::memory_order_acquire);
+        if (state == SessionState::Completed || state == SessionState::Canceled || state == SessionState::Failed) {
+            return 0;
+        }
+
+        if ((spins & check_mask) == 0u) {
+            const uint64_t now_ticks = get_ticks();
+            if (now_ticks >= deadline_ticks) {
+                return ASTRAL_E_TIMEOUT;
+            }
+        }
+
+        if (spins < 64) {
+            platform::cpu_pause();
+        } else {
+            platform::cpu_wait_for_event();
+        }
+        if (spins < 1024) {
+            ++spins;
+        }
+    }
 }
 
 } // namespace astral::inference

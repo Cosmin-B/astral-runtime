@@ -80,10 +80,14 @@ target_include_directories(astral_rt PUBLIC
 # Private include directory for internal headers
 target_include_directories(astral_rt PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    # llama.cpp includes (needed by the CPU backend and JSON schema -> GBNF support)
+    ${LLAMA_CPP_DIR}/include
+    ${LLAMA_CPP_DIR}/common
+    ${LLAMA_CPP_DIR}/vendor
 )
 
 # Link llama.cpp library (built by backend subdirectory)
-target_link_libraries(astral_rt PRIVATE llama)
+target_link_libraries(astral_rt PRIVATE llama common)
 
 # Compiler warnings as errors
 target_compile_options(astral_rt PRIVATE

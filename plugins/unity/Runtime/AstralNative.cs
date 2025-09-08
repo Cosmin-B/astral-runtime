@@ -129,6 +129,12 @@ namespace Astral.Runtime
         public const int ASTRAL_E_UNSUPPORTED = -8; // Unsupported
 
         // ====================================================================
+        // Tunables / Limits
+        // ====================================================================
+
+        public const int ASTRAL_LOGPROBS_MAX = 16;
+
+        // ====================================================================
         // Allocator
         // ====================================================================
 
@@ -266,6 +272,9 @@ namespace Astral.Runtime
         public const ulong ASTRAL_CAP_GRAMMAR = 1UL << 19;
         public const ulong ASTRAL_CAP_LOGPROBS = 1UL << 20;
         public const ulong ASTRAL_CAP_KV_STATE = 1UL << 21;
+        public const ulong ASTRAL_CAP_SLOTS = 1UL << 22;
+        public const ulong ASTRAL_CAP_GRAMMAR_GBNF = 1UL << 23;
+        public const ulong ASTRAL_CAP_GRAMMAR_JSON_SCHEMA = 1UL << 24;
 
         [StructLayout(LayoutKind.Sequential)]
         public struct AstralModelLimits
@@ -368,6 +377,23 @@ namespace Astral.Runtime
             }
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public unsafe struct AstralTokenMeta
+        {
+            public uint token_id;
+            public uint top_n;
+            public float logprob;
+            public fixed uint top_token_ids[ASTRAL_LOGPROBS_MAX];
+            public fixed float top_logprobs[ASTRAL_LOGPROBS_MAX];
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAdapterDesc
+        {
+            public uint size;
+            public AstralSpanU8 path;
+        }
+
         /// <summary>
         /// Create an inference session.
         /// Thread-safety: Safe to call from multiple threads.
@@ -412,10 +438,55 @@ namespace Astral.Runtime
         public static extern int astral_session_set_sampler(AstralHandle session, ref AstralSamplerDesc desc);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_session_penalty_prompt_set_tokens(AstralHandle session, int* tokens, uint count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_stop_clear(AstralHandle session);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_stop_add_utf8(AstralHandle session, AstralSpanU8 utf8);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_stop_set_utf8(AstralHandle session, IntPtr seqs, uint count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_set_logprobs(AstralHandle session, uint n_probs);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_stream_read_meta(AstralHandle session, AstralTokenMeta* out_events, uint capacity, uint timeout_ms);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_state_size(AstralHandle session, out ulong out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_state_save(AstralHandle session, AstralMutSpanU8 out_buf, out ulong out_written);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_state_load(AstralHandle session, AstralSpanU8 state_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_adapter_load(AstralHandle model, ref AstralAdapterDesc desc, out AstralHandle out_adapter);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_model_adapter_release(AstralHandle adapter);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_adapters_clear(AstralHandle session);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_adapters_add(AstralHandle session, AstralHandle adapter, float scale);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_set_grammar_gbnf(AstralHandle session, AstralSpanU8 gbnf, AstralSpanU8 root);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_set_grammar_json_schema(AstralHandle session, AstralSpanU8 json_schema);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_clear_grammar(AstralHandle session);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_set_slot(AstralHandle session, uint slot_id);
 
         /// <summary>
         /// Read tokens from stream.

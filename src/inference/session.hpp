@@ -5,6 +5,7 @@
 #include "../concurrency/spsc_ring.hpp"
 #include "model.hpp"
 #include "sampler.hpp"
+#include "adapter.hpp"
 #include <atomic>
 #include <cstdint>
 
@@ -95,9 +96,15 @@ struct Session {
     uint32_t sample_capacity;    // Candidate capacity for top-k sampling
     SamplerConfig sampler_cfg;
     uint32_t rng_state;          // Mutable RNG state for sampling
+    float mirostat_mu;           // Mirostat mutable state (0 if unused)
+
+    // Logprobs side-channel (optional).
+    uint32_t logprobs_n;         // 0 = disabled
+    concurrency::SpscRing<AstralTokenMeta, 256> meta_ring;
 
     // Sampling penalties state (allocated lazily; not a hot-path allocation)
-    uint16_t* token_counts;      // Size: vocab_size (counts within repeat_last_n window)
+    uint16_t* token_counts;      // Size: vocab_size (counts within repeat_last_n window + optional base)
+    uint16_t* token_counts_base; // Size: vocab_size (fixed counts, e.g. penalty_prompt tokens)
     uint32_t* recent_tokens;     // Size: recent_capacity (ring of last N tokens)
     uint32_t recent_capacity;    // Effective repeat_last_n
     uint32_t recent_pos;         // Ring write position
@@ -122,6 +129,14 @@ struct Session {
     uint8_t stop_seq_lens[16];
     int32_t stop_seq_tokens[16][32];
     uint32_t stop_max_len; // max(stop_seq_lens)
+
+    // Adapters (fixed-size list; session-scoped).
+    uint32_t adapter_count;
+    AstralHandle adapter_handles[8];
+    float adapter_scales[8];
+
+    // Slot id (for providers that support parallel slots).
+    uint32_t slot_id;
 };
 
 /// Create an inference session.
@@ -224,11 +239,39 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc);
 /// Configure sampler controls for a session (extended v0.2 surface).
 AstralErr session_set_sampler(Session* session, const AstralSamplerDesc* desc);
 
+/// Configure penalty prompt (token span) used by penalties.
+AstralErr session_penalty_prompt_set_tokens(Session* session, const int32_t* tokens, uint32_t count);
+
 /// Stop sequences: clear all.
 AstralErr session_stop_clear(Session* session);
 
 /// Stop sequences: add UTF-8 text (tokenized once).
 AstralErr session_stop_add_utf8(Session* session, AstralSpanU8 utf8);
+/// Stop sequences: bulk set (clear + add each).
+AstralErr session_stop_set_utf8(Session* session, const AstralSpanU8* seqs, uint32_t count);
+
+/// Configure logprobs side-channel (0 disables; clamped).
+AstralErr session_set_logprobs(Session* session, uint32_t n_probs);
+
+/// Read meta events from the side-channel stream.
+int32_t stream_read_meta(Session* session, AstralTokenMeta* out_events, uint32_t capacity, uint32_t timeout_ms);
+
+/// Session state size/save/load (KV cache).
+AstralErr session_state_size(Session* session, uint64_t* out_bytes);
+AstralErr session_state_save(Session* session, AstralMutSpanU8 out_buf, uint64_t* out_written);
+AstralErr session_state_load(Session* session, AstralSpanU8 state_bytes);
+
+/// Attach adapters to a session.
+AstralErr session_adapters_clear(Session* session);
+AstralErr session_adapters_add(Session* session, AstralHandle adapter, float scale);
+
+/// Configure grammar-constrained decoding.
+AstralErr session_set_grammar_gbnf(Session* session, AstralSpanU8 gbnf, AstralSpanU8 root);
+AstralErr session_set_grammar_json_schema(Session* session, AstralSpanU8 json_schema);
+AstralErr session_clear_grammar(Session* session);
+
+/// Set the session slot/sequence id.
+AstralErr session_set_slot(Session* session, uint32_t slot_id);
 
 /// Read tokens from stream.
 ///

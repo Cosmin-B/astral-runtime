@@ -21,12 +21,27 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <limits>
 #include <new>
+#include <string>
 #include <thread>
+
+#include <nlohmann/json.hpp>
+#include "json-schema-to-grammar.h"
+
+#if defined(_MSC_VER)
+#include <malloc.h>
+#define ASTRAL_ALLOCA _alloca
+#else
+#include <alloca.h>
+#define ASTRAL_ALLOCA alloca
+#endif
 
 namespace astral::backend {
 
 namespace {
+
+constexpr uint32_t kCpuMaxSlots = 32;
 
 std::atomic<uint32_t> g_llama_backend_refs{0};
 std::atomic<int> g_llama_log_threshold{GGML_LOG_LEVEL_WARN};
@@ -102,6 +117,38 @@ inline uint32_t default_threads_fallback() {
     }
     uint32_t hw = std::thread::hardware_concurrency();
     return hw > 0 ? hw : 4;
+}
+
+inline uint32_t clamp_u32(uint32_t v, uint32_t lo, uint32_t hi) {
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+uint32_t cpu_default_slots_from_env() {
+    // Slots are a session-level setting; parsing env vars here is not a hot path.
+    const char* v = std::getenv("ASTRAL_LLAMA_MAX_SLOTS");
+    if (v == nullptr || v[0] == '\0') {
+        return 1;
+    }
+
+    uint64_t n = 0;
+    for (size_t i = 0; v[i] != '\0'; ++i) {
+        const char c = v[i];
+        if (c < '0' || c > '9') {
+            return 1;
+        }
+        n = n * 10u + static_cast<uint64_t>(c - '0');
+        if (n > 1000000u) {
+            return 1;
+        }
+    }
+
+    return clamp_u32(static_cast<uint32_t>(n), 1u, kCpuMaxSlots);
 }
 
 void* cpu_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
@@ -341,7 +388,7 @@ void* cpu_session_create(void* model_ctx, const AstralSessionDesc* desc, AstralE
     ctx_params.n_threads = static_cast<int32_t>(clamp_threads(model->n_threads, threads_default));
     ctx_params.n_threads_batch =
         static_cast<int32_t>(clamp_threads(model->n_threads_batch, static_cast<uint32_t>(ctx_params.n_threads)));
-    ctx_params.n_seq_max = 1;
+    ctx_params.n_seq_max = static_cast<int32_t>(cpu_default_slots_from_env());
 
     llama_context* ctx = llama_init_from_model(model->model, ctx_params);
     if (ctx == nullptr) {
@@ -359,7 +406,39 @@ void* cpu_session_create(void* model_ctx, const AstralSessionDesc* desc, AstralE
     session->model = model;
     session->ctx = ctx;
     session->n_batch = model->n_batch;
-    session->has_logits = false;
+    session->n_slots = static_cast<uint32_t>(ctx_params.n_seq_max);
+    session->active_slot = 0;
+
+    for (uint32_t i = 0; i < kCpuMaxSlots; ++i) {
+        session->slot_pos[i] = 0;
+        session->slot_has_logits[i] = false;
+        session->grammar[i] = nullptr;
+    }
+
+    // Preallocate batch scratch.
+    const uint32_t cap = session->n_batch > 0 ? session->n_batch : 1;
+    session->batch_pos = new (std::nothrow) int32_t[cap];
+    session->batch_n_seq_id = new (std::nothrow) int32_t[cap];
+    session->batch_seq_id_storage = new (std::nothrow) int32_t[cap];
+    session->batch_seq_id_ptrs = new (std::nothrow) int32_t*[cap];
+    session->batch_logits = new (std::nothrow) int8_t[cap];
+
+    if (session->batch_pos == nullptr || session->batch_n_seq_id == nullptr || session->batch_seq_id_storage == nullptr ||
+        session->batch_seq_id_ptrs == nullptr || session->batch_logits == nullptr) {
+        delete[] session->batch_pos;
+        delete[] session->batch_n_seq_id;
+        delete[] session->batch_seq_id_storage;
+        delete[] session->batch_seq_id_ptrs;
+        delete[] session->batch_logits;
+        delete session;
+        llama_free(ctx);
+        *out_err = ASTRAL_E_NOMEM;
+        return nullptr;
+    }
+
+    for (uint32_t i = 0; i < cap; ++i) {
+        session->batch_seq_id_ptrs[i] = &session->batch_seq_id_storage[i];
+    }
 
     *out_err = ASTRAL_OK;
     return session;
@@ -371,6 +450,17 @@ void cpu_session_destroy(void* session_ctx) {
     }
 
     CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    for (uint32_t i = 0; i < kCpuMaxSlots; ++i) {
+        if (session->grammar[i] != nullptr) {
+            llama_sampler_free(session->grammar[i]);
+            session->grammar[i] = nullptr;
+        }
+    }
+    delete[] session->batch_pos;
+    delete[] session->batch_n_seq_id;
+    delete[] session->batch_seq_id_storage;
+    delete[] session->batch_seq_id_ptrs;
+    delete[] session->batch_logits;
     if (session->ctx) {
         llama_free(session->ctx);
     }
@@ -387,7 +477,7 @@ AstralErr cpu_session_reset(void* session_ctx) {
         return ASTRAL_E_BACKEND;
     }
 
-    // Clear KV/memory for sequence 0 (provider-side state).
+    // Clear KV/memory for all sequences (provider-side state).
     // This keeps the context allocated and avoids session re-creation overhead.
     llama_memory_t mem = llama_get_memory(session->ctx);
     if (mem == nullptr) {
@@ -395,7 +485,13 @@ AstralErr cpu_session_reset(void* session_ctx) {
     }
 
     llama_memory_clear(mem, /*data=*/true);
-    session->has_logits = false;
+    for (uint32_t i = 0; i < session->n_slots; ++i) {
+        session->slot_pos[i] = 0;
+        session->slot_has_logits[i] = false;
+        if (session->grammar[i] != nullptr) {
+            llama_sampler_reset(session->grammar[i]);
+        }
+    }
     return ASTRAL_OK;
 }
 
@@ -409,7 +505,13 @@ AstralErr cpu_session_feed(void* session_ctx, const int32_t* tokens, uint32_t co
 
     CpuSession* session = static_cast<CpuSession*>(session_ctx);
 
-    const uint32_t batch_size = session->n_batch > 0 ? session->n_batch : count;
+    if (session->active_slot >= session->n_slots) {
+        return ASTRAL_E_STATE;
+    }
+
+    const uint32_t batch_cap = session->n_batch > 0 ? session->n_batch : count;
+    const uint32_t batch_size = batch_cap > 0 ? batch_cap : count;
+    int32_t slot_pos = session->slot_pos[session->active_slot];
     for (uint32_t i = 0; i < count; i += batch_size) {
         const uint32_t n = (count - i) < batch_size ? (count - i) : batch_size;
 
@@ -417,15 +519,34 @@ AstralErr cpu_session_feed(void* session_ctx, const int32_t* tokens, uint32_t co
             reinterpret_cast<const llama_token*>(tokens + i)
         );
 
-        const llama_batch batch = llama_batch_get_one(chunk, static_cast<int32_t>(n));
+        llama_batch batch{};
+        batch.n_tokens = static_cast<int32_t>(n);
+        batch.token = chunk;
+        batch.embd = nullptr;
+        batch.pos = reinterpret_cast<llama_pos*>(session->batch_pos);
+        batch.n_seq_id = session->batch_n_seq_id;
+        batch.seq_id = reinterpret_cast<llama_seq_id**>(session->batch_seq_id_ptrs);
+        batch.logits = session->batch_logits;
+
+        for (uint32_t j = 0; j < n; ++j) {
+            session->batch_pos[j] = slot_pos + static_cast<int32_t>(j);
+            session->batch_n_seq_id[j] = 1;
+            session->batch_seq_id_storage[j] = static_cast<int32_t>(session->active_slot);
+            session->batch_logits[j] = 0;
+        }
+        session->batch_logits[n - 1u] = 1;
+
         const int32_t result = llama_decode(session->ctx, batch);
         if (result != 0) {
             return ASTRAL_E_BACKEND;
         }
+
+        slot_pos += static_cast<int32_t>(n);
     }
 
     if (count > 0) {
-        session->has_logits = true;
+        session->slot_pos[session->active_slot] = slot_pos;
+        session->slot_has_logits[session->active_slot] = true;
     }
 
     return ASTRAL_OK;
@@ -437,7 +558,10 @@ AstralErr cpu_session_logits(void* session_ctx, BackendLogitsView* out_view) {
     }
 
     CpuSession* session = static_cast<CpuSession*>(session_ctx);
-    if (!session->has_logits) {
+    if (session->active_slot >= session->n_slots) {
+        return ASTRAL_E_STATE;
+    }
+    if (!session->slot_has_logits[session->active_slot]) {
         return ASTRAL_E_STATE;
     }
 
@@ -461,19 +585,336 @@ AstralErr cpu_session_accept(void* session_ctx, int32_t token) {
     }
 
     CpuSession* session = static_cast<CpuSession*>(session_ctx);
-    if (!session->has_logits) {
+    if (session->active_slot >= session->n_slots) {
+        return ASTRAL_E_STATE;
+    }
+    if (!session->slot_has_logits[session->active_slot]) {
         return ASTRAL_E_STATE;
     }
 
     llama_token t = static_cast<llama_token>(token);
-    llama_batch batch = llama_batch_get_one(&t, 1);
+    llama_batch batch{};
+    batch.n_tokens = 1;
+    batch.token = &t;
+    batch.embd = nullptr;
+    batch.pos = reinterpret_cast<llama_pos*>(session->batch_pos);
+    batch.n_seq_id = session->batch_n_seq_id;
+    batch.seq_id = reinterpret_cast<llama_seq_id**>(session->batch_seq_id_ptrs);
+    batch.logits = session->batch_logits;
+
+    session->batch_pos[0] = session->slot_pos[session->active_slot];
+    session->batch_n_seq_id[0] = 1;
+    session->batch_seq_id_storage[0] = static_cast<int32_t>(session->active_slot);
+    session->batch_logits[0] = 1;
+
     const int32_t result = llama_decode(session->ctx, batch);
     if (result != 0) {
         return ASTRAL_E_BACKEND;
     }
 
-    session->has_logits = true;
+    if (session->grammar[session->active_slot] != nullptr) {
+        llama_sampler_accept(session->grammar[session->active_slot], t);
+    }
+
+    session->slot_pos[session->active_slot] += 1;
+    session->slot_has_logits[session->active_slot] = true;
     return ASTRAL_OK;
+}
+
+// -----------------------------------------------------------------------------
+// Optional generation controls
+// -----------------------------------------------------------------------------
+
+AstralErr cpu_session_grammar_set_gbnf(void* session_ctx, AstralSpanU8 gbnf, AstralSpanU8 root) {
+    if (session_ctx == nullptr || gbnf.data == nullptr || gbnf.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->model == nullptr || session->model->vocab == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+
+    // llama.cpp expects NUL-terminated strings.
+    const size_t g_len = static_cast<size_t>(gbnf.len);
+    char* g = new (std::nothrow) char[g_len + 1];
+    if (g == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+    std::memcpy(g, gbnf.data, g_len);
+    g[g_len] = '\0';
+
+    const size_t r_len = static_cast<size_t>(root.len);
+    char* r = nullptr;
+    if (root.data != nullptr && root.len > 0) {
+        r = new (std::nothrow) char[r_len + 1];
+        if (r == nullptr) {
+            delete[] g;
+            return ASTRAL_E_NOMEM;
+        }
+        std::memcpy(r, root.data, r_len);
+        r[r_len] = '\0';
+    }
+
+    llama_sampler* new_grammars[kCpuMaxSlots]{};
+    const char* root_name = r != nullptr ? r : "root";
+    for (uint32_t i = 0; i < session->n_slots; ++i) {
+        new_grammars[i] = llama_sampler_init_grammar(session->model->vocab, g, root_name);
+        if (new_grammars[i] == nullptr) {
+            for (uint32_t j = 0; j < i; ++j) {
+                llama_sampler_free(new_grammars[j]);
+            }
+            delete[] g;
+            delete[] r;
+            return ASTRAL_E_INVALID;
+        }
+    }
+
+    delete[] g;
+    delete[] r;
+
+    for (uint32_t i = 0; i < session->n_slots; ++i) {
+        if (session->grammar[i] != nullptr) {
+            llama_sampler_free(session->grammar[i]);
+        }
+        session->grammar[i] = new_grammars[i];
+    }
+    return ASTRAL_OK;
+}
+
+[[maybe_unused]] AstralErr cpu_session_grammar_set_json_schema(void* session_ctx, AstralSpanU8 json_schema) {
+    if (session_ctx == nullptr || json_schema.data == nullptr || json_schema.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->model == nullptr || session->model->vocab == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+
+    const char* begin = reinterpret_cast<const char*>(json_schema.data);
+    const char* end = begin + json_schema.len;
+    std::string schema_text(begin, end);
+
+    nlohmann::ordered_json schema = nlohmann::ordered_json::parse(schema_text, /*cb=*/nullptr, /*allow_exceptions=*/false);
+    if (schema.is_discarded()) {
+        return ASTRAL_E_INVALID;
+    }
+
+    std::string gbnf;
+    try {
+        gbnf = json_schema_to_grammar(schema, /*force_gbnf=*/true);
+    } catch (...) {
+        return ASTRAL_E_INVALID;
+    }
+
+    AstralSpanU8 g{};
+    g.data = reinterpret_cast<const uint8_t*>(gbnf.data());
+    g.len = static_cast<uint32_t>(gbnf.size());
+
+    AstralSpanU8 root{};
+    return cpu_session_grammar_set_gbnf(session_ctx, g, root);
+}
+
+AstralErr cpu_session_grammar_clear(void* session_ctx) {
+    if (session_ctx == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    for (uint32_t i = 0; i < session->n_slots; ++i) {
+        if (session->grammar[i] != nullptr) {
+            llama_sampler_free(session->grammar[i]);
+            session->grammar[i] = nullptr;
+        }
+    }
+    return ASTRAL_OK;
+}
+
+AstralErr cpu_session_apply_grammar(void* session_ctx, uint32_t* tokens, float* logits, uint32_t count) {
+    if (session_ctx == nullptr || tokens == nullptr || logits == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (count == 0 || session->active_slot >= session->n_slots) {
+        return ASTRAL_OK;
+    }
+    llama_sampler* smpl = session->grammar[session->active_slot];
+    if (smpl == nullptr) {
+        return ASTRAL_OK;
+    }
+
+    llama_token_data* data =
+        static_cast<llama_token_data*>(ASTRAL_ALLOCA(static_cast<size_t>(count) * sizeof(llama_token_data)));
+
+    for (uint32_t i = 0; i < count; ++i) {
+        data[i].id = static_cast<llama_token>(tokens[i]);
+        data[i].logit = logits[i];
+        data[i].p = 0.0f;
+    }
+
+    llama_token_data_array arr{};
+    arr.data = data;
+    arr.size = count;
+    arr.selected = -1;
+    arr.sorted = false;
+
+    llama_sampler_apply(smpl, &arr);
+
+    const float neg_inf = -std::numeric_limits<float>::infinity();
+    const size_t n = arr.size < static_cast<size_t>(count) ? arr.size : static_cast<size_t>(count);
+    for (size_t i = 0; i < n; ++i) {
+        tokens[i] = static_cast<uint32_t>(arr.data[i].id);
+        logits[i] = arr.data[i].logit;
+    }
+    for (size_t i = n; i < count; ++i) {
+        logits[i] = neg_inf;
+    }
+
+    return ASTRAL_OK;
+}
+
+AstralErr cpu_session_set_slot(void* session_ctx, uint32_t slot_id) {
+    if (session_ctx == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (slot_id >= session->n_slots) {
+        return ASTRAL_E_INVALID;
+    }
+    session->active_slot = slot_id;
+    return ASTRAL_OK;
+}
+
+AstralErr cpu_session_state_size(void* session_ctx, uint64_t* out_bytes) {
+    if (session_ctx == nullptr || out_bytes == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->ctx == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+    *out_bytes = static_cast<uint64_t>(llama_state_get_size(session->ctx));
+    return ASTRAL_OK;
+}
+
+AstralErr cpu_session_state_save(void* session_ctx, uint8_t* out_bytes, uint64_t capacity, uint64_t* out_written) {
+    if (session_ctx == nullptr || out_bytes == nullptr || out_written == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->ctx == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+    const size_t need = llama_state_get_size(session->ctx);
+    if (capacity < need) {
+        return ASTRAL_E_NOMEM;
+    }
+    const size_t wrote = llama_state_get_data(session->ctx, out_bytes, static_cast<size_t>(capacity));
+    if (wrote == 0) {
+        return ASTRAL_E_BACKEND;
+    }
+    *out_written = static_cast<uint64_t>(wrote);
+    return ASTRAL_OK;
+}
+
+AstralErr cpu_session_state_load(void* session_ctx, const uint8_t* bytes, uint64_t size) {
+    if (session_ctx == nullptr || bytes == nullptr || size == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->ctx == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+    const size_t read = llama_state_set_data(session->ctx, bytes, static_cast<size_t>(size));
+    if (read != static_cast<size_t>(size)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    // Reconstruct per-slot token positions from the KV cache.
+    llama_memory_t mem = llama_get_memory(session->ctx);
+    if (mem != nullptr) {
+        for (uint32_t i = 0; i < session->n_slots; ++i) {
+            const llama_pos pmax = llama_memory_seq_pos_max(mem, static_cast<llama_seq_id>(i));
+            session->slot_pos[i] = pmax >= 0 ? (static_cast<int32_t>(pmax) + 1) : 0;
+            session->slot_has_logits[i] = false;
+        }
+    }
+
+    // Logits are only defined for the last decoded sequence. Keep the previous active slot
+    // and mark it "logits available" best-effort.
+    if (session->active_slot < session->n_slots) {
+        session->slot_has_logits[session->active_slot] = session->slot_pos[session->active_slot] > 0;
+    }
+
+    // Grammar state is not serialized in llama_state_*; reset samplers.
+    for (uint32_t i = 0; i < session->n_slots; ++i) {
+        if (session->grammar[i] != nullptr) {
+            llama_sampler_reset(session->grammar[i]);
+        }
+    }
+    return ASTRAL_OK;
+}
+
+void* cpu_model_adapter_load(void* model_ctx, AstralSpanU8 path, AstralErr* out_err) {
+    if (out_err == nullptr) {
+        return nullptr;
+    }
+    if (model_ctx == nullptr || path.data == nullptr || path.len == 0) {
+        *out_err = ASTRAL_E_INVALID;
+        return nullptr;
+    }
+
+    CpuModel* model = static_cast<CpuModel*>(model_ctx);
+    const size_t path_len = static_cast<size_t>(path.len);
+    char* p = new (std::nothrow) char[path_len + 1];
+    if (p == nullptr) {
+        *out_err = ASTRAL_E_NOMEM;
+        return nullptr;
+    }
+    std::memcpy(p, path.data, path_len);
+    p[path_len] = '\0';
+
+    llama_adapter_lora* a = llama_adapter_lora_init(model->model, p);
+    delete[] p;
+
+    if (a == nullptr) {
+        *out_err = ASTRAL_E_BACKEND;
+        return nullptr;
+    }
+    *out_err = ASTRAL_OK;
+    return a;
+}
+
+void cpu_model_adapter_unload(void* model_ctx, void* adapter_ctx) {
+    (void)model_ctx;
+    if (adapter_ctx == nullptr) {
+        return;
+    }
+    llama_adapter_lora_free(static_cast<llama_adapter_lora*>(adapter_ctx));
+}
+
+AstralErr cpu_session_adapter_clear(void* session_ctx) {
+    if (session_ctx == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->ctx == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+    llama_clear_adapter_lora(session->ctx);
+    return ASTRAL_OK;
+}
+
+AstralErr cpu_session_adapter_add(void* session_ctx, void* adapter_ctx, float scale) {
+    if (session_ctx == nullptr || adapter_ctx == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->ctx == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+
+    const int32_t rc = llama_set_adapter_lora(session->ctx, static_cast<llama_adapter_lora*>(adapter_ctx), scale);
+    return rc == 0 ? ASTRAL_OK : ASTRAL_E_BACKEND;
 }
 
 void* cpu_embedder_create(void* model_ctx, AstralErr* out_err) {
@@ -641,23 +1082,43 @@ AstralErr cpu_embedder_embed(void* embedder_ctx, const int32_t* tokens, uint32_t
 }
 
 static const BackendOps kCpuBackendOps = {
-    /*model_load=*/cpu_model_load,
-    /*model_unload=*/cpu_model_unload,
-    /*tokenize=*/cpu_tokenize,
-    /*detokenize=*/cpu_detokenize,
-    /*model_info=*/cpu_model_info,
-    /*model_special_tokens=*/cpu_model_special_tokens,
-    /*model_embedding_dim=*/cpu_model_embedding_dim,
-    /*session_create=*/cpu_session_create,
-    /*session_destroy=*/cpu_session_destroy,
-    /*session_reset=*/cpu_session_reset,
-    /*session_feed=*/cpu_session_feed,
-    /*session_logits=*/cpu_session_logits,
-    /*session_accept=*/cpu_session_accept,
-    /*embedder_create=*/cpu_embedder_create,
-    /*embedder_destroy=*/cpu_embedder_destroy,
-    /*embedder_reset=*/cpu_embedder_reset,
-    /*embedder_embed=*/cpu_embedder_embed,
+    .model_load = cpu_model_load,
+    .model_unload = cpu_model_unload,
+
+    .tokenize = cpu_tokenize,
+    .detokenize = cpu_detokenize,
+
+    .model_info = cpu_model_info,
+    .model_special_tokens = cpu_model_special_tokens,
+    .model_embedding_dim = cpu_model_embedding_dim,
+
+    .session_create = cpu_session_create,
+    .session_destroy = cpu_session_destroy,
+    .session_reset = cpu_session_reset,
+    .session_feed = cpu_session_feed,
+    .session_logits = cpu_session_logits,
+    .session_accept = cpu_session_accept,
+
+    .embedder_create = cpu_embedder_create,
+    .embedder_destroy = cpu_embedder_destroy,
+    .embedder_reset = cpu_embedder_reset,
+    .embedder_embed = cpu_embedder_embed,
+
+    .session_grammar_set_gbnf = cpu_session_grammar_set_gbnf,
+    .session_grammar_set_json_schema = cpu_session_grammar_set_json_schema,
+    .session_grammar_clear = cpu_session_grammar_clear,
+    .session_apply_grammar = cpu_session_apply_grammar,
+
+    .session_state_size = cpu_session_state_size,
+    .session_state_save = cpu_session_state_save,
+    .session_state_load = cpu_session_state_load,
+
+    .model_adapter_load = cpu_model_adapter_load,
+    .model_adapter_unload = cpu_model_adapter_unload,
+    .session_adapter_clear = cpu_session_adapter_clear,
+    .session_adapter_add = cpu_session_adapter_add,
+
+    .session_set_slot = cpu_session_set_slot,
 };
 
 static const BackendProvider kCpuBackendProvider = {

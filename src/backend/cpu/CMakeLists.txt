@@ -20,6 +20,8 @@ add_library(cpu_backend OBJECT ${CPU_BACKEND_SOURCES})
 target_include_directories(cpu_backend PUBLIC
     ${CMAKE_SOURCE_DIR}/include
     ${LLAMA_CPP_DIR}/include
+    ${LLAMA_CPP_DIR}/common
+    ${LLAMA_CPP_DIR}/vendor
 )
 
 target_include_directories(cpu_backend PRIVATE
@@ -27,7 +29,7 @@ target_include_directories(cpu_backend PRIVATE
 )
 
 # Link against llama.cpp
-target_link_libraries(cpu_backend PUBLIC llama::llama)
+target_link_libraries(cpu_backend PUBLIC llama::llama common)
 
 # Compiler flags (same as parent)
 target_compile_options(cpu_backend PRIVATE

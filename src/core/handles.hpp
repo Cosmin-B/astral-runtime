@@ -28,6 +28,7 @@ enum class HandleKind : uint32_t {
     Model = 1,
     Session = 2,
     Embedder = 3,
+    Adapter = 4,
 };
 
 inline constexpr uint32_t kMaxHandles = 8192;
@@ -230,4 +231,3 @@ inline bool handle_valid(AstralHandle handle) {
 }
 
 } // namespace astral::core
-

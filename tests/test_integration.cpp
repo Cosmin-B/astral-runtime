@@ -550,6 +550,126 @@ TEST(cpu_seed_reset_deterministic) {
     astral_shutdown();
 }
 
+TEST(cpu_json_schema_grammar_capability_and_set) {
+    const char* model_path = get_test_model_path();
+    if (!model_path) {
+        fprintf(stderr, "[SKIP] test_cpu_json_schema_grammar_capability_and_set: Model not found\n");
+        return;
+    }
+
+    AstralInit cfg = {0};
+    cfg.reserve_bytes = 2ULL << 30; // 2GB
+    cfg.thread_count = 4;
+    cfg.numa_node = 0xFFFFFFFF;
+    cfg.enable_hugepages = 0;
+
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralModelDesc model_desc = {0};
+    model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
+    model_desc.model_path.len = static_cast<uint32_t>(strlen(model_path));
+    model_desc.n_ctx = 512;
+    model_desc.n_batch = 128;
+    model_desc.n_threads = 1;
+    model_desc.gpu_layers = 0;
+
+    AstralHandle model = 0;
+    err = astral_model_load(&model_desc, &model);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(model));
+
+    AstralCaps caps = 0;
+    err = astral_model_caps(model, &caps);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE((caps & ASTRAL_CAP_GRAMMAR_JSON_SCHEMA) != 0);
+
+    AstralSessionDesc sd = {0};
+    sd.model = model;
+    sd.max_tokens = 8;
+    sd.temperature = 0.0f;
+    sd.top_k = 0;
+    sd.top_p = 1.0f;
+    sd.stream_enabled = 0;
+    sd.seed = 1;
+
+    AstralHandle session = 0;
+    err = astral_session_create(&sd, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(session));
+
+    // Minimal schema: any JSON object.
+    const char* schema = "{}";
+    AstralSpanU8 schema_span{};
+    schema_span.data = reinterpret_cast<const uint8_t*>(schema);
+    schema_span.len = static_cast<uint32_t>(strlen(schema));
+    err = astral_session_set_grammar_json_schema(session, schema_span);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(cpu_slots_smoke) {
+    const char* model_path = get_test_model_path();
+    if (!model_path) {
+        fprintf(stderr, "[SKIP] test_cpu_slots_smoke: Model not found\n");
+        return;
+    }
+
+    // Ensure llama context is created with multiple sequences enabled.
+    setenv("ASTRAL_LLAMA_MAX_SLOTS", "2", 1);
+
+    AstralInit cfg = {0};
+    cfg.reserve_bytes = 2ULL << 30; // 2GB
+    cfg.thread_count = 4;
+    cfg.numa_node = 0xFFFFFFFF;
+    cfg.enable_hugepages = 0;
+
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralModelDesc model_desc = {0};
+    model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
+    model_desc.model_path.len = static_cast<uint32_t>(strlen(model_path));
+    model_desc.n_ctx = 512;
+    model_desc.n_batch = 128;
+    model_desc.n_threads = 1;
+    model_desc.gpu_layers = 0;
+
+    AstralHandle model = 0;
+    err = astral_model_load(&model_desc, &model);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(model));
+
+    AstralSessionDesc sd = {0};
+    sd.model = model;
+    sd.max_tokens = 4;
+    sd.temperature = 0.0f;
+    sd.top_k = 0;
+    sd.top_p = 1.0f;
+    sd.stream_enabled = 0;
+    sd.seed = 1;
+
+    AstralHandle session = 0;
+    err = astral_session_create(&sd, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(session));
+
+    err = astral_session_set_slot(session, 1);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_set_slot(session, 0);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+
+    unsetenv("ASTRAL_LLAMA_MAX_SLOTS");
+}
+
 /**
  * Test: Model loading with invalid path.
  */

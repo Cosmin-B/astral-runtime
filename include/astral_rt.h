@@ -119,6 +119,14 @@ typedef struct AstralMutSpanU8 {
  */
 typedef uint64_t AstralHandle;
 
+// ---------------------------------------------------------------------------
+// Tunables / Limits
+// ---------------------------------------------------------------------------
+
+// Maximum number of per-token logprob entries supported by the ABI.
+// This keeps the meta side-channel fixed-size and allocation-free.
+#define ASTRAL_LOGPROBS_MAX 16u
+
 /**
  * Error codes.
  * All functions return AstralErr (0 = success).
@@ -342,10 +350,13 @@ enum {
     // Optional features (provider-dependent).
     ASTRAL_CAP_EMBEDDINGS  = 1ull << 16,  // Embeddings API supported for this model
     ASTRAL_CAP_GPU_OFFLOAD = 1ull << 17,  // Build/provider supports GPU offload
-    ASTRAL_CAP_LORA        = 1ull << 18,  // LoRA/adapters supported (not yet implemented in v0.1)
-    ASTRAL_CAP_GRAMMAR     = 1ull << 19,  // Grammar-constrained decoding supported (not yet implemented in v0.1)
-    ASTRAL_CAP_LOGPROBS    = 1ull << 20,  // Per-token metadata/logprobs supported (not yet implemented in v0.1)
-    ASTRAL_CAP_KV_STATE    = 1ull << 21,  // Session KV save/load supported (not yet implemented in v0.1)
+    ASTRAL_CAP_LORA        = 1ull << 18,  // LoRA/adapters supported
+    ASTRAL_CAP_GRAMMAR     = 1ull << 19,  // Grammar-constrained decoding supported
+    ASTRAL_CAP_LOGPROBS    = 1ull << 20,  // Per-token metadata/logprobs supported
+    ASTRAL_CAP_KV_STATE    = 1ull << 21,  // Session KV/state save/load supported
+    ASTRAL_CAP_SLOTS       = 1ull << 22,  // Slot/sequence selection supported
+    ASTRAL_CAP_GRAMMAR_GBNF = 1ull << 23, // GBNF grammar supported
+    ASTRAL_CAP_GRAMMAR_JSON_SCHEMA = 1ull << 24, // JSON schema grammar supported
 };
 
 typedef struct AstralModelLimits {
@@ -469,20 +480,48 @@ typedef struct AstralSamplerDesc {
     uint8_t _padding0[3];
     float presence_penalty;     // 0.0 = disabled
     float frequency_penalty;    // 0.0 = disabled
-    uint32_t mirostat;          // 0 = disabled (not yet implemented in v0.1)
-    float mirostat_tau;         // (not yet implemented in v0.1)
-    float mirostat_eta;         // (not yet implemented in v0.1)
+    uint32_t mirostat;          // 0 = disabled, 1 = mirostat, 2 = mirostat v2
+    float mirostat_tau;         // target surprise
+    float mirostat_eta;         // learning rate
 } AstralSamplerDesc;
+
+/**
+ * Per-token metadata event (side-channel stream).
+ *
+ * `top_*` arrays contain up to `top_n` entries, sorted by probability (descending)
+ * within the sampling distribution actually used for the token (post filters).
+ */
+typedef struct AstralTokenMeta {
+    uint32_t token_id;
+    uint32_t top_n; // <= ASTRAL_LOGPROBS_MAX
+    float logprob;  // log(p(token_id)) in the used sampling distribution (0 for greedy)
+    uint32_t top_token_ids[ASTRAL_LOGPROBS_MAX];
+    float top_logprobs[ASTRAL_LOGPROBS_MAX];
+} AstralTokenMeta;
+
+/**
+ * LoRA adapter description.
+ */
+typedef struct AstralAdapterDesc {
+    uint32_t size;      // sizeof(AstralAdapterDesc)
+    AstralSpanU8 path;  // UTF-8 path to adapter file
+} AstralAdapterDesc;
 
 // Compile-time layout validation for configs.
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 64, "AstralInit must be 64 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 56, "AstralModelDesc must be 56 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 24, "AstralAdapterDesc must be 24 bytes on 64-bit");
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 48, "AstralInit must be 48 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 36, "AstralModelDesc must be 36 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12, "AstralAdapterDesc must be 12 bytes on 32-bit");
 #endif
 
 
@@ -550,6 +589,26 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_reset(AstralHandle session, cons
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_sampler(AstralHandle session, const AstralSamplerDesc* desc);
 
 /**
+ * Configure the "penalty prompt" token span used by sampling penalties.
+ *
+ * The provided token ids are counted once and added to the penalty counts for every generated token.
+ * This is useful for penalizing repeats of a fixed system/prefix prompt without requiring callers
+ * to re-tokenize or re-count per token.
+ *
+ * Notes:
+ * - Passing `count == 0` clears the penalty prompt.
+ * - Tokens outside [0, vocab_size) are ignored.
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_penalty_prompt_set_tokens(
+    AstralHandle session,
+    const int32_t* tokens,
+    uint32_t count
+);
+
+/**
  * Clear all stop sequences for a session.
  *
  * Preconditions:
@@ -571,6 +630,106 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_clear(AstralHandle session)
  * Thread-safety: Not thread-safe; single-threaded access per session.
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_add_utf8(AstralHandle session, AstralSpanU8 utf8);
+
+/**
+ * Bulk set stop sequences (UTF-8).
+ *
+ * Equivalent to: `stop_clear()` then `stop_add_utf8()` for each entry, but avoids per-call overhead.
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_set_utf8(
+    AstralHandle session,
+    const AstralSpanU8* seqs,
+    uint32_t count
+);
+
+/**
+ * Configure per-token logprobs side-channel.
+ *
+ * When enabled, the decode thread publishes `AstralTokenMeta` events to the meta stream.
+ *
+ * Notes:
+ * - `n_probs == 0` disables meta events.
+ * - `n_probs` is clamped to `ASTRAL_LOGPROBS_MAX`.
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_logprobs(AstralHandle session, uint32_t n_probs);
+
+/**
+ * Read meta events from the side-channel stream.
+ *
+ * Return values:
+ * - > 0: number of events written to out_events
+ * - 0: end-of-stream (session is terminal and no buffered events remain)
+ * - < 0: error code (e.g. ASTRAL_E_INVALID, ASTRAL_E_TIMEOUT)
+ */
+ASTRAL_API int32_t ASTRAL_CALL astral_stream_read_meta(
+    AstralHandle session,
+    AstralTokenMeta* out_events,
+    uint32_t capacity,
+    uint32_t timeout_ms
+);
+
+/**
+ * Save/load session KV/state as bytes.
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_size(AstralHandle session, uint64_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_save(
+    AstralHandle session,
+    AstralMutSpanU8 out_buf,
+    uint64_t* out_written
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_load(AstralHandle session, AstralSpanU8 state_bytes);
+
+/**
+ * Load/unload a LoRA adapter.
+ *
+ * Adapter handles are model-scoped and can be attached to sessions via
+ * `astral_session_adapters_add()`.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_load(
+    AstralHandle model,
+    const AstralAdapterDesc* desc,
+    AstralHandle* out_adapter
+);
+ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter);
+
+/**
+ * Attach adapters to a session.
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_clear(AstralHandle session);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_add(AstralHandle session, AstralHandle adapter, float scale);
+
+/**
+ * Configure grammar-constrained decoding (GBNF).
+ *
+ * Notes:
+ * - `root` may be empty to use the default start symbol ("root").
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_gbnf(AstralHandle session, AstralSpanU8 gbnf, AstralSpanU8 root);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_json_schema(AstralHandle session, AstralSpanU8 json_schema);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_grammar(AstralHandle session);
+
+/**
+ * Set the session slot/sequence id (for providers that support parallel slots).
+ *
+ * Preconditions:
+ * - Session must not be decoding (cancel + wait first).
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_slot(AstralHandle session, uint32_t slot_id);
 
 /**
  * Create an inference session.
