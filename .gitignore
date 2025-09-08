@@ -45,7 +45,13 @@ Thumbs.db
 perf.data
 perf.data.*
 
+# Local benchmark outputs (do not commit)
+benchmarks/results/
+
 # Downloaded models (do not commit)
 tests/models/*.gguf
 tests/models/*.bin
 tests/models/*.safetensors
+
+# Local scratch docs
+COMPREHENSIVE_REVIEW.md
