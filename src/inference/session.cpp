@@ -237,7 +237,12 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     // Allocate per-session memory (reserve + commit)
     // This will be used by FrameAllocator
     constexpr size_t allocator_capacity = kDefaultAllocatorCapacity;
-    void* allocator_memory = platform::vm_reserve(allocator_capacity);
+    void* allocator_memory = nullptr;
+    if (::astral::core::runtime_hugepages_enabled()) {
+        allocator_memory = platform::vm_reserve_aligned(allocator_capacity, 2 * 1024 * 1024);
+    } else {
+        allocator_memory = platform::vm_reserve(allocator_capacity);
+    }
     if (allocator_memory == nullptr) {
         return ASTRAL_E_NOMEM;
     }

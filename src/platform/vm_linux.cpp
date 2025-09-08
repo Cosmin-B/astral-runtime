@@ -49,6 +49,39 @@ void* vm_reserve(size_t size) {
   return addr;
 }
 
+void* vm_reserve_aligned(size_t size, size_t alignment) {
+  if (size == 0) {
+    return nullptr;
+  }
+  if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+    return nullptr;
+  }
+
+  // Best-effort: over-reserve and trim prefix/suffix with munmap so the remaining mapping is
+  // exactly `size` and starts at an `alignment` boundary. This preserves the vm_release contract
+  // (release with the same base+size).
+  const size_t total = size + alignment;
+  void* base = vm_reserve(total);
+  if (base == nullptr) {
+    return nullptr;
+  }
+
+  const uintptr_t base_int = reinterpret_cast<uintptr_t>(base);
+  const uintptr_t aligned_int = (base_int + (alignment - 1)) & ~(static_cast<uintptr_t>(alignment) - 1);
+  const size_t prefix = static_cast<size_t>(aligned_int - base_int);
+  const size_t suffix = total - prefix - size;
+
+  if (prefix != 0) {
+    munmap(base, prefix);
+  }
+  if (suffix != 0) {
+    void* tail = reinterpret_cast<void*>(aligned_int + size);
+    munmap(tail, suffix);
+  }
+
+  return reinterpret_cast<void*>(aligned_int);
+}
+
 void vm_commit(void* addr, size_t size) {
   if (addr == nullptr || size == 0) {
     return;

@@ -232,8 +232,15 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init(const AstralInit* cfg) {
         reserve_size = 2ULL << 30;
     }
 
+    // If hugepages are enabled, prefer a 2MB-aligned reservation and a 2MB-sized region
+    // so we can use explicit hugepage mappings later (and maximize THP promotion chances).
+    if (cfg->enable_hugepages) {
+        constexpr size_t kHugeAlign = 2 * 1024 * 1024;
+        reserve_size = (reserve_size + (kHugeAlign - 1)) & ~(kHugeAlign - 1);
+    }
+
     // Reserve virtual memory
-    void* vm_base = vm_reserve(reserve_size);
+    void* vm_base = cfg->enable_hugepages ? vm_reserve_aligned(reserve_size, 2 * 1024 * 1024) : vm_reserve(reserve_size);
     if (!vm_base) {
         g_runtime.initialized.store(false, std::memory_order_release);
         return ASTRAL_E_NOMEM;

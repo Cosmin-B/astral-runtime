@@ -23,6 +23,18 @@ namespace astral::platform {
 /// Memory: Does not consume physical memory; only address space
 void* vm_reserve(size_t size);
 
+/// Reserve virtual address space with a requested alignment (best-effort).
+///
+/// Notes:
+/// - On Linux/macOS, this over-reserves and trims with munmap to return an aligned base.
+/// - On Windows, this attempts to reserve at an aligned address via retry; may fall back.
+/// - `alignment` should be a power of two and typically a multiple of the OS page size.
+///
+/// @param size Size in bytes to reserve
+/// @param alignment Requested base alignment in bytes
+/// @return Aligned pointer to reserved address space, or nullptr on failure
+void* vm_reserve_aligned(size_t size, size_t alignment);
+
 /// Commit pages in reserved address space (allocate physical memory).
 ///
 /// Makes reserved pages accessible by committing physical memory. Can be called

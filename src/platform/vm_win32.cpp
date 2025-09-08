@@ -60,6 +60,42 @@ void* vm_reserve(size_t size) {
   return addr;
 }
 
+void* vm_reserve_aligned(size_t size, size_t alignment) {
+  if (size == 0) {
+    return nullptr;
+  }
+  if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+    return nullptr;
+  }
+
+  // Best-effort strategy:
+  // 1) Reserve a larger region anywhere.
+  // 2) Release it.
+  // 3) Try reserving exactly `size` at an aligned address inside the released range.
+  // Repeat a few times if the aligned address cannot be reserved.
+  constexpr uint32_t kMaxAttempts = 32;
+  const size_t total = size + alignment;
+
+  for (uint32_t attempt = 0; attempt < kMaxAttempts; ++attempt) {
+    void* base = ::VirtualAlloc(nullptr, total, MEM_RESERVE, PAGE_NOACCESS);
+    if (base == nullptr) {
+      return nullptr;
+    }
+
+    const uintptr_t base_int = reinterpret_cast<uintptr_t>(base);
+    const uintptr_t aligned_int = (base_int + (alignment - 1)) & ~(static_cast<uintptr_t>(alignment) - 1);
+    ::VirtualFree(base, 0, MEM_RELEASE);
+
+    void* aligned = ::VirtualAlloc(reinterpret_cast<void*>(aligned_int), size, MEM_RESERVE, PAGE_NOACCESS);
+    if (aligned != nullptr) {
+      return aligned;
+    }
+  }
+
+  // Fallback: reserve without alignment.
+  return vm_reserve(size);
+}
+
 void vm_commit(void* addr, size_t size) {
   if (addr == nullptr || size == 0) {
     return;
