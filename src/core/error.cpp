@@ -15,10 +15,12 @@
 
 #include "../../include/astral_rt.h"
 #include "error.hpp"
+#include "abi_guard.hpp"
 #include "handles.hpp"
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstdint>
 
 // ============================================================================
 // Error String Conversion
@@ -27,6 +29,7 @@
 extern "C" {
 
 ASTRAL_API void ASTRAL_CALL astral_version(uint32_t* major, uint32_t* minor, uint32_t* patch) {
+    ASTRAL_ABI_TRY_BEGIN
     if (major) {
         *major = ASTRAL_VERSION_MAJOR;
     }
@@ -36,9 +39,11 @@ ASTRAL_API void ASTRAL_CALL astral_version(uint32_t* major, uint32_t* minor, uin
     if (patch) {
         *patch = ASTRAL_VERSION_PATCH;
     }
+    ASTRAL_ABI_CATCH_END_VOID()
 }
 
 ASTRAL_API const char* ASTRAL_CALL astral_error_string(AstralErr err) {
+    ASTRAL_ABI_TRY_BEGIN
     // Return static error string for error code
     // No allocation, no thread-local state
     switch (err) {
@@ -63,6 +68,7 @@ ASTRAL_API const char* ASTRAL_CALL astral_error_string(AstralErr err) {
         default:
             return "Unknown error";
     }
+    ASTRAL_ABI_CATCH_END_CSTR()
 }
 
 } // extern "C"
@@ -71,27 +77,60 @@ namespace astral::core {
 
 namespace {
 
-thread_local char g_last_error[512] = {0};
+constexpr uint32_t kErrorSlots = 8;
+constexpr size_t kErrorMsgBytes = 512;
+
+struct ErrorTLS {
+    uint32_t depth; // 0 outside Astral; 1+ inside a C ABI call; nested calls bump this
+    char slots[kErrorSlots][kErrorMsgBytes];
+};
+
+thread_local ErrorTLS g_error_tls = {0, {{0}}};
+
+static inline uint32_t current_slot_index() noexcept {
+    // Slot 0 holds the last error for the most recent top-level call.
+    // Slot 1.. are used for nested calls (callbacks calling back into Astral).
+    const uint32_t d = g_error_tls.depth;
+    return d == 0 ? 0u : (d - 1u);
+}
+
+static inline char* current_slot() noexcept {
+    return g_error_tls.slots[current_slot_index()];
+}
 
 } // namespace
 
+ErrorScope::ErrorScope() noexcept {
+    // Bounded nesting: if we overflow, we saturate at the last slot.
+    if (g_error_tls.depth < kErrorSlots) {
+        ++g_error_tls.depth;
+    }
+    current_slot()[0] = '\0';
+}
+
+ErrorScope::~ErrorScope() noexcept {
+    if (g_error_tls.depth > 0) {
+        --g_error_tls.depth;
+    }
+}
+
 void set_last_error(const char* msg) {
     if (msg == nullptr) {
-        g_last_error[0] = '\0';
+        current_slot()[0] = '\0';
         return;
     }
-    std::snprintf(g_last_error, sizeof(g_last_error), "%s", msg);
+    std::snprintf(current_slot(), kErrorMsgBytes, "%s", msg);
 }
 
 void set_last_errorf(const char* fmt, ...) {
     if (fmt == nullptr) {
-        g_last_error[0] = '\0';
+        current_slot()[0] = '\0';
         return;
     }
 
     va_list args;
     va_start(args, fmt);
-    std::vsnprintf(g_last_error, sizeof(g_last_error), fmt, args);
+    std::vsnprintf(current_slot(), kErrorMsgBytes, fmt, args);
     va_end(args);
 }
 
@@ -100,11 +139,11 @@ void set_last_error_from_code(AstralErr err) {
 }
 
 void clear_last_error() {
-    g_last_error[0] = '\0';
+    current_slot()[0] = '\0';
 }
 
 const char* last_error() {
-    return g_last_error;
+    return current_slot();
 }
 
 } // namespace astral::core
@@ -112,15 +151,21 @@ const char* last_error() {
 extern "C" {
 
 ASTRAL_API const char* ASTRAL_CALL astral_last_error(void) {
+    ASTRAL_ABI_TRY_BEGIN
     return astral::core::last_error();
+    ASTRAL_ABI_CATCH_END_CSTR()
 }
 
 ASTRAL_API void ASTRAL_CALL astral_clear_last_error(void) {
+    ASTRAL_ABI_TRY_BEGIN
     astral::core::clear_last_error();
+    ASTRAL_ABI_CATCH_END_VOID()
 }
 
 ASTRAL_API int ASTRAL_CALL astral_handle_valid(AstralHandle handle) {
+    ASTRAL_ABI_TRY_BEGIN
     return astral::core::handle_valid(handle) ? 1 : 0;
+    ASTRAL_ABI_CATCH_END_I32(0)
 }
 
 } // extern "C"

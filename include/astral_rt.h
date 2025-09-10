@@ -223,6 +223,66 @@ typedef struct AstralInit {
     uint8_t _padding1[7];        /** Reserved/padding (keeps layout stable) */
 } AstralInit;
 
+// ============================================================================
+// Initialization (Extended)
+// ============================================================================
+
+typedef uint32_t AstralMemoryMode;
+enum {
+    // Default behavior: reserve/commit virtual memory using platform VM primitives.
+    ASTRAL_MEMMODE_VM = 0,
+
+    // Embedded-friendly: use a user-provided arena (borrowed; Astral will not free it).
+    ASTRAL_MEMMODE_ARENA_BORROWED = 1,
+
+    // Embedded-friendly: Astral allocates and owns a single arena using the provided allocator.
+    ASTRAL_MEMMODE_ARENA_OWNED = 2,
+};
+
+/**
+ * Arena configuration for ASTRAL_MEMMODE_ARENA_*.
+ *
+ * The arena is used as a backing store for Astral-managed regions such as per-session scratch blocks.
+ *
+ * Determinism:
+ * - Sessions acquire fixed-size blocks from the arena (see session_block_* fields).
+ * - If no blocks remain, session creation fails with ASTRAL_E_NOMEM.
+ */
+typedef struct AstralArenaDesc {
+    void* base; /** Arena base address (required for BORROWED; optional for OWNED). */
+#if !(defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8))
+    uint32_t _padding0;
+#endif
+    uint64_t size; /** Arena size in bytes (required). */
+
+    AstralAllocator alloc; /** Allocator used to allocate/free the arena in OWNED mode (optional; falls back to sys_alloc). */
+
+    uint32_t session_block_size;  /** Fixed scratch block size (bytes). 0 = default. */
+    uint32_t session_block_count; /** Number of fixed scratch blocks. 0 = auto from arena size. */
+
+    // Additional arena partitioning knobs (optional; 0 = default):
+    // - _reserved[0]: worker_scratch_bytes_per_worker (default: 256 KiB; 0 disables worker scratch)
+    // - _reserved[1]: runtime_heap_bytes (default: 2 MiB; 0 disables runtime arena heap)
+    // - _reserved[2..3]: reserved for future use
+    uint32_t _reserved[4];
+} AstralArenaDesc;
+
+/**
+ * Extended initialization configuration supporting embedded-friendly arena modes.
+ *
+ * Notes:
+ * - For ASTRAL_MEMMODE_VM, AstralInit.reserve_bytes behaves as in astral_init().
+ * - For ASTRAL_MEMMODE_ARENA_*, reserve_bytes is ignored; use AstralArenaDesc.size instead.
+ * - enable_hugepages is ignored in arena modes.
+ * - In arena modes, if `base.thread_count` is 0, Astral defaults to 1 worker thread for determinism.
+ */
+typedef struct AstralInit2 {
+    AstralInit base;
+    AstralMemoryMode memory_mode;
+    uint32_t flags;
+    AstralArenaDesc arena;
+} AstralInit2;
+
 // Compile-time validation for critical structs
 ASTRAL_STATIC_ASSERT(sizeof(AstralAllocator) == sizeof(void*) * 3, "AstralAllocator layout mismatch");
 ASTRAL_STATIC_ASSERT(sizeof(AstralErr) == 4, "AstralErr must be 32-bit");
@@ -237,6 +297,16 @@ ASTRAL_STATIC_ASSERT(sizeof(AstralHandle) == 8, "AstralHandle must be 64-bit");
  * @return ASTRAL_OK on success; ASTRAL_E_INVALID if cfg is NULL; error code on failure
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_init(const AstralInit* cfg);
+
+/**
+ * Initialize Astral runtime (extended).
+ *
+ * Prefer this API for embedded/robotics targets that cannot rely on virtual memory.
+ *
+ * @param cfg Initialization configuration (must not be NULL)
+ * @return ASTRAL_OK on success; error code on failure
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg);
 
 /**
  * Shutdown Astral runtime.
@@ -324,6 +394,62 @@ typedef struct AstralModelDesc {
     uint8_t _padding0[3];
 #endif
 } AstralModelDesc;
+
+// ============================================================================
+// Model (Extended Source / Embedded-Friendly)
+// ============================================================================
+
+typedef uint32_t AstralModelSourceKind;
+enum {
+    ASTRAL_MODEL_SOURCE_PATH = 0,   // `model_path`
+    ASTRAL_MODEL_SOURCE_MEMORY = 1, // `model_bytes`
+    ASTRAL_MODEL_SOURCE_IO = 2,     // `io`
+};
+
+/**
+ * Model IO interface for embedded builds (no filesystem required).
+ *
+ * Contract:
+ * - `read_at` must be deterministic and thread-safe for concurrent calls.
+ * - `read_at` must not throw exceptions across the C ABI; return 0 on failure.
+ * - Returning fewer bytes than requested is allowed (EOF); 0 means failure or EOF.
+ */
+typedef struct AstralModelIO {
+    void* user;
+    uint64_t (ASTRAL_CALL * size)(void* user);
+    uint32_t (ASTRAL_CALL * read_at)(void* user, uint64_t offset, void* dst, uint32_t dst_len);
+} AstralModelIO;
+
+/**
+ * Extended model configuration (size-tagged).
+ *
+ * Notes:
+ * - `size` must be set to sizeof(AstralModelDesc2).
+ * - `source_kind` selects the model source.
+ */
+typedef struct AstralModelDesc2 {
+    uint32_t size;              // sizeof(AstralModelDesc2)
+    AstralModelSourceKind source_kind;
+    uint32_t _padding0;
+
+    // Sources (selected by `source_kind`)
+    AstralSpanU8 model_path;    // PATH
+    AstralSpanU8 model_bytes;   // MEMORY
+    AstralModelIO io;           // IO
+
+    // Common options (mirrors AstralModelDesc)
+    AstralSpanU8 backend_name;  // Optional backend override
+    uint32_t gpu_layers;
+    uint32_t n_ctx;
+    uint32_t n_batch;
+    uint32_t n_threads;
+    uint8_t embeddings_only;
+#if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
+    uint8_t _padding1[7];
+#else
+    uint8_t _padding1[3];
+#endif
+} AstralModelDesc2;
 
 /**
  * Model metadata.
@@ -434,6 +560,15 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize(
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_load(const AstralModelDesc* desc, AstralHandle* out_model);
 
 /**
+ * Load a model from a selected source (path / memory / custom IO).
+ *
+ * Notes:
+ * - This is an embedded-friendly surface; not all backends support all sources yet.
+ * - If a source is unsupported by the selected backend, returns ASTRAL_E_UNSUPPORTED.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_load2(const AstralModelDesc2* desc, AstralHandle* out_model);
+
+/**
  * Release a model.
  * Thread-safety: Not thread-safe; must not be in use by any session.
  *
@@ -511,6 +646,7 @@ typedef struct AstralAdapterDesc {
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 64, "AstralInit must be 64 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 56, "AstralModelDesc must be 56 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc2) == 112, "AstralModelDesc2 must be 112 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");

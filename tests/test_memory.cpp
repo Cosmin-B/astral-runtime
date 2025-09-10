@@ -12,6 +12,7 @@
 #include "../src/platform/vm.h"
 
 #include <cstring>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -19,14 +20,36 @@
 using namespace astral::memory;
 using namespace astral::platform;
 
+namespace {
+
+static void* alloc_backing(size_t size) {
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
+    void* memory = vm_reserve(size);
+    vm_commit(memory, size);
+    return memory;
+#else
+    return std::malloc(size);
+#endif
+}
+
+static void free_backing(void* memory, size_t size) {
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
+    vm_release(memory, size);
+#else
+    (void)size;
+    std::free(memory);
+#endif
+}
+
+} // namespace
+
 //
 // FrameAllocator Tests
 //
 
 TEST(frame_allocator_basic) {
     constexpr size_t kCapacity = 1024 * 1024; // 1 MB
-    void* memory = vm_reserve(kCapacity);
-    vm_commit(memory, kCapacity);
+    void* memory = alloc_backing(kCapacity);
 
     FrameAllocator alloc(memory, kCapacity);
     ASSERT_EQ(alloc.capacity(), kCapacity);
@@ -41,13 +64,12 @@ TEST(frame_allocator_basic) {
     ASSERT_NOT_NULL(p2);
     ASSERT_LE(alloc.used(), 64 + 128 + 16); // May have alignment padding
 
-    vm_release(memory, kCapacity);
+    free_backing(memory, kCapacity);
 }
 
 TEST(frame_allocator_reset) {
     constexpr size_t kCapacity = 4096;
-    void* memory = vm_reserve(kCapacity);
-    vm_commit(memory, kCapacity);
+    void* memory = alloc_backing(kCapacity);
 
     FrameAllocator alloc(memory, kCapacity);
 
@@ -63,13 +85,12 @@ TEST(frame_allocator_reset) {
     // After reset, same address should be returned (bump pointer reset)
     ASSERT_EQ(p1, p2);
 
-    vm_release(memory, kCapacity);
+    free_backing(memory, kCapacity);
 }
 
 TEST(frame_allocator_alignment) {
     constexpr size_t kCapacity = 8192;
-    void* memory = vm_reserve(kCapacity);
-    vm_commit(memory, kCapacity);
+    void* memory = alloc_backing(kCapacity);
 
     FrameAllocator alloc(memory, kCapacity);
 
@@ -88,13 +109,12 @@ TEST(frame_allocator_alignment) {
     ASSERT_NOT_NULL(p3);
     ASSERT_EQ(reinterpret_cast<uintptr_t>(p3) % 16, 0);
 
-    vm_release(memory, kCapacity);
+    free_backing(memory, kCapacity);
 }
 
 TEST(frame_allocator_out_of_memory) {
     constexpr size_t kCapacity = 1024;
-    void* memory = vm_reserve(kCapacity);
-    vm_commit(memory, kCapacity);
+    void* memory = alloc_backing(kCapacity);
 
     FrameAllocator alloc(memory, kCapacity);
 
@@ -106,13 +126,12 @@ TEST(frame_allocator_out_of_memory) {
     void* p2 = alloc.alloc(1);
     ASSERT_NULL(p2);
 
-    vm_release(memory, kCapacity);
+    free_backing(memory, kCapacity);
 }
 
 TEST(frame_allocator_available) {
     constexpr size_t kCapacity = 2048;
-    void* memory = vm_reserve(kCapacity);
-    vm_commit(memory, kCapacity);
+    void* memory = alloc_backing(kCapacity);
 
     FrameAllocator alloc(memory, kCapacity);
 
@@ -124,13 +143,12 @@ TEST(frame_allocator_available) {
     alloc.reset();
     ASSERT_EQ(alloc.available(), kCapacity);
 
-    vm_release(memory, kCapacity);
+    free_backing(memory, kCapacity);
 }
 
 TEST(frame_allocator_multiple_allocs) {
     constexpr size_t kCapacity = 16384;
-    void* memory = vm_reserve(kCapacity);
-    vm_commit(memory, kCapacity);
+    void* memory = alloc_backing(kCapacity);
 
     FrameAllocator alloc(memory, kCapacity);
 
@@ -148,7 +166,7 @@ TEST(frame_allocator_multiple_allocs) {
 
     ASSERT_LE(alloc.used(), kBlockCount * (kBlockSize + 16)); // With alignment padding
 
-    vm_release(memory, kCapacity);
+    free_backing(memory, kCapacity);
 }
 
 //

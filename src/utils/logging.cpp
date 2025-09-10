@@ -91,7 +91,19 @@ void logv(Level level, const char* fmt, va_list args) {
     void* user = g_user.load(std::memory_order_acquire);
     uint64_t start = monotonic_now_ns();
 
+#if defined(__cpp_exceptions)
+    try {
+        cb(user, static_cast<int>(level), reinterpret_cast<const uint8_t*>(g_buffer), msg_len);
+    } catch (...) {
+        // Never allow user exceptions to unwind through Astral.
+        // Disable the callback to avoid repeated faults.
+        g_callback.store(nullptr, std::memory_order_release);
+        ::fprintf(stderr, "[ASTRAL WARNING] Log callback threw an exception; callback disabled.\n");
+        return;
+    }
+#else
     cb(user, static_cast<int>(level), reinterpret_cast<const uint8_t*>(g_buffer), msg_len);
+#endif
 
     uint64_t elapsed = monotonic_now_ns() - start;
 

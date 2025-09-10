@@ -24,18 +24,36 @@ else()
 endif()
 
 # List of test files
-set(TEST_FILES
-    test_platform
-    test_memory
-    test_concurrency
-    test_utf8
-    test_logging
-    test_core
-    test_backend
-    test_inference
-    test_embeddings
-    test_provider_harness
-)
+#
+# When virtual memory is disabled, skip tests that require VM-backed runtime init/model load.
+if(ASTRAL_ENABLE_VIRTUAL_MEMORY)
+    set(TEST_FILES
+        test_error_scope
+        test_platform
+        test_memory
+        test_concurrency
+        test_utf8
+        test_logging
+        test_core
+        test_arena
+        test_model_sources
+        test_backend
+        test_inference
+        test_embeddings
+        test_provider_harness
+    )
+else()
+    set(TEST_FILES
+        test_error_scope
+        test_platform
+        test_memory
+        test_concurrency
+        test_utf8
+        test_logging
+        test_arena
+        test_model_sources
+    )
+endif()
 
 # Create test executables and register with CTest
 foreach(test_file ${TEST_FILES})
@@ -58,6 +76,12 @@ foreach(test_file ${TEST_FILES})
             CXX_STANDARD_REQUIRED ON
         )
 
+        target_compile_definitions(${test_file} PRIVATE
+            $<$<BOOL:${ASTRAL_ENABLE_CUDA}>:ASTRAL_ENABLE_CUDA=1>
+            $<$<NOT:$<BOOL:${ASTRAL_ENABLE_CUDA}>>:ASTRAL_ENABLE_CUDA=0>
+            ASTRAL_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        )
+
         # Include directories
         target_include_directories(${test_file} PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -78,6 +102,12 @@ foreach(test_file ${TEST_FILES})
             TIMEOUT 30
             LABELS "unit"
         )
+
+        # Inference tests exercise timing-sensitive async scheduling + streaming.
+        # Avoid parallel CTest flakiness on oversubscribed CI hosts.
+        if(${test_file} STREQUAL "test_inference")
+            set_tests_properties(${test_file} PROPERTIES RUN_SERIAL TRUE)
+        endif()
 
         message(STATUS "Configured test: ${test_file}")
     endif()
@@ -136,6 +166,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
                 CXX_STANDARD_REQUIRED ON
             )
 
+            target_compile_definitions(${test_file}_tsan PRIVATE
+                $<$<BOOL:${ASTRAL_ENABLE_CUDA}>:ASTRAL_ENABLE_CUDA=1>
+                $<$<NOT:$<BOOL:${ASTRAL_ENABLE_CUDA}>>:ASTRAL_ENABLE_CUDA=0>
+            )
+
             target_include_directories(${test_file}_tsan PRIVATE
                 ${CMAKE_SOURCE_DIR}/include
                 ${CMAKE_SOURCE_DIR}/src
@@ -163,7 +198,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 # Integration test executable (if exists)
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_integration.cpp)
+if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_integration.cpp)
     add_executable(test_integration
         main.cpp
         test_integration.cpp
@@ -220,7 +255,7 @@ endif()
 message(STATUS "========================================")
 
 # Gate: no allocations in steady-state decode/stream (best-effort portable).
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
+if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
     add_executable(gate_allocations
         gate_allocations.cpp
         main.cpp
@@ -266,7 +301,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
 endif()
 
 # Gate: no steady-state I/O syscalls in decode/stream (best-effort portable).
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
+if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
     add_executable(gate_io_syscalls
         gate_io_syscalls.cpp
         main.cpp
@@ -322,7 +357,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
 endif()
 
 # Gate: RSS cap (embedded validation, Linux-only enforcement).
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_rss_cap.cpp)
+if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_rss_cap.cpp)
     add_executable(gate_rss_cap
         gate_rss_cap.cpp
         main.cpp

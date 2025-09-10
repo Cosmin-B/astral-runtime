@@ -11,7 +11,10 @@
 #include "embedder.hpp"
 #include "adapter.hpp"
 #include "../core/error.hpp"
+#include "../core/abi_guard.hpp"
 #include "../core/handles.hpp"
+#include "../core/runtime_state.hpp"
+#include "../core/model_sources.hpp"
 
 namespace {
 
@@ -39,6 +42,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_load(
     const AstralModelDesc* desc,
     AstralHandle* out_model
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (desc == nullptr || out_model == nullptr) {
         set_err_invalid("desc/out_model");
         return ASTRAL_E_INVALID;
@@ -52,9 +56,112 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_load(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_load2(
+    const AstralModelDesc2* desc2,
+    AstralHandle* out_model
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (desc2 == nullptr || out_model == nullptr) {
+        set_err_invalid("desc/out_model");
+        return ASTRAL_E_INVALID;
+    }
+
+    if (desc2->size != sizeof(AstralModelDesc2)) {
+        set_err_invalid("desc.size");
+        return ASTRAL_E_INVALID;
+    }
+
+    AstralModelDesc desc{};
+    desc.backend_name = desc2->backend_name;
+    desc.gpu_layers = desc2->gpu_layers;
+    desc.n_ctx = desc2->n_ctx;
+    desc.n_batch = desc2->n_batch;
+    desc.n_threads = desc2->n_threads;
+    desc.embeddings_only = desc2->embeddings_only;
+
+    if (desc2->source_kind == ASTRAL_MODEL_SOURCE_PATH) {
+        desc.model_path = desc2->model_path;
+        return astral_model_load(&desc, out_model);
+    }
+
+    if (desc2->source_kind == ASTRAL_MODEL_SOURCE_MEMORY) {
+        if (desc2->model_bytes.data == nullptr || desc2->model_bytes.len == 0) {
+            set_err_invalid("desc.model_bytes");
+            return ASTRAL_E_INVALID;
+        }
+
+        astral::core::ModelSource src{};
+        src.kind = ASTRAL_MODEL_SOURCE_MEMORY;
+        src.bytes = desc2->model_bytes;
+
+        char token[64]{};
+        uint64_t id = 0;
+        const AstralErr reg = astral::core::model_source_register(src, &id, token, sizeof(token));
+        if (reg != ASTRAL_OK) {
+            set_err_code(reg);
+            return reg;
+        }
+
+        desc.model_path.data = reinterpret_cast<const uint8_t*>(token);
+        desc.model_path.len = static_cast<uint32_t>(std::strlen(token));
+
+        astral::inference::Model* model = nullptr;
+        const AstralErr err = astral::inference::model_load(&desc, &model);
+        if (astral::core::model_source_present(id)) {
+            astral::core::model_source_release(id);
+        }
+        if (err == ASTRAL_OK) {
+            *out_model = model->handle;
+        } else {
+            set_err_code(err);
+        }
+        return err;
+    }
+
+    if (desc2->source_kind == ASTRAL_MODEL_SOURCE_IO) {
+        if (desc2->io.size == nullptr || desc2->io.read_at == nullptr) {
+            set_err_invalid("desc.io.size/read_at");
+            return ASTRAL_E_INVALID;
+        }
+
+        astral::core::ModelSource src{};
+        src.kind = ASTRAL_MODEL_SOURCE_IO;
+        src.io = desc2->io;
+
+        char token[64]{};
+        uint64_t id = 0;
+        const AstralErr reg = astral::core::model_source_register(src, &id, token, sizeof(token));
+        if (reg != ASTRAL_OK) {
+            set_err_code(reg);
+            return reg;
+        }
+
+        desc.model_path.data = reinterpret_cast<const uint8_t*>(token);
+        desc.model_path.len = static_cast<uint32_t>(std::strlen(token));
+
+        astral::inference::Model* model = nullptr;
+        const AstralErr err = astral::inference::model_load(&desc, &model);
+        if (astral::core::model_source_present(id)) {
+            astral::core::model_source_release(id);
+        }
+        if (err == ASTRAL_OK) {
+            *out_model = model->handle;
+        } else {
+            set_err_code(err);
+        }
+        return err;
+    }
+
+    set_err_invalid("desc.source_kind");
+    return ASTRAL_E_INVALID;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API void ASTRAL_CALL astral_model_release(AstralHandle model) {
+    ASTRAL_ABI_TRY_BEGIN
     if (model == 0) {
         set_err_invalid("model");
         return;
@@ -67,6 +174,7 @@ ASTRAL_API void ASTRAL_CALL astral_model_release(AstralHandle model) {
     }
 
     astral::inference::model_release(m);
+    ASTRAL_ABI_CATCH_END_VOID()
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_load(
@@ -74,6 +182,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_load(
     const AstralAdapterDesc* desc,
     AstralHandle* out_adapter
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (model == 0 || desc == nullptr || out_adapter == nullptr) {
         set_err_invalid("model/desc/out_adapter");
         return ASTRAL_E_INVALID;
@@ -93,9 +202,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_load(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter) {
+    ASTRAL_ABI_TRY_BEGIN
     if (adapter == 0) {
         set_err_invalid("adapter");
         return;
@@ -109,9 +220,11 @@ ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter) {
     }
 
     astral::inference::adapter_release(a);
+    ASTRAL_ABI_CATCH_END_VOID()
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_info(AstralHandle model, AstralModelInfo* out_info) {
+    ASTRAL_ABI_TRY_BEGIN
     if (model == 0 || out_info == nullptr) {
         set_err_invalid("model/out_info");
         return ASTRAL_E_INVALID;
@@ -146,9 +259,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_info(AstralHandle model, AstralMod
     out_info->token_bos = bos;
     out_info->token_eos = eos;
     return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_caps(AstralHandle model, AstralCaps* out_caps) {
+    ASTRAL_ABI_TRY_BEGIN
     if (model == 0 || out_caps == nullptr) {
         set_err_invalid("model/out_caps");
         return ASTRAL_E_INVALID;
@@ -202,9 +317,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_caps(AstralHandle model, AstralCap
 
     *out_caps = caps;
     return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_limits(AstralHandle model, AstralModelLimits* out_limits) {
+    ASTRAL_ABI_TRY_BEGIN
     if (model == 0 || out_limits == nullptr) {
         set_err_invalid("model/out_limits");
         return ASTRAL_E_INVALID;
@@ -232,6 +349,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_limits(AstralHandle model, AstralM
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_embedding_dim(AstralHandle model, uint32_t* out_dim) {
+    ASTRAL_ABI_TRY_BEGIN
     if (model == 0 || out_dim == nullptr) {
         set_err_invalid("model/out_dim");
         return ASTRAL_E_INVALID;
@@ -255,6 +373,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_embedding_dim(AstralHandle model, 
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize(
@@ -266,6 +385,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize(
     uint8_t parse_special,
     uint32_t* out_count
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (model == 0 || out_tokens == nullptr || out_count == nullptr || max_tokens == 0) {
         set_err_invalid("model/out_tokens/out_count/max_tokens");
         return ASTRAL_E_INVALID;
@@ -291,6 +411,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize(
@@ -300,6 +421,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize(
     AstralMutSpanU8 out_text,
     uint32_t* out_len
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (model == 0 || tokens == nullptr || out_text.data == nullptr || out_len == nullptr) {
         set_err_invalid("model/tokens/out_text/out_len");
         return ASTRAL_E_INVALID;
@@ -316,6 +438,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 // ============================================================================
@@ -326,6 +449,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_create(
     const AstralSessionDesc* desc,
     AstralHandle* out_session
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (desc == nullptr || out_session == nullptr) {
         set_err_invalid("desc/out_session");
         return ASTRAL_E_INVALID;
@@ -339,9 +463,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_create(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API void ASTRAL_CALL astral_session_destroy(AstralHandle session) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return;
@@ -355,6 +481,7 @@ ASTRAL_API void ASTRAL_CALL astral_session_destroy(AstralHandle session) {
     }
 
     astral::inference::session_destroy(s);
+    ASTRAL_ABI_CATCH_END_VOID()
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed(
@@ -362,6 +489,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed(
     AstralSpanU8 prompt_chunk,
     uint8_t finalize
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -383,9 +511,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_sampler(AstralHandle session, const AstralSamplerDesc* desc) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0 || desc == nullptr) {
         set_err_invalid("session/desc");
         return ASTRAL_E_INVALID;
@@ -403,6 +533,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_sampler(AstralHandle session
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_penalty_prompt_set_tokens(
@@ -410,6 +541,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_penalty_prompt_set_tokens(
     const int32_t* tokens,
     uint32_t count
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -427,9 +559,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_penalty_prompt_set_tokens(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_clear(AstralHandle session) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -447,9 +581,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_clear(AstralHandle session)
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_add_utf8(AstralHandle session, AstralSpanU8 utf8) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -467,6 +603,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_add_utf8(AstralHandle sessi
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_set_utf8(
@@ -474,6 +611,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_set_utf8(
     const AstralSpanU8* seqs,
     uint32_t count
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -491,9 +629,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_set_utf8(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_logprobs(AstralHandle session, uint32_t n_probs) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -511,6 +651,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_logprobs(AstralHandle sessio
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API int32_t ASTRAL_CALL astral_stream_read_meta(
@@ -519,6 +660,7 @@ ASTRAL_API int32_t ASTRAL_CALL astral_stream_read_meta(
     uint32_t capacity,
     uint32_t timeout_ms
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -536,9 +678,11 @@ ASTRAL_API int32_t ASTRAL_CALL astral_stream_read_meta(
         set_err_code(static_cast<AstralErr>(result));
     }
     return result;
+    ASTRAL_ABI_CATCH_END_I32(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_size(AstralHandle session, uint64_t* out_bytes) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0 || out_bytes == nullptr) {
         set_err_invalid("session/out_bytes");
         return ASTRAL_E_INVALID;
@@ -556,6 +700,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_size(AstralHandle session,
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_save(
@@ -563,6 +708,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_save(
     AstralMutSpanU8 out_buf,
     uint64_t* out_written
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0 || out_written == nullptr) {
         set_err_invalid("session/out_written");
         return ASTRAL_E_INVALID;
@@ -580,9 +726,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_save(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_load(AstralHandle session, AstralSpanU8 state_bytes) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -600,9 +748,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_state_load(AstralHandle session,
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_clear(AstralHandle session) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -620,9 +770,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_clear(AstralHandle sess
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_add(AstralHandle session, AstralHandle adapter, float scale) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0 || adapter == 0) {
         set_err_invalid("session/adapter");
         return ASTRAL_E_INVALID;
@@ -640,9 +792,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_add(AstralHandle sessio
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_gbnf(AstralHandle session, AstralSpanU8 gbnf, AstralSpanU8 root) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -660,9 +814,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_gbnf(AstralHandle se
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_json_schema(AstralHandle session, AstralSpanU8 json_schema) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -680,9 +836,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_json_schema(AstralHa
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_grammar(AstralHandle session) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -700,9 +858,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_grammar(AstralHandle sessi
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_slot(AstralHandle session, uint32_t slot_id) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -720,9 +880,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_slot(AstralHandle session, u
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_decode(AstralHandle session) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -740,9 +902,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_decode(AstralHandle session) {
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_cancel(AstralHandle session) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -760,9 +924,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_cancel(AstralHandle session) {
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_state(AstralHandle session, AstralSessionState* out_state) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0 || out_state == nullptr) {
         set_err_invalid("session/out_state");
         return ASTRAL_E_INVALID;
@@ -784,9 +950,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_state(AstralHandle session, Astr
 
     *out_state = static_cast<AstralSessionState>(state);
     return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_wait(AstralHandle session, uint32_t timeout_ms) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -804,9 +972,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_wait(AstralHandle session, uint3
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_reset(AstralHandle session, const AstralSessionDesc* desc) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -824,6 +994,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_reset(AstralHandle session, cons
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API int32_t ASTRAL_CALL astral_stream_read(
@@ -831,6 +1002,7 @@ ASTRAL_API int32_t ASTRAL_CALL astral_stream_read(
     AstralMutSpanU8 out_buf,
     uint32_t timeout_ms
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
         set_err_invalid("session");
         return ASTRAL_E_INVALID;
@@ -850,12 +1022,14 @@ ASTRAL_API int32_t ASTRAL_CALL astral_stream_read(
     }
 
     return result;
+    ASTRAL_ABI_CATCH_END_I32(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_stats(
     AstralHandle session,
     AstralStats* out_stats
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (session == 0 || out_stats == nullptr) {
         set_err_invalid("session/out_stats");
         return ASTRAL_E_INVALID;
@@ -877,6 +1051,432 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_stats(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+// ============================================================================
+// Conversation API (continuous batching)
+// ============================================================================
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_create(const AstralConvDesc* desc, AstralHandle* out_conv) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (desc == nullptr || out_conv == nullptr) {
+        set_err_invalid("desc/out_conv");
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->size != sizeof(AstralConvDesc)) {
+        set_err_invalid("desc.size");
+        return ASTRAL_E_INVALID;
+    }
+
+    astral::inference::Conversation* conv = nullptr;
+    const AstralErr err = astral::inference::conv_create(desc, &conv);
+    if (err == ASTRAL_OK) {
+        *out_conv = conv->handle;
+    } else {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API void ASTRAL_CALL astral_conv_destroy(AstralHandle conv) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return;
+    }
+
+    astral::inference::conv_destroy(c);
+    ASTRAL_ABI_CATCH_END_VOID()
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed(AstralHandle conv, AstralSpanU8 prompt_chunk, uint8_t finalize) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_feed(c, prompt_chunk, finalize);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_decode(AstralHandle conv) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_decode(c);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_cancel(AstralHandle conv) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_cancel(c);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_state(AstralHandle conv, AstralSessionState* out_state) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0 || out_state == nullptr) {
+        set_err_invalid("conv/out_state");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_state(c, out_state);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_wait(AstralHandle conv, uint32_t timeout_ms) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_wait(c, timeout_ms);
+    if (err != ASTRAL_OK && err != ASTRAL_E_TIMEOUT) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_reset(AstralHandle conv, const AstralConvDesc* desc) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0 || desc == nullptr) {
+        set_err_invalid("conv/desc");
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->size != sizeof(AstralConvDesc)) {
+        set_err_invalid("desc.size");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_reset(c, desc);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_sampler(AstralHandle conv, const AstralSamplerDesc* desc) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0 || desc == nullptr) {
+        set_err_invalid("conv/desc");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_set_sampler(c, desc);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_penalty_prompt_set_tokens(
+    AstralHandle conv, const int32_t* tokens, uint32_t count) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_penalty_prompt_set_tokens(c, tokens, count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stop_clear(AstralHandle conv) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_stop_clear(c);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stop_add_utf8(AstralHandle conv, AstralSpanU8 utf8) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_stop_add_utf8(c, utf8);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stop_set_utf8(
+    AstralHandle conv, const AstralSpanU8* seqs, uint32_t count) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_stop_set_utf8(c, seqs, count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_logprobs(AstralHandle conv, uint32_t n_probs) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_set_logprobs(c, n_probs);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_set_gbnf(AstralHandle conv, AstralSpanU8 gbnf, AstralSpanU8 root) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_grammar_set_gbnf(c, gbnf, root);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_set_json_schema(AstralHandle conv, AstralSpanU8 json_schema) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_grammar_set_json_schema(c, json_schema);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_clear(AstralHandle conv) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_grammar_clear(c);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read(AstralHandle conv, AstralMutSpanU8 out_buf, uint32_t timeout_ms) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const int32_t result = astral::inference::conv_stream_read(c, out_buf, timeout_ms);
+    if (result < 0 && result != ASTRAL_E_TIMEOUT) {
+        set_err_code(static_cast<AstralErr>(result));
+    }
+    return result;
+    ASTRAL_ABI_CATCH_END_I32(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(
+    AstralHandle conv, AstralTokenMeta* out_events, uint32_t capacity, uint32_t timeout_ms) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const int32_t result = astral::inference::conv_stream_read_meta(c, out_events, capacity, timeout_ms);
+    if (result < 0 && result != ASTRAL_E_TIMEOUT) {
+        set_err_code(static_cast<AstralErr>(result));
+    }
+    return result;
+    ASTRAL_ABI_CATCH_END_I32(ASTRAL_E_BACKEND)
 }
 
 // ============================================================================
@@ -887,6 +1487,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_embed_create(
     AstralHandle model,
     AstralHandle* out_embedder
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (model == 0 || out_embedder == nullptr) {
         set_err_invalid("model/out_embedder");
         return ASTRAL_E_INVALID;
@@ -903,9 +1504,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_embed_create(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API void ASTRAL_CALL astral_embed_destroy(AstralHandle emb) {
+    ASTRAL_ABI_TRY_BEGIN
     if (emb == 0) {
         set_err_invalid("emb");
         return;
@@ -919,6 +1522,7 @@ ASTRAL_API void ASTRAL_CALL astral_embed_destroy(AstralHandle emb) {
     }
 
     astral::inference::embedder_destroy(e);
+    ASTRAL_ABI_CATCH_END_VOID()
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_embed_enqueue(
@@ -943,6 +1547,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_embed_enqueue(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_embed_collect(
@@ -950,6 +1555,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_embed_collect(
     uint64_t ticket,
     AstralMutSpanU8 out_vector
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (emb == 0 || out_vector.data == nullptr) {
         set_err_invalid("emb/out_vector");
         return ASTRAL_E_INVALID;
@@ -967,6 +1573,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_embed_collect(
         set_err_code(err);
     }
     return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 } // extern "C"

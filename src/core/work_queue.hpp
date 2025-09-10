@@ -14,4 +14,12 @@ using WorkFn = void (*)(void* user);
 // Note: Current implementation is blocking on saturation (no try/timeout path yet).
 AstralErr submit_work(WorkFn fn, void* user);
 
+// Submit work to a specific worker thread (affinity).
+//
+// This is used to enforce "one session ↔ one worker thread" so per-session scratch/allocators
+// are not touched concurrently by multiple workers.
+//
+// `worker_id` is best-effort: it is normalized to the current worker count.
+AstralErr submit_work_affine(uint32_t worker_id, WorkFn fn, void* user);
+
 } // namespace astral::core

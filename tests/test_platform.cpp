@@ -15,6 +15,7 @@
 
 using namespace astral::platform;
 
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
 // Test basic VM reserve/commit/decommit/release cycle
 TEST(vm_reserve_commit_release) {
     constexpr size_t kSize = 4 * 1024 * 1024; // 4MB
@@ -91,6 +92,7 @@ TEST(vm_hugepages_fallback) {
 
     vm_release(addr, kSize);
 }
+#endif // ASTRAL_ENABLE_VIRTUAL_MEMORY
 
 // Test cache line size detection
 TEST(cache_line_size_detection) {
@@ -133,6 +135,7 @@ TEST(compiler_fence_no_crash) {
     ASSERT_EQ(x, 3);
 }
 
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
 // Test error handling: reserve returns nullptr on huge allocation
 TEST(vm_reserve_huge_allocation_fails) {
     // Try to reserve 1 PB (petabyte) - should fail
@@ -221,3 +224,4 @@ TEST(vm_multiple_reservations) {
         vm_release(addrs[i], kSize);
     }
 }
+#endif // ASTRAL_ENABLE_VIRTUAL_MEMORY
