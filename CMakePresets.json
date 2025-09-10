@@ -18,6 +18,50 @@
       }
     },
     {
+      "name": "dev-cuda",
+      "displayName": "Development (CUDA)",
+      "description": "Debug build with CUDA backend enabled (requires CUDA toolkit)",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/dev-cuda",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_CUDA": "ON",
+        "ASTRAL_CUDA_ARCHITECTURES": "75;80;86;89;90",
+        "ASTRAL_CUDA_FORCE_CUBLAS": "OFF",
+        "ASTRAL_CUDA_FORCE_MMQ": "OFF"
+      }
+    },
+    {
+      "name": "dev-prof",
+      "displayName": "Development (Profiling)",
+      "description": "Debug build with Tracy enabled (requires external/tracy submodule)",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/dev-prof",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_TRACY": "ON",
+        "ASTRAL_ENABLE_TRACY_MICRO": "OFF"
+      }
+    },
+    {
+      "name": "dev-prof-cuda",
+      "displayName": "Development (Profiling, CUDA)",
+      "description": "Debug build with Tracy + CUDA backend enabled",
+      "inherits": "dev-prof",
+      "binaryDir": "${sourceDir}/build/dev-prof-cuda",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_CUDA": "ON"
+      }
+    },
+    {
+      "name": "dev-prof-micro",
+      "displayName": "Development (Profiling, Micro)",
+      "description": "Debug build with Tracy enabled + micro zones (higher overhead)",
+      "inherits": "dev-prof",
+      "binaryDir": "${sourceDir}/build/dev-prof-micro",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_TRACY_MICRO": "ON"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release Build",
       "description": "Optimized release build without tests",
@@ -25,7 +69,53 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "ASTRAL_BUILD_TESTS": "OFF",
-        "ASTRAL_BUILD_BENCHMARKS": "OFF"
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "ON"
+      }
+    },
+    {
+      "name": "release-cuda",
+      "displayName": "Release (CUDA)",
+      "description": "Release build with CUDA backend enabled (requires CUDA toolkit)",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/build/release-cuda",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_CUDA": "ON",
+        "ASTRAL_CUDA_ARCHITECTURES": "75;80;86;89;90",
+        "ASTRAL_CUDA_FORCE_CUBLAS": "OFF",
+        "ASTRAL_CUDA_FORCE_MMQ": "OFF"
+      }
+    },
+    {
+      "name": "release-prof",
+      "displayName": "Release (Profiling)",
+      "description": "Release build with Tracy enabled (requires external/tracy submodule)",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/build/release-prof",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_TRACY": "ON",
+        "ASTRAL_ENABLE_TRACY_MICRO": "OFF"
+      }
+    },
+    {
+      "name": "release-prof-cuda",
+      "displayName": "Release (Profiling, CUDA)",
+      "description": "Release build with Tracy + CUDA backend enabled",
+      "inherits": "release-prof",
+      "binaryDir": "${sourceDir}/build/release-prof-cuda",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_CUDA": "ON"
+      }
+    },
+    {
+      "name": "release-prof-micro",
+      "displayName": "Release (Profiling, Micro)",
+      "description": "Release build with Tracy enabled + micro zones (higher overhead)",
+      "inherits": "release-prof",
+      "binaryDir": "${sourceDir}/build/release-prof-micro",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_TRACY_MICRO": "ON"
       }
     },
     {
@@ -36,7 +126,9 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "ASTRAL_BUILD_TESTS": "ON",
-        "ASTRAL_BUILD_BENCHMARKS": "ON"
+        "ASTRAL_BUILD_BENCHMARKS": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "ON"
       }
     },
     {
@@ -46,9 +138,70 @@
       "binaryDir": "${sourceDir}/build/unity",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "OFF",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",
-        "ASTRAL_BUILD_UNITY_PLUGIN": "ON"
+        "ASTRAL_BUILD_UNITY_PLUGIN": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "OFF",
+        "ASTRAL_BUILD_SHARED_LIB": "ON"
+      }
+    },
+    {
+      "name": "unity-plugin-android-arm64",
+      "displayName": "Unity Plugin (Android arm64)",
+      "description": "Build Unity native plugin for Android arm64-v8a (requires ANDROID_NDK_HOME; v0.1.1)",
+      "binaryDir": "${sourceDir}/build/unity-android-arm64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-21",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_UNITY_PLUGIN": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "OFF",
+        "ASTRAL_BUILD_SHARED_LIB": "ON"
+      }
+    },
+    {
+      "name": "unity-plugin-ios-arm64",
+      "displayName": "Unity Plugin (iOS arm64)",
+      "description": "Build Unity native plugin for iOS device arm64 (Xcode; v0.1.1)",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build/unity-ios-arm64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_UNITY_PLUGIN": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF"
+      }
+    },
+    {
+      "name": "unity-plugin-prof",
+      "displayName": "Unity Plugin (Profiling)",
+      "description": "Build Unity native plugin with Tracy enabled (requires external/tracy submodule)",
+      "inherits": "unity-plugin",
+      "binaryDir": "${sourceDir}/build/unity-prof",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_TRACY": "ON",
+        "ASTRAL_ENABLE_TRACY_MICRO": "OFF"
+      }
+    },
+    {
+      "name": "unity-plugin-prof-micro",
+      "displayName": "Unity Plugin (Profiling, Micro)",
+      "description": "Build Unity native plugin with Tracy enabled + micro zones (higher overhead)",
+      "inherits": "unity-plugin-prof",
+      "binaryDir": "${sourceDir}/build/unity-prof-micro",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_TRACY_MICRO": "ON"
       }
     },
     {
@@ -58,9 +211,70 @@
       "binaryDir": "${sourceDir}/build/unreal",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "OFF",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",
-        "ASTRAL_BUILD_UNREAL_PLUGIN": "ON"
+        "ASTRAL_BUILD_UNREAL_PLUGIN": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF"
+      }
+    },
+    {
+      "name": "unreal-plugin-android-arm64",
+      "displayName": "Unreal Plugin (Android arm64)",
+      "description": "Build Unreal ThirdParty libs for Android arm64-v8a (requires ANDROID_NDK_HOME; v0.1.1)",
+      "binaryDir": "${sourceDir}/build/unreal-android-arm64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-21",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_UNREAL_PLUGIN": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF"
+      }
+    },
+    {
+      "name": "unreal-plugin-ios-arm64",
+      "displayName": "Unreal Plugin (iOS arm64)",
+      "description": "Build Unreal ThirdParty libs for iOS device arm64 (Xcode; v0.1.1)",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build/unreal-ios-arm64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
+        "ASTRAL_BUILD_TESTS": "OFF",
+        "ASTRAL_BUILD_BENCHMARKS": "OFF",
+        "ASTRAL_BUILD_UNREAL_PLUGIN": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF"
+      }
+    },
+    {
+      "name": "unreal-plugin-prof",
+      "displayName": "Unreal Plugin (Profiling)",
+      "description": "Build Unreal Engine plugin with Tracy enabled (requires external/tracy submodule)",
+      "inherits": "unreal-plugin",
+      "binaryDir": "${sourceDir}/build/unreal-prof",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_TRACY": "ON",
+        "ASTRAL_ENABLE_TRACY_MICRO": "OFF"
+      }
+    },
+    {
+      "name": "unreal-plugin-prof-micro",
+      "displayName": "Unreal Plugin (Profiling, Micro)",
+      "description": "Build Unreal Engine plugin with Tracy enabled + micro zones (higher overhead)",
+      "inherits": "unreal-plugin-prof",
+      "binaryDir": "${sourceDir}/build/unreal-prof-micro",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_TRACY_MICRO": "ON"
       }
     },
     {
@@ -70,9 +284,28 @@
       "binaryDir": "${sourceDir}/build/embedded-x86_64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "OFF",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",
-        "ASTRAL_BUILD_EXAMPLES": "ON"
+        "ASTRAL_BUILD_EXAMPLES": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF",
+        "ASTRAL_NO_THROW_ABI": "ON",
+        "ASTRAL_ENABLE_VIRTUAL_MEMORY": "OFF",
+        "ASTRAL_CPU_MEMORY_SOURCE_MMAP": "OFF",
+        "ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR": "OFF",
+        "ASTRAL_ENABLE_DYNAMIC_BACKENDS": "OFF",
+        "ASTRAL_ENABLE_THREADS": "OFF"
+      }
+    },
+    {
+      "name": "embedded-x86_64-noexceptions",
+      "displayName": "Embedded Profile (Host x86_64, No Exceptions)",
+      "description": "Experimental: compile Astral sources with -fno-exceptions (see docs/EMBEDDED_PROFILE.md caveats)",
+      "inherits": "embedded-x86_64",
+      "binaryDir": "${sourceDir}/build/embedded-x86_64-noexceptions",
+      "cacheVariables": {
+        "ASTRAL_NO_EXCEPTIONS": "ON"
       }
     },
     {
@@ -82,9 +315,18 @@
       "binaryDir": "${sourceDir}/build/embedded-native",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "OFF",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",
-        "ASTRAL_BUILD_EXAMPLES": "ON"
+        "ASTRAL_BUILD_EXAMPLES": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF",
+        "ASTRAL_NO_THROW_ABI": "ON",
+        "ASTRAL_ENABLE_VIRTUAL_MEMORY": "OFF",
+        "ASTRAL_CPU_MEMORY_SOURCE_MMAP": "OFF",
+        "ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR": "OFF",
+        "ASTRAL_ENABLE_DYNAMIC_BACKENDS": "OFF",
+        "ASTRAL_ENABLE_THREADS": "OFF"
       }
     },
     {
@@ -97,9 +339,18 @@
         "CMAKE_BUILD_TYPE": "Release",
         "GGML_NATIVE": "OFF",
         "GGML_OPENMP": "OFF",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "OFF",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",
-        "ASTRAL_BUILD_EXAMPLES": "ON"
+        "ASTRAL_BUILD_EXAMPLES": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF",
+        "ASTRAL_NO_THROW_ABI": "ON",
+        "ASTRAL_ENABLE_VIRTUAL_MEMORY": "OFF",
+        "ASTRAL_CPU_MEMORY_SOURCE_MMAP": "OFF",
+        "ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR": "OFF",
+        "ASTRAL_ENABLE_DYNAMIC_BACKENDS": "OFF",
+        "ASTRAL_ENABLE_THREADS": "OFF"
       }
     },
     {
@@ -112,9 +363,18 @@
         "CMAKE_BUILD_TYPE": "Release",
         "GGML_NATIVE": "OFF",
         "GGML_OPENMP": "OFF",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "ON",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",
-        "ASTRAL_BUILD_EXAMPLES": "ON"
+        "ASTRAL_BUILD_EXAMPLES": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF",
+        "ASTRAL_NO_THROW_ABI": "ON",
+        "ASTRAL_ENABLE_VIRTUAL_MEMORY": "OFF",
+        "ASTRAL_CPU_MEMORY_SOURCE_MMAP": "OFF",
+        "ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR": "OFF",
+        "ASTRAL_ENABLE_DYNAMIC_BACKENDS": "OFF",
+        "ASTRAL_ENABLE_THREADS": "OFF"
       }
     },
     {
@@ -127,9 +387,18 @@
         "CMAKE_BUILD_TYPE": "Release",
         "GGML_NATIVE": "OFF",
         "GGML_OPENMP": "OFF",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "OFF",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",
-        "ASTRAL_BUILD_EXAMPLES": "ON"
+        "ASTRAL_BUILD_EXAMPLES": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF",
+        "ASTRAL_NO_THROW_ABI": "ON",
+        "ASTRAL_ENABLE_VIRTUAL_MEMORY": "OFF",
+        "ASTRAL_CPU_MEMORY_SOURCE_MMAP": "OFF",
+        "ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR": "OFF",
+        "ASTRAL_ENABLE_DYNAMIC_BACKENDS": "OFF",
+        "ASTRAL_ENABLE_THREADS": "OFF"
       }
     },
     {
@@ -142,9 +411,18 @@
         "CMAKE_BUILD_TYPE": "Release",
         "GGML_NATIVE": "OFF",
         "GGML_OPENMP": "OFF",
+        "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "ON",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",
-        "ASTRAL_BUILD_EXAMPLES": "ON"
+        "ASTRAL_BUILD_EXAMPLES": "ON",
+        "ASTRAL_BUILD_STATIC_LIB": "ON",
+        "ASTRAL_BUILD_SHARED_LIB": "OFF",
+        "ASTRAL_NO_THROW_ABI": "ON",
+        "ASTRAL_ENABLE_VIRTUAL_MEMORY": "OFF",
+        "ASTRAL_CPU_MEMORY_SOURCE_MMAP": "OFF",
+        "ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR": "OFF",
+        "ASTRAL_ENABLE_DYNAMIC_BACKENDS": "OFF",
+        "ASTRAL_ENABLE_THREADS": "OFF"
       }
     }
   ],
@@ -154,8 +432,40 @@
       "configurePreset": "dev"
     },
     {
+      "name": "dev-cuda",
+      "configurePreset": "dev-cuda"
+    },
+    {
+      "name": "dev-prof",
+      "configurePreset": "dev-prof"
+    },
+    {
+      "name": "dev-prof-cuda",
+      "configurePreset": "dev-prof-cuda"
+    },
+    {
+      "name": "dev-prof-micro",
+      "configurePreset": "dev-prof-micro"
+    },
+    {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "release-cuda",
+      "configurePreset": "release-cuda"
+    },
+    {
+      "name": "release-prof",
+      "configurePreset": "release-prof"
+    },
+    {
+      "name": "release-prof-cuda",
+      "configurePreset": "release-prof-cuda"
+    },
+    {
+      "name": "release-prof-micro",
+      "configurePreset": "release-prof-micro"
     },
     {
       "name": "release-with-tests",
@@ -166,12 +476,48 @@
       "configurePreset": "unity-plugin"
     },
     {
+      "name": "unity-plugin-prof",
+      "configurePreset": "unity-plugin-prof"
+    },
+    {
+      "name": "unity-plugin-prof-micro",
+      "configurePreset": "unity-plugin-prof-micro"
+    },
+    {
+      "name": "unity-plugin-android-arm64",
+      "configurePreset": "unity-plugin-android-arm64"
+    },
+    {
+      "name": "unity-plugin-ios-arm64",
+      "configurePreset": "unity-plugin-ios-arm64"
+    },
+    {
       "name": "unreal-plugin",
       "configurePreset": "unreal-plugin"
     },
     {
+      "name": "unreal-plugin-prof",
+      "configurePreset": "unreal-plugin-prof"
+    },
+    {
+      "name": "unreal-plugin-prof-micro",
+      "configurePreset": "unreal-plugin-prof-micro"
+    },
+    {
+      "name": "unreal-plugin-android-arm64",
+      "configurePreset": "unreal-plugin-android-arm64"
+    },
+    {
+      "name": "unreal-plugin-ios-arm64",
+      "configurePreset": "unreal-plugin-ios-arm64"
+    },
+    {
       "name": "embedded-x86_64",
       "configurePreset": "embedded-x86_64"
+    },
+    {
+      "name": "embedded-x86_64-noexceptions",
+      "configurePreset": "embedded-x86_64-noexceptions"
     },
     {
       "name": "embedded-native",
@@ -199,6 +545,34 @@
     {
       "name": "dev",
       "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-cuda",
+      "configurePreset": "dev-cuda",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-prof",
+      "configurePreset": "dev-prof",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-prof-cuda",
+      "configurePreset": "dev-prof-cuda",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-prof-micro",
+      "configurePreset": "dev-prof-micro",
       "output": {
         "outputOnFailure": true
       }

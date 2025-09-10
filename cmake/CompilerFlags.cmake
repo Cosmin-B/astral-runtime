@@ -67,18 +67,8 @@ function(apply_compiler_flags target)
         )
     endif()
 
-    # Platform-specific linker flags
-    if(WIN32)
-        # Windows: Export all symbols for DLL builds
-        if(BUILD_SHARED_LIBS)
-            target_compile_definitions(${target} PRIVATE ASTRAL_BUILD_DLL)
-        endif()
-    elseif(UNIX AND NOT APPLE)
-        # Linux: Link against pthread, dl
-        target_link_libraries(${target} PRIVATE pthread dl)
-    elseif(APPLE)
-        # macOS: No special flags needed (CoreFoundation linked automatically)
-    endif()
+    # Platform-specific linker flags are configured in the top-level `CMakeLists.txt`
+    # so embedded profiles can avoid pulling in optional dependencies (e.g. `dl`).
 endfunction()
 
 # FORBIDDEN FLAGS (documented here as warnings)

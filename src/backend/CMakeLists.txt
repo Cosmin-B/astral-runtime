@@ -36,9 +36,9 @@ if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
     
     # Add llama.cpp as subdirectory
     # This builds llama.cpp as part of Astral build
-    # Configure llama.cpp build options
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
-    set(GGML_STATIC ON CACHE BOOL "Build static library" FORCE)
+	    # Configure llama.cpp build options
+	    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+	    set(GGML_STATIC ON CACHE BOOL "Build static library" FORCE)
     # Needed for JSON schema -> GBNF conversion helper (common/json-schema-to-grammar.*).
     set(LLAMA_BUILD_COMMON ON CACHE BOOL "Enable llama.cpp common library" FORCE)
     # Keep llama.cpp common dependency-light (we don't use downloader codepaths).
@@ -46,12 +46,31 @@ if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
     set(LLAMA_HTTPLIB OFF CACHE BOOL "Disable llama.cpp httplib support" FORCE)
     set(LLAMA_BUILD_TESTS OFF CACHE BOOL "Disable llama.cpp tests" FORCE)
     set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "Disable llama.cpp examples" FORCE)
-    set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Disable llama.cpp server" FORCE)
-    
-    add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp EXCLUDE_FROM_ALL)
-    
-    # Alias for consistency
-    add_library(llama::llama ALIAS llama)
+	    set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Disable llama.cpp server" FORCE)
+
+        # Optional GPU backends (CUDA first).
+        #
+        # Keep these OFF by default so CPU-only users don't need any GPU toolchains.
+        if(ASTRAL_ENABLE_CUDA)
+            find_package(CUDAToolkit REQUIRED)
+
+            # Prefer "auto" behavior by default; allow forcing via Astral options.
+            set(GGML_CUDA ON CACHE BOOL "ggml: use CUDA" FORCE)
+            set(GGML_CUDA_FORCE_CUBLAS ${ASTRAL_CUDA_FORCE_CUBLAS} CACHE BOOL "ggml: always use cuBLAS instead of mmq kernels" FORCE)
+            set(GGML_CUDA_FORCE_MMQ ${ASTRAL_CUDA_FORCE_MMQ} CACHE BOOL "ggml: use mmq kernels instead of cuBLAS" FORCE)
+
+            if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+                set(CMAKE_CUDA_ARCHITECTURES "${ASTRAL_CUDA_ARCHITECTURES}" CACHE STRING "CUDA arch list for fatbin builds" FORCE)
+            endif()
+        else()
+            # Ensure a CPU-only build does not retain CUDA from a previous configure.
+            set(GGML_CUDA OFF CACHE BOOL "ggml: use CUDA" FORCE)
+        endif()
+	    
+	    add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp EXCLUDE_FROM_ALL)
+	    
+	    # Alias for consistency
+	    add_library(llama::llama ALIAS llama)
 else()
     message(FATAL_ERROR "llama.cpp not found at: ${LLAMA_CPP_DIR}\n"
                         "Please clone llama.cpp: git clone https://github.com/ggerganov/llama.cpp ${LLAMA_CPP_DIR}")
