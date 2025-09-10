@@ -1,11 +1,11 @@
 #include "session.hpp"
 #include "../core/work_queue.hpp"
 #include "../core/runtime_state.hpp"
-#include "../platform/vm.h"
+#include "../core/runtime_alloc.hpp"
 #include "../platform/atomics.h"
 #include "../platform/time.h"
+#include "../utils/trace.hpp"
 #include <cstring>
-#include <new>
 #include <cstdlib>
 
 namespace astral::inference {
@@ -65,13 +65,34 @@ Session::Session(Model* model_,
     , adapter_count(0)
     , adapter_handles{}
     , adapter_scales{}
-    , slot_id(0) {}
+    , slot_id(0)
+    , worker_id(0) {}
 
 namespace {
 
 inline uint64_t get_ticks() {
     return platform::ticks_now();
 }
+
+struct ScopedAtomicFlagGuard {
+    std::atomic_flag* flag = nullptr;
+    bool locked = false;
+
+    explicit ScopedAtomicFlagGuard(std::atomic_flag* f) : flag(f) {
+        if (flag != nullptr) {
+            locked = !flag->test_and_set(std::memory_order_acquire);
+        }
+    }
+
+    ScopedAtomicFlagGuard(const ScopedAtomicFlagGuard&) = delete;
+    ScopedAtomicFlagGuard& operator=(const ScopedAtomicFlagGuard&) = delete;
+
+    ~ScopedAtomicFlagGuard() {
+        if (locked && flag != nullptr) {
+            flag->clear(std::memory_order_release);
+        }
+    }
+};
 
 /// Default allocator capacity per session (2MB).
 /// Sufficient for:
@@ -83,6 +104,7 @@ inline uint64_t get_ticks() {
 constexpr size_t kDefaultAllocatorCapacity = 2 * 1024 * 1024;
 
 void decode_work(void* user) {
+    ASTRAL_ZONE_N("astral.decode_work");
     decode_loop(static_cast<Session*>(user));
 }
 
@@ -201,26 +223,11 @@ inline void penalty_state_push(Session* session, uint32_t token_id) {
 }
 
 inline void* session_alloc_mem() {
-#if defined(__cpp_aligned_new)
-    return ::operator new(sizeof(Session), std::align_val_t(alignof(Session)), std::nothrow);
-#else
-    void* p = nullptr;
-    if (::posix_memalign(&p, alignof(Session), sizeof(Session)) != 0) {
-        return nullptr;
-    }
-    return p;
-#endif
+    return ::astral::core::runtime_alloc(sizeof(Session), alignof(Session));
 }
 
 inline void session_free_mem(void* p) noexcept {
-    if (p == nullptr) {
-        return;
-    }
-#if defined(__cpp_aligned_new)
-    ::operator delete(p, std::align_val_t(alignof(Session)));
-#else
-    std::free(p);
-#endif
+    ::astral::core::runtime_free(p, sizeof(Session), alignof(Session));
 }
 
 } // namespace
@@ -238,36 +245,25 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     }
     model->refcount.fetch_add(1, std::memory_order_relaxed);
 
-    // Allocate per-session memory (reserve + commit)
-    // This will be used by FrameAllocator
-    constexpr size_t allocator_capacity = kDefaultAllocatorCapacity;
-    void* allocator_memory = nullptr;
-    if (::astral::core::runtime_hugepages_enabled()) {
-        allocator_memory = platform::vm_reserve_aligned(allocator_capacity, 2 * 1024 * 1024);
-    } else {
-        allocator_memory = platform::vm_reserve(allocator_capacity);
-    }
+    // Allocate per-session scratch backing memory (not a hot path).
+    size_t allocator_capacity = kDefaultAllocatorCapacity;
+    void* allocator_memory =
+        ::astral::core::runtime_session_scratch_acquire(kDefaultAllocatorCapacity, 64, &allocator_capacity);
     if (allocator_memory == nullptr) {
         return ASTRAL_E_NOMEM;
-    }
-
-    // Pre-commit all memory ( avoid page faults in hot path)
-    platform::vm_commit(allocator_memory, allocator_capacity);
-    if (::astral::core::runtime_hugepages_enabled()) {
-        // Best-effort: ignore failure.
-        platform::vm_try_hugepages(allocator_memory, allocator_capacity);
     }
 
     // Allocate session struct on heap
     // Use malloc instead of new to avoid default constructor issues
     void* session_mem = session_alloc_mem();
     if (session_mem == nullptr) {
-        platform::vm_release(allocator_memory, allocator_capacity);
+        ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         return ASTRAL_E_NOMEM;
     }
 
     // Construct session object (starts lifetime; avoids UB in release builds).
     Session* session = new (session_mem) Session(model, allocator_memory, allocator_capacity, *desc);
+    session->worker_id = ::astral::core::runtime_assign_worker_id();
 
     // Allocate prompt buffer (initial capacity: 8K tokens)
     session->prompt_capacity = 8192;
@@ -278,7 +274,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
 
     if (session->prompt_tokens == nullptr) {
         model_release(model);
-        platform::vm_release(allocator_memory, allocator_capacity);
+        ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         session->~Session();
         session_free_mem(session_mem);
         return ASTRAL_E_NOMEM;
@@ -291,7 +287,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
         model->backend->ops->model_info(model->backend_model_ctx, &vocab_size, &ctx_size);
     if (info_err != ASTRAL_OK || vocab_size == 0) {
         model_release(model);
-        platform::vm_release(allocator_memory, allocator_capacity);
+        ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         session->~Session();
         session_free_mem(session_mem);
         return info_err != ASTRAL_OK ? info_err : ASTRAL_E_BACKEND;
@@ -303,7 +299,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
         model->backend->ops->session_create(model->backend_model_ctx, desc, &backend_err);
     if (backend_session_ctx == nullptr) {
         model_release(model);
-        platform::vm_release(allocator_memory, allocator_capacity);
+        ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         session->~Session();
         session_free_mem(session_mem);
         return backend_err != ASTRAL_OK ? backend_err : ASTRAL_E_BACKEND;
@@ -323,7 +319,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
             model->backend->ops->session_destroy(session->backend_session_ctx);
             session->backend_session_ctx = nullptr;
             model_release(model);
-            platform::vm_release(allocator_memory, allocator_capacity);
+            ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
             session->~Session();
             session_free_mem(session_mem);
             return tok_err;
@@ -395,7 +391,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
             session->backend_session_ctx = nullptr;
         }
         model_release(model);
-        platform::vm_release(allocator_memory, allocator_capacity);
+        ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         session->~Session();
         session_free_mem(session_mem);
         return ASTRAL_E_NOMEM;
@@ -421,7 +417,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
         model->backend->ops->session_destroy(session->backend_session_ctx);
         session->backend_session_ctx = nullptr;
         model_release(model);
-        platform::vm_release(allocator_memory, allocator_capacity);
+        ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         session->~Session();
         session_free_mem(session_mem);
         return ASTRAL_E_BUSY;
@@ -467,7 +463,7 @@ void session_destroy(Session* session) {
 
     // Release allocator memory
     if (session->allocator_memory != nullptr) {
-        platform::vm_release(session->allocator_memory, session->allocator_capacity);
+        ::astral::core::runtime_session_scratch_release(session->allocator_memory, session->allocator_capacity);
     }
 
     // Destroy backend session context
@@ -566,7 +562,7 @@ AstralErr session_decode(Session* session) {
     session->t_end_ticks = 0;
 
     // Submit decode work to runtime worker pool.
-    const AstralErr submit_err = ::astral::core::submit_work(decode_work, session);
+    const AstralErr submit_err = ::astral::core::submit_work_affine(session->worker_id, decode_work, session);
     if (submit_err != ASTRAL_OK) {
         session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
         return submit_err;
@@ -644,9 +640,7 @@ AstralErr session_wait(Session* session, uint32_t timeout_ms) {
         } else {
             platform::cpu_wait_for_event();
         }
-        if (spins < 1024) {
-            ++spins;
-        }
+        ++spins;
     }
 }
 
@@ -658,6 +652,16 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     // Must not reset while decoding. Caller should cancel + wait first.
     const SessionState state = session->state.load(std::memory_order_acquire);
     if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    // Not safe to reset concurrently with stream readers; fail fast instead of racing on `pending_*` buffers.
+    ScopedAtomicFlagGuard stream_guard(&session->stream_read_lock);
+    if (!stream_guard.locked) {
+        return ASTRAL_E_STATE;
+    }
+    ScopedAtomicFlagGuard meta_guard(&session->meta_read_lock);
+    if (!meta_guard.locked) {
         return ASTRAL_E_STATE;
     }
 
@@ -1195,9 +1199,22 @@ AstralErr session_stats(Session* session, AstralStats* out_stats) {
 }
 
 void decode_loop(Session* session) {
+    ASTRAL_ZONE_N("astral.decode_loop");
     if (session == nullptr) {
         return;
     }
+
+    // Affinity hygiene: decode must run on the session's assigned worker when threading is enabled.
+#if ASTRAL_ENABLE_THREADS
+    if (core::runtime_on_worker_thread() && core::runtime_worker_id() != session->worker_id) {
+        session->t_end_ticks = get_ticks();
+        session->final_err.store(static_cast<int32_t>(ASTRAL_E_STATE), std::memory_order_release);
+        session->state.store(SessionState::Failed, std::memory_order_release);
+        platform::cpu_signal_event();
+        return;
+    }
+    core::runtime_worker_scratch_reset();
+#endif
 
     Model* model = session->model;
     const backend::BackendProvider* backend = model->backend;
@@ -1210,11 +1227,15 @@ void decode_loop(Session* session) {
     AstralErr final_err = ASTRAL_OK;
 
     // Feed prompt tokens
-    AstralErr err = ops->session_feed(
-        backend_session_ctx,
-        session->prompt_tokens,
-        session->prompt_count
-    );
+    AstralErr err = ASTRAL_OK;
+    {
+        ASTRAL_ZONE_N("astral.session_feed");
+        err = ops->session_feed(
+            backend_session_ctx,
+            session->prompt_tokens,
+            session->prompt_count
+        );
+    }
 
     if (err != ASTRAL_OK) {
         // Feed failed; transition to Failed
@@ -1343,17 +1364,20 @@ void decode_loop(Session* session) {
         return false;
     };
 
-    // Generation loop
-    for (uint32_t i = 0; i < max_tokens; ++i) {
-        // Check for cancellation
-        if (session->cancel_requested.load(std::memory_order_acquire)) {
-            final_state = SessionState::Canceled;
-            final_err = ASTRAL_E_CANCELED;
+	    // Generation loop (coarse zone; avoid per-token micro zones for now).
+	    {
+		    ASTRAL_ZONE_N("astral.generation_loop");
+		    for (uint32_t i = 0; i < max_tokens; ++i) {
+	        // Check for cancellation
+	        if (session->cancel_requested.load(std::memory_order_acquire)) {
+	            final_state = SessionState::Canceled;
+	            final_err = ASTRAL_E_CANCELED;
             break;
         }
 
-        backend::BackendLogitsView logits_view{};
-        err = ops->session_logits(backend_session_ctx, &logits_view);
+	        backend::BackendLogitsView logits_view{};
+	        ASTRAL_ZONE_MICRO_N("astral.backend.session_logits");
+	        err = ops->session_logits(backend_session_ctx, &logits_view);
 
         if (err != ASTRAL_OK) {
             final_state = SessionState::Failed;
@@ -1364,7 +1388,7 @@ void decode_loop(Session* session) {
         SamplerMeta meta{};
         SamplerMeta* meta_ptr = (session->logprobs_n > 0) ? &meta : nullptr;
 
-        const int32_t next_token = static_cast<int32_t>(sample_token(
+	        const int32_t next_token = static_cast<int32_t>(sample_token(
             logits_view.logits,
             logits_view.vocab_size,
             session->sampler_cfg,
@@ -1381,12 +1405,13 @@ void decode_loop(Session* session) {
             backend_session_ctx,
             ops->session_apply_grammar,
             session->indices_buffer
-        ));
+	        ));
 
-        err = ops->session_accept(backend_session_ctx, next_token);
-        if (err != ASTRAL_OK) {
-            final_state = SessionState::Failed;
-            final_err = err;
+	        ASTRAL_ZONE_MICRO_N("astral.backend.session_accept");
+	        err = ops->session_accept(backend_session_ctx, next_token);
+	        if (err != ASTRAL_OK) {
+	            final_state = SessionState::Failed;
+	            final_err = err;
             break;
         }
 
@@ -1419,20 +1444,21 @@ void decode_loop(Session* session) {
         uint32_t stop_len = 0;
         const bool stop_hit = stop_check(next_token, &stop_len);
 
-        if (session->desc.stream_enabled) {
-            // Detokenize to UTF-8
-            concurrency::StreamToken stream_token;
-            stream_token.token_id = static_cast<uint32_t>(next_token);
+	        if (session->desc.stream_enabled) {
+	            // Detokenize to UTF-8
+	            concurrency::StreamToken stream_token;
+	            stream_token.token_id = static_cast<uint32_t>(next_token);
 
-            AstralMutSpanU8 out_buf;
-            out_buf.data = stream_token.utf8_data;
-            out_buf.len = sizeof(stream_token.utf8_data);
+	            AstralMutSpanU8 out_buf;
+	            out_buf.data = stream_token.utf8_data;
+	            out_buf.len = sizeof(stream_token.utf8_data);
 
-            uint32_t utf8_len = 0;
-            err = ops->detokenize(
-                model->backend_model_ctx,
-                &next_token,
-                1,
+	            uint32_t utf8_len = 0;
+	            ASTRAL_ZONE_MICRO_N("astral.backend.detokenize");
+	            err = ops->detokenize(
+	                model->backend_model_ctx,
+	                &next_token,
+	                1,
                 out_buf,
                 &utf8_len
             );
@@ -1453,8 +1479,8 @@ void decode_loop(Session* session) {
             }
         }
 
-        if (stop_hit) {
-            if (session->desc.stream_enabled && stop_hold > 0 && stop_len > 0) {
+	        if (stop_hit) {
+	            if (session->desc.stream_enabled && stop_hold > 0 && stop_len > 0) {
                 // Drop stop tokens from the end of the hold buffer.
                 if (stop_len >= hold_count) {
                     hold_count = 0;
@@ -1466,9 +1492,10 @@ void decode_loop(Session* session) {
                     final_err = ASTRAL_E_CANCELED;
                 }
             }
-            break;
-        }
-    }
+	            break;
+	        }
+	    }
+	    }
 
     // Flush any remaining buffered tokens (normal completion/EOS/max_tokens).
     if (final_state == SessionState::Completed && session->desc.stream_enabled && hold_count > 0) {
@@ -1481,12 +1508,32 @@ void decode_loop(Session* session) {
 
     // Transition to terminal state.
     session->t_end_ticks = get_ticks();
+
+    // Coarse plots (best-effort).
+#if ASTRAL_ENABLE_TRACY
+    if (session->t_end_ticks > session->t_start_ticks) {
+        const uint64_t dt_ticks = session->t_end_ticks - session->t_start_ticks;
+        const uint64_t dt_ns = platform::ticks_to_ns(dt_ticks);
+        if (dt_ns > 0) {
+            const float dt_s = static_cast<float>(static_cast<double>(dt_ns) * 1e-9);
+            ASTRAL_PLOT("astral.tokens_total", static_cast<double>(session->total_tokens));
+            ASTRAL_PLOT("astral.tokens_per_s",
+                        dt_s > 0.0f ? static_cast<double>(static_cast<float>(session->total_tokens) / dt_s) : 0.0);
+        }
+    }
+    if (session->t_first_token_ticks > session->t_start_ticks) {
+        const uint64_t ttft_ns = platform::ticks_to_ns(session->t_first_token_ticks - session->t_start_ticks);
+        ASTRAL_PLOT("astral.ttft_ms", static_cast<double>(ttft_ns) / 1e6);
+    }
+#endif
+
     session->final_err.store(static_cast<int32_t>(final_err), std::memory_order_release);
     session->state.store(final_state, std::memory_order_release);
     platform::cpu_signal_event();
 }
 
 int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_ms) {
+    ASTRAL_ZONE_N("astral.stream_read");
     // Validate session
     if (session == nullptr || out_buf.data == nullptr) {
         return ASTRAL_E_INVALID;
@@ -1494,6 +1541,12 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
 
     if (out_buf.len == 0) {
         return ASTRAL_E_INVALID;
+    }
+
+    // Single-consumer enforcement (callback-safe / fail-fast).
+    ScopedAtomicFlagGuard guard(&session->stream_read_lock);
+    if (!guard.locked) {
+        return ASTRAL_E_STATE;
     }
 
     // Consume any remainder from a previous partial-token read.
@@ -1631,9 +1684,7 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
                 // On non-ARM platforms `cpu_wait_for_event()` is a light hint (not a true event wait).
                 // Keep this path syscall-free: avoid `sched_yield()` here and rely on pause/backoff.
             }
-            if (spins < 1024) {
-                ++spins;
-            }
+            ++spins;
         }
     }
 
@@ -1644,6 +1695,11 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
 int32_t stream_read_meta(Session* session, AstralTokenMeta* out_events, uint32_t capacity, uint32_t timeout_ms) {
     if (session == nullptr || out_events == nullptr || capacity == 0) {
         return ASTRAL_E_INVALID;
+    }
+
+    ScopedAtomicFlagGuard guard(&session->meta_read_lock);
+    if (!guard.locked) {
+        return ASTRAL_E_STATE;
     }
 
     AstralTokenMeta ev{};
@@ -1703,9 +1759,7 @@ int32_t stream_read_meta(Session* session, AstralTokenMeta* out_events, uint32_t
         } else {
             platform::cpu_wait_for_event();
         }
-        if (spins < 1024) {
-            ++spins;
-        }
+        ++spins;
     }
 }
 

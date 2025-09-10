@@ -397,7 +397,56 @@ uint32_t sample_token(const float* logits,
         }
 
         // Convert to unnormalized weights.
-        const float max_scaled = scratch_vals[0] * inv_temp;
+        // NOTE: grammar filtering can invalidate the top candidate; recompute the max over finite values.
+        float max_logit = -std::numeric_limits<float>::infinity();
+        bool any_finite = false;
+        for (size_t i = 0; i < heap_size; ++i) {
+            const float v = scratch_vals[i];
+            if (!std::isfinite(v)) {
+                continue;
+            }
+            if (!any_finite || v > max_logit) {
+                max_logit = v;
+                any_finite = true;
+            }
+        }
+
+        if (!any_finite) {
+            // All candidates filtered out; fall back to grammar-aware argmax.
+            if (grammar_ctx != nullptr && grammar_apply != nullptr) {
+                uint32_t best = 0;
+                float best_val = -std::numeric_limits<float>::infinity();
+
+                constexpr size_t kChunk = 256;
+                uint32_t ids[kChunk];
+                float vals[kChunk];
+
+                for (size_t base = 0; base < vocab_size; base += kChunk) {
+                    const size_t n = (vocab_size - base) < kChunk ? (vocab_size - base) : kChunk;
+                    for (size_t i = 0; i < n; ++i) {
+                        const size_t tid = base + i;
+                        ids[i] = static_cast<uint32_t>(tid);
+                        vals[i] = adjusted_logit(tid, logits[tid]);
+                    }
+
+                    (void)grammar_apply(grammar_ctx, ids, vals, static_cast<uint32_t>(n));
+
+                    for (size_t i = 0; i < n; ++i) {
+                        const float v = vals[i];
+                        if (v > best_val) {
+                            best_val = v;
+                            best = ids[i];
+                        }
+                    }
+                }
+
+                return best;
+            }
+
+            return scratch_ids[0];
+        }
+
+        const float max_scaled = max_logit * inv_temp;
         for (size_t i = 0; i < heap_size; ++i) {
             scratch_vals[i] = static_cast<float>(std::exp(scratch_vals[i] * inv_temp - max_scaled));
         }

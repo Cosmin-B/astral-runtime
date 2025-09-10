@@ -7,6 +7,8 @@
 
 namespace astral::inference {
 
+struct ModelExecutor;
+
 /// Model handle structure.
 ///
 /// Represents a loaded GGUF model with associated backend context.
@@ -23,6 +25,11 @@ struct Model {
     const backend::BackendProvider* backend; // Backend provider (CPU/CUDA/Metal/...)
     void* backend_model_ctx;             // Opaque backend model context
     AstralModelDesc desc;                // Model configuration (copy)
+
+    // Continuous batching executor (v0.2+)
+    std::atomic<ModelExecutor*> executor; // lazily created
+    AstralExecutorDesc executor_desc;     // configured by astral_model_executor_configure()
+    std::atomic_flag executor_lock = ATOMIC_FLAG_INIT;
 };
 
 /// Load a GGUF model.

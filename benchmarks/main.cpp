@@ -10,6 +10,9 @@
 namespace astral::bench {
 BenchResult bench_spsc_ring(uint64_t items);
 BenchResult bench_mpmc_queue(uint32_t producers, uint32_t consumers, uint64_t items_per_producer);
+BenchResult bench_runtime_alloc_free(uint64_t iters, uint32_t size, bool arena_mode);
+BenchResult bench_session_create_destroy(uint64_t iters, bool arena_mode);
+BenchResult bench_model_load_release(uint64_t iters, bool arena_mode);
 void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens);
 void bench_embeddings_print(uint32_t dim_override, uint64_t iters);
 } // namespace astral::bench
@@ -23,6 +26,11 @@ struct Options {
     uint64_t mpmc_items_per_producer = 1'000'000ull;
     bool run_spsc = true;
     bool run_mpmc = true;
+    bool run_alloc = false;
+    uint64_t alloc_iters = 5'000'000ull;
+    uint32_t alloc_size = 64;
+    bool run_lifecycle = false;
+    uint64_t lifecycle_iters = 50'000ull;
     bool run_infer = false;
     uint32_t infer_warmup_tokens = 16;
     uint32_t infer_tokens = 128;
@@ -57,7 +65,12 @@ bool parse_u32(const char* s, uint32_t* out) {
 void print_usage(const char* argv0) {
     std::printf("Usage: %s [options]\n", argv0 ? argv0 : "astral_benchmarks");
     std::printf("Options:\n");
-    std::printf("  --only <spsc|mpmc|infer|embed> Run only one benchmark\n");
+    std::printf("  --only <spsc|mpmc|alloc|lifecycle|infer|embed> Run only one benchmark\n");
+    std::printf("  --alloc                       Run runtime_alloc/free microbench (vm + arena)\n");
+    std::printf("  --alloc-iters <N>             Iterations for alloc bench (default: 5000000)\n");
+    std::printf("  --alloc-size <N>              Allocation size in bytes (default: 64)\n");
+    std::printf("  --lifecycle                   Run model/session lifecycle bench (vm + arena)\n");
+    std::printf("  --lifecycle-iters <N>         Iterations for lifecycle bench (default: 50000)\n");
     std::printf("  --infer                       Run inference benchmark (needs a GGUF)\n");
     std::printf("  --infer-warmup <N>            Warmup tokens before measuring (default: 16)\n");
     std::printf("  --infer-tokens <N>            Tokens to generate for measurement (default: 128)\n");
@@ -102,21 +115,43 @@ int main(int argc, char** argv) {
             if (std::strcmp(which, "spsc") == 0) {
                 opt.run_spsc = true;
                 opt.run_mpmc = false;
+                opt.run_alloc = false;
+                opt.run_lifecycle = false;
                 opt.run_infer = false;
                 opt.run_embed = false;
             } else if (std::strcmp(which, "mpmc") == 0) {
                 opt.run_spsc = false;
                 opt.run_mpmc = true;
+                opt.run_alloc = false;
+                opt.run_lifecycle = false;
+                opt.run_infer = false;
+                opt.run_embed = false;
+            } else if (std::strcmp(which, "alloc") == 0) {
+                opt.run_spsc = false;
+                opt.run_mpmc = false;
+                opt.run_alloc = true;
+                opt.run_lifecycle = false;
+                opt.run_infer = false;
+                opt.run_embed = false;
+            } else if (std::strcmp(which, "lifecycle") == 0) {
+                opt.run_spsc = false;
+                opt.run_mpmc = false;
+                opt.run_alloc = false;
+                opt.run_lifecycle = true;
                 opt.run_infer = false;
                 opt.run_embed = false;
             } else if (std::strcmp(which, "infer") == 0) {
                 opt.run_spsc = false;
                 opt.run_mpmc = false;
+                opt.run_alloc = false;
+                opt.run_lifecycle = false;
                 opt.run_infer = true;
                 opt.run_embed = false;
             } else if (std::strcmp(which, "embed") == 0) {
                 opt.run_spsc = false;
                 opt.run_mpmc = false;
+                opt.run_alloc = false;
+                opt.run_lifecycle = false;
                 opt.run_infer = false;
                 opt.run_embed = true;
             } else {
@@ -163,8 +198,42 @@ int main(int argc, char** argv) {
             continue;
         }
 
+        if (std::strcmp(arg, "--alloc") == 0) {
+            opt.run_alloc = true;
+            continue;
+        }
+
+        if (std::strcmp(arg, "--lifecycle") == 0) {
+            opt.run_lifecycle = true;
+            continue;
+        }
+
         if (std::strcmp(arg, "--embed") == 0) {
             opt.run_embed = true;
+            continue;
+        }
+
+        if (std::strcmp(arg, "--alloc-iters") == 0 && i + 1 < argc) {
+            if (!parse_u64(argv[++i], &opt.alloc_iters)) {
+                std::fprintf(stderr, "Invalid --alloc-iters value\n");
+                return 2;
+            }
+            continue;
+        }
+
+        if (std::strcmp(arg, "--alloc-size") == 0 && i + 1 < argc) {
+            if (!parse_u32(argv[++i], &opt.alloc_size)) {
+                std::fprintf(stderr, "Invalid --alloc-size value\n");
+                return 2;
+            }
+            continue;
+        }
+
+        if (std::strcmp(arg, "--lifecycle-iters") == 0 && i + 1 < argc) {
+            if (!parse_u64(argv[++i], &opt.lifecycle_iters)) {
+                std::fprintf(stderr, "Invalid --lifecycle-iters value\n");
+                return 2;
+            }
             continue;
         }
 
@@ -218,6 +287,18 @@ int main(int argc, char** argv) {
         const auto r = astral::bench::bench_mpmc_queue(opt.mpmc_producers, opt.mpmc_consumers,
                                                        opt.mpmc_items_per_producer);
         astral::bench::print_result(r, clk.name);
+    }
+
+    if (opt.run_alloc) {
+        astral::bench::print_result(astral::bench::bench_runtime_alloc_free(opt.alloc_iters, opt.alloc_size, false), clk.name);
+        astral::bench::print_result(astral::bench::bench_runtime_alloc_free(opt.alloc_iters, opt.alloc_size, true), clk.name);
+    }
+
+    if (opt.run_lifecycle) {
+        astral::bench::print_result(astral::bench::bench_model_load_release(opt.lifecycle_iters, false), clk.name);
+        astral::bench::print_result(astral::bench::bench_model_load_release(opt.lifecycle_iters, true), clk.name);
+        astral::bench::print_result(astral::bench::bench_session_create_destroy(opt.lifecycle_iters, false), clk.name);
+        astral::bench::print_result(astral::bench::bench_session_create_destroy(opt.lifecycle_iters, true), clk.name);
     }
 
     if (opt.run_infer) {

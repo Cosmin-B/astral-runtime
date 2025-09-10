@@ -1,5 +1,7 @@
 # Unity Integration Specification
 
+Implementation note: this document is a design/spec. For the current, shippable Unity API and up-to-date examples, prefer `plugins/unity/README.md` and `plugins/unity/Runtime/*`.
+
 ## Goals
 
 1. **Zero GC Allocations**: No managed heap allocations during token streaming (steady state)
@@ -712,7 +714,7 @@ job.bytesRead.Dispose();
 ### Android
 
 - **IL2CPP**: Always use IL2CPP (not Mono) for ARM targets
-- **Native Lib**: Build `libastral_rt.so` for `armeabi-v7a` and `arm64-v8a`
+- **Native Lib**: Build `libastral_rt.so` for `arm64-v8a` (v0.1.1)
 - **Threading**: Use `pthread` backend; avoid JNI calls from native threads
 - **Memory**: Reserve smaller amount (512MB) due to device constraints
 

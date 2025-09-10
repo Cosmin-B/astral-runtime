@@ -6,9 +6,9 @@ Astral is a C++20 high-performance inference layer on top of LLaMA-class backend
 
 - **Zero-Allocation Hot Paths**: No dynamic allocations during token streaming, decoding, or sampling
 - **CAS-Free Concurrency Primitives**: Bounded MPMC queue (ticket + per-slot sequence) and SPSC token rings; ARM-friendly WFE/SEV waiting
-- **C ABI Surface**: Clean separation between C ABI and C++ implementation; pre-v0.1 so ABI can still evolve
+- **C ABI Surface**: Clean separation between C ABI and C++ implementation; v0.1 (ABI may still evolve until v1.0)
 - **Engine-Native Integration**: Direct use of Unity `NativeArray` and Unreal `FMemory` allocators
-- **Cross-Platform**: armv7, armv8, arm64, x86-64 on Linux, Windows, macOS, Android, iOS
+- **Cross-Platform**: Core supports Linux/Windows/macOS (x86_64/arm64) today; Android/iOS packaging is planned for v0.1.1
 - **Embeddings**: End-to-end embeddings API (`astral_embed_*`) for embeddings-only models
 
 ## Project Structure
@@ -31,7 +31,6 @@ astral/
 │       └── CONCURRENCY_SPECIALIST_AGENT.md
 ├── include/                    # Public headers
 │   ├── astral_rt.h             # C ABI (stable)
-│   └── astral_rt.hpp           # C++ wrapper (optional)
 ├── src/                        # Core implementation
 │   ├── core/                   # Runtime init, shutdown, handles
 │   ├── memory/                 # Allocators, arenas, pools
@@ -62,28 +61,41 @@ astral/
 git clone https://github.com/your-org/astral.git
 cd astral
 
-# Configure
-cmake --preset=release
+# Required submodules (llama.cpp; Tracy is optional unless you use *-prof presets)
+git submodule update --init --recursive
 
-# Build
-cmake --build build/release
+# Configure + build (dev includes tests/benchmarks)
+cmake --preset dev
+cmake --build --preset dev -j
 
 # Run tests
-cd build/release && ctest
+ctest --preset dev -j8
 ```
 
 ### CMake Presets
 
 - `dev`: Debug build with tests and benchmarks
+- `dev-prof`: Debug build with Tracy enabled (requires `external/tracy` submodule)
+- `dev-cuda`: Debug build with CUDA backend enabled (requires CUDA toolkit)
+- `dev-prof-cuda`: Debug build with Tracy + CUDA backend enabled
 - `release`: Release build, optimized
 - `release-with-tests`: Release build with tests and benchmarks
+- `release-prof`: Release build with Tracy enabled (requires `external/tracy` submodule)
+- `release-cuda`: Release build with CUDA backend enabled (requires CUDA toolkit)
+- `release-prof-cuda`: Release build with Tracy + CUDA backend enabled
 - `unity-plugin`: Build Unity plugin (outputs to `plugins/unity/Runtime/Plugins/`)
+- `unity-plugin-prof`: Unity plugin build with Tracy enabled (requires `external/tracy` submodule)
 - `unreal-plugin`: Build Unreal plugin (outputs to `plugins/unreal/Binaries/`)
+- `unreal-plugin-prof`: Unreal plugin build with Tracy enabled (requires `external/tracy` submodule)
+- `embedded-*`: Embedded/robotics profiles and cross-compilation presets (see `docs/EMBEDDED_PROFILE.md`)
+
+Release presets build both a static and a shared runtime library on desktop platforms (`ASTRAL_BUILD_STATIC_LIB=ON` and
+`ASTRAL_BUILD_SHARED_LIB=ON`).
 
 ### Benchmarks
 
 ```bash
-cmake --preset=release-with-tests
+cmake --preset release-with-tests
 cmake --build --preset release-with-tests -j
 
 # Concurrency microbenches (rdtsc/mach time where available)
@@ -95,6 +107,15 @@ cmake --build --preset release-with-tests -j
 
 To keep output quiet (llama.cpp can be verbose), set `ASTRAL_LLAMA_LOG=none` (or `error|warn|info|debug`).
 
+### CUDA (optional)
+
+CUDA is disabled by default. To build with the CUDA backend provider enabled:
+
+```bash
+cmake --preset dev-cuda
+cmake --build --preset dev-cuda -j
+```
+
 #### Models (tests/models)
 
 Astral’s integration tests/benches use GGUF models on disk. Download small defaults via:
@@ -103,6 +124,8 @@ Astral’s integration tests/benches use GGUF models on disk. Download small def
 ./tests/model_downloader.sh --preset gpt2-q2k
 ./tests/model_downloader.sh --preset embed-minilm-q2k
 ```
+
+For embedded/no-filesystem deployments, use `astral_model_load2()` with `AstralModelDesc2` and a `MEMORY` or custom `IO` source (single-file GGUF; `use_mmap` is forced OFF for these sources).
 
 #### Threading knobs (benchmarks)
 
@@ -119,7 +142,18 @@ For single-core profiling runs (e.g. `taskset -c 0`), set both runtime and model
 - `ASTRAL_BENCH_INFER_STREAM=1` (default): measure streamed decode (includes detokenize + stream overhead).
 - `ASTRAL_BENCH_INFER_STREAM=0`: measure decode without streaming (skips detokenize + stream backpressure; useful for CPU kernel profiling).
 
+#### Continuous batching bench mode (v0.2+)
+
+Run continuous batching across multiple slots (conversations) using the same `--only infer` benchmark:
+
+- `ASTRAL_BENCH_SLOTS=N` (default: `1`): when `N > 1`, the benchmark uses `astral_conv_*` + the model executor instead of `astral_session_*`.
+- `ASTRAL_BENCH_MAX_BATCH_TOKENS=N` (default: `64`): per-tick token cap for the executor (keep `<= n_batch` for your provider/model).
+- `ASTRAL_BENCH_PROMPT_REPEAT=N` (default: `1`): repeat the default prompt to stress prompt ingestion.
+- `ASTRAL_BENCH_PROMPT_HEAVY_SLOTS=N` (default: `0`): first N slots use the repeated prompt (mixed workload).
+
 #### Profiling (CPU)
+
+Tracy captures (recommended for coarse “what/when” timelines) are documented in `docs/PROFILING_TRACY.md`.
 
 Hotspot profile (call stacks):
 
@@ -345,7 +379,7 @@ See [Concurrency Model](docs/architecture/CONCURRENCY_MODEL.md) for details.
 - **POD Structs**: All config/output via plain-old-data structs
 - **UTF-8 Spans**: Strings as `{const uint8_t* data, uint32_t len}`
 - **Error Codes**: All functions return `AstralErr`; out params for results
-- **No Exceptions**: Zero exceptions across C ABI boundary
+- **No Exceptions Across ABI**: C ABI functions return error codes; `ASTRAL_NO_THROW_ABI=ON` catches/translates unexpected C++ exceptions at the ABI boundary
 
 See [Master Specification](docs/MASTER_SPEC.md) for details.
 
@@ -442,6 +476,7 @@ Contributions welcome! Please read [CODING_STANDARDS.md](docs/rules/CODING_STAND
 - LLMUnity: https://github.com/undreamai/LLMUnity
 - LlamaCppUnity: https://github.com/DefiosLab/LlamaCppUnity
 - llama.cpp: https://github.com/ggerganov/llama.cpp
+- Tracy profiler: https://github.com/wolfpld/tracy
 - Dmitry Vyukov's MPMC: https://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
 
 ## Support

@@ -30,6 +30,21 @@ typedef struct AstralBackendLogitsView {
     uint32_t vocab_size;
 } AstralBackendLogitsView;
 
+/// Batch token descriptor for provider-side multi-slot evaluation.
+///
+/// Contract:
+/// - `slot_id` selects the logical KV/sequence slot (0..max_slots-1).
+/// - `pos` is the absolute token position within that slot (0-based).
+/// - If `want_logits != 0`, the provider must make logits available for this token
+///   as part of the contiguous output set (see `session_batch_logits()`).
+typedef struct AstralBackendBatchToken {
+    int32_t token;
+    uint32_t slot_id;
+    uint32_t pos;
+    uint8_t want_logits;
+    uint8_t _padding0[3];
+} AstralBackendBatchToken;
+
 /// Provider ops table.
 ///
 /// Thread-safety notes:
@@ -56,6 +71,9 @@ typedef struct AstralBackendOps {
 
     // Session lifetime + decode primitives
     void* (ASTRAL_CALL * session_create)(void* model_ctx, const AstralSessionDesc* desc, AstralErr* out_err);
+    // Optional: create a session with an explicit max slot count (multi-seq context).
+    // Providers that don't support slots should ignore max_slots or return ASTRAL_E_UNSUPPORTED.
+    void* (ASTRAL_CALL * session_create_ex)(void* model_ctx, const AstralSessionDesc* desc, uint32_t max_slots, AstralErr* out_err);
     void (ASTRAL_CALL * session_destroy)(void* session_ctx);
 
     // Optional: reset backend session state (KV/cache) for reuse.
@@ -67,6 +85,24 @@ typedef struct AstralBackendOps {
     // Sampling support (zero-copy logits view + accept/advance).
     AstralErr (ASTRAL_CALL * session_logits)(void* session_ctx, AstralBackendLogitsView* out_view);
     AstralErr (ASTRAL_CALL * session_accept)(void* session_ctx, int32_t token);
+
+    // --------------------------------------------------------------------
+    // Continuous batching (optional, provider-specific support)
+    // --------------------------------------------------------------------
+
+    // Evaluate a mixed batch of tokens belonging to multiple slots.
+    // Returns output logits for every token where `want_logits != 0`, stored contiguously
+    // in token order (matching the order of `want_logits` tokens in the input batch).
+    AstralErr (ASTRAL_CALL * session_batch_eval)(void* session_ctx,
+                                                 const AstralBackendBatchToken* tokens,
+                                                 uint32_t token_count,
+                                                 uint32_t* out_output_count);
+
+    // Get logits for the `output_index`th output produced by the last `session_batch_eval()`.
+    AstralErr (ASTRAL_CALL * session_batch_logits)(void* session_ctx, uint32_t output_index, AstralBackendLogitsView* out_view);
+
+    // Optional: reset/clear KV state for a single slot (sequence) for reuse.
+    AstralErr (ASTRAL_CALL * session_slot_reset)(void* session_ctx, uint32_t slot_id);
 
     // Embeddings (optional)
     // Providers that do not support embeddings should set these to NULL and return ASTRAL_E_UNSUPPORTED via
@@ -95,6 +131,13 @@ typedef struct AstralBackendOps {
     // Apply grammar constraints to a candidate list (in-place).
     // `tokens[i]` corresponds to `logits[i]` (logits are mutable scratch; set -inf for disallowed).
     AstralErr (ASTRAL_CALL * session_apply_grammar)(void* session_ctx, uint32_t* tokens, float* logits, uint32_t count);
+
+    // Slot-scoped grammar ops (for continuous batching executors).
+    // If implemented, these must not depend on `session_set_slot()` and should apply to the given slot directly.
+    AstralErr (ASTRAL_CALL * session_grammar_set_gbnf_for_slot)(void* session_ctx, uint32_t slot_id, AstralSpanU8 gbnf, AstralSpanU8 root);
+    AstralErr (ASTRAL_CALL * session_grammar_set_json_schema_for_slot)(void* session_ctx, uint32_t slot_id, AstralSpanU8 json_schema);
+    AstralErr (ASTRAL_CALL * session_grammar_clear_for_slot)(void* session_ctx, uint32_t slot_id);
+    AstralErr (ASTRAL_CALL * session_apply_grammar_for_slot)(void* session_ctx, uint32_t slot_id, uint32_t* tokens, float* logits, uint32_t count);
 
     // KV/session state (save/load) support.
     // Providers should return ASTRAL_E_UNSUPPORTED if not implemented.

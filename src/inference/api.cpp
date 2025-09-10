@@ -8,6 +8,7 @@
 #include "../../include/astral_rt.h"
 #include "model.hpp"
 #include "session.hpp"
+#include "conversation_runtime.hpp"
 #include "embedder.hpp"
 #include "adapter.hpp"
 #include "../core/error.hpp"
@@ -346,6 +347,34 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_limits(AstralHandle model, AstralM
     out_limits->max_batch = 0;
     out_limits->max_slots = 0;
     return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_configure(AstralHandle model, const AstralExecutorDesc* desc) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (model == 0 || desc == nullptr) {
+        set_err_invalid("model/desc");
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->size != sizeof(AstralExecutorDesc)) {
+        set_err_invalid("desc.size");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* m = static_cast<astral::inference::Model*>(astral::core::lookup_handle(model, astral::core::HandleKind::Model));
+    if (m == nullptr) {
+        set_err_invalid("model (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    if (m->executor.load(std::memory_order_acquire) != nullptr) {
+        set_err_code(ASTRAL_E_STATE);
+        return ASTRAL_E_STATE;
+    }
+
+    m->executor_desc = *desc;
+    return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_embedding_dim(AstralHandle model, uint32_t* out_dim) {
@@ -1530,6 +1559,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_embed_enqueue(
     AstralSpanU8 text,
     uint64_t* out_ticket
 ) {
+    ASTRAL_ABI_TRY_BEGIN
     if (emb == 0 || out_ticket == nullptr) {
         set_err_invalid("emb/out_ticket");
         return ASTRAL_E_INVALID;

@@ -5,7 +5,7 @@
 1. **Bytes-first streaming**: Avoid per-chunk `FString` allocations in hot paths; stream UTF-8 via `TConstArrayView<uint8>` / `TArray<uint8>`
 2. **FMemory Integration**: Bridge UE's memory allocator to Astral's `AstralAllocator`
 3. **Thread Safety**: Integrate with UE task graph or use library's own workers
-4. **Platform Coverage**: Windows, macOS, Linux, Android, iOS, consoles (PS5, Xbox Series)
+4. **Platform Coverage**: Windows, macOS, Linux, Android, iOS (consoles explicitly out of scope for now)
 5. **Shipping-Ready**: Static linking, symbol stripping, minimal binary size impact
 
 ## Architecture
@@ -34,7 +34,7 @@
 │ ThirdParty/AstralCore (static lib)                          │
 │   ├─ astral_rt.h (C ABI)                                    │
 │   ├─ libastral_rt.a (Linux/macOS)                           │
-│   └─ astral_rt.lib (Windows)                                │
+│   └─ astral_rt.lib (Windows; may be `astral_rt_static.lib` when building both static+shared) │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -56,20 +56,18 @@ Plugins/
     │   │       ├── AstralModel.cpp          # Model wrapper
     │   │       ├── AstralSession.cpp        # Implementation
     │   └── ThirdParty/
-    │       └── AstralCore/
-    │           ├── include/
-    │           │   ├── astral_rt.h
-    │           │   └── astral_rt.hpp (optional C++ wrapper)
-    │           └── lib/
+│       └── AstralCore/
+│           ├── include/
+│           │   ├── astral_rt.h
+│           └── lib/
     │               ├── Win64/
-    │               │   └── astral_rt.lib
+    │               │   └── astral_rt.lib (or `astral_rt_static.lib`)
     │               ├── Linux/
     │               │   └── libastral_rt.a
     │               ├── Mac/
     │               │   └── libastral_rt.a
     │               ├── Android/
-    │               │   ├── arm64-v8a/libastral_rt.a
-    │               │   └── armeabi-v7a/libastral_rt.a
+    │               │   └── arm64-v8a/libastral_rt.a
     │               └── IOS/
     │                   └── libastral_rt.a
     ├── Content/
@@ -146,8 +144,9 @@ public class AstralRT : ModuleRules
 
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
-            string LibFilePath = Path.Combine(LibPath, "Win64", "astral_rt.lib");
-            PublicAdditionalLibraries.Add(LibFilePath);
+            string StaticLib = Path.Combine(LibPath, "Win64", "astral_rt.lib");
+            string StaticLibAlt = Path.Combine(LibPath, "Win64", "astral_rt_static.lib");
+            PublicAdditionalLibraries.Add(File.Exists(StaticLib) ? StaticLib : StaticLibAlt);
         }
         else if (Target.Platform == UnrealTargetPlatform.Linux)
         {
@@ -162,9 +161,7 @@ public class AstralRT : ModuleRules
         else if (Target.Platform == UnrealTargetPlatform.Android)
         {
             string Arm64LibPath = Path.Combine(LibPath, "Android", "arm64-v8a", "libastral_rt.a");
-            string Armv7LibPath = Path.Combine(LibPath, "Android", "armeabi-v7a", "libastral_rt.a");
             PublicAdditionalLibraries.Add(Arm64LibPath);
-            PublicAdditionalLibraries.Add(Armv7LibPath);
         }
         else if (Target.Platform == UnrealTargetPlatform.IOS)
         {
@@ -673,7 +670,7 @@ public:
         // Initialize Astral runtime
         AstralInit InitCfg = {};
         InitCfg.sys_alloc = Allocator;
-        InitCfg.log_cb = nullptr; // TODO: Implement UE log adapter
+        InitCfg.log_cb = &UELog; // Forwards Astral UTF-8 logs to UE_LOG
         InitCfg.log_user = nullptr;
         InitCfg.reserve_bytes = 2ULL << 30; // 2 GB
         InitCfg.thread_count = 0; // Auto
@@ -799,11 +796,9 @@ public:
 - **Bitcode**: Disable or provide bitcode lib
 - **Memory**: Use `mmap` (POSIX); avoid `vm_allocate`
 
-### Consoles (PS5, Xbox Series)
+### Consoles
 
-- **NDA**: Requires platform-specific headers (not included here)
-- **Memory**: Use platform allocators (`SCE_KERNEL_WC_GARLIC`, `XMemAlloc`)
-- **Threading**: Use platform-specific thread APIs
+Consoles are intentionally out of scope for this iteration of Astral’s Unreal integration docs.
 
 ## Performance Best Practices
 

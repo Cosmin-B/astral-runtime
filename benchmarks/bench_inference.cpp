@@ -6,6 +6,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
+#include <string>
+#include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -224,6 +227,199 @@ static InferenceBenchResult run_streamed_decode(AstralHandle session) {
     return r;
 }
 
+static InferenceBenchResult run_continuous_batching_decode(
+    AstralHandle model,
+    uint32_t slots,
+    uint32_t max_batch_tokens,
+    uint32_t warmup_tokens,
+    uint32_t measure_tokens
+) {
+    InferenceBenchResult r{};
+    r.name = "CPU inference (continuous batching)";
+
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = slots;
+    ex.max_batch_tokens = max_batch_tokens;
+    ex.worker_hint = 0;
+
+    AstralErr err = astral_model_executor_configure(model, &ex);
+    if (err != ASTRAL_OK) {
+        std::fprintf(stderr, "[bench] astral_model_executor_configure failed: %s (%s)\n",
+                     astral_error_string(err),
+                     astral_last_error());
+        return r;
+    }
+
+    const uint32_t prompt_repeat = parse_u32_env("ASTRAL_BENCH_PROMPT_REPEAT", 1);
+    const uint32_t prompt_heavy_slots = parse_u32_env("ASTRAL_BENCH_PROMPT_HEAVY_SLOTS", 0);
+
+    const char* prompt = "Once upon a time";
+    const size_t base_len = std::strlen(prompt);
+    std::string prompt_heavy;
+    if (prompt_repeat > 1) {
+        prompt_heavy.reserve(base_len * static_cast<size_t>(prompt_repeat) + static_cast<size_t>(prompt_repeat));
+        for (uint32_t i = 0; i < prompt_repeat; ++i) {
+            if (i) prompt_heavy.push_back(' ');
+            prompt_heavy.append(prompt);
+        }
+    }
+
+    AstralSpanU8 prompt_span{};
+    prompt_span.data = reinterpret_cast<const uint8_t*>(prompt);
+    prompt_span.len = static_cast<uint32_t>(base_len);
+
+    AstralSpanU8 prompt_heavy_span{};
+    if (!prompt_heavy.empty()) {
+        prompt_heavy_span.data = reinterpret_cast<const uint8_t*>(prompt_heavy.data());
+        prompt_heavy_span.len = static_cast<uint32_t>(prompt_heavy.size());
+    } else {
+        prompt_heavy_span = prompt_span;
+    }
+
+    AstralConvDesc conv_desc{};
+    conv_desc.size = sizeof(AstralConvDesc);
+    conv_desc.model = model;
+    conv_desc.max_tokens = warmup_tokens > 0 ? warmup_tokens : measure_tokens;
+    conv_desc.temperature = 0.8f;
+    conv_desc.top_k = 40;
+    conv_desc.top_p = 0.95f;
+    conv_desc.stream_enabled = 0;
+    conv_desc.seed = 1;
+
+    std::vector<AstralHandle> convs(slots, 0);
+    for (uint32_t i = 0; i < slots; ++i) {
+        err = astral_conv_create(&conv_desc, &convs[i]);
+        if (err != ASTRAL_OK) {
+            std::fprintf(stderr, "[bench] astral_conv_create failed: %s (%s)\n",
+                         astral_error_string(err),
+                         astral_last_error());
+            for (uint32_t j = 0; j < i; ++j) {
+                astral_conv_destroy(convs[j]);
+            }
+            return r;
+        }
+    }
+
+    auto run_round = [&](uint32_t max_tokens, uint32_t seed, bool measure, double* out_p50_ms, double* out_p95_ms) {
+        AstralConvDesc desc = conv_desc;
+        desc.max_tokens = max_tokens;
+        desc.seed = seed;
+        for (uint32_t i = 0; i < slots; ++i) {
+            const AstralErr rr = astral_conv_reset(convs[i], &desc);
+            if (rr != ASTRAL_OK) {
+                std::fprintf(stderr, "[bench] astral_conv_reset failed: %s (%s)\n",
+                             astral_error_string(rr),
+                             astral_last_error());
+                return false;
+            }
+            const AstralSpanU8 use_prompt =
+                (prompt_heavy_slots > 0 && i < prompt_heavy_slots) ? prompt_heavy_span : prompt_span;
+            const AstralErr fr = astral_conv_feed(convs[i], use_prompt, 1);
+            if (fr != ASTRAL_OK) {
+                std::fprintf(stderr, "[bench] astral_conv_feed failed: %s (%s)\n",
+                             astral_error_string(fr),
+                             astral_last_error());
+                return false;
+            }
+        }
+
+        const uint64_t t0 = ticks_now();
+        const uint64_t n0 = ns_now();
+
+        for (uint32_t i = 0; i < slots; ++i) {
+            const AstralErr dr = astral_conv_decode(convs[i]);
+            if (dr != ASTRAL_OK) {
+                std::fprintf(stderr, "[bench] astral_conv_decode failed: %s (%s)\n",
+                             astral_error_string(dr),
+                             astral_last_error());
+                return false;
+            }
+        }
+
+        // Poll completion to extract a basic per-slot completion-time distribution without
+        // serializing completion via per-slot blocking waits.
+        std::vector<uint64_t> done_ns(slots, 0);
+        uint32_t remaining = slots;
+        while (remaining > 0) {
+            for (uint32_t i = 0; i < slots; ++i) {
+                if (done_ns[i] != 0) continue;
+                AstralSessionState st = ASTRAL_SESSION_IDLE;
+                const AstralErr sr = astral_conv_state(convs[i], &st);
+                if (sr != ASTRAL_OK) {
+                    std::fprintf(stderr, "[bench] astral_conv_state failed: %s (%s)\n",
+                                 astral_error_string(sr),
+                                 astral_last_error());
+                    return false;
+                }
+                if (st == ASTRAL_SESSION_COMPLETED || st == ASTRAL_SESSION_CANCELED || st == ASTRAL_SESSION_FAILED) {
+                    done_ns[i] = ns_now();
+                    --remaining;
+                }
+            }
+        }
+
+        for (uint32_t i = 0; i < slots; ++i) {
+            const AstralErr wr = astral_conv_wait(convs[i], 60000);
+            if (wr != ASTRAL_OK) {
+                std::fprintf(stderr, "[bench] astral_conv_wait failed: %s (%s)\n",
+                             astral_error_string(wr),
+                             astral_last_error());
+                return false;
+            }
+        }
+
+        const uint64_t t1 = ticks_now();
+        const uint64_t n1 = ns_now();
+
+        if (measure) {
+            r.total_ticks = t1 - t0;
+            r.total_ns = n1 - n0;
+            r.tokens = static_cast<uint64_t>(slots) * static_cast<uint64_t>(max_tokens);
+
+            std::vector<uint64_t> deltas_ns;
+            deltas_ns.reserve(slots);
+            for (uint32_t i = 0; i < slots; ++i) {
+                const uint64_t dt = done_ns[i] > n0 ? (done_ns[i] - n0) : 0;
+                deltas_ns.push_back(dt);
+            }
+            std::sort(deltas_ns.begin(), deltas_ns.end());
+            auto q = [&](double quant) -> uint64_t {
+                if (deltas_ns.empty()) return 0;
+                const double idx = quant * static_cast<double>(deltas_ns.size() - 1);
+                const size_t i0 = static_cast<size_t>(idx);
+                return deltas_ns[i0];
+            };
+            const uint64_t p50 = q(0.50);
+            const uint64_t p95 = q(0.95);
+            if (out_p50_ms) *out_p50_ms = static_cast<double>(p50) / 1e6;
+            if (out_p95_ms) *out_p95_ms = static_cast<double>(p95) / 1e6;
+        }
+        return true;
+    };
+
+    // Warmup (allows provider to allocate internal caches before measurement).
+    if (warmup_tokens > 0) {
+        (void)run_round(warmup_tokens, 1, false, nullptr, nullptr);
+    }
+
+    double p50_ms = 0.0;
+    double p95_ms = 0.0;
+    (void)run_round(measure_tokens, 1234, true, &p50_ms, &p95_ms);
+    if (p50_ms > 0.0 || p95_ms > 0.0) {
+        std::printf("[bench] Continuous batching completion: p50=%.2f ms, p95=%.2f ms\n", p50_ms, p95_ms);
+        if (prompt_heavy_slots > 0 && prompt_repeat > 1) {
+            std::printf("[bench] Mixed prompts: heavy_slots=%u, prompt_repeat=%u\n", prompt_heavy_slots, prompt_repeat);
+        }
+    }
+
+    for (uint32_t i = 0; i < slots; ++i) {
+        astral_conv_destroy(convs[i]);
+    }
+
+    return r;
+}
+
 } // namespace
 
 static bool feed_default_prompt(AstralHandle session) {
@@ -264,6 +460,9 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
         return;
     }
 
+    const uint32_t slots = parse_u32_env("ASTRAL_BENCH_SLOTS", 1);
+    const uint32_t max_batch_tokens = parse_u32_env("ASTRAL_BENCH_MAX_BATCH_TOKENS", 64);
+
     AstralInit cfg{};
     cfg.reserve_bytes = 2ull << 30; // 2GB address space (virtual reserve).
     cfg.thread_count = bench_runtime_threads();
@@ -281,9 +480,28 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     AstralModelDesc model_desc{};
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));
-    // Let the backend pick a safe/default context size for the model.
+
+    // Let the backend pick a safe/default context size for the model, unless we
+    // explicitly run multi-slot continuous batching. In that mode, we want a
+    // per-slot ctx >= max_tokens + prompt headroom.
     model_desc.n_ctx = 0;
+    if (slots > 1) {
+        const uint32_t env_ctx = parse_u32_env("ASTRAL_BENCH_CTX", 0);
+        if (env_ctx != 0) {
+            model_desc.n_ctx = env_ctx;
+        } else {
+            const uint32_t per_slot = measure_tokens + 128; // prompt + BOS + safety
+            const uint64_t total64 = static_cast<uint64_t>(per_slot) * static_cast<uint64_t>(slots);
+            const uint64_t rounded64 = ((total64 + slots - 1u) / slots) * slots;
+            const uint64_t clamped64 = rounded64 > 0xFFFFFFFFu ? 0xFFFFFFFFu : rounded64;
+            model_desc.n_ctx = static_cast<uint32_t>(clamped64);
+        }
+    }
+
     model_desc.n_batch = 0;
+    if (slots > 1) {
+        model_desc.n_batch = max_batch_tokens;
+    }
     model_desc.n_threads = bench_model_threads();
     model_desc.gpu_layers = 0;
 
@@ -293,6 +511,34 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
         std::fprintf(stderr, "[bench] astral_model_load failed: %s (%s)\n",
                      astral_error_string(err),
                      astral_last_error());
+        astral_shutdown();
+        return;
+    }
+
+    if (slots > 1) {
+        InferenceBenchResult r =
+            run_continuous_batching_decode(model, slots, max_batch_tokens, warmup_tokens, measure_tokens);
+
+        if (r.tokens == 0 || r.total_ns == 0) {
+            std::printf("[bench] Inference: FAILED (no tokens)\n");
+            astral_model_release(model);
+            astral_shutdown();
+            return;
+        }
+
+        const double total_s = static_cast<double>(r.total_ns) * 1e-9;
+        const double tok_s = total_s > 0.0 ? static_cast<double>(r.tokens) / total_s : 0.0;
+
+        std::printf("\nInference benchmark (ticks: %s)\n", clock_info().name);
+        std::printf("Model: %s\n", model_path);
+        std::printf("Mode:  continuous batching\n");
+        std::printf("Slots: %u, max_batch_tokens: %u\n", slots, max_batch_tokens);
+        std::printf("Total: %.2f ms  (%llu ticks)\n",
+                    static_cast<double>(r.total_ns) / 1e6,
+                    static_cast<unsigned long long>(r.total_ticks));
+        std::printf("Tok/s: %.2f  (aggregate across slots)\n\n", tok_s);
+
+        astral_model_release(model);
         astral_shutdown();
         return;
     }

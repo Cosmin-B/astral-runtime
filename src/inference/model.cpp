@@ -1,7 +1,8 @@
 #include "model.hpp"
+#include "executor.hpp"
 #include "../backend/backend.hpp"
+#include "../core/runtime_alloc.hpp"
 #include <cstring>
-#include <new>
 
 namespace astral::inference {
 
@@ -39,7 +40,7 @@ AstralErr model_load(const AstralModelDesc* desc, Model** out_model) {
     }
 
     // Allocate model handle
-    Model* model = new (std::nothrow) Model;
+    Model* model = core::runtime_new<Model>();
     if (model == nullptr) {
         backend->ops->model_unload(backend_model_ctx);
         return ASTRAL_E_NOMEM;
@@ -51,11 +52,17 @@ AstralErr model_load(const AstralModelDesc* desc, Model** out_model) {
     model->backend = backend;
     model->backend_model_ctx = backend_model_ctx;
     model->desc = *desc;
+    model->executor.store(nullptr, std::memory_order_relaxed);
+    std::memset(&model->executor_desc, 0, sizeof(model->executor_desc));
+    model->executor_desc.size = sizeof(AstralExecutorDesc);
+    model->executor_desc.max_slots = 1;
+    model->executor_desc.max_batch_tokens = 0;
+    model->executor_desc.worker_hint = 0;
 
     const AstralHandle handle = core::register_handle(core::HandleKind::Model, model);
     if (handle == 0) {
         backend->ops->model_unload(backend_model_ctx);
-        delete model;
+        core::runtime_delete(model);
         return ASTRAL_E_BUSY;
     }
     model->handle = handle;
@@ -73,6 +80,13 @@ void model_release(Model* model) {
         return;
     }
 
+    // Stop and destroy model executor (if any) before unloading provider state.
+    if (auto* ex = model->executor.load(std::memory_order_acquire)) {
+        executor_stop_and_join(ex);
+        core::runtime_delete(ex);
+        model->executor.store(nullptr, std::memory_order_release);
+    }
+
     // Shutdown backend
     if (model->backend != nullptr && model->backend->ops != nullptr && model->backend_model_ctx != nullptr) {
         model->backend->ops->model_unload(model->backend_model_ctx);
@@ -82,7 +96,7 @@ void model_release(Model* model) {
     model->handle = 0;
 
     // Free model
-    delete model;
+    core::runtime_delete(model);
 }
 
 } // namespace astral::inference

@@ -21,10 +21,16 @@ namespace astral::backend {
 // Built-in backend providers (linked into astral_rt).
 const BackendProvider* builtin_cpu_backend_provider();
 const BackendProvider* builtin_mock_backend_provider();
+const BackendProvider* builtin_cuda_backend_provider();
 
 BackendRegistry::BackendRegistry() {
     (void)register_backend(builtin_cpu_backend_provider());
     (void)register_backend(builtin_mock_backend_provider());
+#if defined(ASTRAL_ENABLE_CUDA) && ASTRAL_ENABLE_CUDA
+    if (const BackendProvider* cuda = builtin_cuda_backend_provider()) {
+        (void)register_backend(cuda);
+    }
+#endif
 }
 
 // ============================================================================

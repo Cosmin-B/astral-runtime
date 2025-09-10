@@ -137,6 +137,14 @@ struct Session {
 
     // Slot id (for providers that support parallel slots).
     uint32_t slot_id;
+
+    // Worker affinity (one session ↔ one worker thread).
+    uint32_t worker_id;
+
+    // Streaming consumer guards.
+    // `SpscRing` is single-consumer; these flags make misuse fail fast instead of racing.
+    std::atomic_flag stream_read_lock = ATOMIC_FLAG_INIT;
+    std::atomic_flag meta_read_lock = ATOMIC_FLAG_INIT;
 };
 
 /// Create an inference session.

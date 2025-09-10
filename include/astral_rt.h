@@ -594,6 +594,51 @@ typedef struct AstralSessionDesc {
     uint32_t seed;             /** RNG seed for sampling (0 = auto) */
 } AstralSessionDesc;
 
+// ============================================================================
+// Continuous batching (conversations)
+// ============================================================================
+
+/**
+ * Model executor configuration (v0.2+).
+ *
+ * An executor is a model-scoped decode engine that can run multiple independent
+ * conversations ("slots") through a single backend session context, enabling
+ * continuous batching across slots.
+ *
+ * Notes:
+ * - `size` must be set to sizeof(AstralExecutorDesc).
+ * - Must be configured before creating any conversations for a model.
+ */
+typedef struct AstralExecutorDesc {
+    uint32_t size;             // sizeof(AstralExecutorDesc)
+    uint32_t max_slots;        // maximum number of concurrent conversations for this model (>=1)
+    uint32_t max_batch_tokens; // per-tick batch token cap (<= model n_batch is recommended)
+    uint32_t worker_hint;      // 0 = auto, otherwise preferred runtime worker id
+} AstralExecutorDesc;
+
+/**
+ * Conversation configuration (v0.2+).
+ *
+ * A conversation is an independent token stream (prompt + generation) that runs
+ * inside a model-scoped executor slot.
+ *
+ * Notes:
+ * - `size` must be set to sizeof(AstralConvDesc).
+ * - Sampling defaults are taken from temperature/top_k/top_p; for full control,
+ *   use `astral_conv_set_sampler()` after creation.
+ */
+typedef struct AstralConvDesc {
+    uint32_t size;           // sizeof(AstralConvDesc)
+    AstralHandle model;      // model handle
+    uint32_t max_tokens;     // maximum tokens to generate
+    float temperature;       // legacy sampler defaults
+    uint32_t top_k;          // legacy sampler defaults
+    float top_p;             // legacy sampler defaults
+    uint8_t stream_enabled;  // enable UTF-8 streaming
+    uint8_t _padding0[3];
+    uint32_t seed;           // RNG seed (0 = auto)
+} AstralConvDesc;
+
 /**
  * Extended sampler controls (v0.2+).
  *
@@ -648,6 +693,8 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 56, "AstralModelDesc must be 56 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc2) == 112, "AstralModelDesc2 must be 112 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 40, "AstralConvDesc must be 40 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 24, "AstralAdapterDesc must be 24 bytes on 64-bit");
@@ -655,6 +702,8 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 48, "AstralInit must be 48 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 36, "AstralModelDesc must be 36 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 36, "AstralConvDesc must be 36 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12, "AstralAdapterDesc must be 12 bytes on 32-bit");
@@ -926,6 +975,60 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_decode(AstralHandle session);
  *         ASTRAL_E_TIMEOUT if no data available within timeout
  */
 ASTRAL_API int32_t ASTRAL_CALL astral_stream_read(AstralHandle session, AstralMutSpanU8 out_buf, uint32_t timeout_ms);
+
+// ============================================================================
+// Conversation (continuous batching)
+// ============================================================================
+
+/**
+ * Configure the model-scoped executor used for continuous batching (v0.2+).
+ *
+ * Must be called before creating any conversations for this model. If the executor is
+ * already created, returns ASTRAL_E_STATE.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_configure(AstralHandle model, const AstralExecutorDesc* desc);
+
+/**
+ * Create a conversation (slot) for a model executor (v0.2+).
+ *
+ * Thread-safety: Not thread-safe; single-threaded access per conversation.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_create(const AstralConvDesc* desc, AstralHandle* out_conv);
+
+/**
+ * Destroy a conversation.
+ * Thread-safety: Not thread-safe; must not be in use.
+ */
+ASTRAL_API void ASTRAL_CALL astral_conv_destroy(AstralHandle conv);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed(AstralHandle conv, AstralSpanU8 prompt_chunk, uint8_t finalize);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_decode(AstralHandle conv);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_cancel(AstralHandle conv);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_state(AstralHandle conv, AstralSessionState* out_state);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_wait(AstralHandle conv, uint32_t timeout_ms);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_reset(AstralHandle conv, const AstralConvDesc* desc);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_sampler(AstralHandle conv, const AstralSamplerDesc* desc);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_penalty_prompt_set_tokens(
+    AstralHandle conv, const int32_t* tokens, uint32_t count);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stop_clear(AstralHandle conv);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stop_add_utf8(AstralHandle conv, AstralSpanU8 utf8);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stop_set_utf8(
+    AstralHandle conv, const AstralSpanU8* seqs, uint32_t count);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_logprobs(AstralHandle conv, uint32_t n_probs);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_set_gbnf(
+    AstralHandle conv, AstralSpanU8 gbnf, AstralSpanU8 root);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_set_json_schema(
+    AstralHandle conv, AstralSpanU8 json_schema);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_clear(AstralHandle conv);
+
+ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read(AstralHandle conv, AstralMutSpanU8 out_buf, uint32_t timeout_ms);
+ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(
+    AstralHandle conv, AstralTokenMeta* out_events, uint32_t capacity, uint32_t timeout_ms);
 
 // ============================================================================
 // Embeddings

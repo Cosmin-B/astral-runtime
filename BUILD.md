@@ -23,14 +23,44 @@ cmake --build build/release-test
 | Preset | Build Type | Tests | Benchmarks | Description |
 |--------|-----------|-------|------------|-------------|
 | `dev` | Debug | ON | ON | Development with ASAN/UBSAN |
+| `dev-prof` | Debug | ON | ON | Development profiling build (Tracy enabled; requires `external/tracy`) |
 | `release` | Release | OFF | OFF | Optimized production build |
 | `release-with-tests` | Release | ON | ON | Optimized with validation |
+| `release-prof` | Release | OFF | OFF | Release profiling build (Tracy enabled; requires `external/tracy`) |
 | `unity-plugin` | Release | OFF | OFF | Unity native plugin build |
+| `unity-plugin-prof` | Release | OFF | OFF | Unity plugin profiling build (Tracy enabled; requires `external/tracy`) |
 | `unreal-plugin` | Release | OFF | OFF | Unreal Engine plugin build |
+| `unreal-plugin-prof` | Release | OFF | OFF | Unreal plugin profiling build (Tracy enabled; requires `external/tracy`) |
+| `dev-cuda` | Debug | ON | ON | Development build with CUDA backend enabled (requires CUDA toolkit) |
+| `dev-prof-cuda` | Debug | ON | ON | Development profiling build with CUDA backend enabled |
+| `release-cuda` | Release | OFF | OFF | Release build with CUDA backend enabled (requires CUDA toolkit) |
+| `release-prof-cuda` | Release | OFF | OFF | Release profiling build with CUDA backend enabled |
+| `embedded-*` | Release | varies | OFF | Embedded/robotics profiles and cross-compilation presets |
+
+## CUDA Builds (optional)
+
+CUDA is off by default. To build the optional CUDA backend provider:
+
+```bash
+cmake --preset dev-cuda
+cmake --build build/dev-cuda -j
+```
+
+Profiling + CUDA:
+
+```bash
+cmake --preset dev-prof-cuda
+cmake --build build/dev-prof-cuda -j
+```
+
+Tuning knobs (CMake cache variables):
+- `ASTRAL_CUDA_ARCHITECTURES` (default: `75;80;86;89;90`)
+- `ASTRAL_CUDA_FORCE_CUBLAS` / `ASTRAL_CUDA_FORCE_MMQ` (default: `OFF`; “auto” prefers cuBLAS when beneficial)
 
 ## Build Targets
 
 - `astral_rt` - Core static library (C++ implementation)
+- `astral_rt_shared` - Core shared library (built when `ASTRAL_BUILD_SHARED_LIB=ON`; outputs as `astral_rt` on disk)
 - `astral_tests` - Unit test suite (if tests enabled)
 - `astral_benchmarks` - Performance benchmarks (if benchmarks enabled)
 
@@ -125,7 +155,12 @@ These flags are NEVER used (see CODING_STANDARDS.md):
 
 ### Windows
 - Uses `VirtualAlloc` for virtual memory
-- Exports symbols for DLL builds (if `BUILD_SHARED_LIBS=ON`)
+- Exports symbols for DLL builds (when `ASTRAL_BUILD_SHARED_LIB=ON`)
+
+When building both static + shared on Windows, the static library output is renamed to avoid clashing with the shared
+import library:
+- Static: `astral_rt_static.lib`
+- Shared: `astral_rt.dll` + `astral_rt.lib` (import)
 
 ## Testing
 
@@ -171,6 +206,21 @@ Ensure all submodules are initialized (if using Git):
 ```bash
 git submodule update --init --recursive
 ```
+
+Tracy is optional and only required for `*-prof` presets. See `docs/PROFILING_TRACY.md`.
+
+## Packaging (desktop artifacts)
+
+To build, test, and produce zip artifacts under `dist/`:
+
+```bash
+./scripts/package_release.sh --preset release-with-tests --unity --unreal
+```
+
+This produces:
+- Core install zip: `dist/astral-<version>-<os>-<arch>.zip` (headers + libs)
+- Unity plugin zip: `dist/astral-<version>-unity-plugin-<os>-<arch>.zip`
+- Unreal plugin zip: `dist/astral-<version>-unreal-plugin-<os>-<arch>.zip`
 
 ### Platform-Specific Issues
 

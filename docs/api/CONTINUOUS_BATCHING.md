@@ -1,0 +1,72 @@
+# Continuous Batching (v0.2+)
+
+Astral v0.2 introduces **continuous batching across slots** via **conversations** (`astral_conv_*`). A conversation is an independent prompt+generation stream that runs inside a **model-scoped executor**. The executor batches work from multiple conversations into a single provider eval call when possible.
+
+This keeps provider selection and model ownership **out of per-token paths**: the hot loop is a single executor thread per model.
+
+## C API overview
+
+### 1) Configure the model executor (once per model)
+
+Call `astral_model_executor_configure()` before creating any conversations:
+
+- `AstralExecutorDesc.max_slots`: maximum concurrent conversations for this model.
+- `AstralExecutorDesc.max_batch_tokens`: per-tick token cap (keep `<= n_batch` for your provider/model).
+
+### 2) Create conversations (slots)
+
+`astral_conv_create()` returns a handle that is bound to one slot in the executor.
+
+Conversations are **not thread-safe** for multi-producer use; keep single-threaded control per conversation (similar to sessions).
+
+### 3) Feed + decode
+
+- `astral_conv_feed()`: tokenizes and appends prompt tokens.
+  - For an “empty prompt” run, call with `{NULL, 0}` and `finalize=1` so the provider can still see BOS.
+- `astral_conv_decode()`: transitions the conversation to decoding and schedules it in the executor loop.
+
+### 4) Streaming + meta
+
+If `AstralConvDesc.stream_enabled=1`:
+
+- `astral_conv_stream_read()` returns UTF-8 bytes (detokenized).
+- `astral_conv_stream_read_meta()` returns optional per-token metadata events.
+  - Enable meta events via `astral_conv_set_logprobs()` (non-zero `n_probs`).
+
+### 4b) Per-slot grammar (constrained decoding)
+
+Conversations support per-slot grammar binding (provider-dependent):
+
+- `astral_conv_grammar_set_gbnf()`
+- `astral_conv_grammar_set_json_schema()`
+- `astral_conv_grammar_clear()`
+
+Grammar compilation/binding happens in the executor thread before the conversation advances decoding.
+
+### 5) Lifecycle
+
+- `astral_conv_cancel()`: requests cancellation.
+- `astral_conv_wait()`: joins completion/cancel/failure state.
+- `astral_conv_reset()`: resets for reuse (must not be decoding).
+
+## Provider requirements
+
+Continuous batching uses optional backend ops from `include/astral_backend.h`:
+
+- `session_create_ex(..., max_slots, ...)`
+- `session_batch_eval(tokens[], token_count, out_output_count)`
+- `session_batch_logits(output_index, out_view)`
+- `session_slot_reset(slot_id)` (best-effort cleanup)
+
+Per-slot grammar binding uses additional optional ops:
+
+- `session_grammar_set_gbnf_for_slot(session_ctx, slot_id, ...)`
+- `session_grammar_set_json_schema_for_slot(session_ctx, slot_id, ...)`
+- `session_grammar_clear_for_slot(session_ctx, slot_id)`
+- `session_apply_grammar_for_slot(session_ctx, slot_id, tokens, logits, count)`
+
+The built-in `cpu` and `mock` backends implement these.
+
+## Notes / current limitations
+
+- `astral_session_*` and `astral_conv_*` are intentionally separate: sessions are per-session worker based; conversations are executor based.

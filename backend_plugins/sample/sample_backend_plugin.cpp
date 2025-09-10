@@ -369,11 +369,16 @@ static const AstralBackendOps kOps = {
     .model_embedding_dim = sample_model_embedding_dim,
 
     .session_create = sample_session_create,
+    .session_create_ex = nullptr,
     .session_destroy = sample_session_destroy,
     .session_reset = sample_session_reset,
     .session_feed = sample_session_feed,
     .session_logits = sample_session_logits,
     .session_accept = sample_session_accept,
+
+    .session_batch_eval = nullptr,
+    .session_batch_logits = nullptr,
+    .session_slot_reset = nullptr,
 
     .embedder_create = sample_embedder_create,
     .embedder_destroy = sample_embedder_destroy,
@@ -384,6 +389,11 @@ static const AstralBackendOps kOps = {
     .session_grammar_set_json_schema = nullptr,
     .session_grammar_clear = nullptr,
     .session_apply_grammar = nullptr,
+
+    .session_grammar_set_gbnf_for_slot = nullptr,
+    .session_grammar_set_json_schema_for_slot = nullptr,
+    .session_grammar_clear_for_slot = nullptr,
+    .session_apply_grammar_for_slot = nullptr,
 
     .session_state_size = nullptr,
     .session_state_save = nullptr,

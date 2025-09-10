@@ -11,11 +11,14 @@
 
 #include "backend.hpp"
 #include "../core/error.hpp"
+#include "../core/abi_guard.hpp"
+#include "../core/runtime_state.hpp"
+
+#if ASTRAL_ENABLE_DYNAMIC_BACKENDS
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <new>
 
 #if defined(_WIN32) || defined(_WIN64)
   #define NOMINMAX
@@ -89,18 +92,21 @@ static void unload_plugin_library(void* handle) {
 #endif
 }
 
-static void* span_to_cstr(AstralSpanU8 s) {
+static char* span_to_cstr(AstralSpanU8 s, size_t* out_bytes) {
     if (s.data == nullptr || s.len == 0) {
         return nullptr;
     }
 
     const size_t n = static_cast<size_t>(s.len);
-    char* p = new (std::nothrow) char[n + 1];
+    char* p = static_cast<char*>(astral::core::runtime_alloc(n + 1, 1));
     if (p == nullptr) {
         return nullptr;
     }
     std::memcpy(p, s.data, n);
     p[n] = '\0';
+    if (out_bytes) {
+        *out_bytes = n + 1;
+    }
     return p;
 }
 
@@ -163,12 +169,14 @@ static AstralErr register_plugin_provider(const AstralBackendProvider* plugin_pr
 extern "C" {
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_backend_load_plugin(AstralSpanU8 path) {
+    ASTRAL_ABI_TRY_BEGIN
     if (path.data == nullptr || path.len == 0) {
         astral::backend::set_err_invalid("path");
         return ASTRAL_E_INVALID;
     }
 
-    void* cstr = astral::backend::span_to_cstr(path);
+    size_t cstr_bytes = 0;
+    char* cstr = astral::backend::span_to_cstr(path, &cstr_bytes);
     if (cstr == nullptr) {
         astral::core::set_last_error_from_code(ASTRAL_E_NOMEM);
         return ASTRAL_E_NOMEM;
@@ -177,7 +185,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_backend_load_plugin(AstralSpanU8 path) {
     void* dylib_handle = nullptr;
     AstralBackendPluginGetProviderV0Fn get_provider = nullptr;
     const AstralErr load_err = astral::backend::load_plugin_library(static_cast<const char*>(cstr), &dylib_handle, &get_provider);
-    delete[] static_cast<char*>(cstr);
+    astral::core::runtime_free(cstr, cstr_bytes, 1);
 
     if (load_err != ASTRAL_OK || dylib_handle == nullptr || get_provider == nullptr) {
         astral::backend::set_err_backend("failed to load plugin or entry point");
@@ -197,6 +205,23 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_backend_load_plugin(AstralSpanU8 path) {
     }
 
     return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 } // extern "C"
+
+#else
+
+extern "C" {
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_backend_load_plugin(AstralSpanU8 path) {
+    ASTRAL_ABI_TRY_BEGIN
+    (void)path;
+    astral::core::set_last_errorf("Unsupported: dynamic backends disabled (ASTRAL_ENABLE_DYNAMIC_BACKENDS=0)");
+    return ASTRAL_E_UNSUPPORTED;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+} // extern "C"
+
+#endif

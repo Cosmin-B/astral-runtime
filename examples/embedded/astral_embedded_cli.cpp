@@ -151,6 +151,16 @@ int main(int argc, char** argv) {
     cfg.numa_node = 0xFFFFFFFFu;
     cfg.enable_hugepages = 0;
     AstralErr err = astral_init(&cfg);
+    if (err == ASTRAL_E_UNSUPPORTED) {
+        // Embedded-friendly fallback: use an Astral-owned arena instead of platform VM.
+        AstralInit2 cfg2{};
+        cfg2.base = cfg;
+        cfg2.memory_mode = ASTRAL_MEMMODE_ARENA_OWNED;
+        cfg2.arena.size = cfg.reserve_bytes;
+        cfg2.arena.session_block_size = 2u * 1024u * 1024u;
+        cfg2.arena.session_block_count = 0; // auto
+        err = astral_init2(&cfg2);
+    }
     if (err != ASTRAL_OK) {
         std::fprintf(stderr, "astral_init failed: %s (%s)\n", astral_error_string(err), astral_last_error());
         return 1;

@@ -84,6 +84,30 @@ std::string read_stream_all(AstralHandle session) {
     return out;
 }
 
+std::string read_conv_stream_all(AstralHandle conv) {
+    std::string out;
+    out.reserve(256);
+
+    uint8_t buf[256];
+    for (uint32_t i = 0; i < 10000; ++i) {
+        AstralMutSpanU8 span{};
+        span.data = buf;
+        span.len = sizeof(buf);
+
+        const int32_t n = astral_conv_stream_read(conv, span, 100 /*ms*/);
+        if (n == 0) {
+            break;
+        }
+        if (n == ASTRAL_E_TIMEOUT) {
+            continue;
+        }
+        ASSERT_GT(n, 0);
+        out.append(reinterpret_cast<const char*>(buf), static_cast<size_t>(n));
+    }
+
+    return out;
+}
+
 } // namespace
 
 //
@@ -95,38 +119,130 @@ TEST(inference_session_create_destroy) {
     cfg.reserve_bytes = 32 * 1024 * 1024;
     astral_init(&cfg);
 
-    // Load model first (may fail if no model file)
-    AstralModelDesc model_desc = {};
-    const char* path = "models/test.gguf";
-    model_desc.model_path.data = reinterpret_cast<const uint8_t*>(path);
-    model_desc.model_path.len = static_cast<uint32_t>(strlen(path));
-    model_desc.n_ctx = 512;
-    model_desc.n_batch = 128;
-    model_desc.gpu_layers = 0;
+    // Use mock backend so the test is hermetic (no external GGUF needed).
+    AstralHandle model = load_mock_model(nullptr);
 
-    AstralHandle model;
-    AstralErr err = astral_model_load(&model_desc, &model);
+    AstralSessionDesc session_desc = {};
+    session_desc.model = model;
+    session_desc.max_tokens = 100;
+    session_desc.temperature = 0.7f;
+    session_desc.top_k = 40;
+    session_desc.top_p = 0.9f;
+    session_desc.stream_enabled = 1;
 
-    if (err == ASTRAL_OK) {
-        // Create session
-        AstralSessionDesc session_desc = {};
-        session_desc.model = model;
-        session_desc.max_tokens = 100;
-        session_desc.temperature = 0.7f;
-        session_desc.top_k = 40;
-        session_desc.top_p = 0.9f;
-        session_desc.stream_enabled = 1;
+    AstralHandle session = 0;
+    const AstralErr err = astral_session_create(&session_desc, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
 
-        AstralHandle session;
-        err = astral_session_create(&session_desc, &session);
+    astral_session_destroy(session);
+    astral_model_release(model);
 
-        if (err == ASTRAL_OK) {
-            astral_session_destroy(session);
-        }
+    astral_shutdown();
+}
 
-        astral_model_release(model);
+TEST(inference_conversation_multi_slot_isolation) {
+    AstralInit cfg{};
+    cfg.reserve_bytes = 32 * 1024 * 1024;
+    astral_init(&cfg);
+
+    AstralHandle model = load_mock_model(nullptr);
+
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = 2;
+    ex.max_batch_tokens = 8;
+    ex.worker_hint = 0;
+    ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
+
+    AstralConvDesc conv_desc{};
+    conv_desc.size = sizeof(AstralConvDesc);
+    conv_desc.model = model;
+    conv_desc.max_tokens = 16;
+    conv_desc.temperature = 0.0f;
+    conv_desc.top_k = 0;
+    conv_desc.top_p = 1.0f;
+    conv_desc.stream_enabled = 1;
+    conv_desc.seed = 1;
+
+    AstralHandle a = 0;
+    AstralHandle b = 0;
+    ASSERT_EQ(astral_conv_create(&conv_desc, &a), ASTRAL_OK);
+    ASSERT_EQ(astral_conv_create(&conv_desc, &b), ASTRAL_OK);
+
+    AstralSpanU8 empty{};
+    ASSERT_EQ(astral_conv_feed(a, empty, 1), ASTRAL_OK);
+    ASSERT_EQ(astral_conv_feed(b, empty, 1), ASTRAL_OK);
+
+    ASSERT_EQ(astral_conv_decode(a), ASTRAL_OK);
+    ASSERT_EQ(astral_conv_decode(b), ASTRAL_OK);
+
+    const std::string out_a = read_conv_stream_all(a);
+    const std::string out_b = read_conv_stream_all(b);
+
+    ASSERT_EQ(astral_conv_wait(a, 1000), ASTRAL_OK);
+    ASSERT_EQ(astral_conv_wait(b, 1000), ASTRAL_OK);
+
+    ASSERT_FALSE(out_a.empty());
+    ASSERT_FALSE(out_b.empty());
+    ASSERT_NE(out_a, out_b);
+
+    AstralHandle c = 0;
+    ASSERT_EQ(astral_conv_create(&conv_desc, &c), ASTRAL_E_NOMEM);
+
+    astral_conv_destroy(a);
+    astral_conv_destroy(b);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(inference_conversation_grammar_gbnf_mock) {
+    AstralInit cfg{};
+    cfg.reserve_bytes = 32 * 1024 * 1024;
+    astral_init(&cfg);
+
+    AstralHandle model = load_mock_model(nullptr);
+
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = 1;
+    ex.max_batch_tokens = 8;
+    ex.worker_hint = 0;
+    ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
+
+    AstralConvDesc conv_desc{};
+    conv_desc.size = sizeof(AstralConvDesc);
+    conv_desc.model = model;
+    conv_desc.max_tokens = 8;
+    conv_desc.temperature = 0.0f;
+    conv_desc.top_k = 0;
+    conv_desc.top_p = 1.0f;
+    conv_desc.stream_enabled = 1;
+    conv_desc.seed = 1;
+
+    AstralHandle conv = 0;
+    ASSERT_EQ(astral_conv_create(&conv_desc, &conv), ASTRAL_OK);
+
+    const char* gbnf = "allow=x";
+    AstralSpanU8 g{};
+    g.data = reinterpret_cast<const uint8_t*>(gbnf);
+    g.len = static_cast<uint32_t>(std::strlen(gbnf));
+    AstralSpanU8 root{};
+    ASSERT_EQ(astral_conv_grammar_set_gbnf(conv, g, root), ASTRAL_OK);
+
+    AstralSpanU8 empty{};
+    ASSERT_EQ(astral_conv_feed(conv, empty, 1), ASTRAL_OK);
+    ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+
+    const std::string out = read_conv_stream_all(conv);
+    ASSERT_EQ(astral_conv_wait(conv, 1000), ASTRAL_OK);
+
+    ASSERT_FALSE(out.empty());
+    for (char ch : out) {
+        ASSERT_EQ(ch, 'x');
     }
 
+    astral_conv_destroy(conv);
+    astral_model_release(model);
     astral_shutdown();
 }
 
@@ -275,6 +391,69 @@ TEST(inference_stream_read_null_buffer) {
     // Would need valid session for full test
     // This tests null buffer handling
     astral_shutdown();
+}
+
+TEST(inference_stream_read_rejects_concurrent_consumers) {
+    struct Cleanup {
+        AstralHandle session = 0;
+        AstralHandle model = 0;
+        bool shutdown = false;
+        ~Cleanup() {
+            if (session) {
+                astral_session_destroy(session);
+            }
+            if (model) {
+                astral_model_release(model);
+            }
+            if (shutdown) {
+                astral_shutdown();
+            }
+        }
+    } cleanup;
+
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 64 * 1024 * 1024;
+    cfg.thread_count = 2;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+    cleanup.shutdown = true;
+
+    cleanup.model = load_mock_model(nullptr);
+
+    AstralSessionDesc session_desc = {};
+    session_desc.model = cleanup.model;
+    session_desc.max_tokens = 8;
+    session_desc.temperature = 0.0f;
+    session_desc.top_k = 0;
+    session_desc.top_p = 1.0f;
+    session_desc.stream_enabled = 1;
+    session_desc.seed = 1;
+
+    err = astral_session_create(&session_desc, &cleanup.session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    // With no decode running, a blocking read will hold the stream consumer lock until it times out.
+    std::atomic<int32_t> blocking_result{0};
+    std::thread t([&]() {
+        uint8_t buf[16];
+        AstralMutSpanU8 out = {};
+        out.data = buf;
+        out.len = sizeof(buf);
+        blocking_result.store(astral_stream_read(cleanup.session, out, 250), std::memory_order_relaxed);
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    uint8_t buf2[16];
+    AstralMutSpanU8 out2 = {};
+    out2.data = buf2;
+    out2.len = sizeof(buf2);
+    const int32_t concurrent = astral_stream_read(cleanup.session, out2, 0);
+
+    t.join();
+
+    const int32_t first = blocking_result.load(std::memory_order_relaxed);
+    ASSERT_TRUE((concurrent == ASTRAL_E_STATE) && (first == ASTRAL_E_TIMEOUT));
 }
 
 TEST(inference_stream_timeout_and_eos_semantics) {
