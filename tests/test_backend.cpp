@@ -206,6 +206,40 @@ TEST(backend_selection_gpu) {
     astral_shutdown();
 }
 
+TEST(backend_cuda_registration_surface) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    astral_init(&cfg);
+
+    // Force the backend by name, but keep model_path empty. This distinguishes:
+    // - backend present: backend load runs and returns ASTRAL_E_INVALID (missing path)
+    // - backend absent: registry lookup fails and Astral returns ASTRAL_E_BACKEND
+    AstralModelDesc model_desc = {};
+    const char* backend = "cuda";
+    model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+    model_desc.backend_name.len = static_cast<uint32_t>(strlen(backend));
+    model_desc.model_path.data = nullptr;
+    model_desc.model_path.len = 0;
+    model_desc.n_ctx = 512;
+    model_desc.n_batch = 128;
+    model_desc.gpu_layers = 10;
+
+    AstralHandle model = 0;
+    const AstralErr err = astral_model_load(&model_desc, &model);
+
+#if defined(ASTRAL_ENABLE_CUDA) && ASTRAL_ENABLE_CUDA
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+#else
+    ASSERT_EQ(err, ASTRAL_E_BACKEND);
+#endif
+
+    if (err == ASTRAL_OK) {
+        astral_model_release(model);
+    }
+
+    astral_shutdown();
+}
+
 //
 // Model Load/Release Tests
 //
@@ -312,6 +346,12 @@ TEST(backend_mock_provider_end_to_end) {
     err = astral_session_decode(session);
     ASSERT_EQ(err, ASTRAL_OK);
 
+    err = astral_session_wait(session, 5000);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const uint64_t allocs_after_decode = g_new_calls.load(std::memory_order_relaxed);
+    ASSERT_EQ(allocs_after_decode, allocs_before_decode);
+
     // Drain output (mock produces a short fixed message).
     uint8_t buf[128];
     uint32_t total = 0;
@@ -334,12 +374,6 @@ TEST(backend_mock_provider_end_to_end) {
         }
     }
 
-    err = astral_session_wait(session, 5000);
-    ASSERT_EQ(err, ASTRAL_OK);
-
-    const uint64_t allocs_after_decode = g_new_calls.load(std::memory_order_relaxed);
-    ASSERT_EQ(allocs_after_decode, allocs_before_decode);
-
     AstralStats stats{};
     err = astral_session_stats(session, &stats);
     ASSERT_EQ(err, ASTRAL_OK);
@@ -358,6 +392,12 @@ TEST(backend_mock_provider_end_to_end) {
 
     err = astral_session_decode(session);
     ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_wait(session, 5000);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const uint64_t allocs_after_decode2 = g_new_calls.load(std::memory_order_relaxed);
+    ASSERT_EQ(allocs_after_decode2, allocs_before_decode2);
 
     uint8_t buf2[128];
     uint32_t total2 = 0;
@@ -379,12 +419,6 @@ TEST(backend_mock_provider_end_to_end) {
             break;
         }
     }
-
-    err = astral_session_wait(session, 5000);
-    ASSERT_EQ(err, ASTRAL_OK);
-
-    const uint64_t allocs_after_decode2 = g_new_calls.load(std::memory_order_relaxed);
-    ASSERT_EQ(allocs_after_decode2, allocs_before_decode2);
 
     ASSERT_GT(total2, 0u);
     ASSERT_EQ(total2, total);
