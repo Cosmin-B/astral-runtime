@@ -1,12 +1,12 @@
 #include "embedder.hpp"
 
 #include "model.hpp"
+#include "../core/runtime_alloc.hpp"
 #include "../platform/atomics.h"
 
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <new>
 
 namespace astral::inference {
 
@@ -101,7 +101,7 @@ AstralErr embedder_create(Model* model, AstralHandle* out_embedder) {
         return derr != ASTRAL_OK ? derr : ASTRAL_E_BACKEND;
     }
 
-    auto* e = new (std::nothrow) Embedder{};
+    auto* e = core::runtime_new<Embedder>();
     if (e == nullptr) {
         return ASTRAL_E_NOMEM;
     }
@@ -123,10 +123,10 @@ AstralErr embedder_create(Model* model, AstralHandle* out_embedder) {
         e->slots[i].token_count = 0;
     }
 
-    e->vectors = new (std::nothrow) float[static_cast<size_t>(kMaxInflight) * static_cast<size_t>(dim)];
+    e->vectors = core::runtime_alloc_array<float>(static_cast<uint32_t>(kMaxInflight * dim));
     if (e->vectors == nullptr) {
         model->refcount.fetch_sub(1, std::memory_order_relaxed);
-        delete e;
+        core::runtime_delete(e);
         return ASTRAL_E_NOMEM;
     }
 
@@ -137,9 +137,9 @@ AstralErr embedder_create(Model* model, AstralHandle* out_embedder) {
             for (uint32_t j = 0; j < i; ++j) {
                 ops->embedder_destroy(e->backend_ctx[j]);
             }
-            delete[] e->vectors;
+            core::runtime_free_array(e->vectors, static_cast<uint32_t>(kMaxInflight * dim));
             model->refcount.fetch_sub(1, std::memory_order_relaxed);
-            delete e;
+            core::runtime_delete(e);
             return be != ASTRAL_OK ? be : ASTRAL_E_BACKEND;
         }
         e->backend_ctx[i] = ctx;
@@ -156,9 +156,9 @@ AstralErr embedder_create(Model* model, AstralHandle* out_embedder) {
         for (uint32_t i = 0; i < kMaxInflight; ++i) {
             ops->embedder_destroy(e->backend_ctx[i]);
         }
-        delete[] e->vectors;
+        core::runtime_free_array(e->vectors, static_cast<uint32_t>(kMaxInflight * dim));
         model->refcount.fetch_sub(1, std::memory_order_relaxed);
-        delete e;
+        core::runtime_delete(e);
         return ASTRAL_E_NOMEM;
     }
 
@@ -198,7 +198,7 @@ void embedder_destroy(Embedder* embedder) {
         }
     }
 
-    delete[] e->vectors;
+    core::runtime_free_array(e->vectors, static_cast<uint32_t>(kMaxInflight * e->dim));
     e->vectors = nullptr;
 
     if (e->model) {
@@ -206,7 +206,7 @@ void embedder_destroy(Embedder* embedder) {
         e->model = nullptr;
     }
 
-    delete e;
+    core::runtime_delete(e);
 }
 
 AstralErr embedder_enqueue(Embedder* embedder, AstralSpanU8 text, uint64_t* out_ticket) {

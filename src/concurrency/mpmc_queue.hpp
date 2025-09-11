@@ -5,6 +5,8 @@
 #include <type_traits>
 
 #include "../platform/atomics.h"
+#include "../platform/cacheline.hpp"
+#include "../utils/trace.hpp"
 
 namespace astral::concurrency {
 
@@ -42,17 +44,19 @@ public:
     ///
     /// Hot path has no CAS (fetch_add + per-slot sequence + WFE/SEV).
     void enqueue_wait(const T& item) {
+        ASTRAL_ZONE_MICRO_N("astral.mpmc.enqueue_wait");
         const uint64_t pos = enqueue_pos_.fetch_add(1, std::memory_order_relaxed);
         Slot& slot = buffer_[pos & kIndexMask];
 
         uint32_t spins = 0;
-        // Spin with relaxed loads and only pay the acquire barrier once, right before writing data.
-        while (slot.seq.load(std::memory_order_relaxed) != pos) {
+        // ARM correctness: relaxed loads in a spin loop are not sufficient; perform the acquire load
+        // on the successful iteration so subsequent slot.data writes are properly ordered.
+        for (;;) {
+            if (slot.seq.load(std::memory_order_acquire) == pos) {
+                break;
+            }
             wait_hint(spins);
         }
-
-        // Synchronize with the consumer's release-store of seq (which follows reading slot.data).
-        (void)slot.seq.load(std::memory_order_acquire);
         slot.data = item;
         slot.seq.store(pos + 1, std::memory_order_release);
         astral::platform::cpu_signal_event();
@@ -62,6 +66,7 @@ public:
     ///
     /// Hot path has no CAS (fetch_add + per-slot sequence + WFE/SEV).
     void dequeue_wait(T* out) {
+        ASTRAL_ZONE_MICRO_N("astral.mpmc.dequeue_wait");
         if (out == nullptr) {
             return;
         }
@@ -70,13 +75,13 @@ public:
         Slot& slot = buffer_[pos & kIndexMask];
 
         uint32_t spins = 0;
-        // Spin with relaxed loads and only pay the acquire barrier once, right before reading data.
-        while (slot.seq.load(std::memory_order_relaxed) != pos + 1) {
+        // ARM correctness: acquire on the successful iteration before reading slot.data.
+        for (;;) {
+            if (slot.seq.load(std::memory_order_acquire) == pos + 1) {
+                break;
+            }
             wait_hint(spins);
         }
-
-        // Synchronize with the producer's release-store of seq (which follows writing slot.data).
-        (void)slot.seq.load(std::memory_order_acquire);
         *out = slot.data;
         slot.seq.store(pos + Capacity, std::memory_order_release);
         astral::platform::cpu_signal_event();
@@ -103,7 +108,7 @@ public:
     }
 
 private:
-    static constexpr size_t kCacheLineSize = 64;
+    static constexpr size_t kCacheLineSize = astral::platform::kCacheLineAlign;
     static constexpr size_t kIndexMask = Capacity - 1;
 
     struct Slot {

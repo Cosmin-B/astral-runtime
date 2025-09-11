@@ -5,6 +5,8 @@
 #include <cstring>
 #include <type_traits>
 
+#include "../platform/cacheline.hpp"
+
 namespace astral::concurrency {
 
 /// Epoch-based memory reclamation for lock-free data structures.
@@ -237,7 +239,7 @@ public:
     }
 
 private:
-    static constexpr size_t kCacheLineSize = 64;
+    static constexpr size_t kCacheLineSize = astral::platform::kCacheLineAlign;
     static constexpr size_t kDeferredMask = kMaxDeferredPerEpoch - 1;
 
     /// Ring buffer for deferred deletions per epoch.

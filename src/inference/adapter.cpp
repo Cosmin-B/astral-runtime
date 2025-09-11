@@ -2,6 +2,7 @@
 
 #include "../core/handles.hpp"
 #include "../core/error.hpp"
+#include "../core/runtime_alloc.hpp"
 
 namespace astral::inference {
 
@@ -29,7 +30,7 @@ AstralErr adapter_load(Model* model, const AstralAdapterDesc* desc, Adapter** ou
         return backend_err != ASTRAL_OK ? backend_err : ASTRAL_E_BACKEND;
     }
 
-    Adapter* a = new (std::nothrow) Adapter{};
+    Adapter* a = core::runtime_new<Adapter>();
     if (a == nullptr) {
         model->backend->ops->model_adapter_unload(model->backend_model_ctx, adapter_ctx);
         return ASTRAL_E_NOMEM;
@@ -47,7 +48,7 @@ AstralErr adapter_load(Model* model, const AstralAdapterDesc* desc, Adapter** ou
     if (h == 0) {
         model->backend->ops->model_adapter_unload(model->backend_model_ctx, adapter_ctx);
         model_release(model);
-        delete a;
+        core::runtime_delete(a);
         return ASTRAL_E_BUSY;
     }
     a->handle = h;
@@ -88,8 +89,7 @@ void adapter_release(Adapter* a) {
     model_release(a->model);
     a->model = nullptr;
 
-    delete a;
+    core::runtime_delete(a);
 }
 
 } // namespace astral::inference
-

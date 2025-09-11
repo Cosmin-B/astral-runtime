@@ -6,6 +6,8 @@
 #include <type_traits>
 
 #include "../platform/atomics.h"
+#include "../platform/cacheline.hpp"
+#include "../utils/trace.hpp"
 
 namespace astral::concurrency {
 
@@ -59,6 +61,7 @@ public:
     ///
     /// IMPORTANT: Must be called from single producer thread only.
     bool push(const T& item) {
+        ASTRAL_ZONE_MICRO_N("astral.spsc.push");
         // Load tail with acquire semantics to see consumer's progress
         // This ensures we don't overwrite data the consumer is reading
         uint64_t tail = tail_.load(std::memory_order_acquire);
@@ -99,6 +102,7 @@ public:
     ///
     /// IMPORTANT: Must be called from single consumer thread only.
     bool pop(T* out) {
+        ASTRAL_ZONE_MICRO_N("astral.spsc.pop");
         if (out == nullptr) [[unlikely]] {
             return false;
         }
@@ -173,7 +177,7 @@ public:
     }
 
 private:
-    static constexpr size_t kCacheLineSize = 64;
+    static constexpr size_t kCacheLineSize = astral::platform::kCacheLineAlign;
     static constexpr size_t kIndexMask = Capacity - 1;
 
     // Cache-line aligned atomics to prevent false sharing
