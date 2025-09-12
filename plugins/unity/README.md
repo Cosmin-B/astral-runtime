@@ -49,7 +49,11 @@ public class GameManager : MonoBehaviour
         gameObject.AddComponent<AstralRuntimeInitializer>();
 
         // Option B: Manual initialization
-        AstralRuntime.Initialize(AstralConfig.Default);
+        var cfg = AstralConfig.Default;
+        cfg.useUnityAllocator = true;              // default: true
+        cfg.enableLogging = true;                  // default: true
+        cfg.maxLogLevel = AstralNative.ASTRAL_LOG_INFO;
+        AstralRuntime.Initialize(cfg);
     }
 
     void OnApplicationQuit()
@@ -141,6 +145,12 @@ Global runtime initialization and shutdown.
 // Initialize runtime
 AstralRuntime.Initialize(AstralConfig.Default);
 
+// Or: no-throw init (recommended for embedded-style, exception-free gameplay loops)
+if (!AstralRuntime.TryInitialize(AstralConfig.Default, out int err))
+{
+    Debug.LogError($"Astral init failed: {AstralRuntime.GetErrorString(err)}");
+}
+
 // Check if initialized
 bool isReady = AstralRuntime.IsInitialized;
 
@@ -163,7 +173,9 @@ using var model = AstralModel.Load("/path/to/model.gguf", AstralModelConfig.Defa
 bool isValid = model.IsValid;
 ```
 
-**Configs**: `Default`, `Mobile`, `HighPerformance`, `Embeddings` (v0.1 stub)
+**Configs**: `Default`, `Mobile`, `HighPerformance`, `Embeddings`
+
+Note: embeddings are supported; `Embeddings` preset selects `embeddingsOnly=1` and related defaults.
 
 ### AstralSession
 
@@ -218,13 +230,13 @@ var config = new AstralModelConfig
     contextSize = 2048,     // Context window in tokens
     batchSize = 512,        // Prompt processing batch size
     threads = 0,            // Auto-detect
-    embeddingsOnly = false  // v0.1: embeddings are not implemented (calls return ASTRAL_E_UNSUPPORTED)
+    embeddingsOnly = false  // Set true for embeddings-only models (enables `astral_embed_*` fast paths)
 };
 
 var model = AstralModel.Load("/path/to/model.gguf", config);
 ```
 
-**Presets**: `Default`, `Mobile`, `HighPerformance`, `Embeddings` (v0.1 stub)
+**Presets**: `Default`, `Mobile`, `HighPerformance`, `Embeddings`
 
 ### Session Configuration
 
@@ -250,7 +262,7 @@ var session = AstralSession.Create(model, config);
 | Windows | x86_64 | Tested | Visual Studio 2022 |
 | Linux | x86_64 | Tested | GCC 11+ |
 | macOS | ARM64 | Tested | Apple Silicon (M1/M2) |
-| Android | ARM64 | Tested | API Level 21+ |
+| Android | ARM64 | Planned (v0.1.1) | API Level 21+ |
 | iOS | ARM64 | Tested | iOS 12.0+ |
 | WebGL | WASM | Planned | v0.3 |
 

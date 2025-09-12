@@ -23,7 +23,9 @@ public class AstralRT : ModuleRules
 
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
-            PublicAdditionalLibraries.Add(Path.Combine(LibPath, "Win64", "astral_rt.lib"));
+            string StaticLib = Path.Combine(LibPath, "Win64", "astral_rt.lib");
+            string StaticLibAlt = Path.Combine(LibPath, "Win64", "astral_rt_static.lib");
+            PublicAdditionalLibraries.Add(File.Exists(StaticLib) ? StaticLib : StaticLibAlt);
         }
         else if (Target.Platform == UnrealTargetPlatform.Linux)
         {
@@ -36,7 +38,6 @@ public class AstralRT : ModuleRules
         else if (Target.Platform == UnrealTargetPlatform.Android)
         {
             PublicAdditionalLibraries.Add(Path.Combine(LibPath, "Android", "arm64-v8a", "libastral_rt.a"));
-            PublicAdditionalLibraries.Add(Path.Combine(LibPath, "Android", "armeabi-v7a", "libastral_rt.a"));
         }
         else if (Target.Platform == UnrealTargetPlatform.IOS)
         {
@@ -47,4 +48,3 @@ public class AstralRT : ModuleRules
         bUseRTTI = false;
     }
 }
-

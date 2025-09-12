@@ -7,7 +7,7 @@ This directory is a Unity Package Manager package that wraps Astral's C ABI for 
 **Docs**
 - `README.md`: install + usage
 - `IMPLEMENTATION.md`: marshaling + low-level notes
-- `ALLOCATOR_INTEGRATION.md`: allocator bridge design (not implemented yet)
+- `ALLOCATOR_INTEGRATION.md`: allocator bridge guide
 - `package.json`: UPM manifest
 
 **Runtime**
@@ -16,9 +16,9 @@ This directory is a Unity Package Manager package that wraps Astral's C ABI for 
 - `Runtime/AstralRuntime.cs`: runtime init/shutdown
 - `Runtime/AstralModel.cs`: model lifetime wrapper (typed 64-bit handle)
 - `Runtime/AstralSession.cs`: session wrapper (feed/decode/stream/cancel/wait/reset)
-- `Runtime/AstralAllocator.cs`: Unity allocator bridge (TODO)
-- `Runtime/AstralLogging.cs`: logging callback bridge (TODO)
-- `Runtime/AstralJobSystem.cs`: jobs/Burst integration (TODO)
+- `Runtime/AstralAllocator.cs`: Unity allocator bridge
+- `Runtime/AstralLogging.cs`: logging callback bridge
+- `Runtime/AstralJobSystem.cs`: jobs/Burst integration helpers
 - `Runtime/AstralExample.cs`: example usage
 - `Runtime/Plugins/README.md`: where native binaries go per platform
 - `Runtime/Astral.Runtime.asmdef`: runtime asmdef
@@ -40,5 +40,5 @@ This directory is a Unity Package Manager package that wraps Astral's C ABI for 
 
 ## Current status
 
-- Implemented: backend name + seed wiring, model/session lifetimes, streaming read loop, cancel/wait/state, session reset.
-- TODO: Unity allocator bridge, logging callbacks, packaging native binaries for each platform, jobs/Burst integration, embeddings wrapper.
+- Implemented: Unity allocator + logging wiring, model/session lifetimes, streaming read loop, cancel/wait/state, session reset, embeddings wrapper, Jobs helpers.
+- TODO: packaging native binaries for each platform (UPM-ready), samples + docs polish, automated Unity CI (licensing permitting).

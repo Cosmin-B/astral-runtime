@@ -30,18 +30,39 @@ namespace Astral.Runtime
         /// <exception cref="AstralException">Thrown if initialization fails</exception>
         public static void Initialize(AstralConfig config = null)
         {
+            if (!TryInitialize(config, out int err))
+            {
+                throw new AstralException($"Failed to initialize Astral runtime: {GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
+        /// Initialize Astral runtime without throwing.
+        /// Thread-safety: Not thread-safe; call from main thread only.
+        /// </summary>
+        /// <param name="config">Runtime configuration (null = default config)</param>
+        /// <param name="err">Output: error code (ASTRAL_OK on success)</param>
+        /// <returns>true on success, false on failure</returns>
+        public static bool TryInitialize(AstralConfig config, out int err)
+        {
             if (s_initialized)
             {
                 Debug.LogWarning("[Astral] Runtime already initialized");
-                return;
+                err = AstralNative.ASTRAL_OK;
+                return true;
             }
 
             s_config = config ?? AstralConfig.Default;
 
+            if (s_config.enableLogging)
+            {
+                AstralLogging.SetMaxLogLevel(s_config.maxLogLevel);
+            }
+
             var init = new AstralNative.AstralInit
             {
-                sys_alloc = default, // Use internal allocator for now (TODO: Unity allocator bridge)
-                log_cb = IntPtr.Zero,
+                sys_alloc = s_config.useUnityAllocator ? AstralAllocatorBridge.CreateUnityAllocator() : default,
+                log_cb = s_config.enableLogging ? AstralLogging.GetLogCallback() : IntPtr.Zero,
                 log_user = IntPtr.Zero,
                 reserve_bytes = s_config.reserveBytes,
                 thread_count = s_config.threadCount,
@@ -49,14 +70,15 @@ namespace Astral.Runtime
                 enable_hugepages = (byte)(s_config.enableHugePages ? 1 : 0)
             };
 
-            int err = AstralNative.astral_init(ref init);
+            err = AstralNative.astral_init(ref init);
             if (err != AstralNative.ASTRAL_OK)
             {
-                throw new AstralException($"Failed to initialize Astral runtime: {GetErrorString(err)}");
+                return false;
             }
 
             s_initialized = true;
             Debug.Log($"[Astral] Runtime initialized (reserve={s_config.reserveBytes / (1024 * 1024)}MB, threads={s_config.threadCount})");
+            return true;
         }
 
         /// <summary>
@@ -74,6 +96,11 @@ namespace Astral.Runtime
 
             AstralNative.astral_shutdown();
             s_initialized = false;
+
+            if (s_config != null && s_config.useUnityAllocator)
+            {
+                AstralAllocatorBridge.ValidateNoLeaks();
+            }
             Debug.Log("[Astral] Runtime shutdown");
         }
 
@@ -129,6 +156,23 @@ namespace Astral.Runtime
         public bool enableHugePages = false;
 
         /// <summary>
+        /// Use Unity's native allocator (Allocator.Persistent) for Astral heap allocations.
+        /// This improves profiler visibility and ensures allocations flow through Unity/Unity runtime.
+        /// </summary>
+        public bool useUnityAllocator = true;
+
+        /// <summary>
+        /// Forward Astral native logs to Unity's logger.
+        /// </summary>
+        public bool enableLogging = true;
+
+        /// <summary>
+        /// Maximum log verbosity forwarded to Unity (0=error .. 4=trace).
+        /// Default: info.
+        /// </summary>
+        public int maxLogLevel = AstralNative.ASTRAL_LOG_INFO;
+
+        /// <summary>
         /// Default configuration for desktop platforms.
         /// </summary>
         public static AstralConfig Default => new AstralConfig();
@@ -140,7 +184,10 @@ namespace Astral.Runtime
         {
             reserveBytes = 512UL << 20, // 512MB
             threadCount = 2,             // Conservative for mobile
-            enableHugePages = false      // Not available on mobile
+            enableHugePages = false,     // Not available on mobile
+            useUnityAllocator = true,
+            enableLogging = true,
+            maxLogLevel = AstralNative.ASTRAL_LOG_WARN
         };
 
         /// <summary>
@@ -150,7 +197,10 @@ namespace Astral.Runtime
         {
             reserveBytes = 4UL << 30,    // 4GB
             threadCount = 0,             // Auto-detect (usually physical cores - 1)
-            enableHugePages = true       // Try huge pages for better performance
+            enableHugePages = true,      // Try huge pages for better performance
+            useUnityAllocator = true,
+            enableLogging = true,
+            maxLogLevel = AstralNative.ASTRAL_LOG_INFO
         };
     }
 
