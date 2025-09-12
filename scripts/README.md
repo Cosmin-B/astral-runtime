@@ -110,6 +110,39 @@ Look for flat heap during decode iterations. Any growth indicates allocations in
 
 ---
 
+## Tracy Profiling (Optional)
+
+Tracy is integrated as an optional git submodule and is only required for `*-prof` presets.
+
+```bash
+./scripts/setup_tracy_submodule.sh
+cmake --preset dev-prof
+cmake --build --preset dev-prof -j
+ctest --preset dev-prof -j8
+```
+
+See `docs/PROFILING_TRACY.md` for capture notes and what zones/plots are instrumented.
+
+### Quick capture helper
+
+Build a profiling preset and run a small workload so you can attach the Tracy UI:
+
+```bash
+./scripts/run_tracy_capture.sh --preset dev-prof
+```
+
+---
+
+## Release Packaging (Desktop)
+
+Build + test and emit zip artifacts under `dist/`:
+
+```bash
+./scripts/package_release.sh --preset release-with-tests --unity --unreal
+```
+
+This is what the CI “v0.1 desktop artifacts” job uses.
+
 ## Interpreting Results
 
 ### PASS Criteria (per MASTER_SPEC § Performance Targets)
