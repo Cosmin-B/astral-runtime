@@ -34,6 +34,105 @@ jobs:
         run: |
           ctest --preset dev -j
 
+  macos-tests:
+    runs-on: macos-latest
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          brew update
+          brew install ninja
+
+      - name: Download small GGUF for integration
+        run: |
+          ./tests/model_downloader.sh
+
+      - name: Configure
+        run: |
+          cmake --preset dev
+
+      - name: Build
+        run: |
+          cmake --build --preset dev -j
+
+      - name: Test
+        run: |
+          ctest --preset dev -j
+
+  windows-tests:
+    runs-on: windows-latest
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          choco install -y ninja
+
+      - name: Download small GGUF for integration
+        shell: bash
+        run: |
+          ./tests/model_downloader.sh
+
+      - name: Configure
+        run: |
+          cmake --preset dev
+
+      - name: Build
+        run: |
+          cmake --build --preset dev -j
+
+      - name: Test
+        run: |
+          ctest --preset dev -j
+
+  linux-prof-tracy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Check Tracy submodule
+        id: tracy
+        run: |
+          if [ -f external/tracy/public/TracyClient.cpp ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure (dev-prof)
+        if: steps.tracy.outputs.enabled == 'true'
+        run: |
+          cmake --preset dev-prof
+
+      - name: Build (dev-prof)
+        if: steps.tracy.outputs.enabled == 'true'
+        run: |
+          cmake --build --preset dev-prof -j
+
+      - name: Test (dev-prof)
+        if: steps.tracy.outputs.enabled == 'true'
+        run: |
+          ctest --preset dev-prof -j
+
   cross-compile:
     runs-on: ubuntu-latest
     steps:
@@ -114,3 +213,291 @@ jobs:
           BIN2="build/embedded-armv7-ci/tests/gate_io_syscalls"
           test -x "${BIN2}"
           qemu-arm -L /usr/arm-linux-gnueabihf "${BIN2}"
+
+  embedded-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Configure (embedded-x86_64)
+        run: |
+          cmake --preset embedded-x86_64
+
+      - name: Build (embedded-x86_64)
+        run: |
+          cmake --build --preset embedded-x86_64 -j
+
+  unity-plugin-artifacts:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Install deps (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install ninja
+
+      - name: Install deps (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install -y ninja
+
+      - name: Configure (unity-plugin)
+        run: |
+          cmake --preset unity-plugin
+
+      - name: Build (unity-plugin)
+        run: |
+          cmake --build --preset unity-plugin -j
+
+      - name: Upload Unity plugin native binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-native-${{ runner.os }}
+          path: |
+            plugins/unity/Runtime/Plugins/
+
+  unity-android-artifacts:
+    runs-on: ubuntu-latest
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+
+      - name: Export ANDROID_NDK_HOME
+        run: |
+          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME}" >> "$GITHUB_ENV"
+
+      - name: Configure (unity-plugin-android-arm64)
+        run: |
+          cmake --preset unity-plugin-android-arm64
+
+      - name: Build (unity-plugin-android-arm64)
+        run: |
+          cmake --build --preset unity-plugin-android-arm64 -j
+
+      - name: Upload Unity Android native binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-android-arm64
+          path: |
+            plugins/unity/Runtime/Plugins/Android/
+
+  unity-ios-artifacts:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Configure (unity-plugin-ios-arm64)
+        run: |
+          cmake --preset unity-plugin-ios-arm64
+
+      - name: Build (unity-plugin-ios-arm64)
+        run: |
+          cmake --build --preset unity-plugin-ios-arm64 -j
+
+      - name: Upload Unity iOS native binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-ios-arm64
+          path: |
+            plugins/unity/Runtime/Plugins/iOS/
+
+  unreal-plugin-artifacts:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Install deps (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install ninja
+
+      - name: Install deps (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install -y ninja
+
+      - name: Configure (unreal-plugin)
+        run: |
+          cmake --preset unreal-plugin
+
+      - name: Build (unreal-plugin)
+        run: |
+          cmake --build --preset unreal-plugin -j
+
+      - name: Upload Unreal plugin ThirdParty artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: unreal-thirdparty-${{ runner.os }}
+          path: |
+            plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/
+
+  unreal-android-artifacts:
+    runs-on: ubuntu-latest
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+
+      - name: Export ANDROID_NDK_HOME
+        run: |
+          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME}" >> "$GITHUB_ENV"
+
+      - name: Configure (unreal-plugin-android-arm64)
+        run: |
+          cmake --preset unreal-plugin-android-arm64
+
+      - name: Build (unreal-plugin-android-arm64)
+        run: |
+          cmake --build --preset unreal-plugin-android-arm64 -j
+
+      - name: Upload Unreal Android ThirdParty artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: unreal-android-arm64
+          path: |
+            plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/include/
+            plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/lib/Android/arm64-v8a/
+
+  unreal-ios-artifacts:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Configure (unreal-plugin-ios-arm64)
+        run: |
+          cmake --preset unreal-plugin-ios-arm64
+
+      - name: Build (unreal-plugin-ios-arm64)
+        run: |
+          cmake --build --preset unreal-plugin-ios-arm64 -j
+
+      - name: Upload Unreal iOS ThirdParty artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: unreal-ios-arm64
+          path: |
+            plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/include/
+            plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/lib/IOS/
+
+  release-desktop-artifacts:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Install deps (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install ninja
+
+      - name: Install deps (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install -y ninja
+
+      - name: Download small GGUF for integration
+        shell: bash
+        run: |
+          ./tests/model_downloader.sh
+
+      - name: Build + test + package (release-with-tests)
+        shell: bash
+        run: |
+          chmod +x ./scripts/package_release.sh
+          ./scripts/package_release.sh --preset release-with-tests --unity --unreal
+
+      - name: Upload v0.1 desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: v0.1-desktop-${{ runner.os }}
+          path: |
+            dist/*.zip
