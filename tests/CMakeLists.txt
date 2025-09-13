@@ -38,6 +38,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY)
         test_arena
         test_model_sources
         test_backend
+        test_cuda_parity
         test_inference
         test_embeddings
         test_provider_harness

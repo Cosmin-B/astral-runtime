@@ -9,7 +9,7 @@ This is the living checklist to turn Astral into a world-class, product-ready fr
 - Embedded pillars (done):
   - `astral_init2()` arena modes (`BORROWED` / `OWNED`) + deterministic per-session scratch blocks.
   - Embedded presets disable VM, dynamic backends, and JSON schema grammar (`docs/EMBEDDED_PROFILE.md`).
-  - `astral_model_load2()` supports `PATH` / `MEMORY` / `IO` for the built-in CPU provider (single-file GGUF; PATH uses mmap; MEMORY can optionally use a temp-file mmap path on desktop; IO remains non-mmap).
+  - `astral_model_load2()` supports `PATH` / `MEMORY` / `IO` for the built-in CPU provider (single-file GGUF; PATH uses mmap; MEMORY/IO can optionally use a temp-file mmap path on desktop; embedded presets disable this).
 - Profiling (done):
   - Tracy integration + profiling presets (+ optional micro-zones) across hot paths (`docs/PROFILING_TRACY.md`).
 - CUDA scaffold (done, non-blocking until v0.2):
@@ -35,6 +35,8 @@ This is the living checklist to turn Astral into a world-class, product-ready fr
   - Define a parity checklist per backend (model load, tokenize/detokenize, streaming, embeddings, grammar, logprobs, batching).
   - Add backend parity tests and reproducible perf benches per target GPU tier.
 - Keep optional deps truly optional (CPU-only builds must not pull GPU toolchains).
+
+See: `docs/CUDA_PARITY.md` (living checklist + parity runner notes).
 
 ## Embedded / Robotics (Ongoing)
 

@@ -39,6 +39,14 @@
 #endif
 #endif
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #if defined(_MSC_VER)
 #include <malloc.h>
 #define ASTRAL_ALLOCA _alloca
@@ -209,27 +217,100 @@ struct MemReader {
     uint64_t size = 0;
 };
 
-static uint64_t mem_reader_size(void* user) {
-    const auto* r = static_cast<const MemReader*>(user);
-    return (r && r->data) ? r->size : 0;
-}
-
-static size_t mem_reader_read_at(void* user, uint64_t offset, void* dst, size_t dst_len) {
-    const auto* r = static_cast<const MemReader*>(user);
-    if (r == nullptr || r->data == nullptr || dst == nullptr) {
+static uint32_t ASTRAL_CALL astral_io_read_at_noexcept(const AstralModelIO* io, uint64_t offset, void* dst, uint32_t dst_len) {
+    if (io == nullptr || io->read_at == nullptr) {
         return 0;
     }
-    if (offset >= r->size) {
+#if defined(__cpp_exceptions)
+    try {
+        return io->read_at(io->user, offset, dst, dst_len);
+    } catch (...) {
         return 0;
     }
-    const uint64_t avail64 = r->size - offset;
-    const size_t avail = avail64 > static_cast<uint64_t>(SIZE_MAX) ? SIZE_MAX : static_cast<size_t>(avail64);
-    const size_t n = avail < dst_len ? avail : dst_len;
-    std::memcpy(dst, r->data + offset, n);
-    return n;
+#else
+    return io->read_at(io->user, offset, dst, dst_len);
+#endif
 }
 
-#if ASTRAL_CPU_MEMORY_SOURCE_MMAP && ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__APPLE__) && !TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR))
+static uint64_t ASTRAL_CALL astral_io_size_noexcept(const AstralModelIO* io) {
+    if (io == nullptr || io->size == nullptr) {
+        return 0;
+    }
+#if defined(__cpp_exceptions)
+    try {
+        return io->size(io->user);
+    } catch (...) {
+        return 0;
+    }
+#else
+    return io->size(io->user);
+#endif
+}
+
+#if defined(_WIN32)
+static bool write_all_handle(HANDLE h, const uint8_t* data, uint64_t size) {
+    if (h == INVALID_HANDLE_VALUE || data == nullptr) {
+        return false;
+    }
+
+    uint64_t off = 0;
+    while (off < size) {
+        const uint64_t remaining = size - off;
+        const DWORD chunk = remaining > 0x7FFFFFFFu ? 0x7FFFFFFFu : static_cast<DWORD>(remaining);
+        DWORD written = 0;
+        if (!WriteFile(h, data + off, chunk, &written, nullptr)) {
+            return false;
+        }
+        if (written == 0) {
+            return false;
+        }
+        off += static_cast<uint64_t>(written);
+    }
+    return true;
+}
+
+static bool make_temp_path(char* out_path, size_t cap) {
+    if (out_path == nullptr || cap == 0) {
+        return false;
+    }
+    char tmp_dir[MAX_PATH + 1];
+    const DWORD n = GetTempPathA(MAX_PATH, tmp_dir);
+    if (n == 0 || n > MAX_PATH) {
+        return false;
+    }
+    char tmp_file[MAX_PATH + 1];
+    if (GetTempFileNameA(tmp_dir, "ast", 0, tmp_file) == 0) {
+        return false;
+    }
+    const size_t len = std::strlen(tmp_file);
+    if (len + 1 > cap) {
+        DeleteFileA(tmp_file);
+        return false;
+    }
+    std::memcpy(out_path, tmp_file, len + 1);
+    return true;
+}
+#else
+static bool make_temp_path(char* out_path, size_t cap, int* out_fd) {
+    if (out_path == nullptr || cap == 0 || out_fd == nullptr) {
+        return false;
+    }
+    char tmpl[] = "/tmp/astral-model-XXXXXX";
+    const int fd = ::mkstemp(tmpl);
+    if (fd < 0) {
+        return false;
+    }
+    const size_t len = std::strlen(tmpl);
+    if (len + 1 > cap) {
+        ::close(fd);
+        ::unlink(tmpl);
+        return false;
+    }
+    std::memcpy(out_path, tmpl, len + 1);
+    *out_fd = fd;
+    return true;
+}
+
 static bool write_all_fd(int fd, const uint8_t* data, uint64_t size) {
     if (fd < 0 || data == nullptr) {
         return false;
@@ -246,7 +327,9 @@ static bool write_all_fd(int fd, const uint8_t* data, uint64_t size) {
     }
     return true;
 }
+#endif
 
+#if ASTRAL_CPU_MEMORY_SOURCE_MMAP
 static llama_model* try_load_memory_source_with_mmap(const uint8_t* data, uint64_t size, llama_model_params model_params) {
     if (data == nullptr || size == 0) {
         return nullptr;
@@ -256,79 +339,137 @@ static llama_model* try_load_memory_source_with_mmap(const uint8_t* data, uint64
         return nullptr;
     }
 
-    // Best-effort: materialize a temp file, then allow llama.cpp to mmap it.
-    // Embedded builds disable this via presets (it implies filesystem syscalls).
-    char tmpl[] = "/tmp/astral-model-XXXXXX";
-    const int fd = ::mkstemp(tmpl);
-    if (fd < 0) {
+    char path[512]{};
+
+#if defined(_WIN32)
+    if (!make_temp_path(path, sizeof(path))) {
         return nullptr;
     }
-
-    const bool ok = write_all_fd(fd, data, size);
-    ::close(fd);
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        DeleteFileA(path);
+        return nullptr;
+    }
+    const bool ok = write_all_handle(h, data, size);
+    CloseHandle(h);
     if (!ok) {
-        ::unlink(tmpl);
+        DeleteFileA(path);
         return nullptr;
     }
 
     ASTRAL_ZONE_N("astral.cpu.llama_model_load_from_file.memory_tmp");
-    llama_model* model = llama_model_load_from_file(tmpl, model_params);
-    ::unlink(tmpl);
+    llama_model* model = llama_model_load_from_file(path, model_params);
+    DeleteFileA(path);
     return model;
-}
-#endif
-
-struct AstralIoReader {
-    AstralModelIO io{};
-};
-
-static uint64_t astral_io_reader_size(void* user) {
-    const auto* r = static_cast<const AstralIoReader*>(user);
-    if (r == nullptr || r->io.size == nullptr) {
-        return 0;
-    }
-#if defined(__cpp_exceptions)
-    try {
-        return r->io.size(r->io.user);
-    } catch (...) {
-        return 0;
-    }
 #else
-    return r->io.size(r->io.user);
+    int fd = -1;
+    if (!make_temp_path(path, sizeof(path), &fd)) {
+        return nullptr;
+    }
+    const bool ok = write_all_fd(fd, data, size);
+    ::close(fd);
+    if (!ok) {
+        ::unlink(path);
+        return nullptr;
+    }
+
+    ASTRAL_ZONE_N("astral.cpu.llama_model_load_from_file.memory_tmp");
+    llama_model* model = llama_model_load_from_file(path, model_params);
+    ::unlink(path);
+    return model;
 #endif
 }
 
-static size_t astral_io_reader_read_at(void* user, uint64_t offset, void* dst, size_t dst_len) {
-    const auto* r = static_cast<const AstralIoReader*>(user);
-    if (r == nullptr || r->io.read_at == nullptr || dst == nullptr) {
-        return 0;
+static llama_model* try_load_io_source_with_mmap(const AstralModelIO* src_io, llama_model_params model_params) {
+    if (src_io == nullptr) {
+        return nullptr;
+    }
+    if (!llama_supports_mmap()) {
+        return nullptr;
     }
 
-    size_t total = 0;
-    while (total < dst_len) {
-        const size_t chunk = (dst_len - total) > 0x7FFFFFFFu ? 0x7FFFFFFFu : (dst_len - total);
-#if defined(__cpp_exceptions)
-        uint32_t n = 0;
-        try {
-            n = r->io.read_at(r->io.user, offset + total, static_cast<uint8_t*>(dst) + total, (uint32_t)chunk);
-        } catch (...) {
-            n = 0;
-        }
-#else
-        const uint32_t n =
-            r->io.read_at(r->io.user, offset + total, static_cast<uint8_t*>(dst) + total, (uint32_t)chunk);
-#endif
-        if (n == 0) {
+    const uint64_t size = astral_io_size_noexcept(src_io);
+    if (size == 0) {
+        return nullptr;
+    }
+
+    char path[512]{};
+
+#if defined(_WIN32)
+    if (!make_temp_path(path, sizeof(path))) {
+        return nullptr;
+    }
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        DeleteFileA(path);
+        return nullptr;
+    }
+
+    uint8_t buf[1u << 20];
+    uint64_t off = 0;
+    bool ok = true;
+    while (off < size) {
+        const uint64_t remaining = size - off;
+        const uint32_t want = remaining > sizeof(buf) ? static_cast<uint32_t>(sizeof(buf)) : static_cast<uint32_t>(remaining);
+        const uint32_t got = astral_io_read_at_noexcept(src_io, off, buf, want);
+        if (got == 0) {
+            ok = false;
             break;
         }
-        total += n;
-        if (n < chunk) {
+        ok = write_all_handle(h, buf, got);
+        if (!ok) {
             break;
         }
+        off += got;
     }
 
-    return total;
+    CloseHandle(h);
+    if (!ok) {
+        DeleteFileA(path);
+        return nullptr;
+    }
+
+    ASTRAL_ZONE_N("astral.cpu.llama_model_load_from_file.io_tmp");
+    llama_model* model = llama_model_load_from_file(path, model_params);
+    DeleteFileA(path);
+    return model;
+#else
+    int fd = -1;
+    if (!make_temp_path(path, sizeof(path), &fd)) {
+        return nullptr;
+    }
+
+    uint8_t buf[1u << 20];
+    uint64_t off = 0;
+    bool ok = true;
+    while (off < size) {
+        const uint64_t remaining = size - off;
+        const uint32_t want = remaining > sizeof(buf) ? static_cast<uint32_t>(sizeof(buf)) : static_cast<uint32_t>(remaining);
+        const uint32_t got = astral_io_read_at_noexcept(src_io, off, buf, want);
+        if (got == 0) {
+            ok = false;
+            break;
+        }
+        ok = write_all_fd(fd, buf, got);
+        if (!ok) {
+            break;
+        }
+        off += got;
+    }
+
+    ::close(fd);
+    if (!ok) {
+        ::unlink(path);
+        return nullptr;
+    }
+
+    ASTRAL_ZONE_N("astral.cpu.llama_model_load_from_file.io_tmp");
+    llama_model* model = llama_model_load_from_file(path, model_params);
+    ::unlink(path);
+    return model;
+#endif
 }
+#endif
 
 void* cpu_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
     if (out_err == nullptr) {
@@ -361,36 +502,24 @@ void* cpu_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
         }
 
         if (src.kind == ASTRAL_MODEL_SOURCE_MEMORY) {
-#if ASTRAL_CPU_MEMORY_SOURCE_MMAP && ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__APPLE__) && !TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR))
+#if ASTRAL_CPU_MEMORY_SOURCE_MMAP
             model = try_load_memory_source_with_mmap(src.bytes.data, src.bytes.len, model_params);
-            if (model == nullptr) {
-#endif
-            MemReader r{};
-            r.data = src.bytes.data;
-            r.size = src.bytes.len;
-
-            llama_model_io io{};
-            io.user = &r;
-            io.size = &mem_reader_size;
-            io.read_at = &mem_reader_read_at;
-
-            ASTRAL_ZONE_N("astral.cpu.llama_model_load_from_io.memory");
-            model = llama_model_load_from_io(&io, "astral-memory", model_params);
-#if ASTRAL_CPU_MEMORY_SOURCE_MMAP && ((defined(__linux__) && !defined(__ANDROID__)) || (defined(__APPLE__) && !TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR))
-            }
+#else
+            model = nullptr;
 #endif
         } else if (src.kind == ASTRAL_MODEL_SOURCE_IO) {
-            AstralIoReader r{};
-            r.io = src.io;
-
-            llama_model_io io{};
-            io.user = &r;
-            io.size = &astral_io_reader_size;
-            io.read_at = &astral_io_reader_read_at;
-
-            ASTRAL_ZONE_N("astral.cpu.llama_model_load_from_io.io");
-            model = llama_model_load_from_io(&io, "astral-io", model_params);
+#if ASTRAL_CPU_MEMORY_SOURCE_MMAP
+            model = try_load_io_source_with_mmap(&src.io, model_params);
+#else
+            model = nullptr;
+#endif
         } else {
+            llama_backend_unref();
+            *out_err = ASTRAL_E_UNSUPPORTED;
+            return nullptr;
+        }
+
+        if (model == nullptr) {
             llama_backend_unref();
             *out_err = ASTRAL_E_UNSUPPORTED;
             return nullptr;

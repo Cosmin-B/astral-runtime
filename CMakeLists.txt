@@ -18,7 +18,7 @@ option(ASTRAL_ENABLE_DYNAMIC_BACKENDS "Enable runtime-loadable backend providers
 option(ASTRAL_ENABLE_THREADS "Enable Astral internal worker threads" ON)
 option(ASTRAL_NO_THROW_ABI "Catch and translate exceptions at the C ABI boundary (recommended)" ON)
 option(ASTRAL_ENABLE_VIRTUAL_MEMORY "Enable platform virtual memory primitives (mmap/VirtualAlloc)" ON)
-option(ASTRAL_CPU_MEMORY_SOURCE_MMAP "CPU backend: enable mmap-backed model load for MEMORY sources (best-effort; may use temp files)" ON)
+option(ASTRAL_CPU_MEMORY_SOURCE_MMAP "CPU backend: enable mmap-backed model load for MEMORY/IO sources (best-effort; may use temp files)" ON)
 option(ASTRAL_ENABLE_TRACY "Enable Tracy profiler integration (profiling presets only; requires external/tracy submodule)" OFF)
 option(ASTRAL_ENABLE_TRACY_MICRO "Enable Tracy micro-instrumentation (higher overhead; profiling builds only)" OFF)
 option(ASTRAL_TRACY_ON_DEMAND "Tracy: on-demand mode (do not capture until connected)" ON)
@@ -94,15 +94,15 @@ endforeach()
 if(NOT ASTRAL_ENABLE_VIRTUAL_MEMORY)
     list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/vm_.*\\.cpp$")
     if(ASTRAL_CPU_MEMORY_SOURCE_MMAP)
-        message(WARNING "ASTRAL_ENABLE_VIRTUAL_MEMORY=OFF disables mmap-backed MEMORY model loading; forcing ASTRAL_CPU_MEMORY_SOURCE_MMAP=OFF")
-        set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: enable mmap-backed model load for MEMORY sources (best-effort; may use temp files)" FORCE)
+        message(WARNING "ASTRAL_ENABLE_VIRTUAL_MEMORY=OFF disables temp-file mmap model loading for MEMORY/IO sources; forcing ASTRAL_CPU_MEMORY_SOURCE_MMAP=OFF")
+        set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: enable mmap-backed model load for MEMORY/IO sources (best-effort; may use temp files)" FORCE)
     endif()
 endif()
 
 # Mobile platforms: avoid temp-file-based mmap paths by default (sandboxed filesystems, non-standard temp locations).
 if((CMAKE_SYSTEM_NAME STREQUAL "iOS" OR ANDROID) AND ASTRAL_CPU_MEMORY_SOURCE_MMAP)
     message(WARNING "ASTRAL_CPU_MEMORY_SOURCE_MMAP=ON is not supported on ${CMAKE_SYSTEM_NAME}; forcing OFF")
-    set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: enable mmap-backed model load for MEMORY sources (best-effort; may use temp files)" FORCE)
+    set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: enable mmap-backed model load for MEMORY/IO sources (best-effort; may use temp files)" FORCE)
 endif()
 
 # Tracy integration (optional; must remain zero-cost when OFF).

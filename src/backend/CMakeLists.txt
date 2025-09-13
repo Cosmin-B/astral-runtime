@@ -59,9 +59,12 @@ if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
             set(GGML_CUDA_FORCE_CUBLAS ${ASTRAL_CUDA_FORCE_CUBLAS} CACHE BOOL "ggml: always use cuBLAS instead of mmq kernels" FORCE)
             set(GGML_CUDA_FORCE_MMQ ${ASTRAL_CUDA_FORCE_MMQ} CACHE BOOL "ggml: use mmq kernels instead of cuBLAS" FORCE)
 
-            if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-                set(CMAKE_CUDA_ARCHITECTURES "${ASTRAL_CUDA_ARCHITECTURES}" CACHE STRING "CUDA arch list for fatbin builds" FORCE)
-            endif()
+            # Do not let ggml-cuda auto-detect "native" architectures: it may pick a GPU CC
+            # unsupported by an older nvcc (e.g. Blackwell on CUDA < 12.8). We ship a fatbin list instead.
+            set(GGML_NATIVE OFF CACHE BOOL "ggml: disable native arch auto-detection (Astral controls CMAKE_CUDA_ARCHITECTURES)" FORCE)
+
+            # Force our architecture list (fatbin/PTX policy). This keeps CPU-only builds CUDA-free.
+            set(CMAKE_CUDA_ARCHITECTURES "${ASTRAL_CUDA_ARCHITECTURES}" CACHE STRING "CUDA arch list for fatbin builds" FORCE)
         else()
             # Ensure a CPU-only build does not retain CUDA from a previous configure.
             set(GGML_CUDA OFF CACHE BOOL "ggml: use CUDA" FORCE)

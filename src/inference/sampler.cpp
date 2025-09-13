@@ -300,6 +300,47 @@ uint32_t sample_token(const float* logits,
 
     // Greedy path.
     if (cfg.temperature <= 0.0f) {
+        const uint32_t want_top_n =
+            (out_meta != nullptr && logprobs_n > 0)
+                ? std::min<uint32_t>(std::min<uint32_t>(logprobs_n, ASTRAL_LOGPROBS_MAX),
+                                     static_cast<uint32_t>(vocab_size))
+                : 0u;
+
+        uint32_t top_ids[ASTRAL_LOGPROBS_MAX]{};
+        float top_vals[ASTRAL_LOGPROBS_MAX]{};
+        uint32_t top_count = 0;
+
+        auto top_consider = [&](uint32_t id, float v) {
+            if (want_top_n == 0) {
+                return;
+            }
+
+            if (top_count == 0) {
+                top_ids[0] = id;
+                top_vals[0] = v;
+                top_count = 1;
+                return;
+            }
+
+            if (top_count == want_top_n && v <= top_vals[top_count - 1]) {
+                return;
+            }
+
+            uint32_t pos = 0;
+            while (pos < top_count && v <= top_vals[pos]) {
+                ++pos;
+            }
+
+            const uint32_t new_count = top_count < want_top_n ? (top_count + 1) : top_count;
+            for (uint32_t j = new_count - 1; j > pos; --j) {
+                top_ids[j] = top_ids[j - 1];
+                top_vals[j] = top_vals[j - 1];
+            }
+            top_ids[pos] = id;
+            top_vals[pos] = v;
+            top_count = new_count;
+        };
+
         uint32_t best = 0;
         float best_val = -std::numeric_limits<float>::infinity();
 
@@ -324,26 +365,37 @@ uint32_t sample_token(const float* logits,
                         best_val = v;
                         best = ids[i];
                     }
+                    top_consider(ids[i], v);
                 }
             }
         } else {
             best = 0;
             best_val = adjusted_logit(0, logits[0]);
+            top_consider(0, best_val);
             for (size_t i = 1; i < vocab_size; ++i) {
                 const float v = adjusted_logit(i, logits[i]);
                 if (v > best_val) {
                     best_val = v;
                     best = static_cast<uint32_t>(i);
                 }
+                top_consider(static_cast<uint32_t>(i), v);
             }
         }
 
         if (out_meta != nullptr && logprobs_n > 0) {
             out_meta->token_id = best;
             out_meta->logprob = 0.0f;
-            out_meta->top_n = 1;
-            out_meta->top_ids[0] = best;
-            out_meta->top_logprobs[0] = 0.0f;
+            if (top_count > 0) {
+                out_meta->top_n = top_count;
+                for (uint32_t i = 0; i < top_count; ++i) {
+                    out_meta->top_ids[i] = top_ids[i];
+                    out_meta->top_logprobs[i] = 0.0f;
+                }
+            } else {
+                out_meta->top_n = 1;
+                out_meta->top_ids[0] = best;
+                out_meta->top_logprobs[0] = 0.0f;
+            }
         }
         return best;
     }
