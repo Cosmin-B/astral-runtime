@@ -46,8 +46,7 @@ jobs:
 
       - name: Install deps
         run: |
-          brew update
-          brew install ninja
+          brew install ninja || true
 
       - name: Download small GGUF for integration
         run: |
@@ -258,8 +257,7 @@ jobs:
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew update
-          brew install ninja
+          brew install ninja || true
 
       - name: Install deps (Windows)
         if: runner.os == 'Windows'
@@ -299,7 +297,8 @@ jobs:
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d
+          # r26d = 26.1.10909125
+          ndk-version: 26.1.10909125
 
       - name: Export ANDROID_NDK_HOME
         run: |
@@ -366,8 +365,7 @@ jobs:
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew update
-          brew install ninja
+          brew install ninja || true
 
       - name: Install deps (Windows)
         if: runner.os == 'Windows'
@@ -407,7 +405,8 @@ jobs:
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d
+          # r26d = 26.1.10909125
+          ndk-version: 26.1.10909125
 
       - name: Export ANDROID_NDK_HOME
         run: |
@@ -476,8 +475,7 @@ jobs:
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew update
-          brew install ninja
+          brew install ninja || true
 
       - name: Install deps (Windows)
         if: runner.os == 'Windows'
