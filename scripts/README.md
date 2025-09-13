@@ -255,7 +255,7 @@ This is expected with Valgrind (10-20x slowdown). For faster validation:
 ### GitHub Actions Example
 
 ```yaml
-name: Memory Validation
+name: Memory Validation (Example)
 
 on: [push, pull_request]
 
@@ -278,6 +278,8 @@ jobs:
       - name: Run Valgrind
         run: ./scripts/run_valgrind.sh
 ```
+
+Note: This is an illustrative snippet. The repo’s actual CI is in `.github/workflows/ci.yml`.
 
 ---
 
