@@ -74,6 +74,65 @@ inline uint64_t get_ticks() {
     return platform::ticks_now();
 }
 
+// ---------------------------------------------------------------------------
+// Session state serialization wrapper
+//
+// llama_state_* only serializes the provider state. For deterministic continuation and parity
+// checks we also need to capture Astral-owned sampling state (rng_state, sampler knobs).
+//
+// This wrapper is backward compatible: if the magic is not present, we assume the payload is the
+// legacy provider-only format and forward it to the backend.
+// ---------------------------------------------------------------------------
+
+static constexpr uint32_t kStateMagic = 0x41535452u; // 'ASTR'
+static constexpr uint16_t kStateVersion = 1;
+
+struct SessionStateHeaderV1 {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t header_bytes;
+    uint64_t backend_bytes;
+
+    uint32_t rng_state;
+    uint32_t logprobs_n;
+    uint32_t slot_id;
+    uint32_t _pad0;
+
+    AstralSamplerDesc sampler;
+    float mirostat_mu;
+    uint32_t _pad1[3];
+};
+
+static_assert(sizeof(SessionStateHeaderV1) <= 256, "SessionStateHeaderV1 unexpectedly large");
+static_assert((sizeof(SessionStateHeaderV1) % 8) == 0, "SessionStateHeaderV1 must be 8-byte aligned");
+
+static bool session_state_parse_header(AstralSpanU8 bytes, SessionStateHeaderV1* out, const uint8_t** out_backend) {
+    if (out == nullptr || out_backend == nullptr) {
+        return false;
+    }
+    *out_backend = nullptr;
+    if (bytes.data == nullptr || bytes.len < sizeof(SessionStateHeaderV1)) {
+        return false;
+    }
+
+    SessionStateHeaderV1 h{};
+    std::memcpy(&h, bytes.data, sizeof(h));
+    if (h.magic != kStateMagic || h.version != kStateVersion) {
+        return false;
+    }
+    if (h.header_bytes != sizeof(SessionStateHeaderV1)) {
+        return false;
+    }
+    const uint64_t total = static_cast<uint64_t>(bytes.len);
+    if (h.backend_bytes == 0 || (static_cast<uint64_t>(h.header_bytes) + h.backend_bytes) > total) {
+        return false;
+    }
+
+    *out = h;
+    *out_backend = bytes.data + h.header_bytes;
+    return true;
+}
+
 struct ScopedAtomicFlagGuard {
     std::atomic_flag* flag = nullptr;
     bool locked = false;
@@ -955,7 +1014,13 @@ AstralErr session_state_size(Session* session, uint64_t* out_bytes) {
     if (ops->session_state_size == nullptr || ops->session_state_save == nullptr || ops->session_state_load == nullptr) {
         return ASTRAL_E_UNSUPPORTED;
     }
-    return ops->session_state_size(session->backend_session_ctx, out_bytes);
+    uint64_t backend_bytes = 0;
+    const AstralErr err = ops->session_state_size(session->backend_session_ctx, &backend_bytes);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+    *out_bytes = static_cast<uint64_t>(sizeof(SessionStateHeaderV1)) + backend_bytes;
+    return ASTRAL_OK;
 }
 
 AstralErr session_state_save(Session* session, AstralMutSpanU8 out_buf, uint64_t* out_written) {
@@ -973,12 +1038,56 @@ AstralErr session_state_save(Session* session, AstralMutSpanU8 out_buf, uint64_t
     if (ops->session_state_size == nullptr || ops->session_state_save == nullptr || ops->session_state_load == nullptr) {
         return ASTRAL_E_UNSUPPORTED;
     }
-    uint64_t written = 0;
-    const AstralErr err = ops->session_state_save(session->backend_session_ctx, out_buf.data, out_buf.len, &written);
-    if (err == ASTRAL_OK) {
-        *out_written = written;
+    uint64_t backend_bytes = 0;
+    AstralErr err = ops->session_state_size(session->backend_session_ctx, &backend_bytes);
+    if (err != ASTRAL_OK) {
+        return err;
     }
-    return err;
+
+    const uint64_t need = static_cast<uint64_t>(sizeof(SessionStateHeaderV1)) + backend_bytes;
+    if (static_cast<uint64_t>(out_buf.len) < need) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    SessionStateHeaderV1 h{};
+    h.magic = kStateMagic;
+    h.version = kStateVersion;
+    h.header_bytes = static_cast<uint16_t>(sizeof(SessionStateHeaderV1));
+    h.backend_bytes = backend_bytes;
+    h.rng_state = session->rng_state;
+    h.logprobs_n = session->logprobs_n;
+    h.slot_id = session->slot_id;
+    h.sampler.size = sizeof(AstralSamplerDesc);
+    h.sampler.temperature = session->sampler_cfg.temperature;
+    h.sampler.top_k = session->sampler_cfg.top_k;
+    h.sampler.top_p = session->sampler_cfg.top_p;
+    h.sampler.min_p = session->sampler_cfg.min_p;
+    h.sampler.typical_p = session->sampler_cfg.typical_p;
+    h.sampler.repeat_penalty = session->sampler_cfg.repeat_penalty;
+    h.sampler.repeat_last_n = session->sampler_cfg.repeat_last_n;
+    h.sampler.penalize_nl = session->sampler_cfg.penalize_nl;
+    h.sampler.presence_penalty = session->sampler_cfg.presence_penalty;
+    h.sampler.frequency_penalty = session->sampler_cfg.frequency_penalty;
+    h.sampler.mirostat = session->sampler_cfg.mirostat;
+    h.sampler.mirostat_tau = session->sampler_cfg.mirostat_tau;
+    h.sampler.mirostat_eta = session->sampler_cfg.mirostat_eta;
+    h.mirostat_mu = session->mirostat_mu;
+
+    std::memcpy(out_buf.data, &h, sizeof(h));
+
+    uint64_t backend_written = 0;
+    err = ops->session_state_save(
+        session->backend_session_ctx,
+        out_buf.data + sizeof(SessionStateHeaderV1),
+        static_cast<uint64_t>(out_buf.len) - sizeof(SessionStateHeaderV1),
+        &backend_written
+    );
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    *out_written = static_cast<uint64_t>(sizeof(SessionStateHeaderV1)) + backend_written;
+    return ASTRAL_OK;
 }
 
 AstralErr session_state_load(Session* session, AstralSpanU8 state_bytes) {
@@ -996,6 +1105,52 @@ AstralErr session_state_load(Session* session, AstralSpanU8 state_bytes) {
     if (ops->session_state_size == nullptr || ops->session_state_save == nullptr || ops->session_state_load == nullptr) {
         return ASTRAL_E_UNSUPPORTED;
     }
+
+    SessionStateHeaderV1 h{};
+    const uint8_t* backend = nullptr;
+    if (session_state_parse_header(state_bytes, &h, &backend)) {
+        if (h.sampler.size == sizeof(AstralSamplerDesc)) {
+            // Keep scratch capacity invariant.
+            if (h.sampler.top_k > 0 && h.sampler.top_k > session->sample_capacity) {
+                return ASTRAL_E_INVALID;
+            }
+
+            session->sampler_cfg.temperature = h.sampler.temperature;
+            session->sampler_cfg.top_k = h.sampler.top_k;
+            session->sampler_cfg.top_p = h.sampler.top_p;
+            session->sampler_cfg.min_p = h.sampler.min_p;
+            session->sampler_cfg.typical_p = h.sampler.typical_p;
+            session->sampler_cfg.repeat_penalty = h.sampler.repeat_penalty;
+            session->sampler_cfg.repeat_last_n = h.sampler.repeat_last_n;
+            session->sampler_cfg.penalize_nl = h.sampler.penalize_nl;
+            session->sampler_cfg.presence_penalty = h.sampler.presence_penalty;
+            session->sampler_cfg.frequency_penalty = h.sampler.frequency_penalty;
+            session->sampler_cfg.mirostat = h.sampler.mirostat;
+            session->sampler_cfg.mirostat_tau = h.sampler.mirostat_tau;
+            session->sampler_cfg.mirostat_eta = h.sampler.mirostat_eta;
+
+            // Keep legacy SessionDesc knobs in sync.
+            session->desc.temperature = h.sampler.temperature;
+            session->desc.top_k = h.sampler.top_k;
+            session->desc.top_p = h.sampler.top_p;
+        }
+
+        session->rng_state = h.rng_state;
+        session->mirostat_mu = h.mirostat_mu;
+
+        session->logprobs_n = h.logprobs_n > ASTRAL_LOGPROBS_MAX ? ASTRAL_LOGPROBS_MAX : h.logprobs_n;
+        session->meta_ring.reset();
+
+        // Slot is provider-owned; apply before loading state so providers can validate if needed.
+        session->slot_id = h.slot_id;
+        if (ops->session_set_slot != nullptr && h.slot_id != 0) {
+            (void)ops->session_set_slot(session->backend_session_ctx, h.slot_id);
+        }
+
+        return ops->session_state_load(session->backend_session_ctx, backend, h.backend_bytes);
+    }
+
+    // Legacy provider-only format.
     return ops->session_state_load(session->backend_session_ctx, state_bytes.data, state_bytes.len);
 }
 

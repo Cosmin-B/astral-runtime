@@ -68,5 +68,5 @@ fi
 echo "[cuda_parity] Build: ${preset}"
 cmake --build --preset "${preset}" -j
 
-echo "[cuda_parity] Test: test_cuda_parity"
-ctest --preset "${preset}" -R test_cuda_parity -V
+echo "[cuda_parity] Test: test_cuda_parity + test_cuda_e2e"
+ctest --preset "${preset}" -R 'test_cuda_(parity|e2e)' -V

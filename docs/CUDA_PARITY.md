@@ -38,6 +38,21 @@ Parity is not just “it runs”. For a given model + prompt + sampler config:
 **Embeddings**
 - [ ] Embeddings produce expected dimensionality and stable output shape.
 
+## End-to-end validation
+
+The `test_cuda_e2e` suite exercises the following against a real GGUF model:
+
+- Logprobs meta shape + consistency (`AstralTokenMeta.top_n`, ordering, membership)
+- GBNF grammar applied in decoding (output constrained to an allowed byte set)
+- KV save/load continuation (requires Astral wrapper state; see `session_state_*`)
+- Embeddings enqueue/collect
+
+Run it on a CUDA machine:
+
+```bash
+ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity.sh --preset dev-cuda
+```
+
 **Slots / executor**
 - [ ] Slot selection works; multi-slot scheduling does not deadlock and is callback-safe.
 
