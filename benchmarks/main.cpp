@@ -15,6 +15,7 @@ BenchResult bench_session_create_destroy(uint64_t iters, bool arena_mode);
 BenchResult bench_model_load_release(uint64_t iters, bool arena_mode);
 void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens);
 void bench_embeddings_print(uint32_t dim_override, uint64_t iters);
+void bench_feature_surfaces_print(void);
 } // namespace astral::bench
 
 namespace {
@@ -37,6 +38,7 @@ struct Options {
     bool run_embed = false;
     uint32_t embed_dim = 0;
     uint64_t embed_iters = 10000;
+    bool run_features = false;
 };
 
 bool parse_u64(const char* s, uint64_t* out) {
@@ -65,7 +67,7 @@ bool parse_u32(const char* s, uint32_t* out) {
 void print_usage(const char* argv0) {
     std::printf("Usage: %s [options]\n", argv0 ? argv0 : "astral_benchmarks");
     std::printf("Options:\n");
-    std::printf("  --only <spsc|mpmc|alloc|lifecycle|infer|embed> Run only one benchmark\n");
+    std::printf("  --only <spsc|mpmc|alloc|lifecycle|infer|embed|features> Run only one benchmark\n");
     std::printf("  --alloc                       Run runtime_alloc/free microbench (vm + arena)\n");
     std::printf("  --alloc-iters <N>             Iterations for alloc bench (default: 5000000)\n");
     std::printf("  --alloc-size <N>              Allocation size in bytes (default: 64)\n");
@@ -77,6 +79,7 @@ void print_usage(const char* argv0) {
     std::printf("  --embed                       Run embeddings benchmark (default backend: toy)\n");
     std::printf("  --embed-dim <N>               Embedding dimension override (toy backend)\n");
     std::printf("  --embed-iters <N>             Embeddings iterations (default: 10000)\n");
+    std::printf("  --features                    Run feature-surface benches (embeddings/KV/grammar/logprobs)\n");
     std::printf("  --spsc-items <N>              Items to transfer (default: 10000000)\n");
     std::printf("  --mpmc-producers <N>          Producer threads (default: 4)\n");
     std::printf("  --mpmc-consumers <N>          Consumer threads (default: 4)\n");
@@ -154,6 +157,15 @@ int main(int argc, char** argv) {
                 opt.run_lifecycle = false;
                 opt.run_infer = false;
                 opt.run_embed = true;
+                opt.run_features = false;
+            } else if (std::strcmp(which, "features") == 0) {
+                opt.run_spsc = false;
+                opt.run_mpmc = false;
+                opt.run_alloc = false;
+                opt.run_lifecycle = false;
+                opt.run_infer = false;
+                opt.run_embed = false;
+                opt.run_features = true;
             } else {
                 std::fprintf(stderr, "Unknown --only value: %s\n", which);
                 return 2;
@@ -205,6 +217,11 @@ int main(int argc, char** argv) {
 
         if (std::strcmp(arg, "--lifecycle") == 0) {
             opt.run_lifecycle = true;
+            continue;
+        }
+
+        if (std::strcmp(arg, "--features") == 0) {
+            opt.run_features = true;
             continue;
         }
 
@@ -307,6 +324,10 @@ int main(int argc, char** argv) {
 
     if (opt.run_embed) {
         astral::bench::bench_embeddings_print(opt.embed_dim, opt.embed_iters);
+    }
+
+    if (opt.run_features) {
+        astral::bench::bench_feature_surfaces_print();
     }
 
     return 0;

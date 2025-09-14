@@ -37,6 +37,7 @@ This is the living checklist to turn Astral into a world-class, product-ready fr
 - Keep optional deps truly optional (CPU-only builds must not pull GPU toolchains).
 
 See: `docs/CUDA_PARITY.md` (living checklist + parity runner notes).
+See: `docs/FEATURE_MATRIX.md` (what works where; presets + providers).
 
 ## Embedded / Robotics (Ongoing)
 

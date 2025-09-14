@@ -52,6 +52,7 @@ benchmarks/results/
 tests/models/*.gguf
 tests/models/*.bin
 tests/models/*.safetensors
+tests/models/hf/
 
 # Local scratch docs
 COMPREHENSIVE_REVIEW.md
