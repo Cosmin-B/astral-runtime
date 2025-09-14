@@ -8,6 +8,7 @@
 #include "../../include/astral_rt.h"
 #include "model.hpp"
 #include "session.hpp"
+#include "executor.hpp"
 #include "conversation_runtime.hpp"
 #include "embedder.hpp"
 #include "adapter.hpp"
@@ -344,8 +345,14 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_limits(AstralHandle model, AstralM
 
     out_limits->vocab_size = vocab_size;
     out_limits->ctx_size = ctx_size;
-    out_limits->max_batch = 0;
-    out_limits->max_slots = 0;
+    out_limits->max_batch = m->desc.n_batch;
+    out_limits->max_slots =
+        (m->backend && m->backend->ops &&
+         m->backend->ops->session_create_ex != nullptr &&
+         m->backend->ops->session_batch_eval != nullptr &&
+         m->backend->ops->session_batch_logits != nullptr)
+            ? astral::inference::ModelExecutor::kMaxSlotsHard
+            : 1u;
     return ASTRAL_OK;
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
@@ -373,6 +380,37 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_configure(AstralHandle mo
     }
 
     m->executor_desc = *desc;
+    return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_tune(AstralHandle model, const AstralExecutorTuning* tuning) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (model == 0 || tuning == nullptr) {
+        set_err_invalid("model/tuning");
+        return ASTRAL_E_INVALID;
+    }
+    if (tuning->size != sizeof(AstralExecutorTuning)) {
+        set_err_invalid("tuning.size");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* m = static_cast<astral::inference::Model*>(astral::core::lookup_handle(model, astral::core::HandleKind::Model));
+    if (m == nullptr) {
+        set_err_invalid("model (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* ex = m->executor.load(std::memory_order_acquire);
+    if (ex == nullptr) {
+        set_err_code(ASTRAL_E_STATE);
+        return ASTRAL_E_STATE;
+    }
+
+    if (tuning->max_prompt_tokens_per_slot_tick != 0) {
+        ex->max_prompt_tokens_per_slot_per_tick.store(tuning->max_prompt_tokens_per_slot_tick, std::memory_order_relaxed);
+    }
+
     return ASTRAL_OK;
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
@@ -1506,6 +1544,28 @@ ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(
     }
     return result;
     ASTRAL_ABI_CATCH_END_I32(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stats(AstralHandle conv, AstralConvStats* out_stats) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0 || out_stats == nullptr) {
+        set_err_invalid("conv/out_stats");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_stats(c, out_stats);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 // ============================================================================

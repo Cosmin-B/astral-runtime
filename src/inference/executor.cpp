@@ -1,5 +1,7 @@
 #include "executor.hpp"
 
+#include "../core/runtime_state.hpp"
+#include "../core/work_queue.hpp"
 #include "../core/runtime_alloc.hpp"
 #include "../platform/atomics.h"
 #include "../platform/time.h"
@@ -233,7 +235,8 @@ void executor_thread(ModelExecutor* ex) {
         return;
     }
 
-    static constexpr uint32_t kMaxPromptTokensPerSlotPerTick = 8;
+    const uint32_t max_prompt_tokens_per_slot_per_tick =
+        ex->max_prompt_tokens_per_slot_per_tick.load(std::memory_order_relaxed);
     uint32_t rr = 0;
 
     while (ex->running.load(std::memory_order_acquire)) {
@@ -430,8 +433,9 @@ void executor_thread(ModelExecutor* ex) {
             }
 
             const uint32_t remaining = conv->prompt_count - conv->prompt_off;
-            const uint32_t slot_cap = (cap - batch_count) < kMaxPromptTokensPerSlotPerTick ? (cap - batch_count)
-                                                                                          : kMaxPromptTokensPerSlotPerTick;
+            const uint32_t slot_cap =
+                (cap - batch_count) < max_prompt_tokens_per_slot_per_tick ? (cap - batch_count)
+                                                                          : max_prompt_tokens_per_slot_per_tick;
             const uint32_t take = remaining < slot_cap ? remaining : slot_cap;
             for (uint32_t i = 0; i < take; ++i) {
                 const uint32_t idx = conv->prompt_off + i;
@@ -696,10 +700,24 @@ ModelExecutor::ModelExecutor(Model* model_) noexcept : model(model_) {
     }
 }
 
+void executor_work_item(void* user) {
+    auto* ex = static_cast<ModelExecutor*>(user);
+    if (ex == nullptr) {
+        return;
+    }
+    ex->started.store(true, std::memory_order_release);
+    executor_thread(ex);
+    ex->finished.store(true, std::memory_order_release);
+    signal();
+}
+
 void executor_start(ModelExecutor* ex) {
     if (ex == nullptr || ex->model == nullptr || ex->model->backend == nullptr || ex->model->backend->ops == nullptr) {
         return;
     }
+
+    ex->started.store(false, std::memory_order_release);
+    ex->finished.store(true, std::memory_order_release); // until successfully started
 
     auto* model = ex->model;
     const auto* ops = model->backend->ops;
@@ -752,7 +770,24 @@ void executor_start(ModelExecutor* ex) {
         return;
     }
 
-    ex->thread = std::thread(executor_thread, ex);
+    // Use the runtime worker pool to run the executor loop (one worker per model).
+    if (!core::runtime_initialized()) {
+        ex->running.store(false, std::memory_order_release);
+        return;
+    }
+
+    const uint32_t cfg_worker = ex->model->executor_desc.worker_hint;
+    ex->worker_id = cfg_worker != 0 ? cfg_worker : core::runtime_assign_worker_id();
+
+    ex->running.store(true, std::memory_order_release);
+    ex->finished.store(false, std::memory_order_release);
+
+    const AstralErr submit_err = core::submit_work_affine(ex->worker_id, executor_work_item, ex);
+    if (submit_err != ASTRAL_OK) {
+        ex->running.store(false, std::memory_order_release);
+        ex->finished.store(true, std::memory_order_release);
+        return;
+    }
 }
 
 void executor_stop_and_join(ModelExecutor* ex) {
@@ -762,8 +797,17 @@ void executor_stop_and_join(ModelExecutor* ex) {
 
     ex->running.store(false, std::memory_order_release);
     signal();
-    if (ex->thread.joinable()) {
-        ex->thread.join();
+
+    uint32_t spins = 0;
+    while (!ex->finished.load(std::memory_order_acquire)) {
+        if (spins < 64) {
+            astral::platform::cpu_pause();
+        } else {
+            astral::platform::cpu_wait_for_event();
+        }
+        if (spins < 1024) {
+            ++spins;
+        }
     }
 
     if (ex->model && ex->model->backend && ex->model->backend->ops && ex->backend_session_ctx) {

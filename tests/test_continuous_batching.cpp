@@ -1,0 +1,180 @@
+/**
+ * test_continuous_batching.cpp - Continuous batching (v0.2+) tests
+ *
+ * Validates:
+ * - model_executor_configure + conv_create for multiple slots
+ * - concurrent progress across multiple conversations (no starvation)
+ * - conv_stats surface is callable during decoding
+ */
+
+#include "test_framework.hpp"
+#include "astral_rt.h"
+
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <chrono>
+#include <thread>
+#include <sys/stat.h>
+
+namespace {
+
+static bool file_exists_min_size(const char* path, uint64_t min_bytes) {
+    if (path == nullptr || path[0] == '\0') {
+        return false;
+    }
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return false;
+    }
+    return static_cast<uint64_t>(st.st_size) >= min_bytes;
+}
+
+static const char* find_test_model_path() {
+    const char* env = std::getenv("ASTRAL_TEST_MODEL");
+    if (file_exists_min_size(env, 5ULL * 1024ULL * 1024ULL)) {
+        return env;
+    }
+
+    static const char* paths[] = {
+        "tests/models/gpt2.Q2_K.gguf",
+        "../tests/models/gpt2.Q2_K.gguf",
+        "../../tests/models/gpt2.Q2_K.gguf",
+        "../../../tests/models/gpt2.Q2_K.gguf",
+        "../../../../tests/models/gpt2.Q2_K.gguf",
+    };
+    for (const char* p : paths) {
+        if (file_exists_min_size(p, 5ULL * 1024ULL * 1024ULL)) {
+            return p;
+        }
+    }
+    return nullptr;
+}
+
+static AstralSpanU8 span_from_cstr(const char* s) {
+    AstralSpanU8 out{};
+    out.data = reinterpret_cast<const uint8_t*>(s);
+    out.len = s ? static_cast<uint32_t>(std::strlen(s)) : 0u;
+    return out;
+}
+
+} // namespace
+
+TEST(continuous_batching_multi_conv_cpu) {
+    const char* model_path = find_test_model_path();
+    if (model_path == nullptr) {
+        return;
+    }
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = 2ULL << 30;
+    cfg.thread_count = 4;
+    cfg.numa_node = 0xFFFFFFFFu;
+    cfg.enable_hugepages = 0;
+
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralModelDesc md{};
+    md.backend_name = span_from_cstr("cpu");
+    md.model_path = span_from_cstr(model_path);
+    md.n_ctx = 512;
+    md.n_batch = 128;
+    md.n_threads = 0;
+    md.embeddings_only = 0;
+
+    AstralHandle model = 0;
+    err = astral_model_load(&md, &model);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralExecutorDesc exd{};
+    exd.size = sizeof(AstralExecutorDesc);
+    exd.max_slots = 4;
+    exd.max_batch_tokens = 64;
+    exd.worker_hint = 0;
+    err = astral_model_executor_configure(model, &exd);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralHandle convs[3] = {0, 0, 0};
+    const char* prompts[3] = {"Hello", "Once upon a time", "The meaning of life is"};
+
+    for (int i = 0; i < 3; ++i) {
+        AstralConvDesc cd{};
+        cd.size = sizeof(AstralConvDesc);
+        cd.model = model;
+        cd.max_tokens = 16;
+        cd.temperature = 0.0f;
+        cd.top_k = 0;
+        cd.top_p = 1.0f;
+        cd.stream_enabled = 1;
+        cd.seed = 1u + static_cast<uint32_t>(i);
+
+        err = astral_conv_create(&cd, &convs[i]);
+        ASSERT_EQ(err, ASTRAL_OK);
+        ASSERT_TRUE(astral_handle_valid(convs[i]));
+
+        err = astral_conv_feed(convs[i], span_from_cstr(prompts[i]), /*finalize=*/1);
+        ASSERT_EQ(err, ASTRAL_OK);
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        err = astral_conv_decode(convs[i]);
+        ASSERT_EQ(err, ASTRAL_OK);
+    }
+
+    bool got_any[3] = {false, false, false};
+    uint32_t done = 0;
+    uint32_t spins = 0;
+
+    // Poll/consume round-robin until all conversations finish (or time out).
+    while (done < 3 && spins < 2000) { // ~2000 * 5ms = 10s budget
+        done = 0;
+        for (int i = 0; i < 3; ++i) {
+            AstralSessionState st = ASTRAL_SESSION_FAILED;
+            err = astral_conv_state(convs[i], &st);
+            ASSERT_EQ(err, ASTRAL_OK);
+
+            if (st == ASTRAL_SESSION_COMPLETED || st == ASTRAL_SESSION_CANCELED || st == ASTRAL_SESSION_FAILED) {
+                ++done;
+            }
+
+            uint8_t buf[128];
+            AstralMutSpanU8 out{};
+            out.data = buf;
+            out.len = sizeof(buf);
+
+            const int32_t n = astral_conv_stream_read(convs[i], out, /*timeout_ms=*/0);
+            if (n > 0) {
+                got_any[i] = true;
+            } else if (n != 0 && n != ASTRAL_E_TIMEOUT) {
+                ASSERT_TRUE(false);
+            }
+
+            AstralConvStats cs{};
+            err = astral_conv_stats(convs[i], &cs);
+            ASSERT_EQ(err, ASTRAL_OK);
+            ASSERT_LT(cs.slot_id, exd.max_slots);
+            ASSERT_GT(cs.prompt_tokens, 0u);
+        }
+
+        // Make sure everyone makes progress (no starvation) within the first few iterations.
+        if (spins == 200) {
+            ASSERT_TRUE(got_any[0]);
+            ASSERT_TRUE(got_any[1]);
+            ASSERT_TRUE(got_any[2]);
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        ++spins;
+    }
+
+    ASSERT_EQ(done, 3u);
+
+    for (int i = 0; i < 3; ++i) {
+        (void)astral_conv_wait(convs[i], 1000);
+        astral_conv_destroy(convs[i]);
+    }
+
+    astral_model_release(model);
+    astral_shutdown();
+}

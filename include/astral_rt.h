@@ -617,6 +617,20 @@ typedef struct AstralExecutorDesc {
 } AstralExecutorDesc;
 
 /**
+ * Executor tuning (v0.2+).
+ *
+ * Allows adjusting non-ABI-critical scheduling knobs at runtime.
+ *
+ * Notes:
+ * - `size` must be set to sizeof(AstralExecutorTuning).
+ * - This is best-effort: if the executor is not yet created, returns ASTRAL_E_STATE.
+ */
+typedef struct AstralExecutorTuning {
+    uint32_t size;                            // sizeof(AstralExecutorTuning)
+    uint32_t max_prompt_tokens_per_slot_tick; // prompt tokens per slot per tick (0 = leave unchanged)
+} AstralExecutorTuning;
+
+/**
  * Conversation configuration (v0.2+).
  *
  * A conversation is an independent token stream (prompt + generation) that runs
@@ -638,6 +652,21 @@ typedef struct AstralConvDesc {
     uint8_t _padding0[3];
     uint32_t seed;           // RNG seed (0 = auto)
 } AstralConvDesc;
+
+/**
+ * Conversation statistics (v0.2+).
+ *
+ * Note: these are approximate and are primarily intended for scheduling/observability.
+ */
+typedef struct AstralConvStats {
+    uint32_t slot_id;          // executor slot id
+    uint32_t prompt_tokens;    // tokenized prompt length
+    uint32_t kv_tokens;        // tokens evaluated in KV for this slot (n_past)
+    uint32_t _padding0;
+    uint64_t generated_tokens; // tokens generated so far (or total at completion)
+    double t_first_token_ms;   // time-to-first-token in ms (0 if not available yet)
+    double tok_per_s;          // generated token throughput (0 if not available yet)
+} AstralConvStats;
 
 /**
  * Extended sampler controls (v0.2+).
@@ -694,7 +723,9 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc2) == 112, "AstralModelDesc2 must be 112 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 40, "AstralConvDesc must be 40 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralConvStats) == 40, "AstralConvStats must be 40 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 24, "AstralAdapterDesc must be 24 bytes on 64-bit");
@@ -703,7 +734,9 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 36, "AstralModelDesc must be 36 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 36, "AstralConvDesc must be 36 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralConvStats) == 40, "AstralConvStats must be 40 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12, "AstralAdapterDesc must be 12 bytes on 32-bit");
@@ -989,6 +1022,13 @@ ASTRAL_API int32_t ASTRAL_CALL astral_stream_read(AstralHandle session, AstralMu
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_configure(AstralHandle model, const AstralExecutorDesc* desc);
 
 /**
+ * Tune an already-created model executor (v0.2+).
+ *
+ * Thread-safety: Safe to call concurrently with conversations.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_tune(AstralHandle model, const AstralExecutorTuning* tuning);
+
+/**
  * Create a conversation (slot) for a model executor (v0.2+).
  *
  * Thread-safety: Not thread-safe; single-threaded access per conversation.
@@ -1029,6 +1069,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_clear(AstralHandle conv);
 ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read(AstralHandle conv, AstralMutSpanU8 out_buf, uint32_t timeout_ms);
 ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(
     AstralHandle conv, AstralTokenMeta* out_events, uint32_t capacity, uint32_t timeout_ms);
+
+/**
+ * Conversation statistics (v0.2+).
+ *
+ * Thread-safety: Safe to call concurrently with decoding/streaming.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stats(AstralHandle conv, AstralConvStats* out_stats);
 
 // ============================================================================
 // Embeddings

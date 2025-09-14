@@ -41,6 +41,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY)
         test_cuda_parity
         test_cuda_e2e
         test_inference
+        test_continuous_batching
         test_embeddings
         test_provider_harness
     )
@@ -108,6 +109,9 @@ foreach(test_file ${TEST_FILES})
         # Inference tests exercise timing-sensitive async scheduling + streaming.
         # Avoid parallel CTest flakiness on oversubscribed CI hosts.
         if(${test_file} STREQUAL "test_inference")
+            set_tests_properties(${test_file} PROPERTIES RUN_SERIAL TRUE)
+        endif()
+        if(${test_file} STREQUAL "test_continuous_batching")
             set_tests_properties(${test_file} PROPERTIES RUN_SERIAL TRUE)
         endif()
         # CUDA E2E loads real models multiple times; keep it isolated to avoid resource contention.

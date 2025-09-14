@@ -11,6 +11,7 @@
 #include "model.hpp"
 
 #include <cstring>
+#include <cstdlib>
 
 namespace astral::inference {
 
@@ -67,6 +68,25 @@ inline uint32_t clamp_u32(uint32_t v, uint32_t lo, uint32_t hi) {
     return v;
 }
 
+inline uint32_t parse_u32_env(const char* key, uint32_t fallback) {
+    const char* v = std::getenv(key);
+    if (v == nullptr || v[0] == '\0') {
+        return fallback;
+    }
+    uint64_t n = 0;
+    for (size_t i = 0; v[i] != '\0'; ++i) {
+        const char c = v[i];
+        if (c < '0' || c > '9') {
+            return fallback;
+        }
+        n = n * 10u + static_cast<uint64_t>(c - '0');
+        if (n > 1000000u) {
+            return fallback;
+        }
+    }
+    return static_cast<uint32_t>(n);
+}
+
 ModelExecutor* ensure_executor(Model* model) {
     if (model == nullptr) {
         return nullptr;
@@ -90,6 +110,12 @@ ModelExecutor* ensure_executor(Model* model) {
             const uint32_t model_batch = model->desc.n_batch > 0 ? model->desc.n_batch : 256;
             created->max_batch_tokens =
                 clamp_u32(max_batch != 0 ? max_batch : model_batch, 1u, model_batch);
+
+            // Scheduling knob: prompt ingestion cap per slot per tick.
+            const uint32_t prompt_cap =
+                parse_u32_env("ASTRAL_EXEC_MAX_PROMPT_TOKENS_PER_SLOT_TICK", 8u);
+            created->max_prompt_tokens_per_slot_per_tick.store(clamp_u32(prompt_cap, 1u, 1024u),
+                                                              std::memory_order_relaxed);
 
             // Requires provider support.
             if (model->backend == nullptr || model->backend->ops == nullptr ||
@@ -892,6 +918,50 @@ AstralErr conv_grammar_clear(Conversation* conv) {
     conv->grammar_dirty = 1;
     conv->grammar_applied = 0;
     platform::cpu_signal_event();
+    return ASTRAL_OK;
+}
+
+AstralErr conv_stats(Conversation* conv, AstralConvStats* out_stats) {
+    if (conv == nullptr || out_stats == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const uint32_t sid = conv->slot_id.load(std::memory_order_acquire);
+    out_stats->slot_id = sid;
+    out_stats->prompt_tokens = conv->prompt_count;
+    out_stats->kv_tokens = conv->n_past;
+    out_stats->_padding0 = 0;
+    out_stats->generated_tokens = conv->total_tokens;
+
+    // Best-effort timing:
+    // - first token time is only meaningful after at least one token is produced
+    // - throughput is only meaningful once we have a time window
+    out_stats->t_first_token_ms = 0.0;
+    out_stats->tok_per_s = 0.0;
+
+    const ConvState st = conv->state.load(std::memory_order_acquire);
+    (void)st;
+
+    if (conv->t_start_ticks != 0 && conv->t_first_token_ticks != 0) {
+        const uint64_t dt = conv->t_first_token_ticks - conv->t_start_ticks;
+        out_stats->t_first_token_ms = static_cast<double>(platform::ticks_to_ns(dt)) / 1.0e6;
+    }
+
+    // Throughput:
+    // - Use end time if terminal, otherwise use "now".
+    if (conv->t_start_ticks != 0 && conv->total_tokens > 0) {
+        const uint64_t end_ticks =
+            (st == ConvState::Completed || st == ConvState::Canceled || st == ConvState::Failed)
+                ? conv->t_end_ticks
+                : get_ticks();
+        if (end_ticks > conv->t_start_ticks) {
+            const double dt_s = static_cast<double>(platform::ticks_to_ns(end_ticks - conv->t_start_ticks)) / 1.0e9;
+            if (dt_s > 0.0) {
+                out_stats->tok_per_s = static_cast<double>(conv->total_tokens) / dt_s;
+            }
+        }
+    }
+
     return ASTRAL_OK;
 }
 

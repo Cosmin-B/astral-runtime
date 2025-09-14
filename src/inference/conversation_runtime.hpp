@@ -26,6 +26,8 @@ AstralErr conv_grammar_set_gbnf(Conversation* conv, AstralSpanU8 gbnf, AstralSpa
 AstralErr conv_grammar_set_json_schema(Conversation* conv, AstralSpanU8 json_schema);
 AstralErr conv_grammar_clear(Conversation* conv);
 
+AstralErr conv_stats(Conversation* conv, AstralConvStats* out_stats);
+
 int32_t conv_stream_read(Conversation* conv, AstralMutSpanU8 out_buf, uint32_t timeout_ms);
 int32_t conv_stream_read_meta(Conversation* conv, AstralTokenMeta* out_events, uint32_t capacity, uint32_t timeout_ms);
 
