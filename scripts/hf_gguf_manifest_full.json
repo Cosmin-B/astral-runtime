@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "description": "Pinned Hugging Face GGUF sources for Astral benchmarking (CPU + CUDA).",
+  "repos": [
+    {
+      "repo": "Qwen/Qwen3-8B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 200
+    },
+    {
+      "repo": "unsloth/Qwen3-1.7B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 200
+    },
+    {
+      "repo": "bartowski/Qwen_Qwen3-32B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 200
+    },
+    {
+      "repo": "Qwen/Qwen3-Embedding-8B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 200
+    },
+    {
+      "repo": "gpustack/bge-m3-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 200
+    },
+    {
+      "repo": "jinaai/jina-embeddings-v4-text-retrieval-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 200
+    },
+    {
+      "repo": "jinaai/jina-embeddings-v4-text-matching-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 200
+    },
+    {
+      "repo": "jinaai/jina-embeddings-v4-text-code-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 200
+    },
+    {
+      "repo": "aiteza/Qwen3-VL-Embedding-8B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 200
+    }
+  ]
+}
+

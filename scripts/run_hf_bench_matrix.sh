@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${root_dir}"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/run_hf_bench_matrix.sh [options]
+
+Runs the canonical feature-surface benchmark across a directory of downloaded HF GGUF files.
+Produces consolidated logs for CPU and CUDA.
+
+This is intended for a CUDA machine (e.g. Hetzner) but CPU runs work anywhere.
+
+Options:
+  --models-dir <dir>        Directory containing downloaded *.gguf (default: tests/models/hf)
+  --out-dir <dir>           Output directory (default: benchmarks/results)
+  --cpu-preset <preset>     CPU preset (default: release-with-tests)
+  --cuda-preset <preset>    CUDA preset (default: dev-cuda)
+  --cuda-cublas-preset <p>  Forced cuBLAS preset (default: dev-cuda-cublas)
+  --cuda-mmq-preset <p>     Forced MMQ preset (default: dev-cuda-mmq)
+  --iters <N>               Feature bench iters (default: 25)
+  --tokens <N>              Logprobs drain tokens (default: 32)
+  --gpu-layers <N>          Default GPU layers for CUDA runs (default: 48)
+  --arch <list>             ASTRAL_CUDA_ARCHITECTURES override for CUDA configure (e.g. 120a-real)
+  --only <cpu|cuda|all>     Which runs to execute (default: all)
+  --help                    Show help
+
+Behavior:
+  - For each "generative" model file, runs features with:
+      model=<file>, embed_model=<baseline embedding GGUF (MiniLM if present)>
+  - For each "embedding" model file, runs features with:
+      model=<baseline generative GGUF (gpt2)>, embed_model=<file>
+
+Heuristic classification:
+  - A file is treated as "embedding" if its filename contains 'embed', 'embedding', 'bge-', or 'jina-embeddings'.
+EOF
+}
+
+models_dir="tests/models/hf"
+out_dir="benchmarks/results"
+cpu_preset="release-with-tests"
+cuda_preset="dev-cuda"
+cuda_cublas_preset="dev-cuda-cublas"
+cuda_mmq_preset="dev-cuda-mmq"
+iters="25"
+tokens="32"
+gpu_layers="48"
+arch_override=""
+only="all"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --models-dir) models_dir="${2:-}"; shift 2 ;;
+    --out-dir) out_dir="${2:-}"; shift 2 ;;
+    --cpu-preset) cpu_preset="${2:-}"; shift 2 ;;
+    --cuda-preset) cuda_preset="${2:-}"; shift 2 ;;
+    --cuda-cublas-preset) cuda_cublas_preset="${2:-}"; shift 2 ;;
+    --cuda-mmq-preset) cuda_mmq_preset="${2:-}"; shift 2 ;;
+    --iters) iters="${2:-}"; shift 2 ;;
+    --tokens) tokens="${2:-}"; shift 2 ;;
+    --gpu-layers) gpu_layers="${2:-}"; shift 2 ;;
+    --arch) arch_override="${2:-}"; shift 2 ;;
+    --only) only="${2:-}"; shift 2 ;;
+    --help|-h) usage; exit 0 ;;
+    *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+mkdir -p "${out_dir}"
+
+if [[ ! -d "${models_dir}" ]]; then
+  echo "Models dir not found: ${models_dir}" >&2
+  exit 2
+fi
+
+# Baselines (keep these stable so comparisons are meaningful).
+baseline_gen="tests/models/gpt2.Q2_K.gguf"
+baseline_emb="tests/models/all-MiniLM-L6-v2-Q2_K.gguf"
+
+if [[ ! -f "${baseline_gen}" ]]; then
+  echo "Missing baseline generative model: ${baseline_gen}" >&2
+  echo "Download with: ./tests/model_downloader.sh --preset gpt2-q2k" >&2
+  exit 2
+fi
+if [[ ! -f "${baseline_emb}" ]]; then
+  echo "Missing baseline embedding model: ${baseline_emb}" >&2
+  echo "Download with: ./tests/model_downloader.sh --preset embed-minilm-q2k" >&2
+  exit 2
+fi
+
+timestamp="$(date -Iseconds | tr ':' '-')"
+
+cpu_log="${out_dir}/hf-matrix-${timestamp}-cpu.txt"
+cuda_log="${out_dir}/hf-matrix-${timestamp}-cuda-auto.txt"
+cuda_cublas_log="${out_dir}/hf-matrix-${timestamp}-cuda-cublas.txt"
+cuda_mmq_log="${out_dir}/hf-matrix-${timestamp}-cuda-mmq.txt"
+
+run_one() {
+  local preset="$1"
+  local backend="$2"
+  local model="$3"
+  local embed_model="$4"
+  local out="$5"
+  local layers="$6"
+
+  {
+    echo
+    echo "## preset=${preset} backend=${backend}"
+    echo "model=${model}"
+    echo "embed_model=${embed_model}"
+  } >> "${out}"
+
+  if [[ -n "${arch_override}" && "${backend}" == "cuda" ]]; then
+    cmake --preset "${preset}" -DASTRAL_CUDA_ARCHITECTURES="${arch_override}" >/dev/null
+  else
+    cmake --preset "${preset}" >/dev/null
+  fi
+
+  cmake --build --preset "${preset}" -j >/dev/null
+
+  if ./scripts/run_ci_bench_features.sh \
+      --preset "${preset}" \
+      --backend "${backend}" \
+      --model "${model}" \
+      --embed-model "${embed_model}" \
+      --gpu-layers "${layers}" \
+      --iters "${iters}" \
+      --tokens "${tokens}" \
+      --out /tmp/astral_hf_bench_tmp.txt; then
+    cat /tmp/astral_hf_bench_tmp.txt >> "${out}"
+  else
+    echo "[bench] FAILED model=${model}" >> "${out}"
+    cat /tmp/astral_hf_bench_tmp.txt >> "${out}" || true
+  fi
+}
+
+is_embedding_file() {
+  local base
+  base="$(basename "$1" | tr '[:upper:]' '[:lower:]')"
+  [[ "${base}" == *"embed"* ]] || [[ "${base}" == *"embedding"* ]] || [[ "${base}" == bge-* ]] || [[ "${base}" == *"jina-embeddings"* ]]
+}
+
+mapfile -t ggufs < <(find "${models_dir}" -type f -name "*.gguf" | sort)
+if [[ ${#ggufs[@]} -eq 0 ]]; then
+  echo "No .gguf files found under: ${models_dir}" >&2
+  exit 0
+fi
+
+{
+  echo "# Astral HF bench matrix"
+  echo "# date: $(date -Iseconds)"
+  echo "# models_dir: ${models_dir}"
+  echo "# iters: ${iters}"
+  echo "# tokens: ${tokens}"
+  echo "# baseline_gen: ${baseline_gen}"
+  echo "# baseline_emb: ${baseline_emb}"
+  echo "# arch_override: ${arch_override}"
+  echo
+} > "${cpu_log}"
+
+if [[ "${only}" == "cuda" || "${only}" == "all" ]]; then
+  {
+    echo "# Astral HF bench matrix (CUDA auto)"
+    echo "# date: $(date -Iseconds)"
+    echo "# models_dir: ${models_dir}"
+    echo "# iters: ${iters}"
+    echo "# tokens: ${tokens}"
+    echo "# gpu_layers: ${gpu_layers}"
+    echo "# baseline_gen: ${baseline_gen}"
+    echo "# baseline_emb: ${baseline_emb}"
+    echo "# arch_override: ${arch_override}"
+    echo
+  } > "${cuda_log}"
+  cp "${cuda_log}" "${cuda_cublas_log}"
+  cp "${cuda_log}" "${cuda_mmq_log}"
+fi
+
+for m in "${ggufs[@]}"; do
+  if is_embedding_file "${m}"; then
+    # Benchmark this embedding model as the embedding surface; use stable generative model for KV/grammar/logprobs.
+    if [[ "${only}" == "cpu" || "${only}" == "all" ]]; then
+      run_one "${cpu_preset}" "cpu" "${baseline_gen}" "${m}" "${cpu_log}" "0"
+    fi
+    if [[ "${only}" == "cuda" || "${only}" == "all" ]]; then
+      run_one "${cuda_preset}" "cuda" "${baseline_gen}" "${m}" "${cuda_log}" "${gpu_layers}"
+      run_one "${cuda_cublas_preset}" "cuda" "${baseline_gen}" "${m}" "${cuda_cublas_log}" "${gpu_layers}"
+      run_one "${cuda_mmq_preset}" "cuda" "${baseline_gen}" "${m}" "${cuda_mmq_log}" "${gpu_layers}"
+    fi
+  else
+    # Benchmark this model as the generative surface; use stable embedding model for embedding roundtrip.
+    if [[ "${only}" == "cpu" || "${only}" == "all" ]]; then
+      run_one "${cpu_preset}" "cpu" "${m}" "${baseline_emb}" "${cpu_log}" "0"
+    fi
+    if [[ "${only}" == "cuda" || "${only}" == "all" ]]; then
+      run_one "${cuda_preset}" "cuda" "${m}" "${baseline_emb}" "${cuda_log}" "${gpu_layers}"
+      run_one "${cuda_cublas_preset}" "cuda" "${m}" "${baseline_emb}" "${cuda_cublas_log}" "${gpu_layers}"
+      run_one "${cuda_mmq_preset}" "cuda" "${m}" "${baseline_emb}" "${cuda_mmq_log}" "${gpu_layers}"
+    fi
+  fi
+done
+
+echo "[hf-matrix] wrote:"
+echo "  ${cpu_log}"
+if [[ "${only}" == "cuda" || "${only}" == "all" ]]; then
+  echo "  ${cuda_log}"
+  echo "  ${cuda_cublas_log}"
+  echo "  ${cuda_mmq_log}"
+fi
+

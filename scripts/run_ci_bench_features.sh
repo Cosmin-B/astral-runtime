@@ -15,6 +15,7 @@ Options:
   --preset <name>        Build preset / build dir (default: release-with-tests)
   --backend <cpu|cuda>   Backend to benchmark (default: cpu)
   --model <path>         GGUF path (default: tests/models/gpt2.Q2_K.gguf)
+  --embed-model <path>   Optional embeddings GGUF override (sets ASTRAL_BENCH_EMBED_MODEL)
   --out <file>           Output log file (default: benchmarks/results/ci-features.txt)
   --iters <N>            ASTRAL_BENCH_FEATURE_ITERS (default: 50)
   --tokens <N>           ASTRAL_BENCH_FEATURE_TOKENS (default: 32)
@@ -30,6 +31,7 @@ EOF
 preset="release-with-tests"
 backend="cpu"
 model="tests/models/gpt2.Q2_K.gguf"
+embed_model=""
 out_file="benchmarks/results/ci-features.txt"
 iters="50"
 tokens="32"
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --preset) preset="${2:-}"; shift 2 ;;
     --backend) backend="${2:-}"; shift 2 ;;
     --model) model="${2:-}"; shift 2 ;;
+    --embed-model) embed_model="${2:-}"; shift 2 ;;
     --out) out_file="${2:-}"; shift 2 ;;
     --iters) iters="${2:-}"; shift 2 ;;
     --tokens) tokens="${2:-}"; shift 2 ;;
@@ -73,6 +76,11 @@ if [[ ! -f "${model}" ]]; then
   exit 2
 fi
 
+if [[ -n "${embed_model}" && ! -f "${embed_model}" ]]; then
+  echo "Embed model not found: ${embed_model}" >&2
+  exit 2
+fi
+
 mkdir -p "$(dirname "${out_file}")"
 
 {
@@ -81,6 +89,9 @@ mkdir -p "$(dirname "${out_file}")"
   echo "# preset: ${preset}"
   echo "# backend: ${backend}"
   echo "# model: ${model}"
+  if [[ -n "${embed_model}" ]]; then
+    echo "# embed_model: ${embed_model}"
+  fi
   echo "# iters: ${iters}"
   echo "# tokens: ${tokens}"
   echo "# gpu_layers: ${gpu_layers}"
@@ -88,6 +99,7 @@ mkdir -p "$(dirname "${out_file}")"
 } > "${out_file}"
 
 ASTRAL_BENCH_MODEL="${model}" \
+ASTRAL_BENCH_EMBED_MODEL="${embed_model}" \
 ASTRAL_BENCH_FEATURE_BACKEND="${backend}" \
 ASTRAL_BENCH_GPU_LAYERS="${gpu_layers}" \
 ASTRAL_BENCH_FEATURE_ITERS="${iters}" \
