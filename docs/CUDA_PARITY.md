@@ -19,6 +19,7 @@ Parity is not just “it runs”. For a given model + prompt + sampler config:
 - [ ] Forced cuBLAS (`GGML_CUDA_FORCE_CUBLAS=ON`) passes all Phase 1 tests.
 - [ ] Forced MMQ (`GGML_CUDA_FORCE_MMQ=ON`) passes all Phase 1 tests.
   - Rationale: ggml-cuda selects between custom MMQ kernels and cuBLAS depending on GPU/quant; we treat both as first-class supported modes and test them separately.
+  - Strategy: see `docs/CUDA_KERNEL_STRATEGY.md`.
 
 **Model load**
 - [ ] `astral_model_load()` / `astral_model_load2(PATH)` with `backend_name="cuda"` loads successfully.

@@ -34,6 +34,104 @@ jobs:
         run: |
           ctest --preset dev -j
 
+  bench-features-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Download small GGUF for benches
+        run: |
+          ./tests/model_downloader.sh
+          ./tests/model_downloader.sh --preset embed-minilm-q2k
+
+      - name: Configure (release-with-tests)
+        run: |
+          cmake --preset release-with-tests
+
+      - name: Build (release-with-tests)
+        run: |
+          cmake --build --preset release-with-tests -j
+
+      - name: Run canonical feature surface bench (CPU)
+        run: |
+          ./scripts/run_ci_bench_features.sh --preset release-with-tests --backend cpu --iters 50 --tokens 32 \
+            --out benchmarks/results/ci-features-linux.txt
+
+      - name: Upload bench log
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-features-linux
+          path: |
+            benchmarks/results/ci-features-linux.txt
+
+  bench-features-cuda-best-effort:
+    # Non-blocking until v0.2: this is expected to skip on GitHub-hosted runners.
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Detect CUDA runtime
+        id: cuda
+        shell: bash
+        run: |
+          if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+            echo "has_gpu=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_gpu=false" >> "$GITHUB_OUTPUT"
+          fi
+          if command -v nvcc >/dev/null 2>&1; then
+            echo "has_nvcc=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_nvcc=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install deps
+        if: steps.cuda.outputs.has_gpu == 'true' && steps.cuda.outputs.has_nvcc == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Download small GGUF for benches
+        if: steps.cuda.outputs.has_gpu == 'true' && steps.cuda.outputs.has_nvcc == 'true'
+        run: |
+          ./tests/model_downloader.sh
+
+      - name: Configure (dev-cuda)
+        if: steps.cuda.outputs.has_gpu == 'true' && steps.cuda.outputs.has_nvcc == 'true'
+        run: |
+          cmake --preset dev-cuda
+
+      - name: Build (dev-cuda)
+        if: steps.cuda.outputs.has_gpu == 'true' && steps.cuda.outputs.has_nvcc == 'true'
+        run: |
+          cmake --build --preset dev-cuda -j
+
+      - name: Run canonical feature surface bench (CUDA)
+        if: steps.cuda.outputs.has_gpu == 'true' && steps.cuda.outputs.has_nvcc == 'true'
+        run: |
+          ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_ci_bench_features.sh --preset dev-cuda --backend cuda --gpu-layers 32 \
+            --iters 25 --tokens 32 --out benchmarks/results/ci-features-cuda.txt
+
+      - name: Upload bench log
+        if: steps.cuda.outputs.has_gpu == 'true' && steps.cuda.outputs.has_nvcc == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-features-cuda-best-effort
+          path: |
+            benchmarks/results/ci-features-cuda.txt
+
   macos-tests:
     runs-on: macos-latest
     env:

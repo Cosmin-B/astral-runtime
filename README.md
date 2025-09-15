@@ -103,6 +103,9 @@ cmake --build --preset release-with-tests -j
 
 # End-to-end streamed inference (requires a GGUF under tests/models/ or ASTRAL_BENCH_MODEL)
 ./build/release-test/benchmarks/astral_benchmarks --only infer --infer-tokens 128
+
+# Canonical surface benchmark (used for CI artifacts; embeddings/KV/grammar/logprobs)
+./build/release-test/benchmarks/astral_benchmarks --only features
 ```
 
 To keep output quiet (llama.cpp can be verbose), set `ASTRAL_LLAMA_LOG=none` (or `error|warn|info|debug`).

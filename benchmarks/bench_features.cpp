@@ -86,6 +86,32 @@ static const char* find_model_path() {
     return nullptr;
 }
 
+static const char* find_embed_model_path_or_fallback(const char* fallback_model_path) {
+    const char* env = std::getenv("ASTRAL_BENCH_EMBED_MODEL");
+    if (env && env[0] != '\0') {
+        if (file_is_large_enough(env, 5ull * 1024ull * 1024ull)) {
+            return env;
+        }
+        std::fprintf(stderr, "[bench] ASTRAL_BENCH_EMBED_MODEL set but file missing/too small: %s\n", env);
+    }
+
+    // Prefer a small embedding GGUF if present locally.
+    static const char* paths[] = {
+        "tests/models/all-MiniLM-L6-v2-Q2_K.gguf",
+        "../tests/models/all-MiniLM-L6-v2-Q2_K.gguf",
+        "../../tests/models/all-MiniLM-L6-v2-Q2_K.gguf",
+        "../../../tests/models/all-MiniLM-L6-v2-Q2_K.gguf",
+        "../../../../tests/models/all-MiniLM-L6-v2-Q2_K.gguf",
+    };
+    for (const char* p : paths) {
+        if (file_is_large_enough(p, 5ull * 1024ull * 1024ull)) {
+            return p;
+        }
+    }
+
+    return fallback_model_path;
+}
+
 static AstralSpanU8 span_from_cstr(const char* s) {
     AstralSpanU8 out{};
     out.data = reinterpret_cast<const uint8_t*>(s);
@@ -392,14 +418,18 @@ static BenchResult bench_logprobs_drain_meta(AstralHandle model, uint32_t tokens
     return r;
 }
 
-static void print_features_header(const char* backend, uint32_t gpu_layers, const char* model_path) {
+static void print_features_header(const char* backend, uint32_t gpu_layers, const char* model_path, const char* embed_model_path) {
     std::printf("\n== Feature surfaces (%s, gpu_layers=%u) ==\n", backend ? backend : "?", gpu_layers);
     std::printf("model: %s\n", model_path ? model_path : "(null)");
+    if (embed_model_path && model_path && std::strcmp(embed_model_path, model_path) != 0) {
+        std::printf("embed_model: %s\n", embed_model_path);
+    }
     std::printf("env:\n");
     std::printf("  ASTRAL_BENCH_FEATURE_BACKEND=%s\n", backend ? backend : "");
     std::printf("  ASTRAL_BENCH_GPU_LAYERS=%u\n", gpu_layers);
     std::printf("  ASTRAL_BENCH_FEATURE_ITERS=%llu\n", (unsigned long long)parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", 2000));
     std::printf("  ASTRAL_BENCH_FEATURE_TOKENS=%u\n", parse_u32_env("ASTRAL_BENCH_FEATURE_TOKENS", 64));
+    std::printf("  ASTRAL_BENCH_EMBED_MODEL=%s\n", std::getenv("ASTRAL_BENCH_EMBED_MODEL") ? std::getenv("ASTRAL_BENCH_EMBED_MODEL") : "");
 }
 
 } // namespace
@@ -410,6 +440,7 @@ void bench_feature_surfaces_print(void) {
         std::fprintf(stderr, "[bench] no GGUF model found for feature benches (set ASTRAL_BENCH_MODEL)\n");
         return;
     }
+    const char* embed_model_path = find_embed_model_path_or_fallback(model_path);
 
     const char* backend = std::getenv("ASTRAL_BENCH_FEATURE_BACKEND");
     if (backend == nullptr || backend[0] == '\0') {
@@ -432,11 +463,11 @@ void bench_feature_surfaces_print(void) {
         return;
     }
 
-    print_features_header(backend, gpu_layers, model_path);
+    print_features_header(backend, gpu_layers, model_path, embed_model_path);
 
     // Embeddings.
     {
-        const AstralHandle model = load_model(backend, model_path, gpu_layers, /*embeddings_only=*/1);
+        const AstralHandle model = load_model(backend, embed_model_path, gpu_layers, /*embeddings_only=*/1);
         if (astral_handle_valid(model)) {
             print_result(bench_embed_roundtrip(model, iters), clock_info().name);
             astral_model_release(model);
@@ -496,4 +527,3 @@ void bench_feature_surfaces_print(void) {
 }
 
 } // namespace astral::bench
-

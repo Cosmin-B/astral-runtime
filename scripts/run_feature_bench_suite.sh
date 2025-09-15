@@ -57,7 +57,18 @@ if [[ -z "${models_dir}" || -z "${out_file}" ]]; then
   exit 2
 fi
 
-bench_bin="build/${preset}/benchmarks/astral_benchmarks"
+build_dir="build/${preset}"
+case "${preset}" in
+  release-with-tests) build_dir="build/release-test" ;;
+  release) build_dir="build/release" ;;
+  dev) build_dir="build/dev" ;;
+  dev-prof) build_dir="build/dev-prof" ;;
+  release-prof) build_dir="build/release-prof" ;;
+  unity-plugin) build_dir="build/unity" ;;
+  unreal-plugin) build_dir="build/unreal" ;;
+esac
+
+bench_bin="${build_dir}/benchmarks/astral_benchmarks"
 if [[ ! -x "${bench_bin}" ]]; then
   echo "Benchmark binary not found: ${bench_bin}" >&2
   echo "Build it with: cmake --preset ${preset} && cmake --build --preset ${preset}" >&2
@@ -109,4 +120,3 @@ for m in "${models[@]}"; do
 done
 
 echo "[suite] done models=${ran} out=${out_file}"
-
