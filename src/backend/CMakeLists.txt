@@ -54,6 +54,10 @@ if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
         if(ASTRAL_ENABLE_CUDA)
             find_package(CUDAToolkit REQUIRED)
 
+            if(ASTRAL_CUDA_FORCE_CUBLAS AND ASTRAL_CUDA_FORCE_MMQ)
+                message(FATAL_ERROR "Invalid CUDA config: ASTRAL_CUDA_FORCE_CUBLAS and ASTRAL_CUDA_FORCE_MMQ are mutually exclusive")
+            endif()
+
             # Prefer "auto" behavior by default; allow forcing via Astral options.
             set(GGML_CUDA ON CACHE BOOL "ggml: use CUDA" FORCE)
             set(GGML_CUDA_FORCE_CUBLAS ${ASTRAL_CUDA_FORCE_CUBLAS} CACHE BOOL "ggml: always use cuBLAS instead of mmq kernels" FORCE)

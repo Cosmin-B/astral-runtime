@@ -31,6 +31,28 @@
       }
     },
     {
+      "name": "dev-cuda-cublas",
+      "displayName": "Development (CUDA, cuBLAS)",
+      "description": "Debug build with CUDA enabled and GGML_CUDA_FORCE_CUBLAS=ON",
+      "inherits": "dev-cuda",
+      "binaryDir": "${sourceDir}/build/dev-cuda-cublas",
+      "cacheVariables": {
+        "ASTRAL_CUDA_FORCE_CUBLAS": "ON",
+        "ASTRAL_CUDA_FORCE_MMQ": "OFF"
+      }
+    },
+    {
+      "name": "dev-cuda-mmq",
+      "displayName": "Development (CUDA, MMQ)",
+      "description": "Debug build with CUDA enabled and GGML_CUDA_FORCE_MMQ=ON",
+      "inherits": "dev-cuda",
+      "binaryDir": "${sourceDir}/build/dev-cuda-mmq",
+      "cacheVariables": {
+        "ASTRAL_CUDA_FORCE_CUBLAS": "OFF",
+        "ASTRAL_CUDA_FORCE_MMQ": "ON"
+      }
+    },
+    {
       "name": "dev-prof",
       "displayName": "Development (Profiling)",
       "description": "Debug build with Tracy enabled (requires external/tracy submodule)",
@@ -436,6 +458,14 @@
       "configurePreset": "dev-cuda"
     },
     {
+      "name": "dev-cuda-cublas",
+      "configurePreset": "dev-cuda-cublas"
+    },
+    {
+      "name": "dev-cuda-mmq",
+      "configurePreset": "dev-cuda-mmq"
+    },
+    {
       "name": "dev-prof",
       "configurePreset": "dev-prof"
     },
@@ -552,6 +582,20 @@
     {
       "name": "dev-cuda",
       "configurePreset": "dev-cuda",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-cuda-cublas",
+      "configurePreset": "dev-cuda-cublas",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-cuda-mmq",
+      "configurePreset": "dev-cuda-mmq",
       "output": {
         "outputOnFailure": true
       }

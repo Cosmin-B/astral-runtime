@@ -14,6 +14,12 @@ Parity is not just “it runs”. For a given model + prompt + sampler config:
 
 ## Phase 1 — Parity Checklist (Must Work)
 
+**Kernel modes / backend variants**
+- [ ] Default CUDA kernels (mmq auto / cuBLAS auto) pass all Phase 1 tests.
+- [ ] Forced cuBLAS (`GGML_CUDA_FORCE_CUBLAS=ON`) passes all Phase 1 tests.
+- [ ] Forced MMQ (`GGML_CUDA_FORCE_MMQ=ON`) passes all Phase 1 tests.
+  - Rationale: ggml-cuda selects between custom MMQ kernels and cuBLAS depending on GPU/quant; we treat both as first-class supported modes and test them separately.
+
 **Model load**
 - [ ] `astral_model_load()` / `astral_model_load2(PATH)` with `backend_name="cuda"` loads successfully.
 - [ ] `gpu_layers > 0` selects CUDA backend when enabled (and falls back to CPU when not built with CUDA).
@@ -51,6 +57,12 @@ Run it on a CUDA machine:
 
 ```bash
 ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity.sh --preset dev-cuda
+```
+
+To validate kernel modes (default + cuBLAS + MMQ) in one go:
+
+```bash
+ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity_matrix.sh --arch 120a-real
 ```
 
 **Slots / executor**
