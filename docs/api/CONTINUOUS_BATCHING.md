@@ -70,3 +70,32 @@ The built-in `cpu` and `mock` backends implement these.
 ## Notes / current limitations
 
 - `astral_session_*` and `astral_conv_*` are intentionally separate: sessions are per-session worker based; conversations are executor based.
+
+## Scheduling and tuning
+
+Continuous batching is a trade-off: you can bias toward **throughput** (large batches, many active slots) or **latency**
+(smaller batches, fewer slots contending for each tick).
+
+Current knobs:
+
+- `AstralExecutorDesc.max_batch_tokens`: global per-tick token cap. Keep this `<= model n_batch` for best behavior.
+- `astral_model_executor_tune()`:
+  - `AstralExecutorTuning.max_prompt_tokens_per_slot_tick`: per-slot prompt token cap per tick (helps control TTFT vs bulk throughput).
+
+Scheduling policy (current):
+
+- Prompt ingest: round-robin across slots with a per-slot cap.
+- Decode: at most 1 token per slot per tick (round-robin) to avoid starvation.
+
+## Multi-model story
+
+Executors are **model-scoped**: each `AstralHandle model` may have its own executor configured via
+`astral_model_executor_configure()`. This enables:
+
+- Multiple independent models in the same process (each with its own conversations/slots).
+- Independent scheduling and tuning per model (e.g. different `max_slots` / `max_batch_tokens`).
+
+Practical constraint:
+
+- Each configured model executor occupies one runtime worker thread while it is active. Size `AstralInit.thread_count`
+  accordingly if you plan to run multiple models concurrently.

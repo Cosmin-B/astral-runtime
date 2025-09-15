@@ -29,6 +29,14 @@ This is the living checklist to turn Astral into a world-class, product-ready fr
 - iOS-specific constraints: page size, entitlements, and minimal-syscall guidance.
 - Unreal mobile plugin packaging/validation (Android/iOS) after Unity; ship prebuilt ThirdParty libs for UE 5.1–5.7.
 
+## v0.2 (Core product: continuous batching + multi-model)
+
+- Continuous batching across slots (multi-conversation scheduling):
+  - Scheduling: fairness guarantees (no starvation), plus explicit throughput/latency knobs (batch cap, prompt ingest cap, etc.).
+  - Observability: KV/memory accounting surfaces (per-slot KV tokens and best-effort memory estimates) + clear executor/slot stats.
+  - Multi-model story: document + validate running multiple models concurrently (each model has its own executor; runtime worker sizing).
+  - Tests/benches: add continuous-batching benchmarks that measure throughput/TTFT under multi-slot load (CPU + CUDA where available).
+
 ## v0.2 (GPU backend real work)
 
 - CUDA backend parity + perf (then Metal, then DirectML):

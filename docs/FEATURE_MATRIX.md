@@ -38,6 +38,11 @@ Notes:
 
 Notes:
 - CUDA is a v0.1 “best-effort scaffold”; determinism policy + parity checks are tracked in `docs/CUDA_PARITY.md`.
+- CUDA builds support multiple ggml-cuda kernel selection modes:
+  - Default “auto” selection (`dev-cuda` / `release-cuda`)
+  - Forced cuBLAS (`dev-cuda-cublas`)
+  - Forced MMQ kernels (`dev-cuda-mmq`)
+  - Validate all three modes via `scripts/run_cuda_parity_matrix.sh` (see `docs/CUDA_PARITY.md`).
 
 ## Model loading (PATH / MEMORY / IO)
 
