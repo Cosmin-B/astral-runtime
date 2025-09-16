@@ -53,6 +53,35 @@
       }
     },
     {
+      "name": "dev-cuda-hf",
+      "displayName": "Development (CUDA, HF Bench)",
+      "description": "Debug CUDA build in a separate build dir for HF bench matrix runs",
+      "inherits": "dev-cuda",
+      "binaryDir": "${sourceDir}/build/dev-cuda-hf"
+    },
+    {
+      "name": "dev-cuda-cublas-hf",
+      "displayName": "Development (CUDA, cuBLAS, HF Bench)",
+      "description": "Debug CUDA build (forced cuBLAS) in a separate build dir for HF bench matrix runs",
+      "inherits": "dev-cuda-hf",
+      "binaryDir": "${sourceDir}/build/dev-cuda-cublas-hf",
+      "cacheVariables": {
+        "ASTRAL_CUDA_FORCE_CUBLAS": "ON",
+        "ASTRAL_CUDA_FORCE_MMQ": "OFF"
+      }
+    },
+    {
+      "name": "dev-cuda-mmq-hf",
+      "displayName": "Development (CUDA, MMQ, HF Bench)",
+      "description": "Debug CUDA build (forced MMQ) in a separate build dir for HF bench matrix runs",
+      "inherits": "dev-cuda-hf",
+      "binaryDir": "${sourceDir}/build/dev-cuda-mmq-hf",
+      "cacheVariables": {
+        "ASTRAL_CUDA_FORCE_CUBLAS": "OFF",
+        "ASTRAL_CUDA_FORCE_MMQ": "ON"
+      }
+    },
+    {
       "name": "dev-prof",
       "displayName": "Development (Profiling)",
       "description": "Debug build with Tracy enabled (requires external/tracy submodule)",
