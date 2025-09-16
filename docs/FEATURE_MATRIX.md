@@ -98,3 +98,16 @@ cmake --preset release-with-tests && cmake --build --preset release-with-tests -
 # CUDA validation (on a CUDA box)
 ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity.sh --preset dev-cuda --arch 120a-real
 ```
+
+HF GGUF bench matrix (optional):
+
+```bash
+# Download a pinned set of HF GGUF repos (large!):
+./scripts/hf_gguf_download_manifest.sh --out tests/models/hf
+
+# Run the feature-surface bench across all downloaded GGUFs (CPU + CUDA):
+./scripts/run_hf_bench_matrix.sh --models-dir tests/models/hf --arch 120a-real
+
+# Parse a consolidated log to CSV (one row per model/preset run):
+./scripts/parse_hf_matrix_log.py --in benchmarks/results/hf-matrix-<...>-cuda-auto.txt --out /tmp/hf-matrix.csv
+```

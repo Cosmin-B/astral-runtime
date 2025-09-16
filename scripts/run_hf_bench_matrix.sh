@@ -97,6 +97,48 @@ cuda_log="${out_dir}/hf-matrix-${timestamp}-cuda-auto.txt"
 cuda_cublas_log="${out_dir}/hf-matrix-${timestamp}-cuda-cublas.txt"
 cuda_mmq_log="${out_dir}/hf-matrix-${timestamp}-cuda-mmq.txt"
 
+declare -A built_presets=()
+
+ensure_built() {
+  local preset="$1"
+  local backend="$2"
+
+  if [[ -n "${built_presets[${preset}]:-}" ]]; then
+    return 0
+  fi
+
+  if [[ -n "${arch_override}" && "${backend}" == "cuda" ]]; then
+    cmake --preset "${preset}" -DASTRAL_CUDA_ARCHITECTURES="${arch_override}" >/dev/null
+  else
+    cmake --preset "${preset}" >/dev/null
+  fi
+
+  cmake --build --preset "${preset}" -j >/dev/null
+  built_presets["${preset}"]="1"
+}
+
+choose_cuda_layers() {
+  local model="$1"
+
+  if [[ ! -f "${model}" ]]; then
+    echo "${gpu_layers}"
+    return 0
+  fi
+
+  # Heuristic: large models often OOM when too many layers are offloaded.
+  local bytes
+  bytes="$(stat -c '%s' "${model}" 2>/dev/null || echo 0)"
+
+  # > 40 GB -> start small; > 20 GB -> moderate; else default.
+  if [[ "${bytes}" -gt 42949672960 ]]; then
+    echo "16"
+  elif [[ "${bytes}" -gt 21474836480 ]]; then
+    echo "32"
+  else
+    echo "${gpu_layers}"
+  fi
+}
+
 run_one() {
   local preset="$1"
   local backend="$2"
@@ -112,27 +154,41 @@ run_one() {
     echo "embed_model=${embed_model}"
   } >> "${out}"
 
-  if [[ -n "${arch_override}" && "${backend}" == "cuda" ]]; then
-    cmake --preset "${preset}" -DASTRAL_CUDA_ARCHITECTURES="${arch_override}" >/dev/null
-  else
-    cmake --preset "${preset}" >/dev/null
-  fi
+  ensure_built "${preset}" "${backend}"
 
-  cmake --build --preset "${preset}" -j >/dev/null
+  local attempt_layers="${layers}"
+  local attempt=0
+  local ok="0"
+  while true; do
+    attempt=$((attempt + 1))
+    echo "[bench] attempt=${attempt} gpu_layers=${attempt_layers}" >> "${out}"
 
-  if ./scripts/run_ci_bench_features.sh \
-      --preset "${preset}" \
-      --backend "${backend}" \
-      --model "${model}" \
-      --embed-model "${embed_model}" \
-      --gpu-layers "${layers}" \
-      --iters "${iters}" \
-      --tokens "${tokens}" \
-      --out /tmp/astral_hf_bench_tmp.txt; then
-    cat /tmp/astral_hf_bench_tmp.txt >> "${out}"
-  else
-    echo "[bench] FAILED model=${model}" >> "${out}"
+    if ./scripts/run_ci_bench_features.sh \
+        --preset "${preset}" \
+        --backend "${backend}" \
+        --model "${model}" \
+        --embed-model "${embed_model}" \
+        --gpu-layers "${attempt_layers}" \
+        --iters "${iters}" \
+        --tokens "${tokens}" \
+        --out /tmp/astral_hf_bench_tmp.txt; then
+      ok="1"
+      cat /tmp/astral_hf_bench_tmp.txt >> "${out}"
+      break
+    fi
+
     cat /tmp/astral_hf_bench_tmp.txt >> "${out}" || true
+    if [[ "${backend}" != "cuda" ]]; then
+      break
+    fi
+    if [[ "${attempt_layers}" -le 1 || "${attempt}" -ge 4 ]]; then
+      break
+    fi
+    attempt_layers=$((attempt_layers / 2))
+  done
+
+  if [[ "${ok}" != "1" ]]; then
+    echo "[bench] FAILED model=${model}" >> "${out}"
   fi
 }
 
@@ -194,9 +250,10 @@ for m in "${ggufs[@]}"; do
       run_one "${cpu_preset}" "cpu" "${m}" "${baseline_emb}" "${cpu_log}" "0"
     fi
     if [[ "${only}" == "cuda" || "${only}" == "all" ]]; then
-      run_one "${cuda_preset}" "cuda" "${m}" "${baseline_emb}" "${cuda_log}" "${gpu_layers}"
-      run_one "${cuda_cublas_preset}" "cuda" "${m}" "${baseline_emb}" "${cuda_cublas_log}" "${gpu_layers}"
-      run_one "${cuda_mmq_preset}" "cuda" "${m}" "${baseline_emb}" "${cuda_mmq_log}" "${gpu_layers}"
+      layers="$(choose_cuda_layers "${m}")"
+      run_one "${cuda_preset}" "cuda" "${m}" "${baseline_emb}" "${cuda_log}" "${layers}"
+      run_one "${cuda_cublas_preset}" "cuda" "${m}" "${baseline_emb}" "${cuda_cublas_log}" "${layers}"
+      run_one "${cuda_mmq_preset}" "cuda" "${m}" "${baseline_emb}" "${cuda_mmq_log}" "${layers}"
     fi
   fi
 done
@@ -208,4 +265,3 @@ if [[ "${only}" == "cuda" || "${only}" == "all" ]]; then
   echo "  ${cuda_cublas_log}"
   echo "  ${cuda_mmq_log}"
 fi
-
