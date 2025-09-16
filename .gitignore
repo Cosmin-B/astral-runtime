@@ -41,6 +41,10 @@ Thumbs.db
 *.log
 *.tmp
 
+# Python caches
+__pycache__/
+*.pyc
+
 # perf artifacts
 perf.data
 perf.data.*
