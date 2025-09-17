@@ -495,6 +495,18 @@
       "configurePreset": "dev-cuda-mmq"
     },
     {
+      "name": "dev-cuda-hf",
+      "configurePreset": "dev-cuda-hf"
+    },
+    {
+      "name": "dev-cuda-cublas-hf",
+      "configurePreset": "dev-cuda-cublas-hf"
+    },
+    {
+      "name": "dev-cuda-mmq-hf",
+      "configurePreset": "dev-cuda-mmq-hf"
+    },
+    {
       "name": "dev-prof",
       "configurePreset": "dev-prof"
     },
