@@ -4,6 +4,13 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${root_dir}"
 
+# Prefer the system-installed toolkit under /usr/local/cuda when present (common on CUDA boxes).
+if [[ -x "/usr/local/cuda/bin/nvcc" ]]; then
+  export PATH="/usr/local/cuda/bin:${PATH}"
+  export CUDAToolkit_ROOT="/usr/local/cuda"
+  export CUDA_PATH="/usr/local/cuda"
+fi
+
 usage() {
   cat <<'EOF'
 Usage: scripts/run_hf_bench_matrix.sh [options]
@@ -107,8 +114,16 @@ ensure_built() {
     return 0
   fi
 
+  local cmake_args=()
+  if [[ "${backend}" == "cuda" && -x "/usr/local/cuda/bin/nvcc" ]]; then
+    cmake_args+=("-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc")
+  fi
   if [[ -n "${arch_override}" && "${backend}" == "cuda" ]]; then
-    cmake --preset "${preset}" -DASTRAL_CUDA_ARCHITECTURES="${arch_override}" >/dev/null
+    cmake_args+=("-DASTRAL_CUDA_ARCHITECTURES=${arch_override}")
+  fi
+
+  if [[ ${#cmake_args[@]} -gt 0 ]]; then
+    cmake --preset "${preset}" "${cmake_args[@]}" >/dev/null
   else
     cmake --preset "${preset}" >/dev/null
   fi
