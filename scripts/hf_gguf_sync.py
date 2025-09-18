@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -58,43 +59,122 @@ def _http_get_json(url: str, token: Optional[str]) -> object:
 
 
 def _http_download(url: str, dst: Path, token: Optional[str]) -> None:
+    # Backwards-compat shim.
+    _http_download_resume(url, dst, token, expected_size=None)
+
+
+def _http_download_resume(url: str, dst: Path, token: Optional[str], expected_size: Optional[int]) -> None:
+    """
+    Robust downloader with resume support:
+      - Writes to <dst>.part and renames on success.
+      - If a .part exists, resumes using HTTP Range when possible.
+      - Retries transient read/timeout errors.
+    """
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_suffix(dst.suffix + ".part")
 
-    req = urllib.request.Request(url)
-    req.add_header("User-Agent", "astral-hf-gguf-sync/0.1")
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
+    chunk_size = 1024 * 1024
+    connect_timeout_s = 60
+    max_attempts = 8
 
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        total = resp.headers.get("Content-Length")
-        total_bytes = int(total) if total and total.isdigit() else None
+    last_pct = -1
+    last_print_mib = 0
 
-        downloaded = 0
-        last_pct = -1
-        last_print_mib = 0
-        with open(tmp, "wb") as f:
-            while True:
-                chunk = resp.read(1024 * 1024)
-                if not chunk:
-                    break
-                f.write(chunk)
-                downloaded += len(chunk)
+    def open_request(start: int) -> urllib.response.addinfourl:
+        req = urllib.request.Request(url)
+        req.add_header("User-Agent", "astral-hf-gguf-sync/0.2")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        if start > 0:
+            req.add_header("Range", f"bytes={start}-")
+        return urllib.request.urlopen(req, timeout=connect_timeout_s)
+
+    attempt = 0
+    while True:
+        attempt += 1
+        start = tmp.stat().st_size if tmp.exists() else 0
+
+        if expected_size is not None and start == expected_size:
+            tmp.replace(dst)
+            return
+
+        if expected_size is not None and start > expected_size:
+            # Corrupted partial; start over.
+            tmp.unlink(missing_ok=True)
+            start = 0
+
+        try:
+            with open_request(start) as resp:
+                # Determine total size: prefer expected_size from HF API.
+                total_bytes = expected_size
+                if total_bytes is None:
+                    total = resp.headers.get("Content-Length")
+                    total_bytes = int(total) if total and total.isdigit() else None
+                # If server ignored Range and returned full payload, restart the file.
+                if start > 0 and getattr(resp, "status", 200) == 200:
+                    tmp.unlink(missing_ok=True)
+                    start = 0
+                    return _http_download_resume(url, dst, token, expected_size)
+
+                downloaded = start
+                mode = "ab" if start > 0 else "wb"
+                with open(tmp, mode) as f:
+                    while True:
+                        try:
+                            chunk = resp.read(chunk_size)
+                        except TimeoutError:
+                            raise
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        if total_bytes:
+                            pct = int((downloaded * 100) // total_bytes)
+                            mib = int(downloaded // (1024 * 1024))
+                            if pct != last_pct or (mib - last_print_mib) >= 64:
+                                sys.stderr.write(
+                                    f"\r  {dst.name}: {pct}% ({mib} MiB/{total_bytes//(1024*1024)} MiB)"
+                                )
+                                sys.stderr.flush()
+                                last_pct = pct
+                                last_print_mib = mib
                 if total_bytes:
-                    pct = int((downloaded * 100) // total_bytes)
-                    mib = int(downloaded // (1024 * 1024))
-                    # Throttle progress output: print on percent change or every 64 MiB.
-                    if pct != last_pct or (mib - last_print_mib) >= 64:
-                        sys.stderr.write(
-                            f"\r  {dst.name}: {pct}% ({mib} MiB/{total_bytes//(1024*1024)} MiB)"
-                        )
-                        sys.stderr.flush()
-                        last_pct = pct
-                        last_print_mib = mib
-        if total_bytes:
-            sys.stderr.write("\n")
+                    sys.stderr.write("\n")
 
-    tmp.replace(dst)
+        except urllib.error.HTTPError as e:
+            # If Range is not satisfiable, try restarting.
+            if e.code == 416 and tmp.exists():
+                tmp.unlink(missing_ok=True)
+                if attempt < max_attempts:
+                    continue
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            raise RuntimeError(f"HTTP {e.code} for {url}: {body}") from e
+        except (urllib.error.URLError, TimeoutError) as e:
+            if attempt >= max_attempts:
+                raise RuntimeError(f"Download failed after {attempt} attempts: {e}") from e
+            sleep_s = min(60, 2 ** (attempt - 1))
+            sys.stderr.write(f"\n[hf] transient download error ({e}); retrying in {sleep_s}s (attempt {attempt}/{max_attempts})\n")
+            sys.stderr.flush()
+            time.sleep(sleep_s)
+            continue
+
+        # Finished this connection. Verify size if known.
+        final_size = tmp.stat().st_size if tmp.exists() else 0
+        if expected_size is not None and final_size != expected_size:
+            if attempt >= max_attempts:
+                raise RuntimeError(
+                    f"Incomplete download for {dst.name}: got {final_size} bytes, expected {expected_size}"
+                )
+            # Continue/resume with a new request.
+            continue
+
+        tmp.replace(dst)
+        return
 
 
 def list_repo_files(repo: str, token: Optional[str]) -> List[FileInfo]:
@@ -259,7 +339,7 @@ def main(argv: List[str]) -> int:
             sys.stderr.write(f"[hf] skip (exists): {dst.name}\n")
             continue
         sys.stderr.write(f"[hf] download: {f.path} ({fmt_size(f.size)})\n")
-        _http_download(url, dst, token)
+        _http_download_resume(url, dst, token, expected_size=f.size if f.size > 0 else None)
 
     return 0
 
