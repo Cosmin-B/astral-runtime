@@ -213,6 +213,16 @@ is_embedding_file() {
   [[ "${base}" == *"embed"* ]] || [[ "${base}" == *"embedding"* ]] || [[ "${base}" == bge-* ]] || [[ "${base}" == *"jina-embeddings"* ]]
 }
 
+is_aux_gguf_file() {
+  local base
+  base="$(basename "$1" | tr '[:upper:]' '[:lower:]')"
+  # Common multimodal aux assets that are not standalone LLMs:
+  # - mmproj-*: vision/audio projector weights
+  # - vocoder-*: audio vocoder weights
+  # - tokenizer-*: audio tokenizer/codec weights
+  [[ "${base}" == mmproj-* ]] || [[ "${base}" == vocoder-* ]] || [[ "${base}" == tokenizer-* ]]
+}
+
 mapfile -t ggufs < <(find "${models_dir}" -type f -name "*.gguf" | sort)
 if [[ ${#ggufs[@]} -eq 0 ]]; then
   echo "No .gguf files found under: ${models_dir}" >&2
@@ -249,6 +259,32 @@ if [[ "${only}" == "cuda" || "${only}" == "all" ]]; then
 fi
 
 for m in "${ggufs[@]}"; do
+  if is_aux_gguf_file "${m}"; then
+    # These are typically paired with a main model and require dedicated multimodal support.
+    # Skip them for the current feature-surface bench.
+    if [[ "${only}" == "cpu" || "${only}" == "all" ]]; then
+      {
+        echo
+        echo "## preset=${cpu_preset} backend=cpu"
+        echo "model=${m}"
+        echo "embed_model=(skipped: aux gguf)"
+        echo "[bench] SKIPPED aux_gguf=1"
+      } >> "${cpu_log}"
+    fi
+    if [[ "${only}" == "cuda" || "${only}" == "all" ]]; then
+      for out in "${cuda_log}" "${cuda_cublas_log}" "${cuda_mmq_log}"; do
+        {
+          echo
+          echo "## preset=${cuda_preset} backend=cuda"
+          echo "model=${m}"
+          echo "embed_model=(skipped: aux gguf)"
+          echo "[bench] SKIPPED aux_gguf=1"
+        } >> "${out}"
+      done
+    fi
+    continue
+  fi
+
   if is_embedding_file "${m}"; then
     # Benchmark this embedding model as the embedding surface; use stable generative model for KV/grammar/logprobs.
     if [[ "${only}" == "cpu" || "${only}" == "all" ]]; then
