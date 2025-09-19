@@ -1,0 +1,11 @@
+{
+  "repos": [
+    { "repo": "LiquidAI/LFM2.5-1.2B-Base-GGUF", "mode": "all", "max_gb_per_file": 10 },
+    { "repo": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF", "mode": "all", "max_gb_per_file": 10 },
+    { "repo": "LiquidAI/LFM2.5-1.2B-JP-GGUF", "mode": "all", "max_gb_per_file": 10 },
+    { "repo": "LiquidAI/LFM2.5-1.2B-Thinking-GGUF", "mode": "all", "max_gb_per_file": 10 },
+    { "repo": "LiquidAI/LFM2.5-VL-1.6B-GGUF", "mode": "all", "max_gb_per_file": 10 },
+    { "repo": "LiquidAI/LFM2.5-Audio-1.5B-GGUF", "mode": "all", "max_gb_per_file": 10 }
+  ]
+}
+
