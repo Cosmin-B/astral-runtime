@@ -453,6 +453,35 @@ static bool parse_bool_env(const char* key, bool fallback) {
     return fallback;
 }
 
+static AstralSpanU8 span_from_cstr(const char* s) {
+    AstralSpanU8 out{};
+    out.data = reinterpret_cast<const uint8_t*>(s);
+    out.len = s ? static_cast<uint32_t>(std::strlen(s)) : 0u;
+    return out;
+}
+
+static const char* bench_backend_name() {
+    const char* v = std::getenv("ASTRAL_BENCH_INFER_BACKEND");
+    if (v == nullptr || v[0] == '\0') {
+        // Back-compat: allow reusing the features bench env.
+        v = std::getenv("ASTRAL_BENCH_FEATURE_BACKEND");
+    }
+    if (v == nullptr || v[0] == '\0') {
+        return "cpu";
+    }
+    return v;
+}
+
+static uint32_t bench_gpu_layers() {
+    // Back-compat: share the same env var name as the features bench.
+    const uint32_t v = parse_u32_env("ASTRAL_BENCH_GPU_LAYERS", 0);
+    if (v != 0) {
+        return v;
+    }
+    const char* backend = bench_backend_name();
+    return (backend && std::strcmp(backend, "cuda") == 0) ? 48u : 0u;
+}
+
 void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     const char* model_path = find_bench_model_path();
     if (model_path == nullptr) {
@@ -460,6 +489,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
         return;
     }
 
+    const char* backend = bench_backend_name();
     const uint32_t slots = parse_u32_env("ASTRAL_BENCH_SLOTS", 1);
     const uint32_t max_batch_tokens = parse_u32_env("ASTRAL_BENCH_MAX_BATCH_TOKENS", 64);
 
@@ -478,6 +508,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     }
 
     AstralModelDesc model_desc{};
+    model_desc.backend_name = span_from_cstr(backend);
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));
 
@@ -503,7 +534,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
         model_desc.n_batch = max_batch_tokens;
     }
     model_desc.n_threads = bench_model_threads();
-    model_desc.gpu_layers = 0;
+    model_desc.gpu_layers = bench_gpu_layers();
 
     AstralHandle model = 0;
     err = astral_model_load(&model_desc, &model);
@@ -531,6 +562,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
 
         std::printf("\nInference benchmark (ticks: %s)\n", clock_info().name);
         std::printf("Model: %s\n", model_path);
+        std::printf("Backend: %s\n", backend);
         std::printf("Mode:  continuous batching\n");
         std::printf("Slots: %u, max_batch_tokens: %u\n", slots, max_batch_tokens);
         std::printf("Total: %.2f ms  (%llu ticks)\n",
@@ -654,6 +686,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
 
     std::printf("\nInference benchmark (ticks: %s)\n", clock_info().name);
     std::printf("Model: %s\n", model_path);
+    std::printf("Backend: %s\n", backend);
     std::printf("Runtime threads (requested): %u\n", cfg.thread_count);
     std::printf("Model threads (requested):   %u\n", model_desc.n_threads);
 
