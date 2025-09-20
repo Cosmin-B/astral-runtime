@@ -282,6 +282,8 @@ TEST(e2e_inference) {
     double t_load_start = get_monotonic_time_ms();
 
     AstralModelDesc model_desc = {0};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = (const uint8_t*)model_path;
     model_desc.model_path.len = (uint32_t)strlen(model_path);
     model_desc.n_ctx = 2048;
@@ -513,6 +515,8 @@ TEST(cpu_seed_reset_deterministic) {
     };
 
     AstralModelDesc model_desc = {0};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(strlen(model_path));
     model_desc.n_ctx = 512;
@@ -567,6 +571,8 @@ TEST(cpu_json_schema_grammar_capability_and_set) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     AstralModelDesc model_desc = {0};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(strlen(model_path));
     model_desc.n_ctx = 512;
@@ -631,6 +637,8 @@ TEST(cpu_slots_smoke) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     AstralModelDesc model_desc = {0};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(strlen(model_path));
     model_desc.n_ctx = 512;
@@ -686,6 +694,8 @@ TEST(model_load_invalid_path) {
     // Try to load non-existent model
     const char* invalid_path = "/nonexistent/model.gguf";
     AstralModelDesc model_desc = {0};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = (const uint8_t*)invalid_path;
     model_desc.model_path.len = (uint32_t)strlen(invalid_path);
     model_desc.n_ctx = 2048;

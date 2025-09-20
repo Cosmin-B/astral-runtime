@@ -32,6 +32,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool GetLimits(FAstralModelLimits& OutLimits) const;
 
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool InitMedia(const FAstralModelMediaDesc& Desc);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool GetMediaInfo(FAstralMediaInfo& OutInfo) const;
+
     uint64 GetHandle() const { return ModelHandle; }
 
     virtual void BeginDestroy() override;

@@ -17,8 +17,17 @@
 #include "../../core/runtime_state.hpp"
 #include "../../core/runtime_alloc.hpp"
 #include "../../core/model_sources.hpp"
+#include "../../core/model_load_config.hpp"
 #include "../../utils/trace.hpp"
 #include <llama.h>
+#include <ggml-backend.h>
+#if defined(ASTRAL_ENABLE_CUDA) && ASTRAL_ENABLE_CUDA
+#include <ggml-cuda.h>
+#endif
+#if ASTRAL_ENABLE_MTMD
+#include "mtmd.h"
+#include "mtmd-helper.h"
+#endif
 
 #include <atomic>
 #include <cstdlib>
@@ -74,6 +83,169 @@ void llama_log_callback(ggml_log_level level, const char* text, void*) {
             std::fputs(text, stderr);
         }
     }
+}
+
+#if defined(ASTRAL_ENABLE_CUDA) && ASTRAL_ENABLE_CUDA
+static bool collect_cuda_devices(std::vector<ggml_backend_dev_t>& out) {
+    ggml_backend_reg_t reg = ggml_backend_cuda_reg();
+    if (!reg) {
+        return false;
+    }
+    const size_t count = ggml_backend_reg_dev_count(reg);
+    if (count == 0) {
+        return false;
+    }
+    out.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        ggml_backend_dev_t dev = ggml_backend_reg_dev_get(reg, i);
+        if (dev != nullptr) {
+            out.push_back(dev);
+        }
+    }
+    return !out.empty();
+}
+#endif
+
+static bool apply_gpu_config(const AstralModelDesc* desc,
+                             llama_model_params& params,
+                             std::vector<ggml_backend_dev_t>& out_devices,
+                             std::vector<float>& out_tensor_split,
+                             AstralErr* out_err) {
+    if (desc == nullptr || desc->size != sizeof(AstralModelDesc)) {
+        return true;
+    }
+
+    const uint32_t flags = desc->gpu_flags;
+    if (flags == 0) {
+        return true;
+    }
+
+#if !defined(ASTRAL_ENABLE_CUDA) || !ASTRAL_ENABLE_CUDA
+    (void)params;
+    (void)out_devices;
+    (void)out_tensor_split;
+    (void)out_err;
+    return true;
+#else
+    if (flags & ASTRAL_GPU_CFG_SPLIT_MODE) {
+        switch (desc->gpu_split_mode) {
+            case ASTRAL_GPU_SPLIT_NONE:
+                params.split_mode = LLAMA_SPLIT_MODE_NONE;
+                break;
+            case ASTRAL_GPU_SPLIT_LAYER:
+                params.split_mode = LLAMA_SPLIT_MODE_LAYER;
+                break;
+            case ASTRAL_GPU_SPLIT_ROW:
+                params.split_mode = LLAMA_SPLIT_MODE_ROW;
+                break;
+            default:
+                if (out_err) {
+                    *out_err = ASTRAL_E_INVALID;
+                }
+                return false;
+        }
+    }
+
+    std::vector<ggml_backend_dev_t> cuda_devices;
+    std::vector<int32_t> selected_indices;
+
+    if (flags & (ASTRAL_GPU_CFG_DEVICES | ASTRAL_GPU_CFG_DEVICE_MASK)) {
+        if (!collect_cuda_devices(cuda_devices)) {
+            if (out_err) {
+                *out_err = ASTRAL_E_BACKEND;
+            }
+            return false;
+        }
+    }
+
+    if (flags & ASTRAL_GPU_CFG_DEVICES) {
+        if (desc->gpu_devices == nullptr || desc->gpu_device_count == 0) {
+            if (out_err) {
+                *out_err = ASTRAL_E_INVALID;
+            }
+            return false;
+        }
+        out_devices.reserve(static_cast<size_t>(desc->gpu_device_count) + 1);
+        selected_indices.reserve(static_cast<size_t>(desc->gpu_device_count));
+        for (uint32_t i = 0; i < desc->gpu_device_count; ++i) {
+            const int32_t idx = desc->gpu_devices[i];
+            if (idx < 0 || static_cast<size_t>(idx) >= cuda_devices.size()) {
+                if (out_err) {
+                    *out_err = ASTRAL_E_INVALID;
+                }
+                return false;
+            }
+            out_devices.push_back(cuda_devices[static_cast<size_t>(idx)]);
+            selected_indices.push_back(idx);
+        }
+    } else if (flags & ASTRAL_GPU_CFG_DEVICE_MASK) {
+        if (desc->gpu_device_mask == 0) {
+            if (out_err) {
+                *out_err = ASTRAL_E_INVALID;
+            }
+            return false;
+        }
+        out_devices.reserve(cuda_devices.size() + 1);
+        selected_indices.reserve(cuda_devices.size());
+        for (size_t i = 0; i < cuda_devices.size(); ++i) {
+            if ((desc->gpu_device_mask >> i) & 1ull) {
+                out_devices.push_back(cuda_devices[i]);
+                selected_indices.push_back(static_cast<int32_t>(i));
+            }
+        }
+        if (out_devices.empty()) {
+            if (out_err) {
+                *out_err = ASTRAL_E_INVALID;
+            }
+            return false;
+        }
+    }
+
+    if (!out_devices.empty()) {
+        out_devices.push_back(nullptr);
+        params.devices = out_devices.data();
+    }
+
+    if (flags & ASTRAL_GPU_CFG_MAIN) {
+        if (!selected_indices.empty()) {
+            int32_t main_index = -1;
+            for (size_t i = 0; i < selected_indices.size(); ++i) {
+                if (selected_indices[i] == desc->gpu_main) {
+                    main_index = static_cast<int32_t>(i);
+                    break;
+                }
+            }
+            if (main_index < 0) {
+                if (out_err) {
+                    *out_err = ASTRAL_E_INVALID;
+                }
+                return false;
+            }
+            params.main_gpu = main_index;
+        } else {
+            params.main_gpu = desc->gpu_main;
+        }
+    }
+
+    if (flags & ASTRAL_GPU_CFG_TENSOR_SPLIT) {
+        if (desc->gpu_tensor_split == nullptr || desc->gpu_tensor_split_count == 0) {
+            if (out_err) {
+                *out_err = ASTRAL_E_INVALID;
+            }
+            return false;
+        }
+        const size_t max_devices = llama_max_devices();
+        out_tensor_split.assign(max_devices, 0.0f);
+        const size_t copy_count =
+            desc->gpu_tensor_split_count < max_devices ? desc->gpu_tensor_split_count : max_devices;
+        if (copy_count > 0) {
+            std::memcpy(out_tensor_split.data(), desc->gpu_tensor_split, copy_count * sizeof(float));
+            params.tensor_split = out_tensor_split.data();
+        }
+    }
+
+    return true;
+#endif
 }
 
 void llama_log_init_from_env() {
@@ -146,6 +318,230 @@ inline uint32_t clamp_u32(uint32_t v, uint32_t lo, uint32_t hi) {
     }
     return v;
 }
+
+#if ASTRAL_ENABLE_MTMD
+struct MediaBuffer {
+    const uint8_t* data = nullptr;
+    size_t size = 0;
+    void* owned = nullptr;
+    size_t owned_size = 0;
+    size_t owned_align = 1;
+};
+
+static void media_buffer_free(MediaBuffer* buf) {
+    if (buf == nullptr || buf->owned == nullptr) {
+        return;
+    }
+    astral::core::runtime_free(buf->owned, buf->owned_size, buf->owned_align);
+    buf->owned = nullptr;
+    buf->data = nullptr;
+    buf->size = 0;
+}
+
+static AstralErr prepare_image_rgb8(const AstralImageDesc* desc, MediaBuffer* out) {
+    if (desc == nullptr || out == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->size != sizeof(AstralImageDesc)) {
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->width == 0 || desc->height == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->pixels.data == nullptr || desc->pixels.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const uint32_t width = desc->width;
+    const uint32_t height = desc->height;
+
+    if (desc->format == ASTRAL_IMAGE_FORMAT_RGB8) {
+        const uint32_t row = desc->row_stride != 0 ? desc->row_stride : width * 3u;
+        const uint64_t need = static_cast<uint64_t>(row) * static_cast<uint64_t>(height);
+        if (desc->pixels.len < need) {
+            return ASTRAL_E_INVALID;
+        }
+        if (row == width * 3u) {
+            out->data = desc->pixels.data;
+            out->size = static_cast<size_t>(width) * static_cast<size_t>(height) * 3u;
+            return ASTRAL_OK;
+        }
+        const size_t packed = static_cast<size_t>(width) * static_cast<size_t>(height) * 3u;
+        uint8_t* dst = static_cast<uint8_t*>(astral::core::runtime_alloc(packed, alignof(uint8_t)));
+        if (dst == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+        const uint8_t* src = desc->pixels.data;
+        for (uint32_t y = 0; y < height; ++y) {
+            std::memcpy(dst + static_cast<size_t>(y) * width * 3u,
+                        src + static_cast<size_t>(y) * row,
+                        static_cast<size_t>(width) * 3u);
+        }
+        out->data = dst;
+        out->size = packed;
+        out->owned = dst;
+        out->owned_size = packed;
+        out->owned_align = alignof(uint8_t);
+        return ASTRAL_OK;
+    }
+
+    if (desc->format == ASTRAL_IMAGE_FORMAT_RGBA8) {
+        const uint32_t row = desc->row_stride != 0 ? desc->row_stride : width * 4u;
+        const uint64_t need = static_cast<uint64_t>(row) * static_cast<uint64_t>(height);
+        if (desc->pixels.len < need) {
+            return ASTRAL_E_INVALID;
+        }
+        const size_t packed = static_cast<size_t>(width) * static_cast<size_t>(height) * 3u;
+        uint8_t* dst = static_cast<uint8_t*>(astral::core::runtime_alloc(packed, alignof(uint8_t)));
+        if (dst == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+        const uint8_t* src = desc->pixels.data;
+        for (uint32_t y = 0; y < height; ++y) {
+            const uint8_t* row_src = src + static_cast<size_t>(y) * row;
+            uint8_t* row_dst = dst + static_cast<size_t>(y) * width * 3u;
+            for (uint32_t x = 0; x < width; ++x) {
+                const uint8_t* px = row_src + x * 4u;
+                row_dst[x * 3u + 0u] = px[0];
+                row_dst[x * 3u + 1u] = px[1];
+                row_dst[x * 3u + 2u] = px[2];
+            }
+        }
+        out->data = dst;
+        out->size = packed;
+        out->owned = dst;
+        out->owned_size = packed;
+        out->owned_align = alignof(uint8_t);
+        return ASTRAL_OK;
+    }
+
+    if (desc->format == ASTRAL_IMAGE_FORMAT_RGB_F32) {
+        const uint32_t row = desc->row_stride != 0 ? desc->row_stride : width * 3u * sizeof(float);
+        const uint64_t need = static_cast<uint64_t>(row) * static_cast<uint64_t>(height);
+        if (desc->pixels.len < need) {
+            return ASTRAL_E_INVALID;
+        }
+        const size_t packed = static_cast<size_t>(width) * static_cast<size_t>(height) * 3u;
+        uint8_t* dst = static_cast<uint8_t*>(astral::core::runtime_alloc(packed, alignof(uint8_t)));
+        if (dst == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+        const uint8_t* src_bytes = desc->pixels.data;
+        for (uint32_t y = 0; y < height; ++y) {
+            const float* row_src = reinterpret_cast<const float*>(src_bytes + static_cast<size_t>(y) * row);
+            uint8_t* row_dst = dst + static_cast<size_t>(y) * width * 3u;
+            for (uint32_t x = 0; x < width; ++x) {
+                const float* px = row_src + x * 3u;
+                for (uint32_t c = 0; c < 3; ++c) {
+                    float v = px[c];
+                    if (v < 0.0f) v = 0.0f;
+                    if (v > 1.0f) v = 1.0f;
+                    row_dst[x * 3u + c] = static_cast<uint8_t>(v * 255.0f + 0.5f);
+                }
+            }
+        }
+        out->data = dst;
+        out->size = packed;
+        out->owned = dst;
+        out->owned_size = packed;
+        out->owned_align = alignof(uint8_t);
+        return ASTRAL_OK;
+    }
+
+    return ASTRAL_E_UNSUPPORTED;
+}
+
+static AstralErr prepare_audio_f32(const AstralAudioDesc* desc, MediaBuffer* out, int32_t expected_rate) {
+    if (desc == nullptr || out == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->size != sizeof(AstralAudioDesc)) {
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->channels == 0 || desc->frame_count == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->samples.data == nullptr || desc->samples.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    if (expected_rate > 0 && desc->sample_rate != static_cast<uint32_t>(expected_rate)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const uint64_t frames = desc->frame_count;
+    const uint32_t channels = desc->channels;
+    const uint64_t total_samples = frames * static_cast<uint64_t>(channels);
+
+    if (desc->format == ASTRAL_AUDIO_FORMAT_F32) {
+        const uint64_t need = total_samples * sizeof(float);
+        if (desc->samples.len < need) {
+            return ASTRAL_E_INVALID;
+        }
+        if (channels == 1) {
+            out->data = desc->samples.data;
+            out->size = static_cast<size_t>(frames) * sizeof(float);
+            return ASTRAL_OK;
+        }
+
+        float* dst = astral::core::runtime_alloc_array<float>(static_cast<uint32_t>(frames));
+        if (dst == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+        const float* src = reinterpret_cast<const float*>(desc->samples.data);
+        for (uint64_t i = 0; i < frames; ++i) {
+            double acc = 0.0;
+            for (uint32_t c = 0; c < channels; ++c) {
+                acc += static_cast<double>(src[i * channels + c]);
+            }
+            dst[i] = static_cast<float>(acc / static_cast<double>(channels));
+        }
+        out->data = reinterpret_cast<const uint8_t*>(dst);
+        out->size = static_cast<size_t>(frames) * sizeof(float);
+        out->owned = dst;
+        out->owned_size = static_cast<size_t>(frames) * sizeof(float);
+        out->owned_align = alignof(float);
+        return ASTRAL_OK;
+    }
+
+    if (desc->format == ASTRAL_AUDIO_FORMAT_I16) {
+        const uint64_t need = total_samples * sizeof(int16_t);
+        if (desc->samples.len < need) {
+            return ASTRAL_E_INVALID;
+        }
+        float* dst = astral::core::runtime_alloc_array<float>(static_cast<uint32_t>(frames));
+        if (dst == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+        const int16_t* src = reinterpret_cast<const int16_t*>(desc->samples.data);
+        for (uint64_t i = 0; i < frames; ++i) {
+            double acc = 0.0;
+            for (uint32_t c = 0; c < channels; ++c) {
+                const int16_t v = src[i * channels + c];
+                acc += static_cast<double>(v) / 32768.0;
+            }
+            dst[i] = static_cast<float>(acc / static_cast<double>(channels));
+        }
+        out->data = reinterpret_cast<const uint8_t*>(dst);
+        out->size = static_cast<size_t>(frames) * sizeof(float);
+        out->owned = dst;
+        out->owned_size = static_cast<size_t>(frames) * sizeof(float);
+        out->owned_align = alignof(float);
+        return ASTRAL_OK;
+    }
+
+    return ASTRAL_E_UNSUPPORTED;
+}
+
+static void mtmd_lock_acquire(std::atomic_flag& flag) {
+    while (flag.test_and_set(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+}
+
+static void mtmd_lock_release(std::atomic_flag& flag) {
+    flag.clear(std::memory_order_release);
+}
+#endif
 
 uint32_t cpu_default_slots_from_env() {
     // Slots are a session-level setting; parsing env vars here is not a hot path.
@@ -490,6 +886,14 @@ void* cpu_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
     model_params.use_mmap = true;
     model_params.use_mlock = false;
 
+    std::vector<ggml_backend_dev_t> gpu_devices;
+    std::vector<float> gpu_tensor_split;
+    const AstralModelDesc* desc_cfg = astral::core::model_load_desc();
+    if (!apply_gpu_config(desc_cfg, model_params, gpu_devices, gpu_tensor_split, out_err)) {
+        llama_backend_unref();
+        return nullptr;
+    }
+
     llama_model* model = nullptr;
 
     uint64_t src_id = 0;
@@ -561,6 +965,9 @@ void* cpu_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
         return nullptr;
     }
 
+    cpu_model->gpu_devices = std::move(gpu_devices);
+    cpu_model->gpu_tensor_split = std::move(gpu_tensor_split);
+
     cpu_model->model = model;
     cpu_model->vocab = llama_model_get_vocab(model);
     if (cpu_model->vocab == nullptr) {
@@ -597,6 +1004,17 @@ void* cpu_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
     const int32_t n_embd = llama_model_n_embd(model);
     cpu_model->n_embd = n_embd > 0 ? static_cast<uint32_t>(n_embd) : 0;
 
+#if ASTRAL_ENABLE_MTMD
+    cpu_model->mtmd = nullptr;
+    cpu_model->media_initialized = 0;
+    cpu_model->supports_vision = 0;
+    cpu_model->supports_audio = 0;
+    cpu_model->image_min_tokens = 0;
+    cpu_model->image_max_tokens = 0;
+    cpu_model->audio_sample_rate = 0;
+    cpu_model->mtmd_lock.clear(std::memory_order_release);
+#endif
+
     *out_err = ASTRAL_OK;
     return cpu_model;
 }
@@ -607,6 +1025,12 @@ void cpu_model_unload(void* model_ctx) {
     }
 
     CpuModel* model = static_cast<CpuModel*>(model_ctx);
+#if ASTRAL_ENABLE_MTMD
+    if (model->mtmd) {
+        mtmd_free(model->mtmd);
+        model->mtmd = nullptr;
+    }
+#endif
     if (model->model) {
         llama_model_free(model->model);
     }
@@ -726,6 +1150,97 @@ AstralErr cpu_model_embedding_dim(void* model_ctx, uint32_t* out_dim) {
 
     *out_dim = model->n_embd;
     return ASTRAL_OK;
+}
+
+AstralErr cpu_model_media_init(void* model_ctx, const AstralModelMediaDesc* desc) {
+#if !ASTRAL_ENABLE_MTMD
+    (void)model_ctx;
+    (void)desc;
+    return ASTRAL_E_UNSUPPORTED;
+#else
+    if (model_ctx == nullptr || desc == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->size != sizeof(AstralModelMediaDesc)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    CpuModel* model = static_cast<CpuModel*>(model_ctx);
+    if (model->media_initialized != 0) {
+        return ASTRAL_E_STATE;
+    }
+    if (desc->source_kind != ASTRAL_MODEL_SOURCE_PATH) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    if (desc->media_path.data == nullptr || desc->media_path.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const size_t path_len = static_cast<size_t>(desc->media_path.len);
+    char* path = static_cast<char*>(astral::core::runtime_alloc(path_len + 1, 1));
+    if (path == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+    std::memcpy(path, desc->media_path.data, path_len);
+    path[path_len] = '\0';
+
+    mtmd_context_params params = mtmd_context_params_default();
+    const bool route_gpu =
+        ((desc->flags & ASTRAL_MEDIA_FLAG_USE_GPU) != 0) || desc->gpu_route_flags != 0 || desc->gpu_device_mask != 0;
+    params.use_gpu = route_gpu;
+    params.warmup = (desc->flags & ASTRAL_MEDIA_FLAG_WARMUP) != 0;
+    params.n_threads = static_cast<int>(clamp_threads(model->n_threads, default_threads_fallback()));
+    params.image_min_tokens = static_cast<int>(desc->image_min_tokens);
+    params.image_max_tokens = static_cast<int>(desc->image_max_tokens);
+
+    mtmd_context* ctx = mtmd_init_from_file(path, model->model, params);
+    astral::core::runtime_free(path, path_len + 1, 1);
+
+    if (ctx == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+
+    model->mtmd = ctx;
+    model->media_initialized = 1;
+    model->supports_vision = mtmd_support_vision(ctx) ? 1 : 0;
+    model->supports_audio = mtmd_support_audio(ctx) ? 1 : 0;
+    model->audio_sample_rate = mtmd_get_audio_bitrate(ctx);
+    model->image_min_tokens = desc->image_min_tokens;
+    model->image_max_tokens = desc->image_max_tokens;
+    return ASTRAL_OK;
+#endif
+}
+
+AstralErr cpu_model_media_info(void* model_ctx, AstralMediaInfo* out_info) {
+#if !ASTRAL_ENABLE_MTMD
+    (void)model_ctx;
+    (void)out_info;
+    return ASTRAL_E_UNSUPPORTED;
+#else
+    if (model_ctx == nullptr || out_info == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (out_info->size != sizeof(AstralMediaInfo)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    CpuModel* model = static_cast<CpuModel*>(model_ctx);
+    if (model->mtmd == nullptr) {
+        out_info->supports_image = 0;
+        out_info->supports_audio = 0;
+        out_info->audio_sample_rate = 0;
+        out_info->image_min_tokens = 0;
+        out_info->image_max_tokens = 0;
+        return ASTRAL_OK;
+    }
+
+    out_info->supports_image = model->supports_vision != 0 ? 1u : 0u;
+    out_info->supports_audio = model->supports_audio != 0 ? 1u : 0u;
+    out_info->audio_sample_rate = model->audio_sample_rate > 0 ? static_cast<uint32_t>(model->audio_sample_rate) : 0u;
+    out_info->image_min_tokens = model->image_min_tokens;
+    out_info->image_max_tokens = model->image_max_tokens;
+    return ASTRAL_OK;
+#endif
 }
 
 void* cpu_session_create_ex(void* model_ctx, const AstralSessionDesc* desc, uint32_t max_slots, AstralErr* out_err);
@@ -939,6 +1454,161 @@ AstralErr cpu_session_feed(void* session_ctx, const int32_t* tokens, uint32_t co
     }
 
     return ASTRAL_OK;
+}
+
+AstralErr cpu_session_feed_image(void* session_ctx, const AstralImageDesc* image, uint8_t finalize) {
+    (void)finalize;
+#if !ASTRAL_ENABLE_MTMD
+    (void)session_ctx;
+    (void)image;
+    return ASTRAL_E_UNSUPPORTED;
+#else
+    if (session_ctx == nullptr || image == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->model == nullptr || session->ctx == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+    CpuModel* model = session->model;
+    if (model->mtmd == nullptr || model->supports_vision == 0) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    if (session->active_slot >= session->n_slots) {
+        return ASTRAL_E_STATE;
+    }
+
+    MediaBuffer buf{};
+    const AstralErr prep = prepare_image_rgb8(image, &buf);
+    if (prep != ASTRAL_OK) {
+        return prep;
+    }
+
+    mtmd_bitmap* bmp = mtmd_bitmap_init(image->width, image->height, buf.data);
+    media_buffer_free(&buf);
+    if (bmp == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    mtmd_input_chunks* chunks = mtmd_input_chunks_init();
+    if (chunks == nullptr) {
+        mtmd_bitmap_free(bmp);
+        return ASTRAL_E_NOMEM;
+    }
+
+    const mtmd_bitmap* bitmaps[1] = { bmp };
+    mtmd_input_text text{};
+    text.text = mtmd_default_marker();
+    text.add_special = session->slot_pos[session->active_slot] == 0 ? true : false;
+    text.parse_special = false;
+
+    int32_t rc = 0;
+    mtmd_lock_acquire(model->mtmd_lock);
+    rc = mtmd_tokenize(model->mtmd, chunks, &text, bitmaps, 1);
+    if (rc == 0) {
+        llama_pos n_past = session->slot_pos[session->active_slot];
+        llama_pos new_n_past = n_past;
+        rc = mtmd_helper_eval_chunks(
+            model->mtmd,
+            session->ctx,
+            chunks,
+            n_past,
+            static_cast<llama_seq_id>(session->active_slot),
+            static_cast<int32_t>(session->n_batch),
+            true,
+            &new_n_past
+        );
+        if (rc == 0) {
+            session->slot_pos[session->active_slot] = static_cast<int32_t>(new_n_past);
+            session->slot_has_logits[session->active_slot] = true;
+        }
+    }
+    mtmd_lock_release(model->mtmd_lock);
+
+    mtmd_input_chunks_free(chunks);
+    mtmd_bitmap_free(bmp);
+
+    return rc == 0 ? ASTRAL_OK : ASTRAL_E_BACKEND;
+#endif
+}
+
+AstralErr cpu_session_feed_audio(void* session_ctx, const AstralAudioDesc* audio, uint8_t finalize) {
+    (void)finalize;
+#if !ASTRAL_ENABLE_MTMD
+    (void)session_ctx;
+    (void)audio;
+    return ASTRAL_E_UNSUPPORTED;
+#else
+    if (session_ctx == nullptr || audio == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->model == nullptr || session->ctx == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+    CpuModel* model = session->model;
+    if (model->mtmd == nullptr || model->supports_audio == 0) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    if (session->active_slot >= session->n_slots) {
+        return ASTRAL_E_STATE;
+    }
+
+    MediaBuffer buf{};
+    const AstralErr prep = prepare_audio_f32(audio, &buf, model->audio_sample_rate);
+    if (prep != ASTRAL_OK) {
+        return prep;
+    }
+
+    const size_t sample_count = buf.size / sizeof(float);
+    mtmd_bitmap* bmp = mtmd_bitmap_init_from_audio(sample_count, reinterpret_cast<const float*>(buf.data));
+    media_buffer_free(&buf);
+    if (bmp == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    mtmd_input_chunks* chunks = mtmd_input_chunks_init();
+    if (chunks == nullptr) {
+        mtmd_bitmap_free(bmp);
+        return ASTRAL_E_NOMEM;
+    }
+
+    const mtmd_bitmap* bitmaps[1] = { bmp };
+    mtmd_input_text text{};
+    text.text = mtmd_default_marker();
+    text.add_special = session->slot_pos[session->active_slot] == 0 ? true : false;
+    text.parse_special = false;
+
+    int32_t rc = 0;
+    mtmd_lock_acquire(model->mtmd_lock);
+    rc = mtmd_tokenize(model->mtmd, chunks, &text, bitmaps, 1);
+    if (rc == 0) {
+        llama_pos n_past = session->slot_pos[session->active_slot];
+        llama_pos new_n_past = n_past;
+        rc = mtmd_helper_eval_chunks(
+            model->mtmd,
+            session->ctx,
+            chunks,
+            n_past,
+            static_cast<llama_seq_id>(session->active_slot),
+            static_cast<int32_t>(session->n_batch),
+            true,
+            &new_n_past
+        );
+        if (rc == 0) {
+            session->slot_pos[session->active_slot] = static_cast<int32_t>(new_n_past);
+            session->slot_has_logits[session->active_slot] = true;
+        }
+    }
+    mtmd_lock_release(model->mtmd_lock);
+
+    mtmd_input_chunks_free(chunks);
+    mtmd_bitmap_free(bmp);
+
+    return rc == 0 ? ASTRAL_OK : ASTRAL_E_BACKEND;
+#endif
 }
 
 AstralErr cpu_session_logits(void* session_ctx, BackendLogitsView* out_view) {
@@ -1476,6 +2146,22 @@ AstralErr cpu_session_set_slot(void* session_ctx, uint32_t slot_id) {
     return ASTRAL_OK;
 }
 
+AstralErr cpu_session_slot_pos(void* session_ctx, uint32_t slot_id, uint32_t* out_pos) {
+    if (session_ctx == nullptr || out_pos == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    CpuSession* session = static_cast<CpuSession*>(session_ctx);
+    if (session->ctx == nullptr || session->model == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+    if (slot_id >= session->n_slots) {
+        return ASTRAL_E_INVALID;
+    }
+    const int32_t pos = session->slot_pos[slot_id];
+    *out_pos = pos > 0 ? static_cast<uint32_t>(pos) : 0u;
+    return ASTRAL_OK;
+}
+
 AstralErr cpu_session_state_size(void* session_ctx, uint64_t* out_bytes) {
     if (session_ctx == nullptr || out_bytes == nullptr) {
         return ASTRAL_E_INVALID;
@@ -1773,6 +2459,198 @@ AstralErr cpu_embedder_embed(void* embedder_ctx, const int32_t* tokens, uint32_t
     return ASTRAL_OK;
 }
 
+AstralErr cpu_embedder_embed_multimodal(void* embedder_ctx,
+                                        AstralSpanU8 text,
+                                        const AstralImageDesc* image,
+                                        const AstralAudioDesc* audio,
+                                        float* out_vec,
+                                        uint32_t vec_dim);
+
+AstralErr cpu_embedder_embed_image(void* embedder_ctx, const AstralImageDesc* image, float* out_vec, uint32_t vec_dim) {
+#if !ASTRAL_ENABLE_MTMD
+    (void)embedder_ctx;
+    (void)image;
+    (void)out_vec;
+    (void)vec_dim;
+    return ASTRAL_E_UNSUPPORTED;
+#else
+    return cpu_embedder_embed_multimodal(embedder_ctx, AstralSpanU8{}, image, nullptr, out_vec, vec_dim);
+#endif
+}
+
+AstralErr cpu_embedder_embed_audio(void* embedder_ctx, const AstralAudioDesc* audio, float* out_vec, uint32_t vec_dim) {
+#if !ASTRAL_ENABLE_MTMD
+    (void)embedder_ctx;
+    (void)audio;
+    (void)out_vec;
+    (void)vec_dim;
+    return ASTRAL_E_UNSUPPORTED;
+#else
+    return cpu_embedder_embed_multimodal(embedder_ctx, AstralSpanU8{}, nullptr, audio, out_vec, vec_dim);
+#endif
+}
+
+AstralErr cpu_embedder_embed_multimodal(void* embedder_ctx,
+                                        AstralSpanU8 text,
+                                        const AstralImageDesc* image,
+                                        const AstralAudioDesc* audio,
+                                        float* out_vec,
+                                        uint32_t vec_dim) {
+#if !ASTRAL_ENABLE_MTMD
+    (void)embedder_ctx;
+    (void)text;
+    (void)image;
+    (void)audio;
+    (void)out_vec;
+    (void)vec_dim;
+    return ASTRAL_E_UNSUPPORTED;
+#else
+    if (embedder_ctx == nullptr || out_vec == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    CpuEmbedder* emb = static_cast<CpuEmbedder*>(embedder_ctx);
+    if (emb->ctx == nullptr || emb->model == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+
+    if (image != nullptr && audio != nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    CpuModel* model = emb->model;
+    if (vec_dim < model->n_embd) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    if (image == nullptr && audio == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    if (model->mtmd == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+
+    (void)cpu_embedder_reset(embedder_ctx);
+
+    const char* marker = mtmd_default_marker();
+    const size_t marker_len = std::strlen(marker);
+    size_t text_len = text.data ? static_cast<size_t>(text.len) : 0;
+    const bool need_space = text_len > 0 && (text.data[text_len - 1] != ' ');
+    const size_t prompt_len = text_len + (need_space ? 1 : 0) + marker_len;
+
+    char* prompt = static_cast<char*>(astral::core::runtime_alloc(prompt_len + 1, 1));
+    if (prompt == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+    size_t off = 0;
+    if (text_len > 0) {
+        std::memcpy(prompt, text.data, text_len);
+        off += text_len;
+    }
+    if (need_space) {
+        prompt[off++] = ' ';
+    }
+    std::memcpy(prompt + off, marker, marker_len);
+    off += marker_len;
+    prompt[off] = '\0';
+
+    MediaBuffer buf{};
+    AstralErr prep = ASTRAL_E_UNSUPPORTED;
+    mtmd_bitmap* bmp = nullptr;
+    if (image != nullptr) {
+        prep = prepare_image_rgb8(image, &buf);
+        if (prep == ASTRAL_OK) {
+            bmp = mtmd_bitmap_init(image->width, image->height, buf.data);
+        }
+    } else if (audio != nullptr) {
+        prep = prepare_audio_f32(audio, &buf, model->audio_sample_rate);
+        if (prep == ASTRAL_OK) {
+            const size_t sample_count = buf.size / sizeof(float);
+            bmp = mtmd_bitmap_init_from_audio(sample_count, reinterpret_cast<const float*>(buf.data));
+        }
+    }
+    media_buffer_free(&buf);
+
+    if (prep != ASTRAL_OK) {
+        astral::core::runtime_free(prompt, prompt_len + 1, 1);
+        return prep;
+    }
+    if (bmp == nullptr) {
+        astral::core::runtime_free(prompt, prompt_len + 1, 1);
+        return ASTRAL_E_NOMEM;
+    }
+
+    mtmd_input_chunks* chunks = mtmd_input_chunks_init();
+    if (chunks == nullptr) {
+        mtmd_bitmap_free(bmp);
+        astral::core::runtime_free(prompt, prompt_len + 1, 1);
+        return ASTRAL_E_NOMEM;
+    }
+
+    mtmd_input_text inp{};
+    inp.text = prompt;
+    inp.add_special = true;
+    inp.parse_special = false;
+    const mtmd_bitmap* bitmaps[1] = { bmp };
+
+    int32_t rc = 0;
+    mtmd_lock_acquire(model->mtmd_lock);
+    rc = mtmd_tokenize(model->mtmd, chunks, &inp, bitmaps, 1);
+    if (rc == 0) {
+        llama_pos new_n_past = 0;
+        rc = mtmd_helper_eval_chunks(
+            model->mtmd,
+            emb->ctx,
+            chunks,
+            0,
+            0,
+            static_cast<int32_t>(model->n_batch),
+            true,
+            &new_n_past
+        );
+    }
+    mtmd_lock_release(model->mtmd_lock);
+
+    // Capture last-chunk token count before freeing chunks.
+    int32_t last_tokens = 0;
+    if (rc == 0) {
+        const size_t n_chunks = mtmd_input_chunks_size(chunks);
+        if (n_chunks > 0) {
+            const mtmd_input_chunk* last = mtmd_input_chunks_get(chunks, n_chunks - 1);
+            last_tokens = static_cast<int32_t>(mtmd_input_chunk_get_n_tokens(last));
+        }
+    }
+
+    astral::core::runtime_free(prompt, prompt_len + 1, 1);
+    mtmd_input_chunks_free(chunks);
+    mtmd_bitmap_free(bmp);
+
+    if (rc != 0) {
+        return ASTRAL_E_BACKEND;
+    }
+
+    if (last_tokens <= 0) {
+        return ASTRAL_E_BACKEND;
+    }
+
+    // Grab last-token embedding from the final batch.
+    float* base = llama_get_embeddings(emb->ctx);
+    if (base == nullptr) {
+        return ASTRAL_E_BACKEND;
+    }
+
+    const int32_t batch = static_cast<int32_t>(model->n_batch > 0 ? model->n_batch : static_cast<uint32_t>(last_tokens));
+    int32_t last_batch = last_tokens % batch;
+    if (last_batch == 0) {
+        last_batch = batch;
+    }
+    const float* last_row = base + static_cast<size_t>(last_batch - 1) * static_cast<size_t>(model->n_embd);
+    std::memcpy(out_vec, last_row, static_cast<size_t>(model->n_embd) * sizeof(float));
+    return ASTRAL_OK;
+#endif
+}
+
 static const BackendOps kCpuBackendOps = {
     .model_load = cpu_model_load,
     .model_unload = cpu_model_unload,
@@ -1783,12 +2661,16 @@ static const BackendOps kCpuBackendOps = {
     .model_info = cpu_model_info,
     .model_special_tokens = cpu_model_special_tokens,
     .model_embedding_dim = cpu_model_embedding_dim,
+    .model_media_init = cpu_model_media_init,
+    .model_media_info = cpu_model_media_info,
 
     .session_create = cpu_session_create,
     .session_create_ex = cpu_session_create_ex,
     .session_destroy = cpu_session_destroy,
     .session_reset = cpu_session_reset,
     .session_feed = cpu_session_feed,
+    .session_feed_image = cpu_session_feed_image,
+    .session_feed_audio = cpu_session_feed_audio,
     .session_logits = cpu_session_logits,
     .session_accept = cpu_session_accept,
 
@@ -1800,6 +2682,9 @@ static const BackendOps kCpuBackendOps = {
     .embedder_destroy = cpu_embedder_destroy,
     .embedder_reset = cpu_embedder_reset,
     .embedder_embed = cpu_embedder_embed,
+    .embedder_embed_image = cpu_embedder_embed_image,
+    .embedder_embed_audio = cpu_embedder_embed_audio,
+    .embedder_embed_multimodal = cpu_embedder_embed_multimodal,
 
     .session_grammar_set_gbnf = cpu_session_grammar_set_gbnf,
     .session_grammar_set_json_schema = (ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR ? cpu_session_grammar_set_json_schema : nullptr),
@@ -1822,6 +2707,7 @@ static const BackendOps kCpuBackendOps = {
     .session_adapter_add = cpu_session_adapter_add,
 
     .session_set_slot = cpu_session_set_slot,
+    .session_slot_pos = cpu_session_slot_pos,
 };
 
 static const BackendProvider kCpuBackendProvider = {

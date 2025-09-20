@@ -26,6 +26,8 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
     FTCHARToUTF8 BackendUtf8(*Desc.BackendName);
 
     AstralModelDesc Native{};
+    Native.size = sizeof(AstralModelDesc);
+    Native.source_kind = ASTRAL_MODEL_SOURCE_PATH;
 
     if (!Desc.ModelPath.IsEmpty())
     {
@@ -117,6 +119,76 @@ bool UAstralModel::GetLimits(FAstralModelLimits& OutLimits) const
     OutLimits.ContextSize = Native.ctx_size;
     OutLimits.MaxBatch = Native.max_batch;
     OutLimits.MaxSlots = Native.max_slots;
+    return true;
+}
+
+bool UAstralModel::InitMedia(const FAstralModelMediaDesc& Desc)
+{
+    if (ModelHandle == 0)
+    {
+        return false;
+    }
+
+    AstralModelMediaDesc Native{};
+    Native.size = sizeof(AstralModelMediaDesc);
+    Native.source_kind = static_cast<AstralModelSourceKind>(Desc.SourceKind);
+    Native.flags = Desc.Flags;
+    Native.image_min_tokens = Desc.ImageMinTokens;
+    Native.image_max_tokens = Desc.ImageMaxTokens;
+    Native.gpu_device = Desc.GpuDevice;
+    Native.gpu_route_flags = Desc.GpuRouteFlags;
+    Native.gpu_device_mask = Desc.GpuDeviceMask;
+    Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Desc.GpuStream));
+
+    FTCHARToUTF8 MediaPathUtf8(*Desc.MediaPath);
+    if (Desc.SourceKind == EAstralModelSourceKind::Path)
+    {
+        if (Desc.MediaPath.IsEmpty())
+        {
+            return false;
+        }
+        Native.media_path.data = reinterpret_cast<const uint8_t*>(MediaPathUtf8.Get());
+        Native.media_path.len = static_cast<uint32_t>(MediaPathUtf8.Length());
+    }
+    else if (Desc.SourceKind == EAstralModelSourceKind::Memory)
+    {
+        if (Desc.MediaBytes.Num() == 0)
+        {
+            return false;
+        }
+        Native.media_bytes.data = Desc.MediaBytes.GetData();
+        Native.media_bytes.len = static_cast<uint32_t>(Desc.MediaBytes.Num());
+    }
+    else
+    {
+        return false;
+    }
+
+    const AstralErr Err = astral_model_media_init(static_cast<AstralHandle>(ModelHandle), &Native);
+    return Err == ASTRAL_OK;
+}
+
+bool UAstralModel::GetMediaInfo(FAstralMediaInfo& OutInfo) const
+{
+    OutInfo = FAstralMediaInfo{};
+    if (ModelHandle == 0)
+    {
+        return false;
+    }
+
+    AstralMediaInfo Native{};
+    Native.size = sizeof(AstralMediaInfo);
+    const AstralErr Err = astral_model_media_info(static_cast<AstralHandle>(ModelHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return false;
+    }
+
+    OutInfo.SupportsImage = Native.supports_image;
+    OutInfo.SupportsAudio = Native.supports_audio;
+    OutInfo.AudioSampleRate = Native.audio_sample_rate;
+    OutInfo.ImageMinTokens = Native.image_min_tokens;
+    OutInfo.ImageMaxTokens = Native.image_max_tokens;
     return true;
 }
 

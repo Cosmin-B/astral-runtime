@@ -167,6 +167,8 @@ int main(int argc, char** argv) {
     }
 
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend_name);

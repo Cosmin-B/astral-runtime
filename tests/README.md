@@ -39,6 +39,15 @@ export ASTRAL_TEST_MODEL="$PWD/astral/tests/models/gpt2.Q2_K.gguf"
 
 The downloader supports overrides via `--url/--file/--min-bytes` and env vars (`ASTRAL_TEST_MODEL_URL`, `ASTRAL_TEST_MODEL_FILE`, `ASTRAL_MODEL_MIN_BYTES`).
 
+## Media (vision/audio) tests
+
+`test_media` exercises mock vision/audio feeds + multimodal embeddings. Optional CPU media init smoke checks run when:
+
+- `ASTRAL_TEST_VISION_MODEL` + `ASTRAL_TEST_VISION_MEDIA` are set
+- `ASTRAL_TEST_AUDIO_MODEL` + `ASTRAL_TEST_AUDIO_MEDIA` are set
+
+Media init requires `ASTRAL_ENABLE_MTMD=ON` at build time.
+
 ## What the gates cover
 
 - `gate_source_scans`: repo-wide source scan that enforces hard rules (no compare-and-swap ops in sources/docs, and no suspicious full-vocab logits copies).

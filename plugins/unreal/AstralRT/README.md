@@ -91,6 +91,49 @@ For Blueprint convenience, `UAstralSession` also exposes:
 - `OnBytesReceived` (UTF-8 bytes, per tick)
 - `OnTokenReceived` (decoded text, per tick; allocates an `FString` only when bound)
 
+## Vision / Audio (Media)
+
+Media support requires a projector/encoder GGUF. Initialize once per model:
+
+```cpp
+FAstralModelMediaDesc MediaDesc;
+MediaDesc.MediaPath = TEXT("/path/to/media.gguf");
+Model->InitMedia(MediaDesc);
+```
+
+Feed media into a session prompt:
+
+```cpp
+FAstralImageDesc Image;
+Image.Format = EAstralImageFormat::RGB8;
+Image.Width = 224;
+Image.Height = 224;
+Image.Pixels.SetNumZeroed(224 * 224 * 3);
+Session->FeedImage(Image, true);
+
+FAstralAudioDesc Audio;
+Audio.Format = EAstralAudioFormat::I16;
+Audio.Channels = 1;
+Audio.SampleRate = 16000;
+Audio.FrameCount = 16000;
+Audio.Samples.SetNumZeroed(16000 * 2);
+Session->FeedAudio(Audio, true);
+```
+
+## Multimodal Embeddings
+
+```cpp
+// Requires embeddings-only model
+UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>(this);
+Embedder->Create(Model);
+
+int64 Ticket = 0;
+Embedder->EnqueueMultimodal(TEXT("describe"), Image, Audio, /*bUseImage=*/true, /*bUseAudio=*/false, Ticket);
+
+TArray<float> Vec;
+Embedder->Collect(Ticket, Vec);
+```
+
 ## Notes
 
 - The module initializes Astral at startup and shuts it down on module unload.
@@ -101,6 +144,8 @@ For Blueprint convenience, `UAstralSession` also exposes:
 Editor-only Automation tests live under `Source/AstralRT/Private/Tests/`:
 - `AstralRT.Module.Init`
 - `AstralRT.Mock.E2E`
+- `AstralRT.Mock.MediaFeed`
+- `AstralRT.Mock.MultimodalEmbed`
 
 Run from Unreal's Automation window or via console:
 `Automation RunTests AstralRT.*`

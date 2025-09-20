@@ -2,6 +2,9 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "AstralEmbedder.h"
+#include "AstralModel.h"
+#include "AstralSession.h"
 #include "IAstralRT.h"
 #include "astral_rt.h"
 
@@ -60,6 +63,8 @@ bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
     }
 
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* backend = "mock";
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
     model_desc.backend_name.len = static_cast<uint32_t>(FCStringAnsi::Strlen(backend));
@@ -187,6 +192,8 @@ bool FAstralRTMockEmbeddingsTest::RunTest(const FString& Parameters) {
     }
 
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* backend = "mock";
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
     model_desc.backend_name.len = static_cast<uint32_t>(FCStringAnsi::Strlen(backend));
@@ -244,6 +251,136 @@ bool FAstralRTMockEmbeddingsTest::RunTest(const FString& Parameters) {
 
     astral_embed_destroy(emb);
     astral_model_release(model);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTMockMediaFeedTest,
+    "AstralRT.Mock.MediaFeed",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTMockMediaFeedTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return true;
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("model load"), ok);
+    if (!ok) {
+        return false;
+    }
+
+    UAstralSession* Session = NewObject<UAstralSession>();
+    TestNotNull(TEXT("session allocated"), Session);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 16;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 0;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = false;
+    SessionDesc.Seed = 42;
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("session create"), ok);
+    if (!ok) {
+        Model->Release();
+        return false;
+    }
+
+    FAstralImageDesc Image{};
+    Image.Format = EAstralImageFormat::RGB8;
+    Image.Width = 1;
+    Image.Height = 1;
+    Image.Pixels.SetNumZeroed(3);
+    ok = Session->FeedImage(Image, true);
+    TestTrue(TEXT("feed image"), ok);
+
+    FAstralAudioDesc Audio{};
+    Audio.Format = EAstralAudioFormat::I16;
+    Audio.Channels = 1;
+    Audio.SampleRate = 16000;
+    Audio.FrameCount = 4;
+    Audio.Samples.SetNumZeroed(8);
+    ok = Session->FeedAudio(Audio, true);
+    TestTrue(TEXT("feed audio"), ok);
+
+    Session->BeginDestroy();
+    Model->Release();
+    Model->BeginDestroy();
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTMockMultimodalEmbedTest,
+    "AstralRT.Mock.MultimodalEmbed",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTMockMultimodalEmbedTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return true;
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+    ModelDesc.bEmbeddingsOnly = true;
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("model load"), ok);
+    if (!ok) {
+        return false;
+    }
+
+    UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>();
+    TestNotNull(TEXT("embedder allocated"), Embedder);
+
+    ok = Embedder->Create(Model);
+    TestTrue(TEXT("embedder create"), ok);
+    if (!ok) {
+        Model->Release();
+        return false;
+    }
+
+    FAstralImageDesc Image{};
+    Image.Format = EAstralImageFormat::RGB8;
+    Image.Width = 1;
+    Image.Height = 1;
+    Image.Pixels.SetNumZeroed(3);
+
+    FAstralAudioDesc Audio{};
+    Audio.Format = EAstralAudioFormat::I16;
+    Audio.Channels = 1;
+    Audio.SampleRate = 16000;
+    Audio.FrameCount = 4;
+    Audio.Samples.SetNumZeroed(8);
+
+    int64 Ticket = 0;
+    ok = Embedder->EnqueueMultimodal(TEXT("abc"), Image, Audio, true, true, Ticket);
+    TestTrue(TEXT("enqueue multimodal"), ok);
+    TestTrue(TEXT("ticket valid"), Ticket > 0);
+
+    TArray<float> Vec;
+    ok = Embedder->Collect(Ticket, Vec);
+    TestTrue(TEXT("collect embedding"), ok);
+    TestTrue(TEXT("vector size"), Vec.Num() == Embedder->GetDim());
+
+    Embedder->Destroy();
+    Embedder->BeginDestroy();
+    Model->Release();
+    Model->BeginDestroy();
     return true;
 }
 

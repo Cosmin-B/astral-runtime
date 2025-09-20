@@ -206,6 +206,8 @@ void bench_embeddings_print(uint32_t dim_override, uint64_t iters) {
     }
 
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.embeddings_only = 1;
     model_desc.n_ctx = 256;
     model_desc.n_batch = 128;

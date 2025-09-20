@@ -6,6 +6,7 @@
 #include "model.hpp"
 #include "sampler.hpp"
 #include "adapter.hpp"
+#include "prompt_chunks.hpp"
 #include <atomic>
 #include <cstdint>
 
@@ -81,6 +82,10 @@ struct Session {
     int32_t* prompt_tokens;
     uint32_t prompt_count;
     uint32_t prompt_capacity;
+    PromptChunk prompt_chunks[kMaxPromptChunks];
+    uint32_t prompt_chunk_count;
+    uint32_t prompt_chunk_index;
+    uint32_t prompt_chunk_token_off;
 
     // Decoding state
     std::atomic<SessionState> state;
@@ -187,6 +192,10 @@ void session_destroy(Session* session);
 ///
 /// Thread-safety: Not thread-safe (single-threaded access per session)
 AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t finalize);
+/// Feed an image prompt chunk.
+AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uint8_t finalize);
+/// Feed an audio prompt chunk.
+AstralErr session_feed_audio(Session* session, const AstralAudioDesc* audio, uint8_t finalize);
 
 /// Start decoding (non-blocking).
 ///

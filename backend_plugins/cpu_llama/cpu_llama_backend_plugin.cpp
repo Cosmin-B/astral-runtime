@@ -600,12 +600,16 @@ static const AstralBackendOps kOps = {
     .model_info = cpu_model_info,
     .model_special_tokens = cpu_model_special_tokens,
     .model_embedding_dim = cpu_model_embedding_dim,
+    .model_media_init = nullptr,
+    .model_media_info = nullptr,
 
     .session_create = cpu_session_create,
     .session_create_ex = nullptr,
     .session_destroy = cpu_session_destroy,
     .session_reset = cpu_session_reset,
     .session_feed = cpu_session_feed,
+    .session_feed_image = nullptr,
+    .session_feed_audio = nullptr,
     .session_logits = cpu_session_logits,
     .session_accept = cpu_session_accept,
 
@@ -617,6 +621,9 @@ static const AstralBackendOps kOps = {
     .embedder_destroy = cpu_embedder_destroy,
     .embedder_reset = cpu_embedder_reset,
     .embedder_embed = cpu_embedder_embed,
+    .embedder_embed_image = nullptr,
+    .embedder_embed_audio = nullptr,
+    .embedder_embed_multimodal = nullptr,
 
     .session_grammar_set_gbnf = nullptr,
     .session_grammar_set_json_schema = nullptr,
@@ -638,6 +645,7 @@ static const AstralBackendOps kOps = {
     .session_adapter_add = nullptr,
 
     .session_set_slot = nullptr,
+    .session_slot_pos = nullptr,
 };
 
 static const AstralBackendProvider kProvider = {

@@ -184,6 +184,8 @@ static void drain_stream(AstralHandle session) {
 
 static void run_no_alloc_gate_for_backend(const char* backend_name, const char* model_path) {
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     if (backend_name != nullptr) {
         model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend_name);
         model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend_name));
@@ -278,6 +280,8 @@ static void run_no_alloc_gate_for_backend(const char* backend_name, const char* 
 
 static void run_no_alloc_gate_for_embeddings(const char* backend_name, const char* model_path) {
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     if (backend_name != nullptr) {
         model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend_name);
         model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend_name));

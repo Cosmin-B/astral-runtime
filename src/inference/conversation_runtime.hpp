@@ -9,6 +9,8 @@ AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv);
 void conv_destroy(Conversation* conv);
 
 AstralErr conv_feed(Conversation* conv, AstralSpanU8 prompt_chunk, uint8_t finalize);
+AstralErr conv_feed_image(Conversation* conv, const AstralImageDesc* image, uint8_t finalize);
+AstralErr conv_feed_audio(Conversation* conv, const AstralAudioDesc* audio, uint8_t finalize);
 AstralErr conv_decode(Conversation* conv);
 AstralErr conv_cancel(Conversation* conv);
 AstralErr conv_state(Conversation* conv, AstralSessionState* out_state);

@@ -160,6 +160,8 @@ TEST(backend_selection_cpu) {
 
     // Create model with cpu_layers=0 (CPU only)
     AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* path = "models/test.gguf";
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(path);
     model_desc.model_path.len = static_cast<uint32_t>(strlen(path));
@@ -186,6 +188,8 @@ TEST(backend_selection_gpu) {
 
     // Create model with gpu_layers > 0
     AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* path = "models/test.gguf";
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(path);
     model_desc.model_path.len = static_cast<uint32_t>(strlen(path));
@@ -215,6 +219,8 @@ TEST(backend_cuda_registration_surface) {
     // - backend present: backend load runs and returns ASTRAL_E_INVALID (missing path)
     // - backend absent: registry lookup fails and Astral returns ASTRAL_E_BACKEND
     AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* backend = "cuda";
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
     model_desc.backend_name.len = static_cast<uint32_t>(strlen(backend));
@@ -250,6 +256,8 @@ TEST(backend_model_load_invalid_path) {
     astral_init(&cfg);
 
     AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* path = "nonexistent/path/model.gguf";
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(path);
     model_desc.model_path.len = static_cast<uint32_t>(strlen(path));
@@ -283,6 +291,8 @@ TEST(backend_model_load_null_output) {
     astral_init(&cfg);
 
     AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* path = "test.gguf";
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(path);
     model_desc.model_path.len = static_cast<uint32_t>(strlen(path));
@@ -302,6 +312,8 @@ TEST(backend_mock_provider_end_to_end) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* backend = "mock";
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
     model_desc.backend_name.len = static_cast<uint32_t>(strlen(backend));

@@ -76,6 +76,8 @@ TEST(embeddings_mock_e2e) {
     const char* model_path = "infinite";
 
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
@@ -144,6 +146,8 @@ TEST(embeddings_cpu_e2e) {
     const char* backend = "cpu";
 
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);

@@ -65,6 +65,8 @@ static std::vector<AstralTokenMeta> read_meta_events(AstralHandle session, uint3
 
 static AstralHandle load_model_by_backend(const char* backend_name, const char* model_path, uint32_t gpu_layers) {
     AstralModelDesc desc{};
+    desc.size = sizeof(AstralModelDesc);
+    desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     if (backend_name != nullptr) {
         desc.backend_name = span_from_cstr(backend_name);
     }
@@ -145,6 +147,8 @@ TEST(cuda_parity_scaffold) {
     // If CUDA is built in, the backend exists; missing model_path then yields ASTRAL_E_INVALID.
     {
         AstralModelDesc model_desc{};
+        model_desc.size = sizeof(AstralModelDesc);
+        model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
         const char* backend = "cuda";
         model_desc.backend_name = span_from_cstr(backend);
         model_desc.gpu_layers = 1;

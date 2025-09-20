@@ -12,12 +12,18 @@
 #pragma once
 
 #include "../backend.hpp"
+#include <atomic>
+#include <vector>
+#include <ggml-backend.h>
 
 // Forward declarations (llama.cpp types)
 struct llama_model;
 struct llama_context;
 struct llama_vocab;
 struct llama_sampler;
+#if ASTRAL_ENABLE_MTMD
+struct mtmd_context;
+#endif
 
 namespace astral::backend {
 
@@ -38,6 +44,23 @@ struct CpuModel {
     uint32_t vocab_size;
     int32_t token_bos;
     int32_t token_eos;
+
+    // GPU routing state for llama.cpp (optional; used in CUDA builds).
+    std::vector<ggml_backend_dev_t> gpu_devices;
+    std::vector<float> gpu_tensor_split;
+
+#if ASTRAL_ENABLE_MTMD
+    // Optional multimodal context (vision/audio)
+    mtmd_context* mtmd;
+    uint8_t media_initialized;
+    uint8_t supports_vision;
+    uint8_t supports_audio;
+    uint8_t _padding0;
+    uint32_t image_min_tokens;
+    uint32_t image_max_tokens;
+    int32_t audio_sample_rate;
+    std::atomic_flag mtmd_lock = ATOMIC_FLAG_INIT;
+#endif
 };
 
 /// CPU backend session context (opaque handle returned by session_create()).

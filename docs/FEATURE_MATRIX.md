@@ -23,10 +23,12 @@ If you are comparing to external frameworks, see `docs/FEATURE_PARITY.md`. This 
 | Exceptions across ABI | ✅ (caught at ABI) | ✅ (caught at ABI) | ✅ (presets build with `ASTRAL_NO_EXCEPTIONS=ON`) |
 | Dynamic backends (`dlopen`/`LoadLibrary`) | ✅ (optional) | ✅ (optional) | ❌ (presets disable) |
 | JSON-schema grammar helper | ✅ (optional) | ✅ (optional) | ❌ (presets disable) |
+| Multimodal media (`ASTRAL_ENABLE_MTMD`) | ⚠️ (opt-in) | ⚠️ (opt-in; best-effort) | ❌ |
 
 Notes:
 - Embedded presets are intended to be “no VM / no dynamic loader / no JSON-schema grammar” by default (`docs/EMBEDDED_PROFILE.md`).
 - “No exceptions” is a build goal; third-party code may still throw unless fully audited.
+- Multimodal media requires `ASTRAL_ENABLE_MTMD=ON` and a media projector file initialized via `astral_model_media_init`.
 
 ## Providers / backends
 
@@ -43,6 +45,7 @@ Notes:
   - Forced cuBLAS (`dev-cuda-cublas`)
   - Forced MMQ kernels (`dev-cuda-mmq`)
   - Validate all three modes via `scripts/run_cuda_parity_matrix.sh` (see `docs/CUDA_PARITY.md`).
+- CUDA builds support multi-GPU selection/split via `AstralModelDesc` gpu_* fields (best-effort).
 
 ## Model loading (PATH / MEMORY / IO)
 
@@ -66,6 +69,7 @@ Caveats (MEMORY/IO):
 | Logprobs meta stream (`set_logprobs` + `stream_read_meta`) | ✅ | ✅ | ✅ |
 | Stop sequences (tokenized) | ✅ | ✅ | ✅ |
 | Slots (`astral_session_set_slot`) | ✅ (provider-dependent) | ✅ (provider-dependent) | ✅ (provider-dependent) |
+| Image/audio prompt feed (`astral_session_feed_image/audio`) | ⚠️ (mtmd + media init) | ⚠️ (best-effort) | ❌ |
 | KV/state save/load (`state_size/save/load`) | ✅ | ✅ | ✅ |
 | KV/state deterministic continuation | ✅ | ✅ | ✅ |
 | GBNF grammar (`set_grammar_gbnf`) | ✅ | ✅ | ✅ |
@@ -74,18 +78,21 @@ Caveats (MEMORY/IO):
 Notes:
 - KV save/load now includes an Astral header that serializes sampler + RNG state so continuations can be deterministic after load.
 - Cross-backend (CPU vs CUDA) **exact token determinism** is not guaranteed in general; see `docs/CUDA_PARITY.md` for current policy/tests.
+- Conversation media prompts require provider slot position queries (`session_slot_pos`); mock + CPU backends support this when mtmd is enabled.
 
 ## Embeddings
 
 | Feature | CPU-only (desktop) | CUDA build (desktop) | Embedded presets |
 |---|---:|---:|---:|
 | Embeddings API (`astral_embed_*`) | ✅ | ✅ | ✅ |
+| Image/audio embeddings (`astral_embed_enqueue_*`) | ⚠️ (mtmd + model support) | 🧪 | ❌ |
 
 ## Test validation map
 
 | Test | What it covers | Where it should run |
 |---|---|---|
 | `test_embeddings` | embeddings mock + CPU e2e | CPU-only + CUDA build |
+| `test_media` | mock media feed + multimodal embeddings | CPU-only + CUDA build |
 | `test_cuda_parity` | CUDA surface + (optional) CPU-vs-CUDA parity harness | CUDA build (optional inference via env) |
 | `test_cuda_e2e` | end-to-end logprobs/grammar/kv/embeddings on real model | CPU-only always; CUDA when `ASTRAL_TEST_CUDA_E2E=1` |
 

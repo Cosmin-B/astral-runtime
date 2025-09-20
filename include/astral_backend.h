@@ -68,6 +68,10 @@ typedef struct AstralBackendOps {
     AstralErr (ASTRAL_CALL * model_info)(void* model_ctx, uint32_t* out_vocab_size, uint32_t* out_ctx_size);
     AstralErr (ASTRAL_CALL * model_special_tokens)(void* model_ctx, int32_t* out_bos, int32_t* out_eos);
     AstralErr (ASTRAL_CALL * model_embedding_dim)(void* model_ctx, uint32_t* out_dim);
+    // Optional: initialize media (vision/audio) support for this model.
+    AstralErr (ASTRAL_CALL * model_media_init)(void* model_ctx, const AstralModelMediaDesc* desc);
+    // Optional: query media (vision/audio) info.
+    AstralErr (ASTRAL_CALL * model_media_info)(void* model_ctx, AstralMediaInfo* out_info);
 
     // Session lifetime + decode primitives
     void* (ASTRAL_CALL * session_create)(void* model_ctx, const AstralSessionDesc* desc, AstralErr* out_err);
@@ -81,6 +85,9 @@ typedef struct AstralBackendOps {
     AstralErr (ASTRAL_CALL * session_reset)(void* session_ctx);
 
     AstralErr (ASTRAL_CALL * session_feed)(void* session_ctx, const int32_t* tokens, uint32_t count);
+    // Optional: feed image/audio chunks.
+    AstralErr (ASTRAL_CALL * session_feed_image)(void* session_ctx, const AstralImageDesc* image, uint8_t finalize);
+    AstralErr (ASTRAL_CALL * session_feed_audio)(void* session_ctx, const AstralAudioDesc* audio, uint8_t finalize);
 
     // Sampling support (zero-copy logits view + accept/advance).
     AstralErr (ASTRAL_CALL * session_logits)(void* session_ctx, AstralBackendLogitsView* out_view);
@@ -115,6 +122,21 @@ typedef struct AstralBackendOps {
                                              uint32_t count,
                                              float* out_vec,
                                              uint32_t vec_dim);
+    // Optional: multimodal embeddings.
+    AstralErr (ASTRAL_CALL * embedder_embed_image)(void* embedder_ctx,
+                                                   const AstralImageDesc* image,
+                                                   float* out_vec,
+                                                   uint32_t vec_dim);
+    AstralErr (ASTRAL_CALL * embedder_embed_audio)(void* embedder_ctx,
+                                                   const AstralAudioDesc* audio,
+                                                   float* out_vec,
+                                                   uint32_t vec_dim);
+    AstralErr (ASTRAL_CALL * embedder_embed_multimodal)(void* embedder_ctx,
+                                                        AstralSpanU8 text,
+                                                        const AstralImageDesc* image,
+                                                        const AstralAudioDesc* audio,
+                                                        float* out_vec,
+                                                        uint32_t vec_dim);
 
     // --------------------------------------------------------------------
     // Generation controls (optional, provider-specific support)
@@ -154,6 +176,8 @@ typedef struct AstralBackendOps {
 
     // Slots (parallel prompts) support.
     AstralErr (ASTRAL_CALL * session_set_slot)(void* session_ctx, uint32_t slot_id);
+    // Optional: query current slot position (n_past) for a given slot.
+    AstralErr (ASTRAL_CALL * session_slot_pos)(void* session_ctx, uint32_t slot_id, uint32_t* out_pos);
 } AstralBackendOps;
 
 /// Static backend provider descriptor.

@@ -74,6 +74,17 @@ inline bool span_equals_ascii(AstralSpanU8 span, const char* lit) {
     return std::memcmp(span.data, lit, lit_len) == 0;
 }
 
+inline uint32_t sum_bytes(const uint8_t* data, uint64_t len) {
+    if (data == nullptr || len == 0) {
+        return 0u;
+    }
+    uint32_t sum = 0;
+    for (uint64_t i = 0; i < len; ++i) {
+        sum += data[i];
+    }
+    return sum;
+}
+
 static bool parse_astral_source_id(AstralSpanU8 path, uint64_t* out_id) {
     if (out_id == nullptr) {
         return false;
@@ -265,6 +276,31 @@ AstralErr mock_model_embedding_dim(void* model_ctx, uint32_t* out_dim) {
     return ASTRAL_OK;
 }
 
+AstralErr mock_model_media_init(void* model_ctx, const AstralModelMediaDesc* desc) {
+    if (model_ctx == nullptr || desc == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->size != sizeof(AstralModelMediaDesc)) {
+        return ASTRAL_E_INVALID;
+    }
+    return ASTRAL_OK;
+}
+
+AstralErr mock_model_media_info(void* model_ctx, AstralMediaInfo* out_info) {
+    if (model_ctx == nullptr || out_info == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (out_info->size != sizeof(AstralMediaInfo)) {
+        return ASTRAL_E_INVALID;
+    }
+    out_info->supports_image = 1;
+    out_info->supports_audio = 1;
+    out_info->audio_sample_rate = 16000;
+    out_info->image_min_tokens = 1;
+    out_info->image_max_tokens = 16;
+    return ASTRAL_OK;
+}
+
 void* mock_session_create_ex(void* model_ctx, const AstralSessionDesc* desc, uint32_t max_slots, AstralErr* out_err);
 
 void* mock_session_create(void* model_ctx, const AstralSessionDesc* desc, AstralErr* out_err) {
@@ -363,6 +399,48 @@ AstralErr mock_session_feed(void* session_ctx, const int32_t* tokens, uint32_t c
         session->slot_step[session->slot_id] = session->step;
         session->slot_has_logits[session->slot_id] = true;
     }
+    return ASTRAL_OK;
+}
+
+AstralErr mock_session_feed_image(void* session_ctx, const AstralImageDesc* image, uint8_t finalize) {
+    (void)finalize;
+    if (session_ctx == nullptr || image == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (image->size != sizeof(AstralImageDesc) || image->pixels.data == nullptr || image->pixels.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+
+    MockSession* session = static_cast<MockSession*>(session_ctx);
+    if (session->slot_id >= session->n_slots) {
+        return ASTRAL_E_STATE;
+    }
+
+    session->slot_step[session->slot_id] += 1u;
+    session->step = session->slot_step[session->slot_id];
+    session->has_logits = true;
+    session->slot_has_logits[session->slot_id] = true;
+    return ASTRAL_OK;
+}
+
+AstralErr mock_session_feed_audio(void* session_ctx, const AstralAudioDesc* audio, uint8_t finalize) {
+    (void)finalize;
+    if (session_ctx == nullptr || audio == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (audio->size != sizeof(AstralAudioDesc) || audio->samples.data == nullptr || audio->samples.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+
+    MockSession* session = static_cast<MockSession*>(session_ctx);
+    if (session->slot_id >= session->n_slots) {
+        return ASTRAL_E_STATE;
+    }
+
+    session->slot_step[session->slot_id] += 1u;
+    session->step = session->slot_step[session->slot_id];
+    session->has_logits = true;
+    session->slot_has_logits[session->slot_id] = true;
     return ASTRAL_OK;
 }
 
@@ -725,6 +803,18 @@ AstralErr mock_session_set_slot(void* session_ctx, uint32_t slot_id) {
     return ASTRAL_OK;
 }
 
+AstralErr mock_session_slot_pos(void* session_ctx, uint32_t slot_id, uint32_t* out_pos) {
+    if (session_ctx == nullptr || out_pos == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    MockSession* s = static_cast<MockSession*>(session_ctx);
+    if (slot_id >= s->n_slots) {
+        return ASTRAL_E_INVALID;
+    }
+    *out_pos = s->slot_step[slot_id];
+    return ASTRAL_OK;
+}
+
 AstralErr mock_session_batch_eval(void* session_ctx,
                                   const AstralBackendBatchToken* tokens,
                                   uint32_t token_count,
@@ -882,6 +972,75 @@ AstralErr mock_embedder_embed(void* embedder_ctx, const int32_t* tokens, uint32_
     return ASTRAL_OK;
 }
 
+static AstralErr mock_embedder_fill(MockEmbedder* e, uint32_t sum, float* out_vec, uint32_t vec_dim) {
+    if (e == nullptr || e->model == nullptr || e->model->emb_dim == 0 || out_vec == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const uint32_t dim = e->model->emb_dim;
+    if (vec_dim < dim) {
+        return ASTRAL_E_NOMEM;
+    }
+    for (uint32_t i = 0; i < dim; ++i) {
+        out_vec[i] = static_cast<float>(sum + i);
+    }
+    return ASTRAL_OK;
+}
+
+AstralErr mock_embedder_embed_image(void* embedder_ctx, const AstralImageDesc* image, float* out_vec, uint32_t vec_dim) {
+    if (embedder_ctx == nullptr || image == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (image->size != sizeof(AstralImageDesc) || image->pixels.data == nullptr || image->pixels.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    MockEmbedder* e = static_cast<MockEmbedder*>(embedder_ctx);
+    const uint32_t sum = sum_bytes(image->pixels.data, image->pixels.len) + 11u;
+    return mock_embedder_fill(e, sum, out_vec, vec_dim);
+}
+
+AstralErr mock_embedder_embed_audio(void* embedder_ctx, const AstralAudioDesc* audio, float* out_vec, uint32_t vec_dim) {
+    if (embedder_ctx == nullptr || audio == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (audio->size != sizeof(AstralAudioDesc) || audio->samples.data == nullptr || audio->samples.len == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    MockEmbedder* e = static_cast<MockEmbedder*>(embedder_ctx);
+    const uint32_t sum = sum_bytes(audio->samples.data, audio->samples.len) + 29u;
+    return mock_embedder_fill(e, sum, out_vec, vec_dim);
+}
+
+AstralErr mock_embedder_embed_multimodal(void* embedder_ctx,
+                                         AstralSpanU8 text,
+                                         const AstralImageDesc* image,
+                                         const AstralAudioDesc* audio,
+                                         float* out_vec,
+                                         uint32_t vec_dim) {
+    if (embedder_ctx == nullptr || out_vec == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (image != nullptr && audio != nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    MockEmbedder* e = static_cast<MockEmbedder*>(embedder_ctx);
+
+    uint32_t sum = sum_bytes(text.data, text.len);
+    if (image != nullptr) {
+        if (image->size != sizeof(AstralImageDesc) || image->pixels.data == nullptr || image->pixels.len == 0) {
+            return ASTRAL_E_INVALID;
+        }
+        sum += sum_bytes(image->pixels.data, image->pixels.len);
+    }
+    if (audio != nullptr) {
+        if (audio->size != sizeof(AstralAudioDesc) || audio->samples.data == nullptr || audio->samples.len == 0) {
+            return ASTRAL_E_INVALID;
+        }
+        sum += sum_bytes(audio->samples.data, audio->samples.len);
+    }
+    sum += 3u;
+    return mock_embedder_fill(e, sum, out_vec, vec_dim);
+}
+
 static const BackendOps kMockBackendOps = {
     .model_load = mock_model_load,
     .model_unload = mock_model_unload,
@@ -892,12 +1051,16 @@ static const BackendOps kMockBackendOps = {
     .model_info = mock_model_info,
     .model_special_tokens = mock_model_special_tokens,
     .model_embedding_dim = mock_model_embedding_dim,
+    .model_media_init = mock_model_media_init,
+    .model_media_info = mock_model_media_info,
 
     .session_create = mock_session_create,
     .session_create_ex = mock_session_create_ex,
     .session_destroy = mock_session_destroy,
     .session_reset = mock_session_reset,
     .session_feed = mock_session_feed,
+    .session_feed_image = mock_session_feed_image,
+    .session_feed_audio = mock_session_feed_audio,
     .session_logits = mock_session_logits,
     .session_accept = mock_session_accept,
 
@@ -909,6 +1072,9 @@ static const BackendOps kMockBackendOps = {
     .embedder_destroy = mock_embedder_destroy,
     .embedder_reset = mock_embedder_reset,
     .embedder_embed = mock_embedder_embed,
+    .embedder_embed_image = mock_embedder_embed_image,
+    .embedder_embed_audio = mock_embedder_embed_audio,
+    .embedder_embed_multimodal = mock_embedder_embed_multimodal,
 
     .session_grammar_set_gbnf = mock_session_grammar_set_gbnf,
     .session_grammar_set_json_schema = nullptr,
@@ -930,6 +1096,7 @@ static const BackendOps kMockBackendOps = {
     .session_adapter_add = mock_session_adapter_add,
 
     .session_set_slot = mock_session_set_slot,
+    .session_slot_pos = mock_session_slot_pos,
 };
 
 static const BackendProvider kMockBackendProvider = {

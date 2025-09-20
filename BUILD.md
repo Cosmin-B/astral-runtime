@@ -55,6 +55,7 @@ cmake --build build/dev-prof-cuda -j
 
 Tuning knobs (CMake cache variables):
 - `ASTRAL_CUDA_ARCHITECTURES` (default: `75;80;86;89;90`)
+- Blackwell/Hetzner builds should override `ASTRAL_CUDA_ARCHITECTURES=120a-real` to emit `sm_120a`.
 - `ASTRAL_CUDA_FORCE_CUBLAS` / `ASTRAL_CUDA_FORCE_MMQ` (default: `OFF`; “auto” prefers cuBLAS when beneficial)
 
 ## Build Targets

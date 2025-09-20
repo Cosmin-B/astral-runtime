@@ -122,6 +122,8 @@ int main() {
     // Test session creation (pre-commits memory for hot path)
     printf("\n2. Testing session creation (should pre-commit memory)...\n");
     AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path = make_span("stub_model.gguf");
     model_desc.gpu_layers = 0;
     model_desc.n_ctx = 2048;

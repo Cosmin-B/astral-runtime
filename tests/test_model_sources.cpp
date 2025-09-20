@@ -108,9 +108,10 @@ static AstralInit2 make_small_borrowed_arena_cfg(void* base, uint64_t size) {
     return cfg;
 }
 
-static AstralModelDesc2 make_desc2_common_mock() {
-    AstralModelDesc2 d{};
-    d.size = sizeof(AstralModelDesc2);
+static AstralModelDesc make_desc_common_mock() {
+    AstralModelDesc d{};
+    d.size = sizeof(AstralModelDesc);
+    d.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     d.backend_name = span_from_cstr("mock");
     d.gpu_layers = 0;
     d.n_ctx = 128;
@@ -120,9 +121,10 @@ static AstralModelDesc2 make_desc2_common_mock() {
     return d;
 }
 
-static AstralModelDesc2 make_desc2_common_cpu() {
-    AstralModelDesc2 d{};
-    d.size = sizeof(AstralModelDesc2);
+static AstralModelDesc make_desc_common_cpu() {
+    AstralModelDesc d{};
+    d.size = sizeof(AstralModelDesc);
+    d.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     d.backend_name = span_from_cstr("cpu");
     d.gpu_layers = 0;
     d.n_ctx = 128;
@@ -139,12 +141,12 @@ TEST(model_load2_memory_mock_smoke) {
     const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
     ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
 
-    AstralModelDesc2 desc2 = make_desc2_common_mock();
-    desc2.source_kind = ASTRAL_MODEL_SOURCE_MEMORY;
-    desc2.model_bytes = span_from_cstr("sampler");
+    AstralModelDesc desc = make_desc_common_mock();
+    desc.source_kind = ASTRAL_MODEL_SOURCE_MEMORY;
+    desc.model_bytes = span_from_cstr("sampler");
 
     AstralHandle model = 0;
-    ASSERT_EQ(astral_model_load2(&desc2, &model), ASTRAL_OK);
+    ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
     ASSERT_TRUE(astral_handle_valid(model));
 
     AstralModelInfo info{};
@@ -165,14 +167,14 @@ TEST(model_load2_io_mock_smoke) {
     io_src.data = reinterpret_cast<const uint8_t*>(tag);
     io_src.len = static_cast<uint32_t>(std::strlen(tag));
 
-    AstralModelDesc2 desc2 = make_desc2_common_mock();
-    desc2.source_kind = ASTRAL_MODEL_SOURCE_IO;
-    desc2.io.user = &io_src;
-    desc2.io.size = io_size_string;
-    desc2.io.read_at = io_read_at_string;
+    AstralModelDesc desc = make_desc_common_mock();
+    desc.source_kind = ASTRAL_MODEL_SOURCE_IO;
+    desc.io.user = &io_src;
+    desc.io.size = io_size_string;
+    desc.io.read_at = io_read_at_string;
 
     AstralHandle model = 0;
-    ASSERT_EQ(astral_model_load2(&desc2, &model), ASTRAL_OK);
+    ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
     ASSERT_TRUE(astral_handle_valid(model));
 
     AstralModelInfo info{};
@@ -192,13 +194,13 @@ TEST(model_load2_memory_cpu_smoke) {
     const auto bytes = read_file(ASTRAL_TEST_SOURCE_DIR "/tests/models/gpt2.Q2_K.gguf");
     ASSERT_FALSE(bytes.empty());
 
-    AstralModelDesc2 desc2 = make_desc2_common_cpu();
-    desc2.source_kind = ASTRAL_MODEL_SOURCE_MEMORY;
-    desc2.model_bytes.data = bytes.data();
-    desc2.model_bytes.len = static_cast<uint32_t>(bytes.size());
+    AstralModelDesc desc = make_desc_common_cpu();
+    desc.source_kind = ASTRAL_MODEL_SOURCE_MEMORY;
+    desc.model_bytes.data = bytes.data();
+    desc.model_bytes.len = static_cast<uint32_t>(bytes.size());
 
     AstralHandle model = 0;
-    ASSERT_EQ(astral_model_load2(&desc2, &model), ASTRAL_OK);
+    ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
     ASSERT_TRUE(astral_handle_valid(model));
 
     AstralModelInfo info{};
@@ -221,14 +223,14 @@ TEST(model_load2_io_cpu_smoke) {
     io_src.data = bytes.data();
     io_src.size = bytes.size();
 
-    AstralModelDesc2 desc2 = make_desc2_common_cpu();
-    desc2.source_kind = ASTRAL_MODEL_SOURCE_IO;
-    desc2.io.user = &io_src;
-    desc2.io.size = io_size_mem;
-    desc2.io.read_at = io_read_at_mem;
+    AstralModelDesc desc = make_desc_common_cpu();
+    desc.source_kind = ASTRAL_MODEL_SOURCE_IO;
+    desc.io.user = &io_src;
+    desc.io.size = io_size_mem;
+    desc.io.read_at = io_read_at_mem;
 
     AstralHandle model = 0;
-    ASSERT_EQ(astral_model_load2(&desc2, &model), ASTRAL_OK);
+    ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
     ASSERT_TRUE(astral_handle_valid(model));
 
     AstralModelInfo info{};

@@ -204,6 +204,47 @@ Debug.Log($"Tokens/sec: {stats.tokensPerSecond:F2}");
 
 **Configs**: `Default`, `Greedy`, `Creative`
 
+### Vision / Audio (Media)
+
+Media support requires a model projector/encoder GGUF. Initialize it once per model:
+
+```csharp
+// Initialize media projector (GGUF path)
+model.InitMediaFromPath("/path/to/media.gguf");
+```
+
+Feed media into a session prompt:
+
+```csharp
+// Image (RGB8)
+session.FeedImage(pixels, width: 224, height: 224, AstralNative.AstralImageFormat.RGB8);
+
+// Audio (PCM f32 or i16)
+session.FeedAudio(audioF32, channels: 1, sampleRate: 16000);
+```
+
+### Multimodal Embeddings
+
+```csharp
+using var embedder = AstralEmbedder.Create(model);
+using var outVec = new NativeArray<float>((int)embedder.Dimension, Allocator.Temp);
+
+// Image-only embedding
+ulong ticket = embedder.EnqueueImage(pixels, 224, 224, AstralNative.AstralImageFormat.RGB8);
+embedder.Collect(ticket, outVec);
+
+// Multimodal embedding (text + image)
+var imageDesc = new AstralNative.AstralImageDesc
+{
+    format = AstralNative.AstralImageFormat.RGB8,
+    width = 224,
+    height = 224,
+    pixels = AstralNative.AstralSpanU8.FromNativeArray(pixels)
+};
+ulong mmTicket = embedder.EnqueueMultimodal("describe", ref imageDesc);
+embedder.Collect(mmTicket, outVec);
+```
+
 ## Configuration
 
 ### Runtime Configuration
@@ -333,6 +374,7 @@ See `Runtime/Plugins/README.md` for build instructions for each platform.
 The package includes small, focused Unity EditMode tests under `Tests/Editor/`:
 - ABI layout assertions for key C ABI structs (`AstralSpanU8`, `AstralModelDesc`, `AstralSessionDesc`, …).
 - Mock-backend smoke (init → model → session → decode → stream → reset → repeat).
+- Mock media feed + multimodal embedding smoke (mock backend; no GGUF required).
 
 These tests skip gracefully if the native `astral_rt` library is not present in the Editor.
 

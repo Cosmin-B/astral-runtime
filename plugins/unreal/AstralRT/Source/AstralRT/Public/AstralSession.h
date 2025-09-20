@@ -36,6 +36,12 @@ public:
     bool FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize = true);
 
     UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool FeedImage(const FAstralImageDesc& Image, bool bFinalize = true);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize = true);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Decode();
 
     UFUNCTION(BlueprintCallable, Category = "Astral")

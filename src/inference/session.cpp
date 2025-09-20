@@ -30,6 +30,10 @@ Session::Session(Model* model_,
     , prompt_tokens(nullptr)
     , prompt_count(0)
     , prompt_capacity(0)
+    , prompt_chunks{}
+    , prompt_chunk_count(0)
+    , prompt_chunk_index(0)
+    , prompt_chunk_token_off(0)
     , state(SessionState::Idle)
     , cancel_requested(false)
     , final_err(ASTRAL_OK)
@@ -289,6 +293,152 @@ inline void session_free_mem(void* p) noexcept {
     ::astral::core::runtime_free(p, sizeof(Session), alignof(Session));
 }
 
+inline void session_prompt_chunks_clear(Session* session) {
+    if (session == nullptr) {
+        return;
+    }
+    for (uint32_t i = 0; i < session->prompt_chunk_count && i < kMaxPromptChunks; ++i) {
+        prompt_chunk_reset(session->prompt_chunks[i]);
+    }
+    session->prompt_chunk_count = 0;
+    session->prompt_chunk_index = 0;
+    session->prompt_chunk_token_off = 0;
+}
+
+inline AstralErr session_push_text_chunk(Session* session, uint32_t token_start, uint32_t token_count, uint8_t finalize) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (token_count == 0) {
+        return ASTRAL_OK;
+    }
+    if (session->prompt_chunk_count >= kMaxPromptChunks) {
+        return ASTRAL_E_NOMEM;
+    }
+    PromptChunk& chunk = session->prompt_chunks[session->prompt_chunk_count++];
+    chunk = PromptChunk{};
+    chunk.kind = PromptChunkKind::Text;
+    chunk.finalize = finalize;
+    chunk.token_start = token_start;
+    chunk.token_count = token_count;
+    return ASTRAL_OK;
+}
+
+inline AstralErr session_push_media_chunk(Session* session,
+                                          const AstralImageDesc* image,
+                                          const AstralAudioDesc* audio,
+                                          uint8_t finalize) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (session->prompt_chunk_count >= kMaxPromptChunks) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    if ((image == nullptr) == (audio == nullptr)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const uint32_t idx = session->prompt_chunk_count;
+    PromptChunk& chunk = session->prompt_chunks[idx];
+    chunk = PromptChunk{};
+    chunk.finalize = finalize;
+
+    if (image != nullptr) {
+        if (image->size != sizeof(AstralImageDesc) || image->pixels.data == nullptr || image->pixels.len == 0 ||
+            image->width == 0 || image->height == 0) {
+            return ASTRAL_E_INVALID;
+        }
+
+        const size_t bytes = static_cast<size_t>(image->pixels.len);
+        uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(bytes, 1));
+        if (buf == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+        std::memcpy(buf, image->pixels.data, bytes);
+        chunk.kind = PromptChunkKind::Image;
+        chunk.image = *image;
+        chunk.image.pixels.data = buf;
+        chunk.image.pixels.len = image->pixels.len;
+        chunk.owned_buffer = buf;
+        chunk.owned_bytes = image->pixels.len;
+        chunk.owned_align = 1;
+    } else if (audio != nullptr) {
+        if (audio->size != sizeof(AstralAudioDesc) || audio->samples.data == nullptr || audio->samples.len == 0 ||
+            audio->channels == 0 || audio->sample_rate == 0 || audio->frame_count == 0) {
+            return ASTRAL_E_INVALID;
+        }
+
+        const size_t bytes = static_cast<size_t>(audio->samples.len);
+        uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(bytes, 1));
+        if (buf == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+        std::memcpy(buf, audio->samples.data, bytes);
+        chunk.kind = PromptChunkKind::Audio;
+        chunk.audio = *audio;
+        chunk.audio.samples.data = buf;
+        chunk.audio.samples.len = audio->samples.len;
+        chunk.owned_buffer = buf;
+        chunk.owned_bytes = audio->samples.len;
+        chunk.owned_align = 1;
+    }
+
+    session->prompt_chunk_count = idx + 1u;
+    return ASTRAL_OK;
+}
+
+inline AstralErr session_feed_prompt_chunks(Session* session, const backend::BackendOps* ops) {
+    if (session == nullptr || ops == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (session->prompt_chunk_count == 0) {
+        return ops->session_feed(session->backend_session_ctx, session->prompt_tokens, session->prompt_count);
+    }
+
+    for (uint32_t i = 0; i < session->prompt_chunk_count; ++i) {
+        PromptChunk& chunk = session->prompt_chunks[i];
+        switch (chunk.kind) {
+            case PromptChunkKind::Text: {
+                const uint32_t count = chunk.token_count;
+                if (count == 0) {
+                    break;
+                }
+                const int32_t* tokens = session->prompt_tokens + chunk.token_start;
+                const AstralErr err = ops->session_feed(session->backend_session_ctx, tokens, count);
+                if (err != ASTRAL_OK) {
+                    return err;
+                }
+                break;
+            }
+            case PromptChunkKind::Image: {
+                if (ops->session_feed_image == nullptr) {
+                    return ASTRAL_E_UNSUPPORTED;
+                }
+                const AstralErr err = ops->session_feed_image(session->backend_session_ctx, &chunk.image, chunk.finalize);
+                prompt_chunk_release(chunk);
+                if (err != ASTRAL_OK) {
+                    return err;
+                }
+                break;
+            }
+            case PromptChunkKind::Audio: {
+                if (ops->session_feed_audio == nullptr) {
+                    return ASTRAL_E_UNSUPPORTED;
+                }
+                const AstralErr err = ops->session_feed_audio(session->backend_session_ctx, &chunk.audio, chunk.finalize);
+                prompt_chunk_release(chunk);
+                if (err != ASTRAL_OK) {
+                    return err;
+                }
+                break;
+            }
+        }
+    }
+
+    return ASTRAL_OK;
+}
+
 } // namespace
 
 AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
@@ -520,6 +670,8 @@ void session_destroy(Session* session) {
         }
     }
 
+    session_prompt_chunks_clear(session);
+
     // Release allocator memory
     if (session->allocator_memory != nullptr) {
         ::astral::core::runtime_session_scratch_release(session->allocator_memory, session->allocator_capacity);
@@ -564,8 +716,12 @@ AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t fina
                                  (finalize != 0 && session->prompt_count == 0);
 
     if (should_tokenize) {
+        if (session->prompt_chunk_count >= kMaxPromptChunks) {
+            return ASTRAL_E_NOMEM;
+        }
         uint32_t space_available = session->prompt_capacity - session->prompt_count;
         uint32_t n_tokens = 0;
+        const uint32_t token_start = session->prompt_count;
 
         AstralErr err = session->model->backend->ops->tokenize(
             session->model->backend_model_ctx,
@@ -593,12 +749,61 @@ AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t fina
         if (session->prompt_count >= session->prompt_capacity) {
             return ASTRAL_E_NOMEM;
         }
+
+        const AstralErr chunk_err = session_push_text_chunk(session, token_start, n_tokens, finalize);
+        if (chunk_err != ASTRAL_OK) {
+            return chunk_err;
+        }
     }
 
     // If finalized, stay in FeedingPrompt state (waiting for decode)
     // Caller must call session_decode() next
 
     return ASTRAL_OK;
+}
+
+AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uint8_t finalize) {
+    if (session == nullptr || image == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    SessionState state = session->state.load(std::memory_order_acquire);
+    if (state != SessionState::Idle && state != SessionState::FeedingPrompt) {
+        return ASTRAL_E_STATE;
+    }
+
+    if (state == SessionState::Idle) {
+        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
+    }
+
+    if (session->model == nullptr || session->model->backend == nullptr ||
+        session->model->backend->ops == nullptr || session->model->backend->ops->session_feed_image == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+
+    return session_push_media_chunk(session, image, nullptr, finalize);
+}
+
+AstralErr session_feed_audio(Session* session, const AstralAudioDesc* audio, uint8_t finalize) {
+    if (session == nullptr || audio == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    SessionState state = session->state.load(std::memory_order_acquire);
+    if (state != SessionState::Idle && state != SessionState::FeedingPrompt) {
+        return ASTRAL_E_STATE;
+    }
+
+    if (state == SessionState::Idle) {
+        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
+    }
+
+    if (session->model == nullptr || session->model->backend == nullptr ||
+        session->model->backend->ops == nullptr || session->model->backend->ops->session_feed_audio == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+
+    return session_push_media_chunk(session, nullptr, audio, finalize);
 }
 
 AstralErr session_decode(Session* session) {
@@ -760,6 +965,7 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     session->cancel_requested.store(false, std::memory_order_release);
     session->final_err.store(ASTRAL_OK, std::memory_order_release);
     session->prompt_count = 0;
+    session_prompt_chunks_clear(session);
     session->token_ring.reset();
     session->meta_ring.reset();
     session->pending_len = 0;
@@ -1385,11 +1591,7 @@ void decode_loop(Session* session) {
     AstralErr err = ASTRAL_OK;
     {
         ASTRAL_ZONE_N("astral.session_feed");
-        err = ops->session_feed(
-            backend_session_ctx,
-            session->prompt_tokens,
-            session->prompt_count
-        );
+        err = session_feed_prompt_chunks(session, ops);
     }
 
     if (err != ASTRAL_OK) {

@@ -115,6 +115,73 @@ namespace Astral.Runtime
         }
 
         // ====================================================================
+        // Media Types (Vision / Audio)
+        // ====================================================================
+
+        public enum AstralImageFormat : uint
+        {
+            RGB8 = 0,
+            RGBA8 = 1,
+            RGB_F32 = 2
+        }
+
+        public enum AstralAudioFormat : uint
+        {
+            F32 = 0,
+            I16 = 1
+        }
+
+        [Flags]
+        public enum AstralMediaFlags : uint
+        {
+            None = 0,
+            UseGpu = 1u << 0,
+            Warmup = 1u << 1
+        }
+
+        [Flags]
+        public enum AstralGpuRouteFlags : uint
+        {
+            None = 0,
+            Device = 1u << 0,
+            DeviceMask = 1u << 1,
+            Stream = 1u << 2
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralImageDesc
+        {
+            public uint size;
+            public AstralImageFormat format;
+            public uint width;
+            public uint height;
+            public uint row_stride;
+            public uint flags;
+            public AstralSpanU8 pixels;
+            public int gpu_device;
+            public uint gpu_route_flags;
+            public ulong gpu_device_mask;
+            public IntPtr gpu_stream;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAudioDesc
+        {
+            public uint size;
+            public AstralAudioFormat format;
+            public uint channels;
+            public uint sample_rate;
+            public ulong frame_count;
+            public AstralSpanU8 samples;
+            public uint flags;
+            public uint _padding0;
+            public int gpu_device;
+            public uint gpu_route_flags;
+            public ulong gpu_device_mask;
+            public IntPtr gpu_stream;
+        }
+
+        // ====================================================================
         // Error Codes
         // ====================================================================
 
@@ -226,16 +293,108 @@ namespace Astral.Runtime
         // Model
         // ====================================================================
 
-        [StructLayout(LayoutKind.Sequential)]
-        public struct AstralModelDesc
+        public enum AstralModelSourceKind : uint
         {
-            public AstralSpanU8 model_path;  // Path to GGUF model file
+            Path = 0,
+            Memory = 1,
+            IO = 2
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralModelIO
+        {
+            public IntPtr user;
+            public IntPtr size;    // function pointer
+            public IntPtr read_at; // function pointer
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralModelMediaDesc
+        {
+            public uint size;
+            public AstralModelSourceKind source_kind;
+            public uint flags;
+            public uint image_min_tokens;
+            public uint image_max_tokens;
+            public uint _padding0;
+
+            public AstralSpanU8 media_path;
+            public AstralSpanU8 media_bytes;
+            public AstralModelIO media_io;
+
+            public int gpu_device;
+            public uint gpu_route_flags;
+            public ulong gpu_device_mask;
+            public IntPtr gpu_stream;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMediaInfo
+        {
+            public uint size;
+            public uint supports_image;
+            public uint supports_audio;
+            public uint audio_sample_rate;
+            public uint image_min_tokens;
+            public uint image_max_tokens;
+            public uint _padding0;
+        }
+
+        public enum AstralGpuSplitMode : int
+        {
+            None = 0,
+            Layer = 1,
+            Row = 2
+        }
+
+        [Flags]
+        public enum AstralGpuConfigFlags : uint
+        {
+            None = 0,
+            Main = 1u << 0,
+            SplitMode = 1u << 1,
+            Devices = 1u << 2,
+            DeviceMask = 1u << 3,
+            TensorSplit = 1u << 4
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public unsafe struct AstralModelDesc
+        {
+            public uint size;                // sizeof(AstralModelDesc)
+            public AstralModelSourceKind source_kind;
+            public uint _padding0;
+
+            // Sources
+            public AstralSpanU8 model_path;  // PATH
+            public AstralSpanU8 model_bytes; // MEMORY
+            public AstralModelIO io;         // IO
+
+            // Common options
             public AstralSpanU8 backend_name; // Optional override ("cpu", "mock", ...)
             public uint gpu_layers;          // Layers to offload to GPU
             public uint n_ctx;               // Context size (tokens)
             public uint n_batch;             // Batch size for prompt processing
             public uint n_threads;           // Threads for backend (0 = auto)
             public byte embeddings_only;     // Embeddings-only mode
+#if UNITY_64 || UNITY_EDITOR_64
+            public fixed byte _padding1[7];
+#else
+            public fixed byte _padding1[3];
+#endif
+
+            // Optional CUDA multi-GPU config (best-effort)
+            public int gpu_main;
+            public int gpu_split_mode; // AstralGpuSplitMode
+            public uint gpu_flags;     // AstralGpuConfigFlags
+            public uint _padding2;
+            public ulong gpu_device_mask;
+            public IntPtr gpu_devices;        // int32_t*
+            public uint gpu_device_count;
+            public uint _padding3;
+            public IntPtr gpu_tensor_split;   // float*
+            public uint gpu_tensor_split_count;
+            public uint _padding4;
         }
 
         /// <summary>
@@ -244,6 +403,9 @@ namespace Astral.Runtime
         /// </summary>
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_model_load(ref AstralModelDesc desc, out AstralHandle out_model);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_load2(ref AstralModelDesc desc, out AstralHandle out_model);
 
         /// <summary>
         /// Release a model.
@@ -275,6 +437,9 @@ namespace Astral.Runtime
         public const ulong ASTRAL_CAP_SLOTS = 1UL << 22;
         public const ulong ASTRAL_CAP_GRAMMAR_GBNF = 1UL << 23;
         public const ulong ASTRAL_CAP_GRAMMAR_JSON_SCHEMA = 1UL << 24;
+        public const ulong ASTRAL_CAP_IMAGE = 1UL << 25;
+        public const ulong ASTRAL_CAP_AUDIO = 1UL << 26;
+        public const ulong ASTRAL_CAP_MM_EMBEDDINGS = 1UL << 27;
 
         [StructLayout(LayoutKind.Sequential)]
         public struct AstralModelLimits
@@ -296,6 +461,12 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_model_embedding_dim(AstralHandle model, out uint out_dim);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_media_init(AstralHandle model, ref AstralModelMediaDesc desc);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_media_info(AstralHandle model, ref AstralMediaInfo out_info);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern unsafe int astral_tokenize(
@@ -415,6 +586,12 @@ namespace Astral.Runtime
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_feed(AstralHandle session, AstralSpanU8 prompt_chunk, byte finalize);
 
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_feed_image(AstralHandle session, ref AstralImageDesc image, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_feed_audio(AstralHandle session, ref AstralAudioDesc audio, byte finalize);
+
         /// <summary>
         /// Start decoding (non-blocking).
         /// Thread-safety: Not thread-safe; single-threaded access per session.
@@ -525,6 +702,20 @@ namespace Astral.Runtime
         /// </summary>
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_embed_enqueue(AstralHandle emb, AstralSpanU8 text, out ulong out_ticket);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_embed_enqueue_image(AstralHandle emb, ref AstralImageDesc image, out ulong out_ticket);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_embed_enqueue_audio(AstralHandle emb, ref AstralAudioDesc audio, out ulong out_ticket);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_embed_enqueue_multimodal(
+            AstralHandle emb,
+            AstralSpanU8 text,
+            IntPtr image,
+            IntPtr audio,
+            out ulong out_ticket);
 
         /// <summary>
         /// Collect embedding vector for a ticket.

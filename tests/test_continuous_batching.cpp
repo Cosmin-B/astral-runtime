@@ -76,6 +76,8 @@ TEST(continuous_batching_multi_conv_cpu) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     AstralModelDesc md{};
+    md.size = sizeof(AstralModelDesc);
+    md.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     md.backend_name = span_from_cstr("cpu");
     md.model_path = span_from_cstr(model_path);
     md.n_ctx = 512;

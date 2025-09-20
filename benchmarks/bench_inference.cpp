@@ -508,6 +508,8 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     }
 
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.backend_name = span_from_cstr(backend);
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));

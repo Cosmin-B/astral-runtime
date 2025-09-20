@@ -88,7 +88,7 @@ These are used to reserve a small front slice of the arena for:
 
 ## Model loading without filesystem (WIP)
 
-Astral exposes `astral_model_load2()` with `AstralModelDesc2` to select a model source (`PATH` / `MEMORY` / custom `IO`) so embedded targets can avoid filesystem paths.
+Astral exposes `astral_model_load2()` with `AstralModelDesc` to select a model source (`PATH` / `MEMORY` / custom `IO`) so embedded targets can avoid filesystem paths.
 
 Status:
 - Built-in CPU provider supports `MEMORY` and `IO` sources by routing GGUF parsing + tensor reads through callbacks (no path required).

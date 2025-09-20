@@ -119,8 +119,54 @@ static AstralSpanU8 span_from_cstr(const char* s) {
     return out;
 }
 
+static AstralImageDesc make_bench_image(std::vector<uint8_t>& storage) {
+    const uint32_t width = parse_u32_env("ASTRAL_BENCH_MEDIA_IMAGE_W", 224);
+    const uint32_t height = parse_u32_env("ASTRAL_BENCH_MEDIA_IMAGE_H", 224);
+    const uint32_t channels = 3;
+    const uint64_t bytes = static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * channels;
+    storage.resize(static_cast<size_t>(bytes));
+    for (uint64_t i = 0; i < bytes; ++i) {
+        storage[static_cast<size_t>(i)] = static_cast<uint8_t>(i & 0xFFu);
+    }
+
+    AstralImageDesc img{};
+    img.size = sizeof(AstralImageDesc);
+    img.format = ASTRAL_IMAGE_FORMAT_RGB8;
+    img.width = width;
+    img.height = height;
+    img.row_stride = 0;
+    img.flags = 0;
+    img.pixels.data = storage.data();
+    img.pixels.len = static_cast<uint32_t>(storage.size());
+    return img;
+}
+
+static AstralAudioDesc make_bench_audio(std::vector<uint8_t>& storage) {
+    const uint32_t sample_rate = parse_u32_env("ASTRAL_BENCH_MEDIA_AUDIO_RATE", 16000);
+    const uint32_t channels = parse_u32_env("ASTRAL_BENCH_MEDIA_AUDIO_CHANNELS", 1);
+    const uint32_t frames = parse_u32_env("ASTRAL_BENCH_MEDIA_AUDIO_FRAMES", sample_rate);
+    const uint64_t bytes = static_cast<uint64_t>(frames) * channels * sizeof(float);
+    storage.resize(static_cast<size_t>(bytes));
+    for (uint64_t i = 0; i < bytes; ++i) {
+        storage[static_cast<size_t>(i)] = static_cast<uint8_t>((i * 3u) & 0xFFu);
+    }
+
+    AstralAudioDesc audio{};
+    audio.size = sizeof(AstralAudioDesc);
+    audio.format = ASTRAL_AUDIO_FORMAT_F32;
+    audio.channels = channels;
+    audio.sample_rate = sample_rate;
+    audio.frame_count = frames;
+    audio.samples.data = storage.data();
+    audio.samples.len = static_cast<uint32_t>(storage.size());
+    audio.flags = 0;
+    return audio;
+}
+
 static AstralHandle load_model(const char* backend, const char* path, uint32_t gpu_layers, uint8_t embeddings_only) {
     AstralModelDesc desc{};
+    desc.size = sizeof(AstralModelDesc);
+    desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     desc.backend_name = span_from_cstr(backend);
     desc.model_path = span_from_cstr(path);
     desc.gpu_layers = gpu_layers;
@@ -200,6 +246,96 @@ static BenchResult bench_embed_roundtrip(AstralHandle model, uint64_t iters) {
     r.ns = n1 - n0;
 
     astral_embed_destroy(emb);
+    return r;
+}
+
+static AstralHandle create_session(AstralHandle model, uint32_t max_tokens, float temperature, uint32_t top_k, float top_p, uint32_t seed);
+
+static AstralErr init_media_for_model(AstralHandle model, const char* media_path) {
+    if (media_path == nullptr || media_path[0] == '\0') {
+        return ASTRAL_E_INVALID;
+    }
+
+    AstralModelMediaDesc desc{};
+    desc.size = sizeof(AstralModelMediaDesc);
+    desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    desc.media_path = span_from_cstr(media_path);
+    desc.flags = 0;
+
+    return astral_model_media_init(model, &desc);
+}
+
+static BenchResult bench_media_feed_image(AstralHandle model, const AstralImageDesc& image, uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.media feed_image";
+    r.ops = iters;
+
+    AstralHandle session = create_session(model, /*max_tokens=*/1, /*temperature=*/0.0f, /*top_k=*/0, /*top_p=*/1.0f, /*seed=*/1);
+    if (!astral_handle_valid(session)) {
+        r.ops = 0;
+        return r;
+    }
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+
+    for (uint64_t i = 0; i < iters; ++i) {
+        AstralErr err = astral_session_reset(session, nullptr);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+        err = astral_session_feed_image(session, &image, 1);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+    }
+
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+
+    astral_session_destroy(session);
+    return r;
+}
+
+static BenchResult bench_media_feed_audio(AstralHandle model, const AstralAudioDesc& audio, uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.media feed_audio";
+    r.ops = iters;
+
+    AstralHandle session = create_session(model, /*max_tokens=*/1, /*temperature=*/0.0f, /*top_k=*/0, /*top_p=*/1.0f, /*seed=*/1);
+    if (!astral_handle_valid(session)) {
+        r.ops = 0;
+        return r;
+    }
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+
+    for (uint64_t i = 0; i < iters; ++i) {
+        AstralErr err = astral_session_reset(session, nullptr);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+        err = astral_session_feed_audio(session, &audio, 1);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+    }
+
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+
+    astral_session_destroy(session);
     return r;
 }
 
@@ -430,6 +566,10 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
     std::printf("  ASTRAL_BENCH_FEATURE_ITERS=%llu\n", (unsigned long long)parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", 2000));
     std::printf("  ASTRAL_BENCH_FEATURE_TOKENS=%u\n", parse_u32_env("ASTRAL_BENCH_FEATURE_TOKENS", 64));
     std::printf("  ASTRAL_BENCH_EMBED_MODEL=%s\n", std::getenv("ASTRAL_BENCH_EMBED_MODEL") ? std::getenv("ASTRAL_BENCH_EMBED_MODEL") : "");
+    std::printf("  ASTRAL_BENCH_VISION_MODEL=%s\n", std::getenv("ASTRAL_BENCH_VISION_MODEL") ? std::getenv("ASTRAL_BENCH_VISION_MODEL") : "");
+    std::printf("  ASTRAL_BENCH_VISION_MEDIA=%s\n", std::getenv("ASTRAL_BENCH_VISION_MEDIA") ? std::getenv("ASTRAL_BENCH_VISION_MEDIA") : "");
+    std::printf("  ASTRAL_BENCH_AUDIO_MODEL=%s\n", std::getenv("ASTRAL_BENCH_AUDIO_MODEL") ? std::getenv("ASTRAL_BENCH_AUDIO_MODEL") : "");
+    std::printf("  ASTRAL_BENCH_AUDIO_MEDIA=%s\n", std::getenv("ASTRAL_BENCH_AUDIO_MEDIA") ? std::getenv("ASTRAL_BENCH_AUDIO_MEDIA") : "");
 }
 
 } // namespace
@@ -471,6 +611,47 @@ void bench_feature_surfaces_print(void) {
         if (astral_handle_valid(model)) {
             print_result(bench_embed_roundtrip(model, iters), clock_info().name);
             astral_model_release(model);
+        }
+    }
+
+    // Media feed (vision/audio) benches when models + media are provided.
+    {
+        const char* vision_model = std::getenv("ASTRAL_BENCH_VISION_MODEL");
+        const char* vision_media = std::getenv("ASTRAL_BENCH_VISION_MEDIA");
+        if (file_is_large_enough(vision_model, 100ull * 1024ull * 1024ull) &&
+            file_is_large_enough(vision_media, 1ull * 1024ull * 1024ull)) {
+            const AstralHandle model = load_model(backend, vision_model, gpu_layers, /*embeddings_only=*/0);
+            if (astral_handle_valid(model)) {
+                const AstralErr m_err = init_media_for_model(model, vision_media);
+                if (m_err == ASTRAL_OK) {
+                    std::vector<uint8_t> img_storage;
+                    const AstralImageDesc img = make_bench_image(img_storage);
+                    print_result(bench_media_feed_image(model, img, iters), clock_info().name);
+                } else {
+                    std::fprintf(stderr, "[bench] media init failed (vision): %s (%s)\n",
+                                 astral_error_string(m_err), astral_last_error());
+                }
+                astral_model_release(model);
+            }
+        }
+
+        const char* audio_model = std::getenv("ASTRAL_BENCH_AUDIO_MODEL");
+        const char* audio_media = std::getenv("ASTRAL_BENCH_AUDIO_MEDIA");
+        if (file_is_large_enough(audio_model, 100ull * 1024ull * 1024ull) &&
+            file_is_large_enough(audio_media, 1ull * 1024ull * 1024ull)) {
+            const AstralHandle model = load_model(backend, audio_model, gpu_layers, /*embeddings_only=*/0);
+            if (astral_handle_valid(model)) {
+                const AstralErr m_err = init_media_for_model(model, audio_media);
+                if (m_err == ASTRAL_OK) {
+                    std::vector<uint8_t> audio_storage;
+                    const AstralAudioDesc audio = make_bench_audio(audio_storage);
+                    print_result(bench_media_feed_audio(model, audio, iters), clock_info().name);
+                } else {
+                    std::fprintf(stderr, "[bench] media init failed (audio): %s (%s)\n",
+                                 astral_error_string(m_err), astral_last_error());
+                }
+                astral_model_release(model);
+            }
         }
     }
 

@@ -18,6 +18,8 @@ namespace {
 
 AstralHandle load_mock_model(const char* model_path) {
     AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* backend = "mock";
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
     model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend));
@@ -1213,6 +1215,8 @@ TEST(inference_embed_create_and_run_mock) {
     const char* backend = "mock";
     const char* model_path = "infinite";
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
     model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);

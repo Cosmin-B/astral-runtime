@@ -72,6 +72,8 @@ TEST(core_handle_validation) {
 
     // Create a model handle
     AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* path = "test_model.gguf";
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(path);
     model_desc.model_path.len = static_cast<uint32_t>(strlen(path));

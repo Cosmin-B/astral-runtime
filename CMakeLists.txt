@@ -19,6 +19,7 @@ option(ASTRAL_ENABLE_THREADS "Enable Astral internal worker threads" ON)
 option(ASTRAL_NO_THROW_ABI "Catch and translate exceptions at the C ABI boundary (recommended)" ON)
 option(ASTRAL_ENABLE_VIRTUAL_MEMORY "Enable platform virtual memory primitives (mmap/VirtualAlloc)" ON)
 option(ASTRAL_CPU_MEMORY_SOURCE_MMAP "CPU backend: enable mmap-backed model load for MEMORY/IO sources (best-effort; may use temp files)" ON)
+option(ASTRAL_ENABLE_MTMD "Enable multimodal (vision/audio) support via llama.cpp libmtmd" OFF)
 option(ASTRAL_ENABLE_TRACY "Enable Tracy profiler integration (profiling presets only; requires external/tracy submodule)" OFF)
 option(ASTRAL_ENABLE_TRACY_MICRO "Enable Tracy micro-instrumentation (higher overhead; profiling builds only)" OFF)
 option(ASTRAL_TRACY_ON_DEMAND "Tracy: on-demand mode (do not capture until connected)" ON)
@@ -171,9 +172,13 @@ function(astral_configure_runtime_target tgt)
         ${LLAMA_CPP_DIR}/include
         ${LLAMA_CPP_DIR}/common
         ${LLAMA_CPP_DIR}/vendor
+        $<$<BOOL:${ASTRAL_ENABLE_MTMD}>:${LLAMA_CPP_DIR}/tools/mtmd>
     )
 
     target_link_libraries(${tgt} PRIVATE llama common)
+    if(ASTRAL_ENABLE_MTMD)
+        target_link_libraries(${tgt} PRIVATE mtmd)
+    endif()
 
     target_compile_options(${tgt} PRIVATE
         $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Werror -Wno-unused-parameter>
@@ -194,6 +199,12 @@ function(astral_configure_runtime_target tgt)
         target_compile_definitions(${tgt} PRIVATE ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR=1)
     else()
         target_compile_definitions(${tgt} PRIVATE ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR=0)
+    endif()
+
+    if(ASTRAL_ENABLE_MTMD)
+        target_compile_definitions(${tgt} PRIVATE ASTRAL_ENABLE_MTMD=1)
+    else()
+        target_compile_definitions(${tgt} PRIVATE ASTRAL_ENABLE_MTMD=0)
     endif()
 
     if(ASTRAL_ENABLE_DYNAMIC_BACKENDS)

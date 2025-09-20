@@ -5,6 +5,7 @@
 //  Thread-safety: Safe to load from multiple threads; must not be in use when releasing
 
 using System;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using Unity.Collections;
 
@@ -91,6 +92,103 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Initialize media (vision/audio) support for this model.
+        /// </summary>
+        public void InitMedia(ref AstralNative.AstralModelMediaDesc desc)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            desc.size = (uint)Marshal.SizeOf<AstralNative.AstralModelMediaDesc>();
+            int err = AstralNative.astral_model_media_init(m_handle, ref desc);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_model_media_init failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
+        /// Initialize media (vision/audio) support using a media/projector GGUF path.
+        /// </summary>
+        public void InitMediaFromPath(
+            string mediaPath,
+            AstralNative.AstralMediaFlags flags = AstralNative.AstralMediaFlags.None,
+            uint imageMinTokens = 0,
+            uint imageMaxTokens = 0,
+            AstralNative.AstralGpuRouteFlags gpuRouteFlags = AstralNative.AstralGpuRouteFlags.None,
+            int gpuDevice = 0,
+            ulong gpuDeviceMask = 0,
+            IntPtr gpuStream = default)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+            if (string.IsNullOrEmpty(mediaPath))
+            {
+                throw new ArgumentNullException(nameof(mediaPath));
+            }
+
+            NativeArray<byte> pathArray;
+            var pathSpan = AstralNative.AstralSpanU8.FromString(mediaPath, out pathArray);
+
+            try
+            {
+                var desc = new AstralNative.AstralModelMediaDesc
+                {
+                    size = (uint)Marshal.SizeOf<AstralNative.AstralModelMediaDesc>(),
+                    source_kind = AstralNative.AstralModelSourceKind.Path,
+                    flags = (uint)flags,
+                    image_min_tokens = imageMinTokens,
+                    image_max_tokens = imageMaxTokens,
+                    media_path = pathSpan,
+                    gpu_device = gpuDevice,
+                    gpu_route_flags = (uint)gpuRouteFlags,
+                    gpu_device_mask = gpuDeviceMask,
+                    gpu_stream = gpuStream
+                };
+
+                int err = AstralNative.astral_model_media_init(m_handle, ref desc);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_model_media_init failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+            }
+            finally
+            {
+                if (pathArray.IsCreated)
+                {
+                    pathArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Query media (vision/audio) info for this model.
+        /// </summary>
+        public AstralNative.AstralMediaInfo GetMediaInfo()
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            var info = new AstralNative.AstralMediaInfo
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralMediaInfo>()
+            };
+            int err = AstralNative.astral_model_media_info(m_handle, ref info);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_model_media_info failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+
+            return info;
+        }
+
+        /// <summary>
         /// Load a GGUF model.
         /// Thread-safety: Safe to call from multiple threads.
         /// </summary>
@@ -126,6 +224,8 @@ namespace Astral.Runtime
             {
                 var desc = new AstralNative.AstralModelDesc
                 {
+                    size = (uint)Marshal.SizeOf<AstralNative.AstralModelDesc>(),
+                    source_kind = AstralNative.AstralModelSourceKind.Path,
                     model_path = pathSpan,
                     backend_name = backendSpan,
                     gpu_layers = config.gpuLayers,

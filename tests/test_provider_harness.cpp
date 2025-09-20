@@ -104,6 +104,8 @@ struct ProviderCase {
 
 static void run_provider_case(const ProviderCase& c) {
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
 
     if (c.name != nullptr) {
         model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(c.name);
@@ -335,6 +337,8 @@ TEST(provider_override_unknown_fails_cleanly) {
 
     const char* unknown = "next";
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(unknown);
     model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(unknown));
     model_desc.n_ctx = 128;

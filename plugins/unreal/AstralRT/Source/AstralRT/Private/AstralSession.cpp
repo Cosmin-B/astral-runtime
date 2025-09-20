@@ -107,6 +107,103 @@ bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinali
     return true;
 }
 
+bool UAstralSession::FeedImage(const FAstralImageDesc& Image, bool bFinalize)
+{
+    if (SessionHandle == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        return false;
+    }
+
+    if (Image.Pixels.Num() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AstralRT: image pixels are empty"));
+        return false;
+    }
+
+    AstralImageDesc Native{};
+    Native.size = sizeof(AstralImageDesc);
+    Native.format = static_cast<AstralImageFormat>(Image.Format);
+    Native.width = Image.Width;
+    Native.height = Image.Height;
+    Native.row_stride = Image.RowStride;
+    Native.flags = Image.Flags;
+    Native.pixels.data = Image.Pixels.GetData();
+    Native.pixels.len = static_cast<uint32_t>(Image.Pixels.Num());
+    Native.gpu_device = Image.GpuDevice;
+    Native.gpu_route_flags = Image.GpuRouteFlags;
+    Native.gpu_device_mask = Image.GpuDeviceMask;
+    Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Image.GpuStream));
+
+    const AstralErr Err =
+        astral_session_feed_image(static_cast<AstralHandle>(SessionHandle), &Native, bFinalize ? 1 : 0);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_feed_image failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
+bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
+{
+    if (SessionHandle == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        return false;
+    }
+
+    if (Audio.Samples.Num() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AstralRT: audio samples are empty"));
+        return false;
+    }
+
+    AstralAudioDesc Native{};
+    Native.size = sizeof(AstralAudioDesc);
+    Native.format = static_cast<AstralAudioFormat>(Audio.Format);
+    if (Audio.Channels == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AstralRT: audio channels must be > 0"));
+        return false;
+    }
+
+    uint64 FrameCount = Audio.FrameCount;
+    if (FrameCount == 0)
+    {
+        const uint32 BytesPerSample = (Audio.Format == EAstralAudioFormat::F32) ? 4u : 2u;
+        const uint64 TotalSamples = static_cast<uint64>(Audio.Samples.Num()) / BytesPerSample;
+        if (TotalSamples % Audio.Channels != 0)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("AstralRT: audio samples not aligned to channels"));
+            return false;
+        }
+        FrameCount = TotalSamples / Audio.Channels;
+    }
+
+    Native.channels = Audio.Channels;
+    Native.sample_rate = Audio.SampleRate;
+    Native.frame_count = FrameCount;
+    Native.samples.data = Audio.Samples.GetData();
+    Native.samples.len = static_cast<uint32_t>(Audio.Samples.Num());
+    Native.flags = Audio.Flags;
+    Native.gpu_device = Audio.GpuDevice;
+    Native.gpu_route_flags = Audio.GpuRouteFlags;
+    Native.gpu_device_mask = Audio.GpuDeviceMask;
+    Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Audio.GpuStream));
+
+    const AstralErr Err =
+        astral_session_feed_audio(static_cast<AstralHandle>(SessionHandle), &Native, bFinalize ? 1 : 0);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_feed_audio failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
 bool UAstralSession::Decode()
 {
     if (SessionHandle == 0)

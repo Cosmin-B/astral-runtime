@@ -7,6 +7,7 @@
 
 #include "model.hpp"
 #include "sampler.hpp"
+#include "prompt_chunks.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -56,6 +57,10 @@ struct Conversation {
     uint32_t prompt_count;
     uint32_t prompt_capacity;
     uint32_t prompt_off; // how many prompt tokens have been evaluated
+    PromptChunk prompt_chunks[kMaxPromptChunks];
+    uint32_t prompt_chunk_count;
+    uint32_t prompt_chunk_index;
+    uint32_t prompt_chunk_token_off;
 
     std::atomic<ConvState> state;
     std::atomic<bool> cancel_requested;

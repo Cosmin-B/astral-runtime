@@ -43,6 +43,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY)
         test_inference
         test_continuous_batching
         test_embeddings
+        test_media
         test_provider_harness
     )
 else()

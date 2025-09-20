@@ -10,6 +10,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace Astral.Runtime
 {
@@ -140,6 +141,243 @@ namespace Astral.Runtime
                 {
                     tempArray.Dispose();
                 }
+            }
+        }
+
+        /// <summary>
+        /// Feed an image chunk into the session prompt.
+        /// </summary>
+        public void FeedImage(ref AstralNative.AstralImageDesc image, bool finalize = true)
+        {
+            if (m_disposed)
+            {
+                throw new ObjectDisposedException(nameof(AstralSession));
+            }
+
+            image.size = (uint)Marshal.SizeOf<AstralNative.AstralImageDesc>();
+            int err = AstralNative.astral_session_feed_image(m_handle, ref image, (byte)(finalize ? 1 : 0));
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_session_feed_image failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
+        /// Feed an image chunk from a raw byte buffer.
+        /// </summary>
+        public void FeedImage(
+            NativeArray<byte> pixels,
+            uint width,
+            uint height,
+            AstralNative.AstralImageFormat format,
+            bool finalize = true,
+            uint rowStride = 0,
+            uint flags = 0)
+        {
+            if (!pixels.IsCreated)
+            {
+                throw new ArgumentException("pixels must be created", nameof(pixels));
+            }
+            if (pixels.Length == 0)
+            {
+                throw new ArgumentException("pixels must not be empty", nameof(pixels));
+            }
+
+            var desc = new AstralNative.AstralImageDesc
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralImageDesc>(),
+                format = format,
+                width = width,
+                height = height,
+                row_stride = rowStride,
+                flags = flags,
+                pixels = AstralNative.AstralSpanU8.FromNativeArray(pixels)
+            };
+
+            FeedImage(ref desc, finalize);
+        }
+
+        /// <summary>
+        /// Feed an audio chunk into the session prompt.
+        /// </summary>
+        public void FeedAudio(ref AstralNative.AstralAudioDesc audio, bool finalize = true)
+        {
+            if (m_disposed)
+            {
+                throw new ObjectDisposedException(nameof(AstralSession));
+            }
+
+            audio.size = (uint)Marshal.SizeOf<AstralNative.AstralAudioDesc>();
+            int err = AstralNative.astral_session_feed_audio(m_handle, ref audio, (byte)(finalize ? 1 : 0));
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_session_feed_audio failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
+        /// Feed audio from a raw byte buffer.
+        /// </summary>
+        public void FeedAudio(
+            NativeArray<byte> samples,
+            uint channels,
+            uint sampleRate,
+            ulong frameCount,
+            AstralNative.AstralAudioFormat format,
+            bool finalize = true,
+            uint flags = 0)
+        {
+            if (!samples.IsCreated)
+            {
+                throw new ArgumentException("samples must be created", nameof(samples));
+            }
+            if (samples.Length == 0)
+            {
+                throw new ArgumentException("samples must not be empty", nameof(samples));
+            }
+            if (channels == 0)
+            {
+                throw new ArgumentException("channels must be > 0", nameof(channels));
+            }
+
+            if (frameCount == 0)
+            {
+                uint bytesPerSample = format == AstralNative.AstralAudioFormat.F32 ? 4u : 2u;
+                ulong totalSamples = (ulong)samples.Length / bytesPerSample;
+                if (totalSamples % channels != 0)
+                {
+                    throw new ArgumentException("samples length is not aligned to channels", nameof(samples));
+                }
+                frameCount = totalSamples / channels;
+            }
+
+            var desc = new AstralNative.AstralAudioDesc
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralAudioDesc>(),
+                format = format,
+                channels = channels,
+                sample_rate = sampleRate,
+                frame_count = frameCount,
+                samples = AstralNative.AstralSpanU8.FromNativeArray(samples),
+                flags = flags
+            };
+
+            FeedAudio(ref desc, finalize);
+        }
+
+        /// <summary>
+        /// Feed audio from a float PCM buffer (F32).
+        /// </summary>
+        public void FeedAudio(
+            NativeArray<float> samples,
+            uint channels,
+            uint sampleRate,
+            bool finalize = true,
+            ulong frameCount = 0,
+            uint flags = 0)
+        {
+            if (!samples.IsCreated)
+            {
+                throw new ArgumentException("samples must be created", nameof(samples));
+            }
+            if (samples.Length == 0)
+            {
+                throw new ArgumentException("samples must not be empty", nameof(samples));
+            }
+            if (channels == 0)
+            {
+                throw new ArgumentException("channels must be > 0", nameof(channels));
+            }
+
+            if (samples.Length % (int)channels != 0)
+            {
+                throw new ArgumentException("samples length is not aligned to channels", nameof(samples));
+            }
+
+            ulong computedFrames = (ulong)samples.Length / channels;
+            if (frameCount == 0)
+            {
+                frameCount = computedFrames;
+            }
+
+            unsafe
+            {
+                var span = new AstralNative.AstralSpanU8
+                {
+                    data = (IntPtr)samples.GetUnsafeReadOnlyPtr(),
+                    len = (uint)((ulong)samples.Length * (ulong)sizeof(float))
+                };
+
+                var desc = new AstralNative.AstralAudioDesc
+                {
+                    size = (uint)Marshal.SizeOf<AstralNative.AstralAudioDesc>(),
+                    format = AstralNative.AstralAudioFormat.F32,
+                    channels = channels,
+                    sample_rate = sampleRate,
+                    frame_count = frameCount,
+                    samples = span,
+                    flags = flags
+                };
+
+                FeedAudio(ref desc, finalize);
+            }
+        }
+
+        /// <summary>
+        /// Feed audio from an int16 PCM buffer (I16).
+        /// </summary>
+        public void FeedAudio(
+            NativeArray<short> samples,
+            uint channels,
+            uint sampleRate,
+            bool finalize = true,
+            ulong frameCount = 0,
+            uint flags = 0)
+        {
+            if (!samples.IsCreated)
+            {
+                throw new ArgumentException("samples must be created", nameof(samples));
+            }
+            if (samples.Length == 0)
+            {
+                throw new ArgumentException("samples must not be empty", nameof(samples));
+            }
+            if (channels == 0)
+            {
+                throw new ArgumentException("channels must be > 0", nameof(channels));
+            }
+
+            if (samples.Length % (int)channels != 0)
+            {
+                throw new ArgumentException("samples length is not aligned to channels", nameof(samples));
+            }
+
+            ulong computedFrames = (ulong)samples.Length / channels;
+            if (frameCount == 0)
+            {
+                frameCount = computedFrames;
+            }
+
+            unsafe
+            {
+                var span = new AstralNative.AstralSpanU8
+                {
+                    data = (IntPtr)samples.GetUnsafeReadOnlyPtr(),
+                    len = (uint)((ulong)samples.Length * (ulong)sizeof(short))
+                };
+
+                var desc = new AstralNative.AstralAudioDesc
+                {
+                    size = (uint)Marshal.SizeOf<AstralNative.AstralAudioDesc>(),
+                    format = AstralNative.AstralAudioFormat.I16,
+                    channels = channels,
+                    sample_rate = sampleRate,
+                    frame_count = frameCount,
+                    samples = span,
+                    flags = flags
+                };
+
+                FeedAudio(ref desc, finalize);
             }
         }
 

@@ -136,6 +136,8 @@ TEST(gate_rss_cap) {
     uint64_t rss_peak = read_rss_kb_linux();
 
     AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     model_desc.model_path.data = reinterpret_cast<const uint8_t*>(gguf);
     model_desc.model_path.len = static_cast<uint32_t>(std::strlen(gguf));
     model_desc.n_ctx = 256;

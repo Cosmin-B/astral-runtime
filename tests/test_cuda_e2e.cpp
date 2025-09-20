@@ -72,6 +72,8 @@ static AstralSpanU8 span_from_cstr(const char* s) {
 
 static AstralHandle load_model(const char* backend, const char* model_path, uint32_t gpu_layers, uint8_t embeddings_only) {
     AstralModelDesc desc{};
+    desc.size = sizeof(AstralModelDesc);
+    desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     desc.backend_name = span_from_cstr(backend);
     desc.model_path = span_from_cstr(model_path);
     desc.gpu_layers = gpu_layers;

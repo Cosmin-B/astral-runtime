@@ -66,6 +66,8 @@ static AstralErr init_arena_runtime(ArenaBuffer& arena) {
 
 static AstralHandle load_mock_model() {
     AstralModelDesc desc{};
+    desc.size = sizeof(AstralModelDesc);
+    desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
     const char* backend = "mock";
     desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
     desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend));
@@ -170,4 +172,3 @@ BenchResult bench_session_create_destroy(uint64_t iters, bool arena_mode) {
 }
 
 } // namespace astral::bench
-

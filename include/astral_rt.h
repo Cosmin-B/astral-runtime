@@ -119,6 +119,82 @@ typedef struct AstralMutSpanU8 {
  */
 typedef uint64_t AstralHandle;
 
+// ============================================================================
+// Media Types (Vision / Audio)
+// ============================================================================
+
+typedef uint32_t AstralImageFormat;
+enum {
+    ASTRAL_IMAGE_FORMAT_RGB8 = 0,   /** RGB, 8-bit per channel */
+    ASTRAL_IMAGE_FORMAT_RGBA8 = 1,  /** RGBA, 8-bit per channel (alpha ignored) */
+    ASTRAL_IMAGE_FORMAT_RGB_F32 = 2 /** RGB, float32 per channel (0..1 assumed) */
+};
+
+typedef uint32_t AstralAudioFormat;
+enum {
+    ASTRAL_AUDIO_FORMAT_F32 = 0, /** float32 PCM */
+    ASTRAL_AUDIO_FORMAT_I16 = 1  /** int16 PCM */
+};
+
+typedef uint32_t AstralMediaFlags;
+enum {
+    ASTRAL_MEDIA_FLAG_USE_GPU = 1u << 0,  /** Request GPU in media projector (best-effort). */
+    ASTRAL_MEDIA_FLAG_WARMUP  = 1u << 1   /** Warmup media encoder on init (best-effort). */
+};
+
+typedef uint32_t AstralGpuRouteFlags;
+enum {
+    ASTRAL_GPU_ROUTE_NONE = 0,
+    ASTRAL_GPU_ROUTE_DEVICE = 1u << 0,       /** Use gpu_device as an explicit device index. */
+    ASTRAL_GPU_ROUTE_DEVICE_MASK = 1u << 1,  /** Use gpu_device_mask bitset to choose a device. */
+    ASTRAL_GPU_ROUTE_STREAM = 1u << 2        /** Use gpu_stream when supported by the backend. */
+};
+
+/**
+ * Image descriptor (size-tagged).
+ *
+ * Notes:
+ * - `size` must be set to sizeof(AstralImageDesc).
+ * - `row_stride` is in bytes; 0 means tightly packed.
+ * - GPU routing fields are best-effort and may be ignored by a backend.
+ */
+typedef struct AstralImageDesc {
+    uint32_t size;        // sizeof(AstralImageDesc)
+    AstralImageFormat format;
+    uint32_t width;
+    uint32_t height;
+    uint32_t row_stride;  // bytes; 0 = width * bytes_per_pixel
+    uint32_t flags;
+    AstralSpanU8 pixels;  // raw pixel bytes
+    int32_t gpu_device;         // backend device index (best-effort)
+    uint32_t gpu_route_flags;   // AstralGpuRouteFlags
+    uint64_t gpu_device_mask;   // bitset of allowed devices (best-effort)
+    void* gpu_stream;           // backend-specific stream handle (e.g., cudaStream_t)
+} AstralImageDesc;
+
+/**
+ * Audio descriptor (size-tagged).
+ *
+ * Notes:
+ * - `size` must be set to sizeof(AstralAudioDesc).
+ * - `frame_count` is per-channel frames.
+ * - GPU routing fields are best-effort and may be ignored by a backend.
+ */
+typedef struct AstralAudioDesc {
+    uint32_t size;         // sizeof(AstralAudioDesc)
+    AstralAudioFormat format;
+    uint32_t channels;
+    uint32_t sample_rate;
+    uint64_t frame_count;  // per-channel frames
+    AstralSpanU8 samples;  // raw PCM bytes
+    uint32_t flags;
+    uint32_t _padding0;
+    int32_t gpu_device;         // backend device index (best-effort)
+    uint32_t gpu_route_flags;   // AstralGpuRouteFlags
+    uint64_t gpu_device_mask;   // bitset of allowed devices (best-effort)
+    void* gpu_stream;           // backend-specific stream handle (e.g., cudaStream_t)
+} AstralAudioDesc;
+
 // ---------------------------------------------------------------------------
 // Tunables / Limits
 // ---------------------------------------------------------------------------
@@ -377,24 +453,6 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_backend_load_plugin(AstralSpanU8 path);
 // Model
 // ============================================================================
 
-/**
- * Model configuration.
- */
-typedef struct AstralModelDesc {
-    AstralSpanU8 model_path;   /** Model identifier/path (UTF-8). May be empty for backends that don't load from file. */
-    AstralSpanU8 backend_name; /** Optional backend override (e.g., "cpu", "mock"); empty = auto */
-    uint32_t gpu_layers;       /** Number of layers to offload to GPU (0 = CPU only) */
-    uint32_t n_ctx;            /** Context size (tokens) */
-    uint32_t n_batch;          /** Batch size for prompt processing */
-    uint32_t n_threads;        /** Threads for backend (0 = auto) */
-    uint8_t embeddings_only;   /** Embeddings-only mode (1 = yes, 0 = no) */
-#if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
-    uint8_t _padding0[7];
-#else
-    uint8_t _padding0[3];
-#endif
-} AstralModelDesc;
-
 // ============================================================================
 // Model (Extended Source / Embedded-Friendly)
 // ============================================================================
@@ -420,15 +478,33 @@ typedef struct AstralModelIO {
     uint32_t (ASTRAL_CALL * read_at)(void* user, uint64_t offset, void* dst, uint32_t dst_len);
 } AstralModelIO;
 
+typedef int32_t AstralGpuSplitMode;
+enum {
+    ASTRAL_GPU_SPLIT_NONE  = 0, // single GPU
+    ASTRAL_GPU_SPLIT_LAYER = 1, // split layers/KV across GPUs
+    ASTRAL_GPU_SPLIT_ROW   = 2  // split layers/KV + tensor parallelism if supported
+};
+
+typedef uint32_t AstralGpuConfigFlags;
+enum {
+    ASTRAL_GPU_CFG_NONE          = 0,
+    ASTRAL_GPU_CFG_MAIN          = 1u << 0,
+    ASTRAL_GPU_CFG_SPLIT_MODE    = 1u << 1,
+    ASTRAL_GPU_CFG_DEVICES       = 1u << 2,
+    ASTRAL_GPU_CFG_DEVICE_MASK   = 1u << 3,
+    ASTRAL_GPU_CFG_TENSOR_SPLIT  = 1u << 4
+};
+
 /**
- * Extended model configuration (size-tagged).
+ * Model configuration (size-tagged).
  *
  * Notes:
- * - `size` must be set to sizeof(AstralModelDesc2).
+ * - `size` must be set to sizeof(AstralModelDesc).
  * - `source_kind` selects the model source.
+ * - GPU config fields are honored only when their bit is set in `gpu_flags`.
  */
-typedef struct AstralModelDesc2 {
-    uint32_t size;              // sizeof(AstralModelDesc2)
+typedef struct AstralModelDesc {
+    uint32_t size;              // sizeof(AstralModelDesc)
     AstralModelSourceKind source_kind;
     uint32_t _padding0;
 
@@ -437,7 +513,7 @@ typedef struct AstralModelDesc2 {
     AstralSpanU8 model_bytes;   // MEMORY
     AstralModelIO io;           // IO
 
-    // Common options (mirrors AstralModelDesc)
+    // Common options
     AstralSpanU8 backend_name;  // Optional backend override
     uint32_t gpu_layers;
     uint32_t n_ctx;
@@ -449,7 +525,20 @@ typedef struct AstralModelDesc2 {
 #else
     uint8_t _padding1[3];
 #endif
-} AstralModelDesc2;
+
+    // Optional GPU configuration (llama.cpp). Honor only when flagged in gpu_flags.
+    int32_t gpu_main;            // index into selected device list
+    int32_t gpu_split_mode;      // AstralGpuSplitMode
+    uint32_t gpu_flags;          // AstralGpuConfigFlags
+    uint32_t _padding2;
+    uint64_t gpu_device_mask;    // optional device bitset (0 = ignore)
+    const int32_t* gpu_devices;  // optional device index list
+    uint32_t gpu_device_count;   // number of entries in gpu_devices
+    uint32_t _padding3;
+    const float* gpu_tensor_split; // optional tensor split ratios
+    uint32_t gpu_tensor_split_count; // entries in gpu_tensor_split
+    uint32_t _padding4;
+} AstralModelDesc;
 
 /**
  * Model metadata.
@@ -483,6 +572,9 @@ enum {
     ASTRAL_CAP_SLOTS       = 1ull << 22,  // Slot/sequence selection supported
     ASTRAL_CAP_GRAMMAR_GBNF = 1ull << 23, // GBNF grammar supported
     ASTRAL_CAP_GRAMMAR_JSON_SCHEMA = 1ull << 24, // JSON schema grammar supported
+    ASTRAL_CAP_IMAGE       = 1ull << 25,  // Vision input supported
+    ASTRAL_CAP_AUDIO       = 1ull << 26,  // Audio input supported
+    ASTRAL_CAP_MM_EMBEDDINGS = 1ull << 27 // Multimodal embeddings supported
 };
 
 typedef struct AstralModelLimits {
@@ -491,6 +583,49 @@ typedef struct AstralModelLimits {
     uint32_t max_batch;  // 0 if unknown/unreported
     uint32_t max_slots;  // 0 if not applicable
 } AstralModelLimits;
+
+/**
+ * Media (vision/audio) configuration for a model.
+ *
+ * Notes:
+ * - `size` must be set to sizeof(AstralModelMediaDesc).
+ * - `source_kind` mirrors AstralModelDesc sources (PATH / MEMORY / IO).
+ * - GPU routing fields are best-effort and may be ignored by a backend.
+ */
+typedef struct AstralModelMediaDesc {
+    uint32_t size;              // sizeof(AstralModelMediaDesc)
+    AstralModelSourceKind source_kind;
+    uint32_t flags;             // AstralMediaFlags
+    uint32_t image_min_tokens;  // 0 = use model metadata
+    uint32_t image_max_tokens;  // 0 = use model metadata
+    uint32_t _padding0;
+
+    AstralSpanU8 media_path;    // PATH
+    AstralSpanU8 media_bytes;   // MEMORY
+    AstralModelIO media_io;     // IO
+
+    // Optional GPU routing overrides for media projector/encoder.
+    int32_t gpu_device;         // backend device index (best-effort)
+    uint32_t gpu_route_flags;   // AstralGpuRouteFlags
+    uint64_t gpu_device_mask;   // bitset of allowed devices (best-effort)
+    void* gpu_stream;           // backend-specific stream handle (e.g., cudaStream_t)
+} AstralModelMediaDesc;
+
+/**
+ * Media (vision/audio) info for a model.
+ *
+ * Notes:
+ * - `size` must be set to sizeof(AstralMediaInfo).
+ */
+typedef struct AstralMediaInfo {
+    uint32_t size;              // sizeof(AstralMediaInfo)
+    uint32_t supports_image;    // 1 if vision input supported
+    uint32_t supports_audio;    // 1 if audio input supported
+    uint32_t audio_sample_rate; // 0 if unknown / not applicable
+    uint32_t image_min_tokens;  // 0 if unknown
+    uint32_t image_max_tokens;  // 0 if unknown
+    uint32_t _padding0;
+} AstralMediaInfo;
 
 /**
  * Get model metadata.
@@ -511,6 +646,20 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_caps(AstralHandle model, AstralCap
  * Thread-safety: Safe to call from multiple threads.
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_limits(AstralHandle model, AstralModelLimits* out_limits);
+
+/**
+ * Initialize media (vision/audio) support for a model.
+ *
+ * Notes:
+ * - Must be called before creating sessions or embedders that use media.
+ * - If media is already initialized, returns ASTRAL_E_STATE.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_media_init(AstralHandle model, const AstralModelMediaDesc* desc);
+
+/**
+ * Query media (vision/audio) info for a model.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_media_info(AstralHandle model, AstralMediaInfo* out_info);
 
 /**
  * Get embedding vector dimension for a model.
@@ -566,7 +715,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_load(const AstralModelDesc* desc, 
  * - This is an embedded-friendly surface; not all backends support all sources yet.
  * - If a source is unsupported by the selected backend, returns ASTRAL_E_UNSUPPORTED.
  */
-ASTRAL_API AstralErr ASTRAL_CALL astral_model_load2(const AstralModelDesc2* desc, AstralHandle* out_model);
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_load2(const AstralModelDesc* desc, AstralHandle* out_model);
 
 /**
  * Release a model.
@@ -719,8 +868,7 @@ typedef struct AstralAdapterDesc {
 // Compile-time layout validation for configs.
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 64, "AstralInit must be 64 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 56, "AstralModelDesc must be 56 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc2) == 112, "AstralModelDesc2 must be 112 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 168, "AstralModelDesc must be 168 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
@@ -729,9 +877,13 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 24, "AstralAdapterDesc must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 64, "AstralImageDesc must be 64 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 72, "AstralAudioDesc must be 72 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 104, "AstralModelMediaDesc must be 104 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMediaInfo) == 28, "AstralMediaInfo must be 28 bytes on 64-bit");
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 48, "AstralInit must be 48 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 36, "AstralModelDesc must be 36 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 116, "AstralModelDesc must be 116 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
@@ -740,6 +892,10 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12, "AstralAdapterDesc must be 12 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 52, "AstralImageDesc must be 52 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 60, "AstralAudioDesc must be 60 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 72, "AstralModelMediaDesc must be 72 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMediaInfo) == 28, "AstralMediaInfo must be 28 bytes on 32-bit");
 #endif
 
 
@@ -980,6 +1136,30 @@ ASTRAL_API void ASTRAL_CALL astral_session_destroy(AstralHandle session);
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed(AstralHandle session, AstralSpanU8 prompt_chunk, uint8_t finalize);
 
 /**
+ * Feed an image chunk into a session prompt.
+ *
+ * Notes:
+ * - Media support must be initialized via astral_model_media_init().
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed_image(
+    AstralHandle session,
+    const AstralImageDesc* image,
+    uint8_t finalize
+);
+
+/**
+ * Feed an audio chunk into a session prompt.
+ *
+ * Notes:
+ * - Media support must be initialized via astral_model_media_init().
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed_audio(
+    AstralHandle session,
+    const AstralAudioDesc* audio,
+    uint8_t finalize
+);
+
+/**
  * Start decoding (non-blocking).
  * Submits work to thread pool; returns immediately.
  * Thread-safety: Not thread-safe; single-threaded access per session.
@@ -1042,6 +1222,18 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_create(const AstralConvDesc* desc, 
 ASTRAL_API void ASTRAL_CALL astral_conv_destroy(AstralHandle conv);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed(AstralHandle conv, AstralSpanU8 prompt_chunk, uint8_t finalize);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed_image(
+    AstralHandle conv,
+    const AstralImageDesc* image,
+    uint8_t finalize
+);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed_audio(
+    AstralHandle conv,
+    const AstralAudioDesc* audio,
+    uint8_t finalize
+);
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_decode(AstralHandle conv);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_cancel(AstralHandle conv);
@@ -1111,6 +1303,35 @@ ASTRAL_API void ASTRAL_CALL astral_embed_destroy(AstralHandle emb);
  * @return ASTRAL_OK on success; ASTRAL_E_INVALID if emb/out_ticket is NULL; error code on failure
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_embed_enqueue(AstralHandle emb, AstralSpanU8 text, uint64_t* out_ticket);
+
+/**
+ * Enqueue image for embedding.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_embed_enqueue_image(
+    AstralHandle emb,
+    const AstralImageDesc* image,
+    uint64_t* out_ticket
+);
+
+/**
+ * Enqueue audio for embedding.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_embed_enqueue_audio(
+    AstralHandle emb,
+    const AstralAudioDesc* audio,
+    uint64_t* out_ticket
+);
+
+/**
+ * Enqueue multimodal input (text + optional image/audio) for embedding.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_embed_enqueue_multimodal(
+    AstralHandle emb,
+    AstralSpanU8 text,
+    const AstralImageDesc* image,
+    const AstralAudioDesc* audio,
+    uint64_t* out_ticket
+);
 
 /**
  * Collect embedding vector for a ticket.

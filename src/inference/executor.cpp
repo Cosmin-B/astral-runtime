@@ -222,6 +222,170 @@ inline bool stream_hold_flush_all(Conversation* conv) {
     return true;
 }
 
+inline PromptChunk* conv_current_chunk(Conversation* conv) {
+    if (conv == nullptr || conv->prompt_chunk_index >= conv->prompt_chunk_count) {
+        return nullptr;
+    }
+    return &conv->prompt_chunks[conv->prompt_chunk_index];
+}
+
+inline bool conv_prompt_complete(const Conversation* conv) {
+    return conv == nullptr || conv->prompt_chunk_index >= conv->prompt_chunk_count;
+}
+
+inline void process_logits_for_conv(ModelExecutor* ex,
+                                    const backend::BackendOps* ops,
+                                    Conversation* conv,
+                                    uint32_t sid,
+                                    const backend::BackendLogitsView& view) {
+    if (ex == nullptr || ops == nullptr || conv == nullptr || view.logits == nullptr || view.vocab_size == 0) {
+        if (conv != nullptr) {
+            conv->t_end_ticks = ticks_now();
+            conv->final_err.store(ASTRAL_E_BACKEND, std::memory_order_release);
+            conv->state.store(ConvState::Failed, std::memory_order_release);
+            signal();
+        }
+        return;
+    }
+
+    // Init penalty state from prompt once (best-effort).
+    if (ensure_penalty_state(conv) == ASTRAL_OK && conv->token_counts != nullptr &&
+        conv->total_tokens == 0 && conv->prompt_count > 0) {
+        penalty_state_clear(conv);
+        for (uint32_t j = 0; j < conv->prompt_count; ++j) {
+            const int32_t t = conv->prompt_tokens[j];
+            if (t >= 0) {
+                penalty_state_push(conv, static_cast<uint32_t>(t));
+            }
+        }
+    }
+
+    SamplerMeta meta{};
+    SamplerMeta* meta_ptr = conv->logprobs_n > 0 ? &meta : nullptr;
+
+    GrammarApplyCtx grammar_ctx{};
+    void* grammar_ctx_ptr = nullptr;
+    AstralErr (ASTRAL_CALL * grammar_apply_fn)(void*, uint32_t*, float*, uint32_t) = nullptr;
+    if (conv->grammar_kind != 0 && conv->grammar_applied != 0) {
+        if (ops->session_apply_grammar_for_slot != nullptr) {
+            grammar_ctx.session_ctx = ex->backend_session_ctx;
+            grammar_ctx.ops = ops;
+            grammar_ctx.slot_id = sid;
+            grammar_ctx_ptr = &grammar_ctx;
+            grammar_apply_fn = apply_grammar_for_slot;
+        }
+    }
+
+    const uint32_t next =
+        sample_token(view.logits,
+                     static_cast<size_t>(view.vocab_size),
+                     conv->sampler_cfg,
+                     &conv->rng_state,
+                     conv->token_counts,
+                     conv->token_counts_base,
+                     conv->token_nl,
+                     &conv->mirostat_mu,
+                     conv->logprobs_n,
+                     meta_ptr,
+                     conv->sample_ids,
+                     conv->sample_logits,
+                     conv->sample_capacity,
+                     grammar_ctx_ptr,
+                     grammar_apply_fn,
+                     ex->indices_buffer);
+
+    const int32_t next_token = static_cast<int32_t>(next);
+
+    conv->total_tokens++;
+    if (conv->total_tokens == 1) {
+        conv->t_first_token_ticks = ticks_now();
+    }
+
+    uint32_t stop_len = 0;
+    const bool stop_hit = stop_check(conv, next_token, &stop_len);
+
+    if (next_token >= 0) {
+        penalty_state_push(conv, static_cast<uint32_t>(next_token));
+    }
+
+    if (meta_ptr != nullptr) {
+        AstralTokenMeta ev{};
+        ev.token_id = meta_ptr->token_id;
+        ev.logprob = meta_ptr->logprob;
+        ev.top_n = meta_ptr->top_n;
+        for (uint32_t j = 0; j < meta_ptr->top_n && j < ASTRAL_LOGPROBS_MAX; ++j) {
+            ev.top_token_ids[j] = meta_ptr->top_ids[j];
+            ev.top_logprobs[j] = meta_ptr->top_logprobs[j];
+        }
+        (void)conv->meta_ring.push(ev);
+    }
+
+    conv->pending_emit_token = next_token;
+    if (conv->desc.stream_enabled != 0) {
+        concurrency::StreamToken st{};
+        st.token_id = static_cast<uint32_t>(next_token);
+        AstralMutSpanU8 out{};
+        out.data = st.utf8_data;
+        out.len = sizeof(st.utf8_data);
+        uint32_t utf8_len = 0;
+        const AstralErr det_err = ops->detokenize(ex->model->backend_model_ctx, &next_token, 1, out, &utf8_len);
+        if (det_err != ASTRAL_OK) {
+            conv->t_end_ticks = ticks_now();
+            conv->final_err.store(det_err, std::memory_order_release);
+            conv->state.store(ConvState::Failed, std::memory_order_release);
+            signal();
+            return;
+        }
+        st.utf8_len = static_cast<uint16_t>(utf8_len);
+
+        const uint32_t stop_hold =
+            (conv->stop_max_len > 0 && conv->stop_max_len <= 32) ? conv->stop_max_len : 0;
+        if (stream_hold_push(conv, st, stop_hold)) {
+            conv->pending_emit_valid = 0;
+        } else {
+            conv->pending_emit_stream = st;
+            conv->pending_emit_valid = 1;
+        }
+    } else {
+        conv->pending_emit_valid = 0;
+    }
+
+    if (!stop_hit && conv->token_eos >= 0 && next_token == conv->token_eos) {
+        conv->pending_token_valid = 0;
+    } else if (conv->total_tokens >= conv->desc.max_tokens) {
+        conv->pending_token_valid = 0;
+    } else if (!stop_hit) {
+        conv->pending_token = next_token;
+        conv->pending_token_valid = 1;
+    } else {
+        conv->pending_token_valid = 0;
+    }
+
+    if (stop_hit) {
+        if (conv->desc.stream_enabled != 0) {
+            if (stop_len >= conv->hold_count) {
+                conv->hold_count = 0;
+            } else {
+                conv->hold_count -= stop_len;
+            }
+            (void)stream_hold_flush_all(conv);
+        }
+        conv->t_end_ticks = ticks_now();
+        conv->final_err.store(ASTRAL_OK, std::memory_order_release);
+        conv->state.store(ConvState::Completed, std::memory_order_release);
+        signal();
+    } else if (conv->total_tokens >= conv->desc.max_tokens ||
+               (conv->token_eos >= 0 && next_token == conv->token_eos)) {
+        if (conv->desc.stream_enabled != 0) {
+            (void)stream_hold_flush_all(conv);
+        }
+        conv->t_end_ticks = ticks_now();
+        conv->final_err.store(ASTRAL_OK, std::memory_order_release);
+        conv->state.store(ConvState::Completed, std::memory_order_release);
+        signal();
+    }
+}
+
 void executor_thread(ModelExecutor* ex) {
     ASTRAL_ZONE_N("astral.executor.thread");
     if (ex == nullptr || ex->model == nullptr || ex->model->backend == nullptr || ex->model->backend->ops == nullptr) {
@@ -364,6 +528,110 @@ void executor_thread(ModelExecutor* ex) {
             conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
         }
 
+        // 1c) Feed media prompt chunks (image/audio) outside batch eval.
+        for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
+            Conversation* conv = ex->slots[sid].load(std::memory_order_acquire);
+            if (conv == nullptr) continue;
+
+            conv->exec_refs.fetch_add(1, std::memory_order_acq_rel);
+            if (ex->slots[sid].load(std::memory_order_acquire) != conv) {
+                conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                continue;
+            }
+
+            if (conv->state.load(std::memory_order_acquire) != ConvState::Decoding || conv->pending_emit_valid != 0) {
+                conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                continue;
+            }
+
+            if (conv->cancel_requested.load(std::memory_order_acquire)) {
+                conv->t_end_ticks = ticks_now();
+                conv->final_err.store(ASTRAL_E_CANCELED, std::memory_order_release);
+                conv->state.store(ConvState::Canceled, std::memory_order_release);
+                signal();
+                conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                continue;
+            }
+
+            PromptChunk* chunk = conv_current_chunk(conv);
+            if (chunk == nullptr || chunk->kind == PromptChunkKind::Text) {
+                conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                continue;
+            }
+
+            if (ops->session_set_slot == nullptr || ops->session_slot_pos == nullptr || ops->session_logits == nullptr) {
+                conv->t_end_ticks = ticks_now();
+                conv->final_err.store(ASTRAL_E_UNSUPPORTED, std::memory_order_release);
+                conv->state.store(ConvState::Failed, std::memory_order_release);
+                signal();
+                conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                continue;
+            }
+
+            const AstralErr slot_err = ops->session_set_slot(ex->backend_session_ctx, sid);
+            if (slot_err != ASTRAL_OK) {
+                conv->t_end_ticks = ticks_now();
+                conv->final_err.store(slot_err, std::memory_order_release);
+                conv->state.store(ConvState::Failed, std::memory_order_release);
+                signal();
+                conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                continue;
+            }
+
+            AstralErr feed_err = ASTRAL_E_UNSUPPORTED;
+            if (chunk->kind == PromptChunkKind::Image) {
+                if (ops->session_feed_image != nullptr) {
+                    feed_err = ops->session_feed_image(ex->backend_session_ctx, &chunk->image, chunk->finalize);
+                }
+            } else if (chunk->kind == PromptChunkKind::Audio) {
+                if (ops->session_feed_audio != nullptr) {
+                    feed_err = ops->session_feed_audio(ex->backend_session_ctx, &chunk->audio, chunk->finalize);
+                }
+            }
+
+            if (feed_err != ASTRAL_OK) {
+                conv->t_end_ticks = ticks_now();
+                conv->final_err.store(feed_err, std::memory_order_release);
+                conv->state.store(ConvState::Failed, std::memory_order_release);
+                signal();
+                conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                continue;
+            }
+
+            uint32_t slot_pos = 0;
+            const AstralErr pos_err = ops->session_slot_pos(ex->backend_session_ctx, sid, &slot_pos);
+            if (pos_err != ASTRAL_OK) {
+                conv->t_end_ticks = ticks_now();
+                conv->final_err.store(pos_err, std::memory_order_release);
+                conv->state.store(ConvState::Failed, std::memory_order_release);
+                signal();
+                conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                continue;
+            }
+            conv->n_past = slot_pos;
+
+            prompt_chunk_reset(*chunk);
+            conv->prompt_chunk_index += 1u;
+            conv->prompt_chunk_token_off = 0;
+            any_work = true;
+
+            if (conv_prompt_complete(conv) && conv->pending_token_valid == 0) {
+                backend::BackendLogitsView view{};
+                const AstralErr log_err = ops->session_logits(ex->backend_session_ctx, &view);
+                if (log_err != ASTRAL_OK || view.logits == nullptr || view.vocab_size == 0) {
+                    conv->t_end_ticks = ticks_now();
+                    conv->final_err.store(log_err != ASTRAL_OK ? log_err : ASTRAL_E_BACKEND, std::memory_order_release);
+                    conv->state.store(ConvState::Failed, std::memory_order_release);
+                    signal();
+                    conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                    continue;
+                }
+                process_logits_for_conv(ex, ops, conv, sid, view);
+            }
+
+            conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+        }
+
         // 2) Build a continuous batching step.
         uint32_t batch_count = 0;
         const uint32_t cap = ex->max_batch_tokens;
@@ -427,18 +695,26 @@ void executor_thread(ModelExecutor* ex) {
                 continue;
             }
 
-            if (conv->prompt_off >= conv->prompt_count) {
+            PromptChunk* chunk = conv_current_chunk(conv);
+            if (chunk == nullptr || chunk->kind != PromptChunkKind::Text) {
                 conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
                 continue;
             }
 
-            const uint32_t remaining = conv->prompt_count - conv->prompt_off;
+            if (conv->prompt_chunk_token_off >= chunk->token_count) {
+                conv->prompt_chunk_index += 1u;
+                conv->prompt_chunk_token_off = 0;
+                conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+                continue;
+            }
+
+            const uint32_t remaining = chunk->token_count - conv->prompt_chunk_token_off;
             const uint32_t slot_cap =
                 (cap - batch_count) < max_prompt_tokens_per_slot_per_tick ? (cap - batch_count)
                                                                           : max_prompt_tokens_per_slot_per_tick;
             const uint32_t take = remaining < slot_cap ? remaining : slot_cap;
             for (uint32_t i = 0; i < take; ++i) {
-                const uint32_t idx = conv->prompt_off + i;
+                const uint32_t idx = chunk->token_start + conv->prompt_chunk_token_off + i;
                 const int32_t tok = conv->prompt_tokens[idx];
                 ex->batch_tokens[batch_count].token = tok;
                 ex->batch_tokens[batch_count].slot_id = sid;
@@ -447,7 +723,9 @@ void executor_thread(ModelExecutor* ex) {
                 ++batch_count;
             }
 
-            if (conv->prompt_off + take == conv->prompt_count && conv->pending_token_valid == 0 && take > 0) {
+            if (conv->prompt_chunk_token_off + take == chunk->token_count &&
+                conv->prompt_chunk_index + 1u >= conv->prompt_chunk_count &&
+                conv->pending_token_valid == 0 && take > 0) {
                 ex->batch_tokens[batch_count - 1u].want_logits = 1;
             }
 
@@ -499,6 +777,18 @@ void executor_thread(ModelExecutor* ex) {
                 const uint32_t off = conv->prompt_off;
                 if (off < conv->prompt_count && conv->prompt_tokens[off] == ex->batch_tokens[i].token) {
                     conv->prompt_off = off + 1u;
+                    if (conv->prompt_chunk_index < conv->prompt_chunk_count) {
+                        PromptChunk& chunk = conv->prompt_chunks[conv->prompt_chunk_index];
+                        if (chunk.kind == PromptChunkKind::Text) {
+                            if (conv->prompt_chunk_token_off < chunk.token_count) {
+                                conv->prompt_chunk_token_off += 1u;
+                            }
+                            if (conv->prompt_chunk_token_off >= chunk.token_count) {
+                                conv->prompt_chunk_index += 1u;
+                                conv->prompt_chunk_token_off = 0;
+                            }
+                        }
+                    }
                 }
             } else if (conv->pending_token_valid != 0) {
                 conv->pending_token_valid = 0;
@@ -546,143 +836,7 @@ void executor_thread(ModelExecutor* ex) {
                 continue;
             }
 
-            // Init penalty state from prompt once (best-effort).
-            if (ensure_penalty_state(conv) == ASTRAL_OK && conv->token_counts != nullptr &&
-                conv->total_tokens == 0 && conv->prompt_count > 0) {
-                penalty_state_clear(conv);
-                for (uint32_t j = 0; j < conv->prompt_count; ++j) {
-                    const int32_t t = conv->prompt_tokens[j];
-                    if (t >= 0) {
-                        penalty_state_push(conv, static_cast<uint32_t>(t));
-                    }
-                }
-            }
-
-            SamplerMeta meta{};
-            SamplerMeta* meta_ptr = conv->logprobs_n > 0 ? &meta : nullptr;
-
-            GrammarApplyCtx grammar_ctx{};
-            void* grammar_ctx_ptr = nullptr;
-            AstralErr (ASTRAL_CALL * grammar_apply_fn)(void*, uint32_t*, float*, uint32_t) = nullptr;
-            if (conv->grammar_kind != 0 && conv->grammar_applied != 0) {
-                if (ops->session_apply_grammar_for_slot != nullptr) {
-                    grammar_ctx.session_ctx = ex->backend_session_ctx;
-                    grammar_ctx.ops = ops;
-                    grammar_ctx.slot_id = sid;
-                    grammar_ctx_ptr = &grammar_ctx;
-                    grammar_apply_fn = apply_grammar_for_slot;
-                }
-            }
-
-            const uint32_t next =
-                sample_token(view.logits,
-                             static_cast<size_t>(view.vocab_size),
-                             conv->sampler_cfg,
-                             &conv->rng_state,
-                             conv->token_counts,
-                             conv->token_counts_base,
-                             conv->token_nl,
-                             &conv->mirostat_mu,
-                             conv->logprobs_n,
-                             meta_ptr,
-                             conv->sample_ids,
-                             conv->sample_logits,
-                             conv->sample_capacity,
-                             grammar_ctx_ptr,
-                             grammar_apply_fn,
-                             ex->indices_buffer);
-
-            const int32_t next_token = static_cast<int32_t>(next);
-
-            conv->total_tokens++;
-            if (conv->total_tokens == 1) {
-                conv->t_first_token_ticks = ticks_now();
-            }
-
-            uint32_t stop_len = 0;
-            const bool stop_hit = stop_check(conv, next_token, &stop_len);
-
-            if (next_token >= 0) {
-                penalty_state_push(conv, static_cast<uint32_t>(next_token));
-            }
-
-            if (meta_ptr != nullptr) {
-                AstralTokenMeta ev{};
-                ev.token_id = meta_ptr->token_id;
-                ev.logprob = meta_ptr->logprob;
-                ev.top_n = meta_ptr->top_n;
-                for (uint32_t j = 0; j < meta_ptr->top_n && j < ASTRAL_LOGPROBS_MAX; ++j) {
-                    ev.top_token_ids[j] = meta_ptr->top_ids[j];
-                    ev.top_logprobs[j] = meta_ptr->top_logprobs[j];
-                }
-                (void)conv->meta_ring.push(ev);
-            }
-
-            conv->pending_emit_token = next_token;
-            if (conv->desc.stream_enabled != 0) {
-                concurrency::StreamToken st{};
-                st.token_id = static_cast<uint32_t>(next_token);
-                AstralMutSpanU8 out{};
-                out.data = st.utf8_data;
-                out.len = sizeof(st.utf8_data);
-                uint32_t utf8_len = 0;
-                const AstralErr det_err = ops->detokenize(model->backend_model_ctx, &next_token, 1, out, &utf8_len);
-                if (det_err != ASTRAL_OK) {
-                    conv->t_end_ticks = ticks_now();
-                    conv->final_err.store(det_err, std::memory_order_release);
-                    conv->state.store(ConvState::Failed, std::memory_order_release);
-                    signal();
-                    conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
-                    continue;
-                }
-                st.utf8_len = static_cast<uint16_t>(utf8_len);
-
-                const uint32_t stop_hold =
-                    (conv->stop_max_len > 0 && conv->stop_max_len <= 32) ? conv->stop_max_len : 0;
-                if (stream_hold_push(conv, st, stop_hold)) {
-                    conv->pending_emit_valid = 0;
-                } else {
-                    conv->pending_emit_stream = st;
-                    conv->pending_emit_valid = 1;
-                }
-            } else {
-                conv->pending_emit_valid = 0;
-            }
-
-            if (!stop_hit && conv->token_eos >= 0 && next_token == conv->token_eos) {
-                conv->pending_token_valid = 0;
-            } else if (conv->total_tokens >= conv->desc.max_tokens) {
-                conv->pending_token_valid = 0;
-            } else if (!stop_hit) {
-                conv->pending_token = next_token;
-                conv->pending_token_valid = 1;
-            } else {
-                conv->pending_token_valid = 0;
-            }
-
-            if (stop_hit) {
-                if (conv->desc.stream_enabled != 0) {
-                    if (stop_len >= conv->hold_count) {
-                        conv->hold_count = 0;
-                    } else {
-                        conv->hold_count -= stop_len;
-                    }
-                    (void)stream_hold_flush_all(conv);
-                }
-                conv->t_end_ticks = ticks_now();
-                conv->final_err.store(ASTRAL_OK, std::memory_order_release);
-                conv->state.store(ConvState::Completed, std::memory_order_release);
-                signal();
-            } else if (conv->total_tokens >= conv->desc.max_tokens ||
-                       (conv->token_eos >= 0 && next_token == conv->token_eos)) {
-                if (conv->desc.stream_enabled != 0) {
-                    (void)stream_hold_flush_all(conv);
-                }
-                conv->t_end_ticks = ticks_now();
-                conv->final_err.store(ASTRAL_OK, std::memory_order_release);
-                conv->state.store(ConvState::Completed, std::memory_order_release);
-                signal();
-            }
+            process_logits_for_conv(ex, ops, conv, sid, view);
 
             conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
         }

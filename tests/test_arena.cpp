@@ -17,6 +17,8 @@ namespace {
 
 static AstralModelDesc make_mock_model_desc() {
     AstralModelDesc d{};
+    d.size = sizeof(AstralModelDesc);
+    d.source_kind = ASTRAL_MODEL_SOURCE_PATH;
 
     const char* backend = "mock";
     d.backend_name.data = reinterpret_cast<const uint8_t*>(backend);

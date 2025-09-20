@@ -18,6 +18,46 @@ enum class EAstralError : int32
     Unsupported = -8
 };
 
+UENUM(BlueprintType)
+enum class EAstralImageFormat : uint32
+{
+    RGB8 = 0,
+    RGBA8 = 1,
+    RGB_F32 = 2
+};
+
+UENUM(BlueprintType)
+enum class EAstralAudioFormat : uint32
+{
+    F32 = 0,
+    I16 = 1
+};
+
+UENUM(BlueprintType)
+enum class EAstralMediaFlags : uint32
+{
+    None = 0,
+    UseGPU = 1u << 0,
+    Warmup = 1u << 1
+};
+
+UENUM(BlueprintType)
+enum class EAstralGpuRouteFlags : uint32
+{
+    None = 0,
+    Device = 1u << 0,
+    DeviceMask = 1u << 1,
+    Stream = 1u << 2
+};
+
+UENUM(BlueprintType)
+enum class EAstralModelSourceKind : uint32
+{
+    Path = 0,
+    Memory = 1,
+    IO = 2
+};
+
 USTRUCT(BlueprintType)
 struct ASTRALRT_API FAstralModelDesc
 {
@@ -43,6 +83,135 @@ struct ASTRALRT_API FAstralModelDesc
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
     bool bEmbeddingsOnly = false;
+};
+
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralImageDesc
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    EAstralImageFormat Format = EAstralImageFormat::RGB8;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 Width = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 Height = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 RowStride = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 Flags = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    TArray<uint8> Pixels;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    int32 GpuDevice = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 GpuRouteFlags = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint64 GpuDeviceMask = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint64 GpuStream = 0;
+};
+
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralAudioDesc
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    EAstralAudioFormat Format = EAstralAudioFormat::F32;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 Channels = 1;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 SampleRate = 16000;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint64 FrameCount = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    TArray<uint8> Samples;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 Flags = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    int32 GpuDevice = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 GpuRouteFlags = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint64 GpuDeviceMask = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint64 GpuStream = 0;
+};
+
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralModelMediaDesc
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    EAstralModelSourceKind SourceKind = EAstralModelSourceKind::Path;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    FString MediaPath;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    TArray<uint8> MediaBytes;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 Flags = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 ImageMinTokens = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 ImageMaxTokens = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    int32 GpuDevice = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint32 GpuRouteFlags = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint64 GpuDeviceMask = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    uint64 GpuStream = 0;
+};
+
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralMediaInfo
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    uint32 SupportsImage = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    uint32 SupportsAudio = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    uint32 AudioSampleRate = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    uint32 ImageMinTokens = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    uint32 ImageMaxTokens = 0;
 };
 
 USTRUCT(BlueprintType)

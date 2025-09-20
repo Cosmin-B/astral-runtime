@@ -26,6 +26,10 @@ Conversation::Conversation(Model* model_,
     , prompt_count(0)
     , prompt_capacity(0)
     , prompt_off(0)
+    , prompt_chunks{}
+    , prompt_chunk_count(0)
+    , prompt_chunk_index(0)
+    , prompt_chunk_token_off(0)
     , state(ConvState::Idle)
     , cancel_requested(false)
     , final_err(ASTRAL_OK)
