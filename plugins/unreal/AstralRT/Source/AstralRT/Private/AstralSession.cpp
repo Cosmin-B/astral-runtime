@@ -1,9 +1,9 @@
 #include "AstralSession.h"
+#include "AstralSessionStreamPump.h"
 #include "AstralModel.h"
 #include "IAstralRT.h"
 
 #include "Containers/Ticker.h"
-#include "Containers/StringBuilder.h"
 #include "Containers/UnrealString.h"
 
 #include "astral_rt.h"
@@ -391,88 +391,20 @@ bool UAstralSession::TickStream(float DeltaTime)
         return false;
     }
 
-    const bool want_tick_utf8 =
-        StreamBytesNative.IsBound() || OnBytesReceived.IsBound() || OnTokenReceived.IsBound() || StreamTextNative.IsBound();
-
-    if (want_tick_utf8)
-    {
-        TickUtf8Buffer.Reset();
-    }
-
-    constexpr uint32 MaxReadsPerTick = 128;
-    constexpr uint32 MaxBytesPerTick = 64u * 1024u;
-
-    uint32 total_bytes = 0;
-    bool stop_ticker = false;
-
-    for (uint32 i = 0; i < MaxReadsPerTick; ++i)
-    {
-        const int32 BytesRead = StreamRead(TokenBuffer, 0);
-        if (BytesRead == ASTRAL_E_TIMEOUT)
+    const bool keep_running = AstralRT::Private::FAstralSessionStreamPump::Tick(
+        [this](TArray<uint8>& OutBuffer, uint32 TimeoutMs)
         {
-            break;
-        }
-
-        if (BytesRead < 0)
-        {
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_stream_read failed (%d)"), BytesRead);
-            stop_ticker = true;
-            break;
-        }
-
-        if (BytesRead == 0)
-        {
-            stop_ticker = true;
-            break;
-        }
-
-        total_bytes += static_cast<uint32>(BytesRead);
-
-        if (want_tick_utf8)
-        {
-            TickUtf8Buffer.Append(TokenBuffer.GetData(), BytesRead);
-        }
-
-        if (total_bytes >= MaxBytesPerTick)
-        {
-            break;
-        }
-    }
-
-    if (want_tick_utf8 && TickUtf8Buffer.Num() > 0)
-    {
-        if (StreamBytesNative.IsBound())
-        {
-            StreamBytesNative.Broadcast(TConstArrayView<uint8>(TickUtf8Buffer.GetData(), TickUtf8Buffer.Num()));
-        }
-
-        if (OnBytesReceived.IsBound())
-        {
-            OnBytesReceived.Broadcast(TickUtf8Buffer);
-        }
-
-        if (OnTokenReceived.IsBound() || StreamTextNative.IsBound())
-        {
-            FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(TickUtf8Buffer.GetData()), TickUtf8Buffer.Num());
-
-            if (StreamTextNative.IsBound())
-            {
-                TStringBuilder<4096> Text;
-                Text.Append(Converter.Get(), Converter.Length());
-                StreamTextNative.Broadcast(Text.ToView());
-            }
-
-            if (OnTokenReceived.IsBound())
-            {
-                TickTextScratch.Reset();
-                TickTextScratch.Reserve(Converter.Length());
-                TickTextScratch.AppendChars(Converter.Get(), Converter.Length());
-                OnTokenReceived.Broadcast(TickTextScratch);
-            }
-        }
-    }
-
-    if (stop_ticker)
+            return StreamRead(OutBuffer, TimeoutMs);
+        },
+        TokenBuffer,
+        TickUtf8Buffer,
+        TickTextScratch,
+        StreamBytesNative,
+        StreamTextNative,
+        OnBytesReceived,
+        OnTokenReceived
+    );
+    if (!keep_running)
     {
         TickerHandle.Reset();
         return false;
