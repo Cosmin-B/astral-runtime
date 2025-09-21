@@ -15,7 +15,7 @@ static bool ensure_astral_initialized(FAutomationTestBase& test) {
     (void)IAstralRT::Get();
 
     if (!IAstralRT::IsAvailable() || !IAstralRT::Get().IsInitialized()) {
-        test.AddWarning(TEXT("AstralRT runtime is not initialized; skipping test."));
+        test.AddError(TEXT("AstralRT runtime is not initialized."));
         return false;
     }
     return true;
@@ -44,7 +44,7 @@ bool FAstralRTModuleInitTest::RunTest(const FString& Parameters) {
     (void)Parameters;
     const bool ok = ensure_astral_initialized(*this);
     if (!ok) {
-        return true;
+        return false;
     }
     TestTrue(TEXT("AstralRT initialized"), ok);
     return true;
@@ -59,7 +59,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
     (void)Parameters;
     if (!ensure_astral_initialized(*this)) {
-        return true;
+        return false;
     }
 
     AstralModelDesc model_desc{};
@@ -178,7 +178,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FAstralRTMockEmbeddingsTest::RunTest(const FString& Parameters) {
     (void)Parameters;
     if (!ensure_astral_initialized(*this)) {
-        return true;
+        return false;
     }
 
     AstralModelDesc model_desc{};
@@ -253,7 +253,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FAstralRTMockMediaFeedTest::RunTest(const FString& Parameters) {
     (void)Parameters;
     if (!ensure_astral_initialized(*this)) {
-        return true;
+        return false;
     }
 
     UAstralModel* Model = NewObject<UAstralModel>();
@@ -318,7 +318,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FAstralRTMockMultimodalEmbedTest::RunTest(const FString& Parameters) {
     (void)Parameters;
     if (!ensure_astral_initialized(*this)) {
-        return true;
+        return false;
     }
 
     UAstralModel* Model = NewObject<UAstralModel>();
