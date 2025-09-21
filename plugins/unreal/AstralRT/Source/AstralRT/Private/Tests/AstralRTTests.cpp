@@ -163,16 +163,6 @@ bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
     const bool ok2 = run_once(out2);
     TestTrue(TEXT("second decode ok"), ok2);
     TestTrue(TEXT("stop suppresses backend suffix"), bytes_equal_ascii(out2, "mock-"));
-    if (err != ASTRAL_OK) {
-        astral_session_destroy(session);
-        astral_model_release(model);
-        return false;
-    }
-
-    TArray<uint8> out2;
-    const bool ok2 = run_once(out2);
-    TestTrue(TEXT("second decode ok"), ok2);
-    TestTrue(TEXT("mock output repeats"), out2 == out1);
 
     astral_session_destroy(session);
     astral_model_release(model);
