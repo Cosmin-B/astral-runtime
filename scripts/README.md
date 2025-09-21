@@ -143,6 +143,18 @@ Build + test and emit zip artifacts under `dist/`:
 
 This is what the CI “v0.1 desktop artifacts” job uses.
 
+## Unreal Automation (Optional)
+
+Build the Unreal ThirdParty package, then run the plugin Automation tests through Unreal:
+
+```bash
+cmake --preset unreal-plugin
+cmake --build --preset unreal-plugin -j
+UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh
+```
+
+By default the runner stages a sidecar project under `build/unreal-ci-project/` and writes logs to `build/unreal-ci-results/`. Set `ASTRAL_UNREAL_PROJECT` to run against an existing project with `Plugins/AstralRT` already installed.
+
 ## Interpreting Results
 
 ### PASS Criteria (per MASTER_SPEC § Performance Targets)

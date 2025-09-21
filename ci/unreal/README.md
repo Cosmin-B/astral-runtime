@@ -1,11 +1,19 @@
-# Unreal CI project (minimal)
+# Unreal CI project
 
-`ci/unreal/AstralCiUnrealProject/` is a tiny UE project scaffold intended to run the plugin’s Automation tests under `plugins/unreal/AstralRT/Source/AstralRT/Private/Tests/`.
+`ci/unreal/AstralCiUnrealProject/` is a tiny UE project scaffold for the plugin Automation tests under `plugins/unreal/AstralRT/Source/AstralRT/Private/Tests/`.
+
+The production target is Unreal Engine 5.7 with UE 5.4+ compatibility. On Linux, the expected 5.7 toolchain is clang 20.1.8, matching Epic's 5.7 development images such as `ghcr.io/epicgames/unreal-engine:dev-5.7.4` and `ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4` when access is configured.
 
 ## Setup
 
-1) Create a UE project (or use this scaffold as the project directory).
-2) Copy the plugin into the project:
+Build/package the native ThirdParty library into the plugin first:
+
+```bash
+cmake --preset unreal-plugin
+cmake --build --preset unreal-plugin -j
+```
+
+The CI runner stages a sidecar project under `build/unreal-ci-project/` and copies the plugin there, so it does not modify tracked files. To use your own project, copy the plugin into:
 
 ```text
 <ProjectRoot>/Plugins/AstralRT/
@@ -13,17 +21,15 @@
 
 From this repo, the plugin root is `plugins/unreal/AstralRT/`.
 
-3) Build/package the native ThirdParty library into the plugin:
-
-```bash
-cd astral
-cmake --preset unreal-plugin
-cmake --build --preset unreal-plugin -j
-```
-
 ## Run Automation tests
 
-- In Editor: `Window → Developer Tools → Session Frontend → Automation`
-- CLI (example):
-  - `Automation RunTests AstralRT.*`
+```bash
+UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh
+```
 
+Useful overrides:
+
+- `UNREAL_TEST_FILTER=AstralRT.Mock*` narrows the Automation filter.
+- `ASTRAL_UNREAL_PROJECT=/path/to/project` runs against an existing project that already has `Plugins/AstralRT` installed.
+
+Manual Editor path: `Window > Developer Tools > Session Frontend > Automation`, then run `AstralRT.*`.
