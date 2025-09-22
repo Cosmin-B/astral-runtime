@@ -29,7 +29,7 @@ target_include_directories(cpu_backend PRIVATE
 )
 
 # Link against llama.cpp
-target_link_libraries(cpu_backend PUBLIC llama::llama common)
+target_link_libraries(cpu_backend PUBLIC llama::llama ${ASTRAL_LLAMA_COMMON_TARGET})
 
 # Compiler flags (same as parent)
 target_compile_options(cpu_backend PRIVATE

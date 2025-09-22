@@ -34,11 +34,14 @@ if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
         set(GGML_OPENMP OFF CACHE BOOL "ggml: disable OpenMP for shared consumers/tests" FORCE)
     endif()
     
-    # Add llama.cpp as subdirectory
-    # This builds llama.cpp as part of Astral build
-	    # Configure llama.cpp build options
-	    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
-	    set(GGML_STATIC ON CACHE BOOL "Build static library" FORCE)
+    # Add llama.cpp as subdirectory.
+    # This builds llama.cpp as part of Astral build.
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+    # BUILD_SHARED_LIBS=OFF gives Astral static llama/ggml archives. GGML_STATIC is
+    # llama.cpp's fully-static link mode; keep it off so shared consumers do not
+    # pull non-PIC system archives such as libm.a.
+    set(GGML_STATIC OFF CACHE BOOL "ggml: disable fully static system linking" FORCE)
+    unset(MATH_LIBRARY CACHE)
     # Needed for JSON schema -> GBNF conversion helper (common/json-schema-to-grammar.*).
     set(LLAMA_BUILD_COMMON ON CACHE BOOL "Enable llama.cpp common library" FORCE)
     # Keep llama.cpp common dependency-light (we don't use downloader codepaths).
@@ -46,38 +49,45 @@ if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
     set(LLAMA_HTTPLIB OFF CACHE BOOL "Disable llama.cpp httplib support" FORCE)
     set(LLAMA_BUILD_TESTS OFF CACHE BOOL "Disable llama.cpp tests" FORCE)
     set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "Disable llama.cpp examples" FORCE)
-	    set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Disable llama.cpp server" FORCE)
+    set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Disable llama.cpp server" FORCE)
 
-        # Optional GPU backends (CUDA first).
-        #
-        # Keep these OFF by default so CPU-only users don't need any GPU toolchains.
-        if(ASTRAL_ENABLE_CUDA)
-            find_package(CUDAToolkit REQUIRED)
+    # Optional GPU backends (CUDA first).
+    #
+    # Keep these OFF by default so CPU-only users don't need any GPU toolchains.
+    if(ASTRAL_ENABLE_CUDA)
+        find_package(CUDAToolkit REQUIRED)
 
-            if(ASTRAL_CUDA_FORCE_CUBLAS AND ASTRAL_CUDA_FORCE_MMQ)
-                message(FATAL_ERROR "Invalid CUDA config: ASTRAL_CUDA_FORCE_CUBLAS and ASTRAL_CUDA_FORCE_MMQ are mutually exclusive")
-            endif()
-
-            # Prefer "auto" behavior by default; allow forcing via Astral options.
-            set(GGML_CUDA ON CACHE BOOL "ggml: use CUDA" FORCE)
-            set(GGML_CUDA_FORCE_CUBLAS ${ASTRAL_CUDA_FORCE_CUBLAS} CACHE BOOL "ggml: always use cuBLAS instead of mmq kernels" FORCE)
-            set(GGML_CUDA_FORCE_MMQ ${ASTRAL_CUDA_FORCE_MMQ} CACHE BOOL "ggml: use mmq kernels instead of cuBLAS" FORCE)
-
-            # Do not let ggml-cuda auto-detect "native" architectures: it may pick a GPU CC
-            # unsupported by an older nvcc (e.g. Blackwell on CUDA < 12.8). We ship a fatbin list instead.
-            set(GGML_NATIVE OFF CACHE BOOL "ggml: disable native arch auto-detection (Astral controls CMAKE_CUDA_ARCHITECTURES)" FORCE)
-
-            # Force our architecture list (fatbin/PTX policy). This keeps CPU-only builds CUDA-free.
-            set(CMAKE_CUDA_ARCHITECTURES "${ASTRAL_CUDA_ARCHITECTURES}" CACHE STRING "CUDA arch list for fatbin builds" FORCE)
-        else()
-            # Ensure a CPU-only build does not retain CUDA from a previous configure.
-            set(GGML_CUDA OFF CACHE BOOL "ggml: use CUDA" FORCE)
+        if(ASTRAL_CUDA_FORCE_CUBLAS AND ASTRAL_CUDA_FORCE_MMQ)
+            message(FATAL_ERROR "Invalid CUDA config: ASTRAL_CUDA_FORCE_CUBLAS and ASTRAL_CUDA_FORCE_MMQ are mutually exclusive")
         endif()
-	    
-	    add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp EXCLUDE_FROM_ALL)
-	    
-	    # Alias for consistency
-	    add_library(llama::llama ALIAS llama)
+
+        # Prefer "auto" behavior by default; allow forcing via Astral options.
+        set(GGML_CUDA ON CACHE BOOL "ggml: use CUDA" FORCE)
+        set(GGML_CUDA_FORCE_CUBLAS ${ASTRAL_CUDA_FORCE_CUBLAS} CACHE BOOL "ggml: always use cuBLAS instead of mmq kernels" FORCE)
+        set(GGML_CUDA_FORCE_MMQ ${ASTRAL_CUDA_FORCE_MMQ} CACHE BOOL "ggml: use mmq kernels instead of cuBLAS" FORCE)
+
+        # Do not let ggml-cuda auto-detect "native" architectures: it may pick a GPU CC
+        # unsupported by an older nvcc (e.g. Blackwell on CUDA < 12.8). We ship a fatbin list instead.
+        set(GGML_NATIVE OFF CACHE BOOL "ggml: disable native arch auto-detection (Astral controls CMAKE_CUDA_ARCHITECTURES)" FORCE)
+
+        # Force our architecture list (fatbin/PTX policy). This keeps CPU-only builds CUDA-free.
+        set(CMAKE_CUDA_ARCHITECTURES "${ASTRAL_CUDA_ARCHITECTURES}" CACHE STRING "CUDA arch list for fatbin builds" FORCE)
+    else()
+        # Ensure a CPU-only build does not retain CUDA from a previous configure.
+        set(GGML_CUDA OFF CACHE BOOL "ggml: use CUDA" FORCE)
+    endif()
+
+    add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp EXCLUDE_FROM_ALL)
+
+    # Alias for consistency.
+    add_library(llama::llama ALIAS llama)
+    if(TARGET llama-common)
+        set(ASTRAL_LLAMA_COMMON_TARGET llama-common CACHE INTERNAL "llama.cpp common library target")
+    elseif(TARGET common)
+        set(ASTRAL_LLAMA_COMMON_TARGET common CACHE INTERNAL "llama.cpp common library target")
+    else()
+        message(FATAL_ERROR "llama.cpp common library target not found")
+    endif()
 else()
     message(FATAL_ERROR "llama.cpp not found at: ${LLAMA_CPP_DIR}\n"
                         "Please clone llama.cpp: git clone https://github.com/ggerganov/llama.cpp ${LLAMA_CPP_DIR}")

@@ -79,7 +79,9 @@ struct CpuSession {
 
     // Per-slot state
     int32_t slot_pos[32];
+    int32_t slot_last_token[32];
     bool slot_has_logits[32];
+    bool slot_last_token_valid[32];
 
     // Optional generation controls (per-slot; stateful)
     ::llama_sampler* grammar[32]; // nullptr if no grammar for this slot

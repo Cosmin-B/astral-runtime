@@ -175,7 +175,7 @@ function(astral_configure_runtime_target tgt)
         $<$<BOOL:${ASTRAL_ENABLE_MTMD}>:${LLAMA_CPP_DIR}/tools/mtmd>
     )
 
-    target_link_libraries(${tgt} PRIVATE llama common)
+    target_link_libraries(${tgt} PRIVATE llama ${ASTRAL_LLAMA_COMMON_TARGET})
     if(ASTRAL_ENABLE_MTMD)
         target_link_libraries(${tgt} PRIVATE mtmd)
     endif()
