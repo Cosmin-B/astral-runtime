@@ -100,10 +100,16 @@ These are the Liquid models used for validation and bench coverage:
 
 ## Tests and benches
 
-Optional env vars for media init smoke tests:
+Real media init smoke tests:
 
 - `ASTRAL_TEST_VISION_MODEL`, `ASTRAL_TEST_VISION_MEDIA`
 - `ASTRAL_TEST_AUDIO_MODEL`, `ASTRAL_TEST_AUDIO_MEDIA`
+
+The default `test_media` run skips real fixtures when they are absent. The release lane makes them required:
+
+```bash
+./scripts/run_multimodal_validation.sh --bench
+```
 
 Feature bench inputs:
 

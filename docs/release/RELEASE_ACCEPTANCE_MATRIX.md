@@ -9,6 +9,7 @@ release candidate.
 |---|---|---|
 | Debug native build/tests | `cmake --preset dev && cmake --build --preset dev -j && ctest --preset dev -j --output-on-failure` | Yes |
 | Release native build/tests | `cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure` | Yes |
+| Required release gates | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench` | Yes |
 | Release metadata | `./scripts/generate_release_metadata.sh dist` | Yes |
 
 ## Unreal Gate
@@ -25,8 +26,8 @@ release candidate.
 | Area | Required evidence | Required for RC |
 |---|---|---|
 | CPU llama | Native tests plus feature benchmark with a real GGUF | Yes |
-| CUDA | Real GPU runner, CPU-vs-CUDA parity, auto/cuBLAS/MMQ modes | Yes |
-| Multimodal | `ASTRAL_ENABLE_MTMD=ON` build plus real vision/audio projector fixtures | Yes |
+| CUDA | `./scripts/run_cuda_parity_matrix.sh --preset-set release --strict` on a real GPU runner with `ASTRAL_TEST_CUDA_PARITY_INFER=1` and `ASTRAL_TEST_CUDA_E2E=1` | Yes |
+| Multimodal | `./scripts/run_multimodal_validation.sh --bench` with real vision and audio model/projector fixtures | Yes |
 | HF matrix | Pinned GGUF matrix logs and pass/fail summary | Yes |
 
 ## Release Artifacts

@@ -1221,7 +1221,7 @@ AstralErr cpu_model_media_init(void* model_ctx, const AstralModelMediaDesc* desc
     model->media_initialized = 1;
     model->supports_vision = mtmd_support_vision(ctx) ? 1 : 0;
     model->supports_audio = mtmd_support_audio(ctx) ? 1 : 0;
-    model->audio_sample_rate = mtmd_get_audio_bitrate(ctx);
+    model->audio_sample_rate = mtmd_get_audio_sample_rate(ctx);
     model->image_min_tokens = desc->image_min_tokens;
     model->image_max_tokens = desc->image_max_tokens;
     return ASTRAL_OK;

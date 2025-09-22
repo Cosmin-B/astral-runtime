@@ -83,6 +83,8 @@ foreach(test_file ${TEST_FILES})
         target_compile_definitions(${test_file} PRIVATE
             $<$<BOOL:${ASTRAL_ENABLE_CUDA}>:ASTRAL_ENABLE_CUDA=1>
             $<$<NOT:$<BOOL:${ASTRAL_ENABLE_CUDA}>>:ASTRAL_ENABLE_CUDA=0>
+            $<$<BOOL:${ASTRAL_ENABLE_MTMD}>:ASTRAL_ENABLE_MTMD=1>
+            $<$<NOT:$<BOOL:${ASTRAL_ENABLE_MTMD}>>:ASTRAL_ENABLE_MTMD=0>
             ASTRAL_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
         )
 
@@ -184,6 +186,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
             target_compile_definitions(${test_file}_tsan PRIVATE
                 $<$<BOOL:${ASTRAL_ENABLE_CUDA}>:ASTRAL_ENABLE_CUDA=1>
                 $<$<NOT:$<BOOL:${ASTRAL_ENABLE_CUDA}>>:ASTRAL_ENABLE_CUDA=0>
+                $<$<BOOL:${ASTRAL_ENABLE_MTMD}>:ASTRAL_ENABLE_MTMD=1>
+                $<$<NOT:$<BOOL:${ASTRAL_ENABLE_MTMD}>>:ASTRAL_ENABLE_MTMD=0>
             )
 
             target_include_directories(${test_file}_tsan PRIVATE

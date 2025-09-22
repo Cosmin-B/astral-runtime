@@ -41,12 +41,18 @@ The downloader supports overrides via `--url/--file/--min-bytes` and env vars (`
 
 ## Media (vision/audio) tests
 
-`test_media` exercises mock vision/audio feeds + multimodal embeddings. Optional CPU media init smoke checks run when:
+`test_media` exercises mock vision/audio feeds + multimodal embeddings. Real CPU media init smoke checks run when:
 
 - `ASTRAL_TEST_VISION_MODEL` + `ASTRAL_TEST_VISION_MEDIA` are set
 - `ASTRAL_TEST_AUDIO_MODEL` + `ASTRAL_TEST_AUDIO_MEDIA` are set
 
 Media init requires `ASTRAL_ENABLE_MTMD=ON` at build time.
+
+Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail instead of skipping. The release gate does this through:
+
+```bash
+./scripts/run_multimodal_validation.sh --bench
+```
 
 ## What the gates cover
 

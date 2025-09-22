@@ -95,6 +95,9 @@ endif()
 
 # Optional multimodal (libmtmd) support.
 if(ASTRAL_ENABLE_MTMD)
+    if(NOT DEFINED LLAMA_INSTALL_VERSION)
+        set(LLAMA_INSTALL_VERSION 0.0.0)
+    endif()
     add_subdirectory(${LLAMA_CPP_DIR}/tools/mtmd ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp/mtmd EXCLUDE_FROM_ALL)
 endif()
 

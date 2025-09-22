@@ -166,6 +166,31 @@ UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh
 
 By default the runner stages a sidecar project under `build/unreal-ci-project/` and writes logs to `build/unreal-ci-results/`. Set `ASTRAL_UNREAL_PROJECT` to run against an existing project with `Plugins/AstralRT` already installed.
 
+## Required Release Gates
+
+`run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, and the real MTMD media gate.
+
+```bash
+ASTRAL_TEST_VISION_MODEL=/models/vision.gguf \
+ASTRAL_TEST_VISION_MEDIA=/models/mmproj-vision.gguf \
+ASTRAL_TEST_AUDIO_MODEL=/models/audio.gguf \
+ASTRAL_TEST_AUDIO_MEDIA=/models/mmproj-audio.gguf \
+  ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench
+```
+
+The CUDA part uses release-with-tests CUDA presets and requires a real CUDA runner:
+
+```bash
+ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 \
+  ./scripts/run_cuda_parity_matrix.sh --preset-set release --strict
+```
+
+The MTMD part fails before CTest if any required model/projector fixture is missing:
+
+```bash
+./scripts/run_multimodal_validation.sh --bench
+```
+
 ## Interpreting Results
 
 ### PASS Criteria (per MASTER_SPEC § Performance Targets)

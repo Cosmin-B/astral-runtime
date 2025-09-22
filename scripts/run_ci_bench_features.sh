@@ -55,6 +55,11 @@ done
 build_dir="build/${preset}"
 case "${preset}" in
   release-with-tests) build_dir="build/release-test" ;;
+  release-with-tests-cuda) build_dir="build/release-test-cuda" ;;
+  release-with-tests-cuda-cublas) build_dir="build/release-test-cuda-cublas" ;;
+  release-with-tests-cuda-mmq) build_dir="build/release-test-cuda-mmq" ;;
+  release-with-tests-mtmd) build_dir="build/release-test-mtmd" ;;
+  release-with-tests-mtmd-cuda) build_dir="build/release-test-mtmd-cuda" ;;
   release) build_dir="build/release" ;;
   dev) build_dir="build/dev" ;;
   dev-prof) build_dir="build/dev-prof" ;;
