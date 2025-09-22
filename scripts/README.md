@@ -143,6 +143,17 @@ Build + test and emit zip artifacts under `dist/`:
 
 This is what the CI “v0.1 desktop artifacts” job uses.
 
+The packaging script also writes release governance metadata:
+
+- `dist/dependency-manifest.json`
+- `dist/checksums.sha256`
+
+To regenerate metadata for an existing output directory:
+
+```bash
+./scripts/generate_release_metadata.sh dist
+```
+
 ## Unreal Automation (Optional)
 
 Build the Unreal ThirdParty package, then run the plugin Automation tests through Unreal:

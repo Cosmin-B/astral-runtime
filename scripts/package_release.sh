@@ -103,6 +103,9 @@ fi
 
 echo "[package_release] Install to staging: ${install_prefix}"
 cmake --install "${build_dir}" --prefix "${install_prefix}"
+cmake -E copy "${root_dir}/LICENSE" "${root_dir}/NOTICE" "${install_prefix}/"
+cmake -E make_directory "${install_prefix}/share/astral/release"
+cmake -E copy_directory "${root_dir}/docs/release" "${install_prefix}/share/astral/release"
 
 core_zip="${out_dir}/astral-${version}-${os}-${arch}.zip"
 echo "[package_release] Zip core: ${core_zip}"
@@ -117,7 +120,7 @@ if [[ "${do_unity}" -eq 1 ]]; then
   cmake --build --preset unity-plugin -j
   unity_zip="${out_dir}/astral-${version}-unity-plugin-${os}-${arch}.zip"
   echo "[package_release] Zip Unity plugin: ${unity_zip}"
-  cmake -E tar cf "${unity_zip}" --format=zip -- "plugins/unity"
+  cmake -E tar cf "${unity_zip}" --format=zip -- "plugins/unity" "LICENSE" "NOTICE" "docs/release"
 fi
 
 if [[ "${do_unreal}" -eq 1 ]]; then
@@ -126,7 +129,10 @@ if [[ "${do_unreal}" -eq 1 ]]; then
   cmake --build --preset unreal-plugin -j
   unreal_zip="${out_dir}/astral-${version}-unreal-plugin-${os}-${arch}.zip"
   echo "[package_release] Zip Unreal plugin: ${unreal_zip}"
-  cmake -E tar cf "${unreal_zip}" --format=zip -- "plugins/unreal/AstralRT"
+  cmake -E tar cf "${unreal_zip}" --format=zip -- "plugins/unreal/AstralRT" "LICENSE" "NOTICE" "docs/release"
 fi
+
+echo "[package_release] Generate release metadata"
+"${root_dir}/scripts/generate_release_metadata.sh" "${out_dir}"
 
 echo "[package_release] Done. Artifacts in: ${out_dir}"
