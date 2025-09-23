@@ -68,6 +68,19 @@ set(FORBIDDEN_STRINGS
   "${token_forbidden_3}"
 )
 
+set(todo_token "TO")
+string(APPEND todo_token "DO")
+set(fixme_token "FIX")
+string(APPEND fixme_token "ME")
+set(hack_token "HA")
+string(APPEND hack_token "CK")
+
+set(TRACKED_COMMENT_TOKENS
+  "${todo_token}"
+  "${fixme_token}"
+  "${hack_token}"
+)
+
 foreach(path IN LISTS FILES)
   file(READ "${path}" content)
 
@@ -82,6 +95,17 @@ foreach(path IN LISTS FILES)
   if(content MATCHES "memcpy\\([^\\)]*logits" OR content MATCHES "memcpy\\([^\\)]*vocab_size")
     message(FATAL_ERROR "Suspicious logits/vocab memcpy found in ${path}")
   endif()
+
+  file(STRINGS "${path}" lines)
+  set(line_no 0)
+  foreach(line IN LISTS lines)
+    math(EXPR line_no "${line_no} + 1")
+    foreach(token IN LISTS TRACKED_COMMENT_TOKENS)
+      if(line MATCHES "${token}" AND NOT line MATCHES "workspace-[A-Za-z0-9]+")
+        message(FATAL_ERROR "Untracked ${token} marker in ${path}:${line_no}; add a issue tracker issue id or remove it")
+      endif()
+    endforeach()
+  endforeach()
 endforeach()
 
 message(STATUS "gate_source_scans: OK (${FILES_LEN} files)")

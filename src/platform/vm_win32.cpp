@@ -210,8 +210,8 @@ bool vm_try_hugepages(void* addr, size_t size) {
   // For now, this function returns false because large pages must be requested
   // at allocation time on Windows, not after the fact.
   //
-  // TODO: Add vm_reserve_large() and vm_commit_large() variants that use
-  // MEM_LARGE_PAGES from the start.
+  // TODO(workspace-j5s): Add vm_reserve_large() and vm_commit_large()
+  // variants that use MEM_LARGE_PAGES from the start.
 
   return false; // Large pages cannot be applied retroactively on Windows
 }

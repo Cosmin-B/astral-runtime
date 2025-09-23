@@ -41,4 +41,4 @@ This directory is a Unity Package Manager package that wraps Astral's C ABI for 
 ## Current status
 
 - Implemented: Unity allocator + logging wiring, model/session lifetimes, streaming read loop, cancel/wait/state, session reset, embeddings wrapper, Jobs helpers.
-- TODO: packaging native binaries for each platform (UPM-ready), samples + docs polish, automated Unity CI (licensing permitting).
+- Remaining: packaging native binaries for each platform (UPM-ready), samples and docs polish, automated Unity CI where licensing permits.
