@@ -37,5 +37,5 @@ release candidate.
 | Core runtime package | Zip in `dist/`, `checksums.sha256`, dependency manifest |
 | Unity package | Native binaries, package metadata, license/notice files, ABI tests |
 | Unreal plugin package | ThirdParty native libraries, license/notice files, UE Automation evidence |
-| Signing | Detached signatures or documented waiver |
+| Signing | `./scripts/sign_release_artifacts.sh --out-dir dist` writes a detached signature for `checksums.sha256` |
 | Rollback | Release notes identify previous known-good artifact and dependency pins |

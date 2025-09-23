@@ -154,6 +154,25 @@ To regenerate metadata for an existing output directory:
 ./scripts/generate_release_metadata.sh dist
 ```
 
+To sign the artifact set, sign the checksum file after metadata generation:
+
+```bash
+ASTRAL_RELEASE_SIGN_KEY=release@example.com ./scripts/sign_release_artifacts.sh --out-dir dist
+```
+
+`package_release.sh` can run the same signing step:
+
+```bash
+./scripts/package_release.sh --preset release-with-tests --unity --unreal --sign --sign-key release@example.com
+```
+
+Verification:
+
+```bash
+gpg --verify dist/checksums.sha256.asc dist/checksums.sha256
+(cd dist && sha256sum -c checksums.sha256)
+```
+
 ## Unreal Automation (Optional)
 
 Build the Unreal ThirdParty package, then run the plugin Automation tests through Unreal:

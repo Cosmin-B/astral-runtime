@@ -24,7 +24,37 @@ The script writes:
 
 - `dist/dependency-manifest.json`
 - `dist/checksums.sha256`
+- `dist/checksums.sha256.asc` when signed with GPG
+- `dist/checksums.sha256.minisig` when signed with minisign
 
 The generated manifest records the Astral version, source commit, dirty state,
 submodule commits, and engine package versions. `checksums.sha256` covers files
 already present in the output directory, excluding the generated manifest files.
+
+## Signing
+
+Sign the checksum file for a release candidate:
+
+```bash
+ASTRAL_RELEASE_SIGN_KEY=release@example.com ./scripts/sign_release_artifacts.sh --out-dir dist
+```
+
+Verify the signed artifact set:
+
+```bash
+gpg --verify dist/checksums.sha256.asc dist/checksums.sha256
+(cd dist && sha256sum -c checksums.sha256)
+```
+
+Release managers own the private signing key. CI may sign only from a protected
+release environment; presubmit and local smoke jobs should use
+`scripts/sign_release_artifacts.sh --dry-run`.
+
+Release storage policy:
+
+- Store `checksums.sha256` and its detached signature next to the release zips.
+- Publish the public verification key or GPG fingerprint in the release notes.
+- Keep private keys in the protected release secret store only; never in the repo,
+  build cache, artifact zips, or local developer defaults.
+- Treat a missing signature as a release blocker unless the release notes carry an
+  explicit waiver owned by the release manager.

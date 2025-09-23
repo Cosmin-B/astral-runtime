@@ -17,6 +17,9 @@ Options:
   --out-dir <path>         Output directory for zips (default: ./dist)
   --unity                  Also build+package Unity plugin and zip ./plugins/unity
   --unreal                 Also build+package Unreal plugin and zip ./plugins/unreal/AstralRT
+  --sign                   Sign dist/checksums.sha256 after metadata generation
+  --sign-tool <tool>       Signing backend for --sign: gpg or minisign
+  --sign-key <id-or-path>  GPG key id or minisign secret key path
   --help                   Show this help
 
 Notes:
@@ -31,6 +34,9 @@ install_prefix="${root_dir}/dist/stage"
 out_dir="${root_dir}/dist"
 do_unity=0
 do_unreal=0
+do_sign=0
+sign_tool=""
+sign_key=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,6 +46,9 @@ while [[ $# -gt 0 ]]; do
     --out-dir) out_dir="${2:-}"; shift 2 ;;
     --unity) do_unity=1; shift ;;
     --unreal) do_unreal=1; shift ;;
+    --sign) do_sign=1; shift ;;
+    --sign-tool) sign_tool="${2:-}"; shift 2 ;;
+    --sign-key) sign_key="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -134,5 +143,17 @@ fi
 
 echo "[package_release] Generate release metadata"
 "${root_dir}/scripts/generate_release_metadata.sh" "${out_dir}"
+
+if [[ "${do_sign}" -eq 1 ]]; then
+  sign_args=(--out-dir "${out_dir}")
+  if [[ -n "${sign_tool}" ]]; then
+    sign_args+=(--tool "${sign_tool}")
+  fi
+  if [[ -n "${sign_key}" ]]; then
+    sign_args+=(--key "${sign_key}")
+  fi
+  echo "[package_release] Sign release checksums"
+  "${root_dir}/scripts/sign_release_artifacts.sh" "${sign_args[@]}"
+fi
 
 echo "[package_release] Done. Artifacts in: ${out_dir}"
