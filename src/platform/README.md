@@ -98,7 +98,7 @@ Release entire virtual address space reservation.
 Attempt to use huge pages (2MB/1GB) for better TLB performance.
 
 - **Linux**: `madvise(MADV_HUGEPAGE)` (requires THP enabled)
-- **Windows**: Not supported (returns `false`)
+- **Windows**: Retroactive promotion is not supported (returns `false`)
 - **macOS**: Not supported (returns `false`)
 
 **Parameters**:
@@ -112,6 +112,24 @@ Attempt to use huge pages (2MB/1GB) for better TLB performance.
 - On Linux, requires THP enabled or `vm.nr_hugepages > 0`
 - On Windows, huge pages must be requested at allocation time (not retroactively)
 - Graceful fallback to regular pages is always safe
+
+#### `void* vm_reserve_large(size_t size, size_t* out_size)`
+
+Reserve a large-page region for initialization-time memory pools.
+
+- **Linux**: reserves a 2 MiB-aligned region, commits it, and applies `MADV_HUGEPAGE`
+- **Windows**: calls `VirtualAlloc(MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES)`
+- **macOS**: returns `nullptr`
+
+**Parameters**:
+- `size`: Requested byte size
+- `out_size`: Optional actual allocation size after platform rounding
+
+**Notes**:
+- Windows requires `SeLockMemoryPrivilege`; failure falls back to normal pages.
+- A successful Windows large-page allocation is already committed and cannot be
+  decommitted in pieces; release it with `vm_release()`.
+- This is not a hot-path primitive.
 
 ### Pre-Commit Strategy
 

@@ -92,6 +92,29 @@ TEST(vm_hugepages_fallback) {
 
     vm_release(addr, kSize);
 }
+
+TEST(vm_large_page_reserve_fallback) {
+    const size_t large_page_size = vm_large_page_size();
+    if (large_page_size == 0) {
+        ASSERT_NULL(vm_reserve_large(2 * 1024 * 1024, nullptr));
+        return;
+    }
+
+    size_t actual_size = 0;
+    void* addr = vm_reserve_large(large_page_size, &actual_size);
+    if (addr == nullptr) {
+        ASSERT_EQ(actual_size, 0u);
+        return;
+    }
+
+    ASSERT_GE(actual_size, large_page_size);
+    memset(addr, 0xEF, large_page_size);
+    auto* bytes = static_cast<unsigned char*>(addr);
+    ASSERT_EQ(bytes[0], 0xEF);
+    ASSERT_EQ(bytes[large_page_size - 1], 0xEF);
+
+    vm_release(addr, actual_size);
+}
 #endif // ASTRAL_ENABLE_VIRTUAL_MEMORY
 
 // Test cache line size detection

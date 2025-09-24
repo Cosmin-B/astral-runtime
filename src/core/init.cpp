@@ -975,22 +975,26 @@ void* runtime_session_scratch_acquire(size_t min_size, size_t alignment, size_t*
 #if ASTRAL_ENABLE_VIRTUAL_MEMORY
     using namespace astral::platform;
     void* mem = nullptr;
+    bool huge_pages = false;
+    size_t alloc_size = min_size;
     if (g_runtime.enable_hugepages) {
-        mem = vm_reserve_aligned(min_size, 2 * 1024 * 1024);
-    } else {
+        mem = vm_reserve_large(min_size, &alloc_size);
+        huge_pages = (mem != nullptr);
+    }
+    if (mem == nullptr) {
+        alloc_size = min_size;
         mem = vm_reserve(min_size);
     }
     if (mem == nullptr) {
         return nullptr;
     }
 
-    vm_commit(mem, min_size);
-    if (g_runtime.enable_hugepages) {
-        (void)vm_try_hugepages(mem, min_size);
+    if (!huge_pages) {
+        vm_commit(mem, min_size);
     }
 
     if (out_size) {
-        *out_size = min_size;
+        *out_size = alloc_size;
     }
     (void)alignment;
     return mem;
@@ -1160,25 +1164,39 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
             reserve_size = align_up_size(reserve_size, kHugeAlign);
         }
 
-        void* vm_base = cfg->enable_hugepages ? vm_reserve_aligned(reserve_size, 2 * 1024 * 1024) : vm_reserve(reserve_size);
+        bool huge_pages_enabled = false;
+        size_t allocated_size = reserve_size;
+        void* vm_base = nullptr;
+        if (cfg->enable_hugepages) {
+            vm_base = vm_reserve_large(reserve_size, &allocated_size);
+            huge_pages_enabled = (vm_base != nullptr);
+        }
+        if (!vm_base) {
+            allocated_size = reserve_size;
+            vm_base = cfg->enable_hugepages ? vm_reserve_aligned(reserve_size, 2 * 1024 * 1024) : vm_reserve(reserve_size);
+        }
         if (!vm_base) {
             return fail_init(ASTRAL_E_NOMEM);
         }
 
         size_t initial_commit = 2 * 1024 * 1024;
-        if (initial_commit > reserve_size) {
-            initial_commit = reserve_size;
+        if (initial_commit > allocated_size) {
+            initial_commit = allocated_size;
         }
-        vm_commit(vm_base, initial_commit);
+        if (huge_pages_enabled) {
+            initial_commit = allocated_size;
+        } else {
+            vm_commit(vm_base, initial_commit);
+        }
 
-        if (cfg->enable_hugepages) {
-            (void)vm_try_hugepages(vm_base, reserve_size);
+        if (cfg->enable_hugepages && !huge_pages_enabled) {
+            huge_pages_enabled = vm_commit_large(vm_base, initial_commit);
         }
 
         g_runtime.vm_base = vm_base;
-        g_runtime.vm_size = reserve_size;
+        g_runtime.vm_size = allocated_size;
         g_runtime.vm_committed = initial_commit;
-        g_runtime.enable_hugepages = (cfg->enable_hugepages != 0);
+        g_runtime.enable_hugepages = huge_pages_enabled;
 
 #endif
     } else if (cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_BORROWED || cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {

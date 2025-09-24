@@ -179,4 +179,42 @@ bool vm_try_hugepages(void* addr, size_t size) {
   return true;
 }
 
+size_t vm_large_page_size() {
+  return kHugePageSize;
+}
+
+void* vm_reserve_large(size_t size, size_t* out_size) {
+  if (out_size != nullptr) {
+    *out_size = 0;
+  }
+  if (size == 0) {
+    return nullptr;
+  }
+
+  void* addr = vm_reserve_aligned(size, kHugePageSize);
+  if (addr == nullptr) {
+    return nullptr;
+  }
+
+  vm_commit(addr, size);
+  if (!vm_try_hugepages(addr, size)) {
+    vm_release(addr, size);
+    return nullptr;
+  }
+
+  if (out_size != nullptr) {
+    *out_size = size;
+  }
+  return addr;
+}
+
+bool vm_commit_large(void* addr, size_t size) {
+  if (addr == nullptr || size == 0) {
+    return false;
+  }
+
+  vm_commit(addr, size);
+  return vm_try_hugepages(addr, size);
+}
+
 } // namespace astral::platform

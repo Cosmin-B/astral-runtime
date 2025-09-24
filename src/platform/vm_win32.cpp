@@ -29,6 +29,10 @@ size_t get_large_page_minimum() {
   return large_page_size;
 }
 
+size_t align_up(size_t value, size_t alignment) {
+  return (value + alignment - 1) & ~(alignment - 1);
+}
+
 } // namespace
 
 void* vm_reserve(size_t size) {
@@ -191,29 +195,47 @@ bool vm_try_hugepages(void* addr, size_t size) {
     return false; // Size not multiple of large page size
   }
 
-  // Windows large page support requirements:
-  // 1. Process must have SE_LOCK_MEMORY_NAME privilege (SeLockMemoryPrivilege)
-  //    This is typically disabled by default and requires administrator access
-  //    to enable via Local Security Policy or Group Policy
-  //
-  // 2. Must allocate with MEM_LARGE_PAGES flag in VirtualAlloc
-  //    NOTE: Large pages must be committed and reserved in a SINGLE operation
-  //    Cannot reserve first, then commit later
-  //
-  // 3. Large pages cannot be decommitted (MEM_DECOMMIT not supported)
-  //    Must free entire region with MEM_RELEASE
-  //
-  // Since the pages are already reserved/committed at this point, we cannot
-  // retroactively apply MEM_LARGE_PAGES. The caller must use large pages
-  // from the start by calling VirtualAlloc with MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES.
-  //
-  // For now, this function returns false because large pages must be requested
-  // at allocation time on Windows, not after the fact.
-  //
-  // TODO(workspace-j5s): Add vm_reserve_large() and vm_commit_large()
-  // variants that use MEM_LARGE_PAGES from the start.
-
   return false; // Large pages cannot be applied retroactively on Windows
+}
+
+size_t vm_large_page_size() {
+  return get_large_page_minimum();
+}
+
+void* vm_reserve_large(size_t size, size_t* out_size) {
+  if (out_size != nullptr) {
+    *out_size = 0;
+  }
+  if (size == 0) {
+    return nullptr;
+  }
+
+  const size_t large_page_min = get_large_page_minimum();
+  if (large_page_min == 0) {
+    return nullptr;
+  }
+
+  const size_t alloc_size = align_up(size, large_page_min);
+  void* addr = ::VirtualAlloc(
+    nullptr,
+    alloc_size,
+    MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES,
+    PAGE_READWRITE
+  );
+  if (addr == nullptr) {
+    return nullptr;
+  }
+
+  if (out_size != nullptr) {
+    *out_size = alloc_size;
+  }
+  return addr;
+}
+
+bool vm_commit_large(void* addr, size_t size) {
+  (void)addr;
+  (void)size;
+  return false;
 }
 
 } // namespace astral::platform

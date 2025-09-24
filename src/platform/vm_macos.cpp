@@ -192,6 +192,24 @@ bool vm_try_hugepages(void* addr, size_t size) {
   return false; // No explicit huge page control on macOS
 }
 
+size_t vm_large_page_size() {
+  return 0;
+}
+
+void* vm_reserve_large(size_t size, size_t* out_size) {
+  (void)size;
+  if (out_size != nullptr) {
+    *out_size = 0;
+  }
+  return nullptr;
+}
+
+bool vm_commit_large(void* addr, size_t size) {
+  (void)addr;
+  (void)size;
+  return false;
+}
+
 } // namespace astral::platform
 
 #endif // __APPLE__
