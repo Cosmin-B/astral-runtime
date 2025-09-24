@@ -1,6 +1,6 @@
-// AstralEmbedder.cs - Embeddings wrapper with RAII pattern
+// AstralEmbedder.cs - Embeddings handle with explicit native ownership.
 //
-// Always call Dispose() when done (use 'using' statement).
+// Dispose releases the native embedder handle; prefer a using scope.
 
 using System;
 using System.Runtime.InteropServices;
@@ -10,7 +10,7 @@ using Unity.Collections.LowLevel.Unsafe;
 namespace Astral.Runtime
 {
     /// <summary>
-    /// Embeddings handle wrapper.
+    /// Embeddings handle wrapper with explicit native ownership.
     /// </summary>
     public sealed class AstralEmbedder : IDisposable
     {

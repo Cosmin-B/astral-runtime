@@ -2,7 +2,7 @@
 // Zero-copy conversions between Unity NativeArray and Astral spans
 //
 // Performance: All conversions are zero-copy (pointer-based)
-// Safety: Uses unsafe pointers with proper lifetime management
+// Safety: The caller keeps the NativeArray alive for the span lifetime.
 // Compatibility: Works with Burst compiler and IL2CPP
 
 using System;
@@ -16,7 +16,7 @@ namespace Astral.Runtime
     /// <summary>
     /// Helpers for zero-copy conversion between NativeArray and Astral spans.
     ///
-    /// CRITICAL DESIGN PRINCIPLES:
+    /// Span conversion rules:
     /// - All conversions are zero-copy (no memcpy, just pointer casts)
     /// - Lifetime: Span is valid only while NativeArray is alive
     /// - Thread-safety: NativeArray must not be disposed while span is in use

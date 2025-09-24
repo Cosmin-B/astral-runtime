@@ -3,7 +3,7 @@
 //
 // Design: Uses Unity Jobs System for async token streaming
 // Performance: Burst-compiled, zero GC allocations
-// Thread-safety: NativeArray ensures safe data transfer
+// Thread-safety: NativeArray owns the cross-thread byte buffers.
 
 using System;
 using Unity.Burst;
@@ -22,7 +22,7 @@ namespace Astral.Runtime
     /// - No exceptions (returns error codes)
     ///
     /// THREAD-SAFETY:
-    /// - NativeArray provides thread-safe data transfer
+    /// - NativeArray owns the cross-thread byte buffers
     /// - Session handle is thread-safe (Astral runtime handles locking)
     /// - No shared state between jobs
     ///

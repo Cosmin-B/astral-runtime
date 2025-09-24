@@ -163,7 +163,7 @@ AstralRuntime.Shutdown();
 
 ### AstralModel
 
-GGUF model handle with RAII pattern.
+GGUF model handle with deterministic native ownership.
 
 ```csharp
 // Load model

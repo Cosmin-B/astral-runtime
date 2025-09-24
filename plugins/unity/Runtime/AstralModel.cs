@@ -1,8 +1,8 @@
-// AstralModel.cs - Model wrapper with RAII pattern
+// AstralModel.cs - GGUF model handle with explicit native ownership.
 //
-//  Always call Dispose() when done (use 'using' statement)
-//  No GC allocations in hot paths
-//  Thread-safety: Safe to load from multiple threads; must not be in use when releasing
+//  Dispose releases the native model handle; prefer a using scope.
+//  No GC allocations in hot paths.
+//  Thread-safety: Safe to load from multiple threads; must not be in use when releasing.
 
 using System;
 using System.Runtime.InteropServices;
@@ -13,7 +13,7 @@ namespace Astral.Runtime
 {
     /// <summary>
     /// GGUF model handle.
-    /// Implements IDisposable for RAII pattern.
+    /// Implements IDisposable to release the native model handle deterministically.
     /// Thread-safety: Safe to load from multiple threads; must not be in use when releasing.
     /// </summary>
     public class AstralModel : IDisposable
@@ -261,7 +261,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Dispose model (RAII pattern).
+        /// Release the native model handle.
         /// Thread-safety: Not thread-safe; must not be in use by any session.
         /// </summary>
         public void Dispose()

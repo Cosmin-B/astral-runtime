@@ -68,7 +68,7 @@ namespace Astral.Runtime.Examples
 
         private void OnDestroy()
         {
-            // Cleanup (RAII pattern)
+            // Release native handles before Unity destroys this component.
             m_session?.Dispose();
             m_model?.Dispose();
         }

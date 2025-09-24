@@ -1,8 +1,8 @@
 // AstralSession.cs - Session wrapper with streaming support
 //
-//  Always call Dispose() when done (use 'using' statement)
-//  No GC allocations in hot paths (streaming, token reading)
-//  Single-threaded access per session (not thread-safe)
+//  Dispose releases the native session handle; prefer a using scope.
+//  No GC allocations in hot paths (streaming, token reading).
+//  Single-threaded access per session (not thread-safe).
 
 using System;
 using System.Collections;
@@ -16,7 +16,7 @@ namespace Astral.Runtime
 {
     /// <summary>
     /// Inference session handle.
-    /// Implements IDisposable for RAII pattern.
+    /// Implements IDisposable to release the native session handle deterministically.
     /// Thread-safety: Not thread-safe; single-threaded access per session.
     /// </summary>
     public class AstralSession : IDisposable
@@ -819,7 +819,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Dispose session (RAII pattern).
+        /// Release the native session handle.
         /// Thread-safety: Not thread-safe; must not be in use.
         /// </summary>
         public void Dispose()

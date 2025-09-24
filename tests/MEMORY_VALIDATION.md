@@ -395,5 +395,5 @@ The Astral runtime memory validation infrastructure is **complete and functional
 ---
 
 **Report Generated**: 2025-10-21
-**Author**: Astral validation suite
+**Author**: Astral validation harness
 **Status**: VALIDATION INFRASTRUCTURE COMPLETE

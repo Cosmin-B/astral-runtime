@@ -1,6 +1,6 @@
 # Astral Unity Plugin - Implementation Summary
 
-Production-ready Unity C# plugin wrapper for Astral runtime with zero GC allocations, Burst compatibility, and IL2CPP safety.
+Unity C# plugin wrapper for Astral runtime with zero GC allocation targets, Burst-compatible data paths, and IL2CPP-safe ABI declarations.
 
 ## File Structure
 
@@ -13,7 +13,7 @@ plugins/unity/
 │   ├── Astral.Runtime.asmdef        # Assembly definition (allowUnsafeCode: true)
 │   ├── AstralNative.cs              # Low-level P/Invoke declarations
 │   ├── AstralRuntime.cs             # Runtime initialization/shutdown
-│   ├── AstralModel.cs               # Model wrapper (RAII pattern)
+│   ├── AstralModel.cs               # Model wrapper (IDisposable native handle)
 │   ├── AstralSession.cs             # Session wrapper (streaming support)
 │   ├── AstralExample.cs             # Example usage (blocking, streaming, zero-alloc)
 │   └── Plugins/
@@ -76,16 +76,16 @@ var span = AstralSpanU8.FromString(str, out NativeArray<byte> tempArray);
 var span = AstralSpanU8.FromNativeArray(nativeArray);
 ```
 
-**Rationale**: Astral C ABI never assumes NUL termination (explicit in the public ABI contract). Unity's default string marshaling (`[MarshalAs(UnmanagedType.LPStr)]`) adds NUL terminators, which violates ABI contract.
+**Rationale**: Astral C ABI never assumes NUL termination; every string crosses the ABI as an explicit byte span. Unity's default string marshaling (`[MarshalAs(UnmanagedType.LPStr)]`) adds NUL terminators, which violates that contract.
 
-### 4. RAII Pattern
+### 4. Native Handle Lifetime
 
 **All resource handles implement `IDisposable`**:
 
 ```csharp
 using var model = AstralModel.Load("/path/to/model.gguf");
 using var session = AstralSession.Create(model);
-// Automatic cleanup when scope exits
+// Native handles are released when the scope exits.
 ```
 
 **Rationale**: Unity's garbage collector is non-deterministic. Explicit disposal ensures native resources are freed immediately, preventing memory leaks.
@@ -152,7 +152,7 @@ session.ReadStream(buffer);
 
 ### Memory Management
 
-- [x] RAII pattern for all handles (`IDisposable`)
+- [x] Deterministic native handle release through `IDisposable`
 - [x] Finalizers warn if not disposed properly
 - [x] Zero GC allocations in streaming paths (validated with Unity Profiler)
 
@@ -466,5 +466,3 @@ Research references:
 - Unity Native Plugin Architecture (Unity Technologies)
 - IL2CPP Platform Abstraction Layer design patterns
 - P/Invoke marshaling best practices (Microsoft .NET documentation)
-
-**CRITICAL**: Never mention AI generation or automated tools in user-facing documentation.

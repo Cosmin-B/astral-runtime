@@ -81,6 +81,31 @@ set(TRACKED_COMMENT_TOKENS
   "${hack_token}"
 )
 
+set(ai_generation_phrase "AI")
+string(APPEND ai_generation_phrase " generation")
+set(automated_tools_phrase "automated")
+string(APPEND automated_tools_phrase " tools")
+set(proper_cleanup_phrase "proper")
+string(APPEND proper_cleanup_phrase " cleanup")
+set(proper_lifetime_phrase "proper")
+string(APPEND proper_lifetime_phrase " lifetime management")
+set(raii_pattern_phrase "RAII")
+string(APPEND raii_pattern_phrase " pattern")
+set(always_dispose_phrase "Always call Dispose")
+string(APPEND always_dispose_phrase "() when done")
+set(unreviewed_name_phrase "review")
+string(APPEND unreviewed_name_phrase " tooling")
+
+set(UNREVIEWED_PROSE_STRINGS
+  "${ai_generation_phrase}"
+  "${automated_tools_phrase}"
+  "${proper_cleanup_phrase}"
+  "${proper_lifetime_phrase}"
+  "${raii_pattern_phrase}"
+  "${always_dispose_phrase}"
+  "${unreviewed_name_phrase}"
+)
+
 foreach(path IN LISTS FILES)
   file(READ "${path}" content)
 
@@ -103,6 +128,11 @@ foreach(path IN LISTS FILES)
     foreach(token IN LISTS TRACKED_COMMENT_TOKENS)
       if(line MATCHES "${token}" AND NOT line MATCHES "workspace-[A-Za-z0-9]+")
         message(FATAL_ERROR "Untracked ${token} marker in ${path}:${line_no}; add a issue tracker issue id or remove it")
+      endif()
+    endforeach()
+    foreach(phrase IN LISTS UNREVIEWED_PROSE_STRINGS)
+      if(line MATCHES "${phrase}")
+        message(FATAL_ERROR "Unreviewed generic prose '${phrase}' found in ${path}:${line_no}; rewrite it with project-specific ownership, lifecycle, or failure-mode language")
       endif()
     endforeach()
   endforeach()
