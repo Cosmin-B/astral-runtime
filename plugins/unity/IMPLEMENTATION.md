@@ -432,16 +432,12 @@ Expected: Zero allocations during ReadStream()
 
 ### v0.2 (Planned)
 
-- [ ] Unity Allocator Bridge (`Allocator.Persistent` → `AstralAllocator`)
-- [ ] Logging Callback (C# → native UTF-8 span marshaling)
-- [ ] Embeddings API (C# wrapper for `astral_embed_*`)
 - [ ] GPU Backend Support (CUDA, Metal)
 - [ ] Grammar Constraints (GBNF)
 
 ### v0.3+ (Future)
 
 - [ ] Burst Compiler Support (direct IL to native code)
-- [ ] Jobs System Integration (parallel inference)
 - [ ] Unity DOTS Integration (ECS-friendly API)
 - [ ] WebGL Backend (WASM + WebGPU)
 

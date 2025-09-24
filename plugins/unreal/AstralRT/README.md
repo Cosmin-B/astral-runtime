@@ -93,7 +93,7 @@ For Blueprint convenience, `UAstralSession` also exposes:
 
 ## Vision / Audio (Media)
 
-Media support requires a projector/encoder GGUF. Initialize once per model:
+Media support requires a projector/encoder GGUF and a native Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:
 
 ```cpp
 FAstralModelMediaDesc MediaDesc;
@@ -101,7 +101,7 @@ MediaDesc.MediaPath = TEXT("/path/to/media.gguf");
 Model->InitMedia(MediaDesc);
 ```
 
-Feed media into a session prompt:
+Feed media into a session prompt. `FAstralImageDesc::Pixels` and `FAstralAudioDesc::Samples` must remain valid until the feed call returns.
 
 ```cpp
 FAstralImageDesc Image;
@@ -122,8 +122,9 @@ Session->FeedAudio(Audio, true);
 
 ## Multimodal Embeddings
 
+Load the model with `FAstralModelDesc::bEmbeddingsOnly = true`; call `InitMedia` first when image or audio embeddings are used.
+
 ```cpp
-// Requires embeddings-only model
 UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>(this);
 Embedder->Create(Model);
 

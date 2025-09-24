@@ -206,14 +206,13 @@ Debug.Log($"Tokens/sec: {stats.tokensPerSecond:F2}");
 
 ### Vision / Audio (Media)
 
-Media support requires a model projector/encoder GGUF. Initialize it once per model:
+Media support requires a model projector/encoder GGUF and an Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:
 
 ```csharp
-// Initialize media projector (GGUF path)
 model.InitMediaFromPath("/path/to/media.gguf");
 ```
 
-Feed media into a session prompt:
+Feed media into a session prompt. The backing `NativeArray` must stay alive for the duration of the feed call; Astral copies or consumes the data before the method returns.
 
 ```csharp
 // Image (RGB8)
@@ -224,6 +223,8 @@ session.FeedAudio(audioF32, channels: 1, sampleRate: 16000);
 ```
 
 ### Multimodal Embeddings
+
+Load embedding models with `embeddingsOnly = true`, initialize media first when image/audio input is used, and size the output vector from `embedder.Dimension`.
 
 ```csharp
 using var embedder = AstralEmbedder.Create(model);
