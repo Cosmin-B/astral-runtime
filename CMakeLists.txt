@@ -269,6 +269,20 @@ if(ASTRAL_BUILD_SHARED_LIB)
     astral_configure_runtime_target(astral_rt_shared)
 
     set_target_properties(astral_rt_shared PROPERTIES OUTPUT_NAME "astral_rt")
+    set_target_properties(astral_rt_shared PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        C_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN YES
+    )
+
+    if(UNIX AND NOT APPLE)
+        set(_ASTRAL_EXPORTS_MAP "${CMAKE_CURRENT_BINARY_DIR}/astral_rt_exports.map")
+        file(WRITE "${_ASTRAL_EXPORTS_MAP}" "{\n  global:\n    astral_*;\n  local:\n    *;\n};\n")
+        target_link_options(astral_rt_shared PRIVATE
+            "LINKER:--version-script=${_ASTRAL_EXPORTS_MAP}"
+            "LINKER:--exclude-libs,ALL"
+        )
+    endif()
 
     if(WIN32)
         target_compile_definitions(astral_rt_shared PRIVATE ASTRAL_BUILD_DLL)

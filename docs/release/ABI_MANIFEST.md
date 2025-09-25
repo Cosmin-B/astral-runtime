@@ -31,8 +31,12 @@ ctest --preset release-with-tests -j --output-on-failure
 For shared-library symbol review on Linux:
 
 ```bash
-nm -D --defined-only build/release-test/libastral_rt.so | awk '{print $3}' | sort
+ctest --preset release-with-tests -R '^gate_shared_exports$' -V
 ```
+
+The gate compares `build/release-test/libastral_rt.so` against `include/astral_rt.h`
+and fails if the shared library exports C++ implementation symbols, dependency
+symbols, or any `astral_*` symbol that is not declared with `ASTRAL_API`.
 
 For engine binding layout checks:
 
@@ -41,6 +45,7 @@ For engine binding layout checks:
 
 ## Current Status
 
-This is a manifest and policy document, not a full ABI diff tool. A production
-release still needs a generated exported-symbol baseline and struct layout report
-checked in or archived with the release candidate.
+`gate_shared_exports` now enforces the public runtime symbol surface on Linux.
+A production release still needs a generated struct layout report checked in or
+archived with the release candidate, plus Unity/Unreal binding layout results
+from real engine runners.

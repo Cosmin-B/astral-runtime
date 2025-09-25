@@ -257,6 +257,21 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_source_scans.cmake)
     message(STATUS "Configured test: gate_source_scans")
 endif()
 
+if(TARGET astral_rt_shared AND UNIX AND NOT APPLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_shared_exports.cmake)
+    add_test(
+        NAME gate_shared_exports
+        COMMAND ${CMAKE_COMMAND}
+            -DASTRAL_SHARED_LIBRARY=$<TARGET_FILE:astral_rt_shared>
+            -DASTRAL_PUBLIC_HEADER=${CMAKE_SOURCE_DIR}/include/astral_rt.h
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_shared_exports.cmake
+    )
+    set_tests_properties(gate_shared_exports PROPERTIES
+        TIMEOUT 30
+        LABELS "gate;abi"
+    )
+    message(STATUS "Configured test: gate_shared_exports")
+endif()
+
 # Print test summary
 message(STATUS "========================================")
 message(STATUS "Astral Test Suite Configuration")

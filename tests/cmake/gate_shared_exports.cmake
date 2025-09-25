@@ -1,0 +1,80 @@
+if(POLICY CMP0057)
+  cmake_policy(SET CMP0057 NEW)
+endif()
+
+if(NOT DEFINED ASTRAL_SHARED_LIBRARY)
+  message(FATAL_ERROR "ASTRAL_SHARED_LIBRARY not set")
+endif()
+if(NOT DEFINED ASTRAL_PUBLIC_HEADER)
+  message(FATAL_ERROR "ASTRAL_PUBLIC_HEADER not set")
+endif()
+
+if(NOT EXISTS "${ASTRAL_SHARED_LIBRARY}")
+  message(FATAL_ERROR "Shared library not found: ${ASTRAL_SHARED_LIBRARY}")
+endif()
+if(NOT EXISTS "${ASTRAL_PUBLIC_HEADER}")
+  message(FATAL_ERROR "Public header not found: ${ASTRAL_PUBLIC_HEADER}")
+endif()
+
+find_program(ASTRAL_NM_EXECUTABLE NAMES nm llvm-nm)
+if(NOT ASTRAL_NM_EXECUTABLE)
+  message(FATAL_ERROR "nm or llvm-nm is required for gate_shared_exports")
+endif()
+
+execute_process(
+  COMMAND "${ASTRAL_NM_EXECUTABLE}" -D --defined-only "${ASTRAL_SHARED_LIBRARY}"
+  OUTPUT_VARIABLE nm_output
+  ERROR_VARIABLE nm_error
+  RESULT_VARIABLE nm_result
+)
+if(NOT nm_result EQUAL 0)
+  message(FATAL_ERROR "nm failed for ${ASTRAL_SHARED_LIBRARY}: ${nm_error}")
+endif()
+
+set(exported_symbols)
+string(REPLACE "\n" ";" nm_lines "${nm_output}")
+foreach(line IN LISTS nm_lines)
+  string(STRIP "${line}" line)
+  if(line STREQUAL "")
+    continue()
+  endif()
+  if(line MATCHES "^[0-9A-Fa-f]+[ \t]+[A-Za-z][ \t]+([^ \t]+)$")
+    set(symbol "${CMAKE_MATCH_1}")
+    string(REGEX REPLACE "@@.*$" "" symbol "${symbol}")
+    if(NOT symbol MATCHES "^astral_[A-Za-z0-9_]+$")
+      message(FATAL_ERROR "Unexpected public export '${symbol}' in ${ASTRAL_SHARED_LIBRARY}")
+    endif()
+    list(APPEND exported_symbols "${symbol}")
+  endif()
+endforeach()
+list(REMOVE_DUPLICATES exported_symbols)
+list(SORT exported_symbols)
+
+if(NOT exported_symbols)
+  message(FATAL_ERROR "No public Astral exports found in ${ASTRAL_SHARED_LIBRARY}")
+endif()
+
+set(expected_symbols)
+file(STRINGS "${ASTRAL_PUBLIC_HEADER}" header_lines REGEX "ASTRAL_API")
+foreach(line IN LISTS header_lines)
+  if(line MATCHES "ASTRAL_API[^;]*[ \t\\*](astral_[A-Za-z0-9_]+)[ \t]*\\(")
+    list(APPEND expected_symbols "${CMAKE_MATCH_1}")
+  endif()
+endforeach()
+list(REMOVE_DUPLICATES expected_symbols)
+list(SORT expected_symbols)
+
+foreach(symbol IN LISTS expected_symbols)
+  if(NOT symbol IN_LIST exported_symbols)
+    message(FATAL_ERROR "Public ABI symbol declared but not exported: ${symbol}")
+  endif()
+endforeach()
+
+foreach(symbol IN LISTS exported_symbols)
+  if(NOT symbol IN_LIST expected_symbols)
+    message(FATAL_ERROR "Exported Astral symbol is not declared with ASTRAL_API in ${ASTRAL_PUBLIC_HEADER}: ${symbol}")
+  endif()
+endforeach()
+
+list(LENGTH exported_symbols export_count)
+message(STATUS "gate_shared_exports: OK (${export_count} public Astral exports)")
