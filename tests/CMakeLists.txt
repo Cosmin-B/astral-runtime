@@ -272,6 +272,20 @@ if(TARGET astral_rt_shared AND UNIX AND NOT APPLE AND EXISTS ${CMAKE_CURRENT_SOU
     message(STATUS "Configured test: gate_shared_exports")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_header_mirror.cmake)
+    add_test(
+        NAME gate_unreal_header_mirror
+        COMMAND ${CMAKE_COMMAND}
+            -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_header_mirror.cmake
+    )
+    set_tests_properties(gate_unreal_header_mirror PROPERTIES
+        TIMEOUT 30
+        LABELS "gate;abi;unreal"
+    )
+    message(STATUS "Configured test: gate_unreal_header_mirror")
+endif()
+
 # Print test summary
 message(STATUS "========================================")
 message(STATUS "Astral Test Suite Configuration")
