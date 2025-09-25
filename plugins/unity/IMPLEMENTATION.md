@@ -267,10 +267,10 @@ IEnumerator StreamZeroAlloc()
 
 ## Known Limitations
 
-1. **No Unity Allocator Bridge**: Currently uses Astral's internal allocator. Future: accept Unity's `Allocator.Persistent` via function pointers.
-2. **No Logging Callback**: C# logging callback not yet implemented (requires marshaling UTF-8 spans).
-3. **No Embeddings API**: Not yet exposed in the high-level C# wrapper; v0.1 C ABI calls currently return `Unsupported`.
-4. **No GPU Backend**: v0.1 is CPU-only; GPU support planned for v0.2.
+1. **Editor runner required**: ABI and mock-backend tests need a real Unity Editor with native binaries present.
+2. **Native packaging incomplete**: Platform binaries are built by CMake, but release packaging still needs final UPM-ready artifact layout and signing.
+3. **Real model coverage pending**: Text/media embeddings are exposed through `AstralEmbedder`, but production sign-off still needs real GGUF and MTMD fixture runs.
+4. **GPU validation pending**: CUDA builds are handled by the native runtime gates; Unity-specific GPU artifact and runtime validation are still release-lane work.
 
 ## Testing Strategy
 
