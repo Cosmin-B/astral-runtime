@@ -34,7 +34,7 @@ release candidate.
 
 | Artifact | Required evidence |
 |---|---|
-| Core runtime package | Zip in `dist/`, `checksums.sha256`, dependency manifest |
+| Core runtime package | Zip in `dist/`, `checksums.sha256`, dependency manifest, ABI layout report |
 | Unity package | Native binaries, package metadata, license/notice files, ABI tests |
 | Unreal plugin package | ThirdParty native libraries, license/notice files, UE Automation evidence |
 | Signing | `./scripts/sign_release_artifacts.sh --out-dir dist` writes a detached signature for `checksums.sha256` |

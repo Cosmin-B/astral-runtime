@@ -145,12 +145,14 @@ This is what the CI “v0.1 desktop artifacts” job uses.
 
 The packaging script also writes release governance metadata:
 
+- `dist/abi-layout.json`
 - `dist/dependency-manifest.json`
 - `dist/checksums.sha256`
 
 To regenerate metadata for an existing output directory:
 
 ```bash
+./scripts/generate_abi_layout_report.sh --out dist/abi-layout.json
 ./scripts/generate_release_metadata.sh dist
 ```
 

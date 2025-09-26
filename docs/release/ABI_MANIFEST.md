@@ -40,7 +40,8 @@ symbols, or any `astral_*` symbol that is not declared with `ASTRAL_API`.
 
 For engine binding layout checks:
 
-- `scripts/generate_abi_layout_report.sh --out dist/abi-layout.json`
+- `scripts/package_release.sh` must emit `dist/abi-layout.json`, and
+  `dist/checksums.sha256` must cover it.
 - `ctest --preset release-with-tests -R '^gate_unreal_header_mirror$' -V`
 - Unity ABI tests must pass in the Unity package lane.
 - Unreal Automation tests must pass in the UE 5.7 lane.

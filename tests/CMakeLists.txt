@@ -300,6 +300,23 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             LABELS "gate;abi"
         )
         message(STATUS "Configured test: gate_abi_layout_report")
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_metadata.cmake)
+            add_test(
+                NAME gate_release_metadata
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -DASTRAL_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_metadata.cmake
+            )
+            set_tests_properties(gate_release_metadata PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release;abi"
+            )
+            message(STATUS "Configured test: gate_release_metadata")
+        endif()
     endif()
 endif()
 

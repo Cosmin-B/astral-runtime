@@ -69,6 +69,16 @@ if [[ -z "${version}" ]]; then
   exit 1
 fi
 
+case "${install_prefix}" in
+  /*) ;;
+  *) install_prefix="${root_dir}/${install_prefix}" ;;
+esac
+
+case "${out_dir}" in
+  /*) ;;
+  *) out_dir="${root_dir}/${out_dir}" ;;
+esac
+
 os="unknown"
 arch="unknown"
 case "${OSTYPE:-}" in
@@ -142,6 +152,7 @@ if [[ "${do_unreal}" -eq 1 ]]; then
 fi
 
 echo "[package_release] Generate release metadata"
+"${root_dir}/scripts/generate_abi_layout_report.sh" --out "${out_dir}/abi-layout.json"
 "${root_dir}/scripts/generate_release_metadata.sh" "${out_dir}"
 
 if [[ "${do_sign}" -eq 1 ]]; then

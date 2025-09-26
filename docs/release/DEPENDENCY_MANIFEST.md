@@ -17,19 +17,23 @@ Astral release artifacts must be traceable to exact source and dependency pins.
 Generate the release dependency manifest and artifact checksums after packaging:
 
 ```bash
+./scripts/generate_abi_layout_report.sh --out dist/abi-layout.json
 ./scripts/generate_release_metadata.sh dist
 ```
 
-The script writes:
+The release packaging flow writes:
 
+- `dist/abi-layout.json`
 - `dist/dependency-manifest.json`
 - `dist/checksums.sha256`
 - `dist/checksums.sha256.asc` when signed with GPG
 - `dist/checksums.sha256.minisig` when signed with minisign
 
 The generated manifest records the Astral version, source commit, dirty state,
-submodule commits, and engine package versions. `checksums.sha256` covers files
-already present in the output directory, excluding the generated manifest files.
+submodule commits, and engine package versions. `abi-layout.json` records public
+C ABI struct sizes and alignments for the release host. `checksums.sha256`
+covers files already present in the output directory, excluding the generated
+manifest files.
 
 ## Signing
 
