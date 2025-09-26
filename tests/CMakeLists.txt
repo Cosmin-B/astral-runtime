@@ -317,6 +317,18 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             )
             message(STATUS "Configured test: gate_release_metadata")
         endif()
+
+        if(EXISTS ${CMAKE_SOURCE_DIR}/scripts/validate_release_notes.sh)
+            add_test(
+                NAME gate_release_notes
+                COMMAND ${ASTRAL_BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/validate_release_notes.sh
+            )
+            set_tests_properties(gate_release_notes PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_notes")
+        endif()
     endif()
 endif()
 

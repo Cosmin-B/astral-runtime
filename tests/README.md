@@ -61,4 +61,5 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_unreal_header_mirror`: verifies the tracked Unreal ThirdParty `astral_rt.h` mirror matches the root public ABI header exactly.
 - `gate_abi_layout_report`: compiles `include/astral_rt.h` and checks that a JSON struct size/alignment report can be generated for release evidence.
 - `gate_release_metadata`: checks that release metadata generation keeps `abi-layout.json` covered by `checksums.sha256`.
+- `gate_release_notes`: checks release notes include artifact, validation, engine, rollback, and known-gap evidence.
 - `gate_allocations`: best-effort heap allocation interposition gate for steady-state decode/stream (runs mock always; CPU is opt-in via `ASTRAL_GATE_CPU_ALLOC=1`).

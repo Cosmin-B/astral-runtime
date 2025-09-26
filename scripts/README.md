@@ -175,6 +175,12 @@ gpg --verify dist/checksums.sha256.asc dist/checksums.sha256
 (cd dist && sha256sum -c checksums.sha256)
 ```
 
+Validate release notes before publishing a release candidate:
+
+```bash
+./scripts/validate_release_notes.sh docs/release/RELEASE_NOTES_TEMPLATE.md
+```
+
 ## Unreal Automation (Optional)
 
 Build the Unreal ThirdParty package, then run the plugin Automation tests through Unreal:

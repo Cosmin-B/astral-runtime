@@ -11,6 +11,7 @@ release candidate.
 | Release native build/tests | `cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure` | Yes |
 | Required release gates | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench` | Yes |
 | Release metadata | `./scripts/generate_release_metadata.sh dist` | Yes |
+| Release notes | `./scripts/validate_release_notes.sh <release-notes.md>` | Yes |
 
 ## Unreal Gate
 
