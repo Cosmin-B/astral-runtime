@@ -286,6 +286,23 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_header_mirror.cmake)
     message(STATUS "Configured test: gate_unreal_header_mirror")
 endif()
 
+if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout_report.sh)
+    find_program(ASTRAL_BASH_EXECUTABLE bash)
+    if(ASTRAL_BASH_EXECUTABLE)
+        add_test(
+            NAME gate_abi_layout_report
+            COMMAND ${CMAKE_COMMAND} -E env
+                CXX=${CMAKE_CXX_COMPILER}
+                ${ASTRAL_BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout_report.sh --check
+        )
+        set_tests_properties(gate_abi_layout_report PROPERTIES
+            TIMEOUT 30
+            LABELS "gate;abi"
+        )
+        message(STATUS "Configured test: gate_abi_layout_report")
+    endif()
+endif()
+
 # Print test summary
 message(STATUS "========================================")
 message(STATUS "Astral Test Suite Configuration")

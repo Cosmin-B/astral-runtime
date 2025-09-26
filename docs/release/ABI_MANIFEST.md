@@ -40,13 +40,14 @@ symbols, or any `astral_*` symbol that is not declared with `ASTRAL_API`.
 
 For engine binding layout checks:
 
+- `scripts/generate_abi_layout_report.sh --out dist/abi-layout.json`
 - `ctest --preset release-with-tests -R '^gate_unreal_header_mirror$' -V`
 - Unity ABI tests must pass in the Unity package lane.
 - Unreal Automation tests must pass in the UE 5.7 lane.
 
 ## Current Status
 
-`gate_shared_exports` now enforces the public runtime symbol surface on Linux.
-A production release still needs a generated struct layout report checked in or
-archived with the release candidate, plus Unity/Unreal binding layout results
-from real engine runners.
+`gate_shared_exports` now enforces the public runtime symbol surface on Linux,
+and `scripts/generate_abi_layout_report.sh` produces the release-candidate
+struct size/alignment report. Unity/Unreal binding layout results from real
+engine runners are still required before release sign-off.

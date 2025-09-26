@@ -59,4 +59,5 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_source_scans`: repo-wide source scan that enforces hard rules (tracked cleanup markers, no compare-and-swap ops in sources/docs, no suspicious full-vocab logits copies, and no unreviewed generic prose in comments/docs).
 - `gate_shared_exports`: Linux shared-library export scan that allows only `astral_*` symbols declared with `ASTRAL_API` in `include/astral_rt.h`.
 - `gate_unreal_header_mirror`: verifies the tracked Unreal ThirdParty `astral_rt.h` mirror matches the root public ABI header exactly.
+- `gate_abi_layout_report`: compiles `include/astral_rt.h` and checks that a JSON struct size/alignment report can be generated for release evidence.
 - `gate_allocations`: best-effort heap allocation interposition gate for steady-state decode/stream (runs mock always; CPU is opt-in via `ASTRAL_GATE_CPU_ALLOC=1`).
