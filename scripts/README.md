@@ -34,7 +34,7 @@ brew install valgrind
 - Integer overflows
 - Undefined behavior
 
-**Output**: Console output only (errors shown inline)
+**Output**: CTest output for `gate_allocations` and `gate_rss_cap`.
 
 ---
 
@@ -95,7 +95,8 @@ ms_print massif.out
 ```
 
 **Critical Check**:
-Look for flat heap during decode iterations. Any growth indicates allocations in hot path (FAILURE per MASTER_SPEC).
+The Massif target is `gate_allocations`; growth after steady-state setup needs
+review before a release candidate.
 
 ---
 
@@ -298,7 +299,7 @@ ASAN is disabled by default for Valgrind compatibility. The `run_asan.sh` script
 ```bash
 # Build test first
 cmake --preset dev
-cmake --build build/dev --target test_memory_validation -j8
+cmake --build --preset dev --target gate_allocations -j
 ```
 
 ### Slow Execution
@@ -314,17 +315,19 @@ This is expected with Valgrind (10-20x slowdown). For faster validation:
 ### run_asan.sh
 - Creates separate build directory: `build/asan`
 - Compiles with: `-fsanitize=address -fsanitize=undefined`
-- Runs test with: `ASAN_OPTIONS=detect_leaks=1:check_initialization_order=1`
+- Runs `gate_allocations` and `gate_rss_cap` through CTest.
 - Exit code: 0 (pass), non-zero (fail)
 
 ### run_valgrind.sh
 - Uses existing build: `build/dev`
+- Runs `gate_allocations`
 - Runs with: `--tool=memcheck --leak-check=full --track-origins=yes`
 - Log file: `valgrind_memcheck.log`
 - Reports: Errors, leaks, invalid accesses
 
 ### run_massif.sh
 - Uses existing build: `build/dev`
+- Runs `gate_allocations`
 - Runs with: `--tool=massif --detailed-freq=1`
 - Output files: `massif.out`, `massif_report.txt`
 - Reports: Peak heap, heap timeline, allocation hotspots
@@ -378,7 +381,7 @@ Note: This is an illustrative snippet. The repo’s actual CI is in `.github/wor
 ## References
 
 **Astral Documentation**:
-- `/home/user/workspace/astral/tests/MEMORY_VALIDATION.md` - Full validation report
+- `tests/MEMORY_VALIDATION.md` - Current memory validation gates
 - `/home/user/workspace/astral/docs/MASTER_SPEC.md` - Performance targets
 - `/home/user/workspace/astral/docs/rules/CODING_STANDARDS.md` - Memory rules
 
