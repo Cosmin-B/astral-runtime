@@ -175,6 +175,10 @@ ASTRAL_RELEASE_SIGN_KEY=release@example.com ./scripts/sign_release_artifacts.sh 
 ./scripts/package_release.sh --preset release-with-tests --unity --unreal --sign --sign-key release@example.com
 ```
 
+Protected release signing is handled by the manual `release-sign` GitHub Actions
+workflow. It signs checksum manifests from an existing artifact run in the
+`release` environment after release-note and dependency-pin validation.
+
 Verification:
 
 ```bash

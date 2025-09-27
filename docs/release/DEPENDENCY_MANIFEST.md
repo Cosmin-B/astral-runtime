@@ -60,6 +60,16 @@ Release managers own the private signing key. CI may sign only from a protected
 release environment; presubmit and local smoke jobs should use
 `scripts/sign_release_artifacts.sh --dry-run`.
 
+The protected CI signing lane is `.github/workflows/release-sign.yml`. It is
+manual-only, runs in the `release` environment, validates release notes and
+dependency pins, downloads artifact zips plus metadata from a completed artifact
+run, signs every `checksums.sha256`, verifies the signatures, and uploads the
+signed manifests. Configure the environment with:
+
+- `ASTRAL_RELEASE_GPG_PRIVATE_KEY`
+- `ASTRAL_RELEASE_GPG_PASSPHRASE`
+- `ASTRAL_RELEASE_GPG_KEY_ID`
+
 Release storage policy:
 
 - Store `checksums.sha256` and its detached signature next to the release zips.

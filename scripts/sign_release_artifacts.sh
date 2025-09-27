@@ -22,6 +22,7 @@ Options:
 Environment:
   ASTRAL_RELEASE_SIGN_TOOL  gpg or minisign
   ASTRAL_RELEASE_SIGN_KEY   GPG key id or minisign secret key path
+  ASTRAL_RELEASE_GPG_PASSPHRASE_FILE  File containing the GPG key passphrase
 EOF
 }
 
@@ -99,6 +100,9 @@ case "${tool}" in
     fi
     signature="${checksums}.asc"
     cmd=(gpg --batch --yes --armor --detach-sign --output "${signature}")
+    if [[ -n "${ASTRAL_RELEASE_GPG_PASSPHRASE_FILE:-}" ]]; then
+      cmd+=(--pinentry-mode loopback --passphrase-file "${ASTRAL_RELEASE_GPG_PASSPHRASE_FILE}")
+    fi
     if [[ -n "${key}" ]]; then
       cmd+=(--local-user "${key}")
     fi

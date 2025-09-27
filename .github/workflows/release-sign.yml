@@ -1,0 +1,110 @@
+name: release-sign
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: GitHub Actions run ID that produced release artifacts
+        required: true
+        type: string
+      artifact_pattern:
+        description: Artifact name pattern to sign
+        required: true
+        default: v0.1-desktop-*
+        type: string
+      release_notes:
+        description: Release notes file to validate before signing
+        required: true
+        default: docs/release/RELEASE_NOTES_TEMPLATE.md
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  sign-checksums:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Install signing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gpg
+
+      - name: Validate release notes
+        run: |
+          ./scripts/validate_release_notes.sh "${{ inputs.release_notes }}"
+
+      - name: Validate dependency pins
+        run: |
+          ./scripts/validate_dependency_pins.sh
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+          pattern: ${{ inputs.artifact_pattern }}
+          path: release-artifacts
+
+      - name: Import release signing key
+        env:
+          ASTRAL_RELEASE_GPG_PRIVATE_KEY: ${{ secrets.ASTRAL_RELEASE_GPG_PRIVATE_KEY }}
+          ASTRAL_RELEASE_GPG_PASSPHRASE: ${{ secrets.ASTRAL_RELEASE_GPG_PASSPHRASE }}
+        run: |
+          test -n "${ASTRAL_RELEASE_GPG_PRIVATE_KEY}"
+          test -n "${ASTRAL_RELEASE_GPG_PASSPHRASE}"
+          install -m 700 -d ~/.gnupg
+          printf '%s' "${ASTRAL_RELEASE_GPG_PRIVATE_KEY}" | gpg --batch --import
+          printf '%s' "${ASTRAL_RELEASE_GPG_PASSPHRASE}" > ~/.gnupg/release-passphrase
+          chmod 600 ~/.gnupg/release-passphrase
+
+      - name: Sign checksum manifests
+        env:
+          ASTRAL_RELEASE_SIGN_KEY: ${{ secrets.ASTRAL_RELEASE_GPG_KEY_ID }}
+          ASTRAL_RELEASE_GPG_PASSPHRASE_FILE: ${{ github.workspace }}/.release-passphrase
+        run: |
+          cp ~/.gnupg/release-passphrase "${ASTRAL_RELEASE_GPG_PASSPHRASE_FILE}"
+          chmod 600 "${ASTRAL_RELEASE_GPG_PASSPHRASE_FILE}"
+          shopt -s nullglob
+          manifests=(release-artifacts/*/checksums.sha256)
+          if [[ "${#manifests[@]}" -eq 0 ]]; then
+            echo "No checksums.sha256 files found in downloaded artifacts" >&2
+            exit 1
+          fi
+          for manifest in "${manifests[@]}"; do
+            ./scripts/sign_release_artifacts.sh \
+              --checksums "${manifest}" \
+              --tool gpg \
+              --key "${ASTRAL_RELEASE_SIGN_KEY}"
+          done
+
+      - name: Verify signatures
+        run: |
+          shopt -s nullglob
+          signatures=(release-artifacts/*/checksums.sha256.asc)
+          if [[ "${#signatures[@]}" -eq 0 ]]; then
+            echo "No checksum signatures were written" >&2
+            exit 1
+          fi
+          for signature in "${signatures[@]}"; do
+            manifest="${signature%.asc}"
+            gpg --verify "${signature}" "${manifest}"
+            (cd "$(dirname "${manifest}")" && sha256sum -c checksums.sha256)
+          done
+
+      - name: Upload signed release manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-release-manifests
+          path: |
+            release-artifacts/**/checksums.sha256
+            release-artifacts/**/checksums.sha256.asc
+            release-artifacts/**/dependency-manifest.json
+            release-artifacts/**/abi-layout.json

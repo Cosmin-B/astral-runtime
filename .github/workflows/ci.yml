@@ -597,3 +597,6 @@ jobs:
           name: v0.1-desktop-${{ runner.os }}
           path: |
             dist/*.zip
+            dist/abi-layout.json
+            dist/checksums.sha256
+            dist/dependency-manifest.json
