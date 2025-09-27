@@ -1,0 +1,14 @@
+# type	path	key	value
+project	CMakeLists.txt	version	0.1.0
+submodule	external/llama.cpp	commit	eff06702b2a52e1020ea009ebd86cb9f5acabab5
+submodule	external/llama.cpp	description	b9025
+submodule	external/tracy	commit	a602127eddb60825ac91e726986c12955e9a0082
+submodule	external/tracy	description	v0.13.1-55-ga602127e
+unity_package	plugins/unity/package.json	name	com.astral.runtime
+unity_package	plugins/unity/package.json	version	0.1.0
+unity_package	plugins/unity/package.json	unity	2021.3
+unity_package	plugins/unity/package.json	unityRelease	0f1
+unity_dependency	plugins/unity/package.json	com.unity.collections	1.2.4
+unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	VersionName	0.1.0
+unreal_support	plugins/unreal/AstralRT/AstralRT.uplugin	compatibility_floor	5.4
+unreal_support	plugins/unreal/AstralRT/AstralRT.uplugin	production_target	5.7

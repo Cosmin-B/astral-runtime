@@ -4,6 +4,12 @@ Astral release artifacts must be traceable to exact source and dependency pins.
 
 ## Current Pins
 
+Committed pins live in `docs/release/dependency-pins.tsv` and are checked by:
+
+```bash
+./scripts/validate_dependency_pins.sh
+```
+
 | Dependency | Pin source | Current value |
 |---|---|---|
 | Astral runtime | `CMakeLists.txt`, `include/astral_rt.h` | `0.1.0` |

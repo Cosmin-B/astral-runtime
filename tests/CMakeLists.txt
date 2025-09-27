@@ -329,6 +329,18 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             )
             message(STATUS "Configured test: gate_release_notes")
         endif()
+
+        if(EXISTS ${CMAKE_SOURCE_DIR}/scripts/validate_dependency_pins.sh)
+            add_test(
+                NAME gate_dependency_pins
+                COMMAND ${ASTRAL_BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/validate_dependency_pins.sh
+            )
+            set_tests_properties(gate_dependency_pins PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_dependency_pins")
+        endif()
     endif()
 endif()
 

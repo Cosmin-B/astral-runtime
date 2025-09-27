@@ -156,6 +156,12 @@ To regenerate metadata for an existing output directory:
 ./scripts/generate_release_metadata.sh dist
 ```
 
+Check committed dependency pins against the working tree:
+
+```bash
+./scripts/validate_dependency_pins.sh
+```
+
 To sign the artifact set, sign the checksum file after metadata generation:
 
 ```bash
