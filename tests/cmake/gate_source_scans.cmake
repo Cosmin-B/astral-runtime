@@ -95,6 +95,18 @@ set(always_dispose_phrase "Always call Dispose")
 string(APPEND always_dispose_phrase "() when done")
 set(unreviewed_name_phrase "review")
 string(APPEND unreviewed_name_phrase " tooling")
+set(handle_error_phrase "handle")
+string(APPEND handle_error_phrase " the error")
+set(process_data_phrase "process")
+string(APPEND process_data_phrase " the data")
+set(ensure_proper_phrase "ensure")
+string(APPEND ensure_proper_phrase " proper")
+set(this_function_phrase "this")
+string(APPEND this_function_phrase " function")
+set(for_safety_phrase "for")
+string(APPEND for_safety_phrase " safety")
+set(just_in_case_phrase "just")
+string(APPEND just_in_case_phrase " in case")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -104,6 +116,12 @@ set(UNREVIEWED_PROSE_STRINGS
   "${raii_pattern_phrase}"
   "${always_dispose_phrase}"
   "${unreviewed_name_phrase}"
+  "${handle_error_phrase}"
+  "${process_data_phrase}"
+  "${ensure_proper_phrase}"
+  "${this_function_phrase}"
+  "${for_safety_phrase}"
+  "${just_in_case_phrase}"
 )
 
 foreach(path IN LISTS FILES)

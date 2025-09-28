@@ -165,9 +165,7 @@ inline uint32_t sample_from_weights_sorted_desc(const uint32_t* ids,
                                                 size_t count,
                                                 float top_p,
                                                 uint32_t* rng_state) {
-    // weights_in_out contains unnormalized weights; this function:
-    // - finds nucleus cutoff (by cumulative mass in sorted order)
-    // - samples from the truncated distribution
+    // weights_in_out is the sorted scratch buffer; truncate and sample in-place.
     double sum = 0.0;
     for (size_t i = 0; i < count; ++i) {
         sum += static_cast<double>(weights_in_out[i]);
