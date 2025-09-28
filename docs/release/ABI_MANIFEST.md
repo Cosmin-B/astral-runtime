@@ -42,6 +42,7 @@ For engine binding layout checks:
 
 - `scripts/package_release.sh` must emit `dist/abi-layout.json`, and
   `dist/checksums.sha256` must cover it.
+- `ctest --preset release-with-tests -R '^test_abi_invalid_args$' -V`
 - `ctest --preset release-with-tests -R '^gate_unreal_header_mirror$' -V`
 - Unity ABI tests must pass in the Unity package lane.
 - Unreal Automation tests must pass in the UE 5.7 lane.

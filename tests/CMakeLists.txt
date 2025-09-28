@@ -35,6 +35,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY)
         test_utf8
         test_logging
         test_core
+        test_abi_invalid_args
         test_arena
         test_model_sources
         test_backend
