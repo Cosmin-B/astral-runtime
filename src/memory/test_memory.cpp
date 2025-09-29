@@ -127,6 +127,17 @@ struct Token {
     char data[48]; // Padding to make it realistic size
 };
 
+static void object_pool_thread_worker(ObjectPool<Token, 256>* pool, int thread_id, size_t iterations) {
+    for (size_t i = 0; i < iterations; ++i) {
+        Token* tok = pool->acquire();
+        if (tok) {
+            tok->id = thread_id * 1000000 + i;
+            tok->timestamp = i;
+            pool->release(tok);
+        }
+    }
+}
+
 TEST(object_pool_basic) {
     ObjectPool<Token, 16> pool;
 
@@ -189,24 +200,9 @@ TEST(object_pool_thread_safety) {
 
     ObjectPool<Token, kPoolSize> pool;
 
-    auto worker = [&pool](int thread_id) {
-        for (size_t i = 0; i < kIterations; ++i) {
-            // Acquire
-            Token* tok = pool.acquire();
-            if (tok) {
-                // Simulate work
-                tok->id = thread_id * 1000000 + i;
-                tok->timestamp = i;
-
-                // Release
-                pool.release(tok);
-            }
-        }
-    };
-
     std::vector<std::thread> threads;
     for (size_t i = 0; i < kThreads; ++i) {
-        threads.emplace_back(worker, i);
+        threads.emplace_back(object_pool_thread_worker, &pool, static_cast<int>(i), kIterations);
     }
 
     for (auto& t : threads) {
