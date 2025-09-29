@@ -8,6 +8,20 @@
 
 #include "astral_rt.h"
 
+namespace {
+
+struct FAstralSessionStreamReader
+{
+    UAstralSession* Session = nullptr;
+
+    int32 operator()(TArray<uint8>& OutBuffer, uint32 TimeoutMs) const
+    {
+        return Session->StreamRead(OutBuffer, TimeoutMs);
+    }
+};
+
+} // namespace
+
 UAstralSession::UAstralSession()
 {
     TokenBuffer.SetNumUninitialized(4096);
@@ -391,11 +405,9 @@ bool UAstralSession::TickStream(float DeltaTime)
         return false;
     }
 
+    const FAstralSessionStreamReader Reader{this};
     const bool keep_running = AstralRT::Private::FAstralSessionStreamPump::Tick(
-        [this](TArray<uint8>& OutBuffer, uint32 TimeoutMs)
-        {
-            return StreamRead(OutBuffer, TimeoutMs);
-        },
+        Reader,
         TokenBuffer,
         TickUtf8Buffer,
         TickTextScratch,

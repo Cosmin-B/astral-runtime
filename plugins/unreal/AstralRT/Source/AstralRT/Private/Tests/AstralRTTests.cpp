@@ -32,6 +32,48 @@ static bool bytes_equal_ascii(const TArray<uint8>& bytes, const char* lit) {
     return FMemory::Memcmp(bytes.GetData(), lit, lit_len) == 0;
 }
 
+static bool run_mock_session_once(AstralHandle session, TArray<uint8>& out_bytes) {
+    out_bytes.Reset();
+    out_bytes.Reserve(32);
+
+    const char* prompt = "hi";
+    AstralSpanU8 prompt_span{};
+    prompt_span.data = reinterpret_cast<const uint8_t*>(prompt);
+    prompt_span.len = static_cast<uint32_t>(FCStringAnsi::Strlen(prompt));
+
+    AstralErr e = astral_session_feed(session, prompt_span, 1);
+    if (e != ASTRAL_OK) {
+        return false;
+    }
+
+    e = astral_session_decode(session);
+    if (e != ASTRAL_OK) {
+        return false;
+    }
+
+    uint8_t buf[64];
+    for (;;) {
+        AstralMutSpanU8 out{};
+        out.data = buf;
+        out.len = sizeof(buf);
+
+        const int32_t n = astral_stream_read(session, out, 1000);
+        if (n == ASTRAL_E_TIMEOUT) {
+            continue;
+        }
+        if (n < 0) {
+            return false;
+        }
+        if (n == 0) {
+            break;
+        }
+        out_bytes.Append(buf, n);
+    }
+
+    e = astral_session_wait(session, 5000);
+    return e == ASTRAL_OK;
+}
+
 } // namespace
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -100,50 +142,8 @@ bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
         return false;
     }
 
-    auto run_once = [&](TArray<uint8>& out_bytes) -> bool {
-        out_bytes.Reset();
-        out_bytes.Reserve(32);
-
-        const char* prompt = "hi";
-        AstralSpanU8 prompt_span{};
-        prompt_span.data = reinterpret_cast<const uint8_t*>(prompt);
-        prompt_span.len = static_cast<uint32_t>(FCStringAnsi::Strlen(prompt));
-
-        AstralErr e = astral_session_feed(session, prompt_span, 1);
-        if (e != ASTRAL_OK) {
-            return false;
-        }
-
-        e = astral_session_decode(session);
-        if (e != ASTRAL_OK) {
-            return false;
-        }
-
-        uint8_t buf[64];
-        for (;;) {
-            AstralMutSpanU8 out{};
-            out.data = buf;
-            out.len = sizeof(buf);
-
-            const int32_t n = astral_stream_read(session, out, 1000);
-            if (n == ASTRAL_E_TIMEOUT) {
-                continue;
-            }
-            if (n < 0) {
-                return false;
-            }
-            if (n == 0) {
-                break;
-            }
-            out_bytes.Append(buf, n);
-        }
-
-        e = astral_session_wait(session, 5000);
-        return e == ASTRAL_OK;
-    };
-
     TArray<uint8> out1;
-    const bool ok1 = run_once(out1);
+    const bool ok1 = run_mock_session_once(session, out1);
     TestTrue(TEXT("first decode ok"), ok1);
     TestTrue(TEXT("mock output == mock-backend"), bytes_equal_ascii(out1, "mock-backend"));
 
@@ -160,7 +160,7 @@ bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("astral_session_stop_add_utf8"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
 
     TArray<uint8> out2;
-    const bool ok2 = run_once(out2);
+    const bool ok2 = run_mock_session_once(session, out2);
     TestTrue(TEXT("second decode ok"), ok2);
     TestTrue(TEXT("stop suppresses backend suffix"), bytes_equal_ascii(out2, "mock-"));
 
