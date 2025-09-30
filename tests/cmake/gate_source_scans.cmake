@@ -126,6 +126,13 @@ set(UNREVIEWED_PROSE_STRINGS
 
 foreach(path IN LISTS FILES)
   file(READ "${path}" content)
+  get_filename_component(ext "${path}" EXT)
+  set(is_lambda_gated_source OFF)
+  if(path MATCHES "/include/" OR path MATCHES "/src/" OR path MATCHES "/backend_plugins/" OR path MATCHES "/plugins/unreal/AstralRT/Source/AstralRT/Private/")
+    if(NOT path MATCHES "/tests/" AND NOT path MATCHES "/benchmarks/" AND NOT path MATCHES "/examples/")
+      set(is_lambda_gated_source ON)
+    endif()
+  endif()
 
   foreach(token IN LISTS FORBIDDEN_STRINGS)
     if(content MATCHES "${token}")
@@ -153,6 +160,9 @@ foreach(path IN LISTS FILES)
         message(FATAL_ERROR "Unreviewed generic prose '${phrase}' found in ${path}:${line_no}; rewrite it with project-specific ownership, lifecycle, or failure-mode language")
       endif()
     endforeach()
+    if(is_lambda_gated_source AND ext MATCHES "^\\.(h|hpp|c|cc|cpp)$" AND line MATCHES "\\[[^]]*\\][ \t]*\\(" AND NOT line MATCHES "operator[^[]*\\[[ \t]*\\]")
+      message(FATAL_ERROR "Lambda expression found in ${path}:${line_no}; use a named helper so ownership, profiling, and control flow stay reviewable")
+    endif()
   endforeach()
 endforeach()
 
