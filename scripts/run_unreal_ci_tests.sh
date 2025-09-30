@@ -23,7 +23,7 @@ source_project_dir="${root_dir}/ci/unreal/AstralCiUnrealProject"
 source_project_file="${source_project_dir}/AstralCiUnrealProject.uproject"
 plugin_dir="${root_dir}/plugins/unreal/AstralRT"
 test_filter="${UNREAL_TEST_FILTER:-AstralRT.*}"
-results_dir="${root_dir}/build/unreal-ci-results"
+results_dir="${ASTRAL_UNREAL_RESULTS_DIR:-${root_dir}/build/unreal-ci-results}"
 
 if [[ -n "${ASTRAL_UNREAL_PROJECT:-}" ]]; then
   project_dir="${ASTRAL_UNREAL_PROJECT}"

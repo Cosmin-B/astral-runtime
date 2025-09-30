@@ -204,6 +204,18 @@ UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh
 
 By default the runner stages a sidecar project under `build/unreal-ci-project/` and writes logs to `build/unreal-ci-results/`. Set `ASTRAL_UNREAL_PROJECT` to run against an existing project with `Plugins/AstralRT` already installed.
 
+For the UE 5.4+ compatibility lane, set one editor per version and run the matrix wrapper:
+
+```bash
+UNREAL_54_EDITOR=/opt/Unreal-5.4/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
+  ./scripts/run_unreal_compatibility_matrix.sh
+```
+
+Each version writes separate reports under `build/unreal-ci-results/ue-<version>/`. Release-candidate runs should provide all four editors; `--allow-missing` is only for local discovery.
+
 ## Required Release Gates
 
 `run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, and the real MTMD media gate.

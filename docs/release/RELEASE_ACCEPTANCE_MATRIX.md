@@ -21,7 +21,7 @@ release candidate.
 | UE 5.7 full container | `ghcr.io/epicgames/unreal-engine:dev-5.7.4` | Yes |
 | UE 5.7 slim container | `ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4` | Yes |
 | Automation tests | `UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh` | Yes |
-| UE 5.4/5.5/5.6 compatibility | Compile plugin and run smoke tests | Yes |
+| UE 5.4/5.5/5.6/5.7 compatibility | `UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh` | Yes |
 
 ## Backend And Model Gate
 
