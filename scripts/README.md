@@ -218,15 +218,22 @@ Each version writes separate reports under `build/unreal-ci-results/ue-<version>
 
 ## Required Release Gates
 
-`run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, and the real MTMD media gate.
+`run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, the real MTMD media gate, Unreal 5.4+ Automation compatibility, and Unity EditMode ABI tests.
 
 ```bash
 ASTRAL_TEST_VISION_MODEL=/models/vision.gguf \
 ASTRAL_TEST_VISION_MEDIA=/models/mmproj-vision.gguf \
 ASTRAL_TEST_AUDIO_MODEL=/models/audio.gguf \
 ASTRAL_TEST_AUDIO_MEDIA=/models/mmproj-audio.gguf \
+UNREAL_54_EDITOR=/opt/Unreal-5.4/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNITY_EDITOR=/opt/Unity/Editor/Unity \
   ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench
 ```
+
+The `--skip-engine`, `--skip-unreal`, and `--skip-unity` flags are for partial local diagnosis only. A release candidate should not use them.
 
 The CUDA part uses release-with-tests CUDA presets and requires a real CUDA runner:
 
