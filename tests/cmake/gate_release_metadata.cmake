@@ -14,7 +14,7 @@ endif()
 set(out_dir "${ASTRAL_BUILD_DIR}/release-metadata-gate")
 file(REMOVE_RECURSE "${out_dir}")
 file(MAKE_DIRECTORY "${out_dir}")
-file(WRITE "${out_dir}/astral-smoke.zip" "smoke\n")
+file(WRITE "${out_dir}/astral-0.1.0-linux-x86_64.zip" "smoke\n")
 
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E env
@@ -54,8 +54,21 @@ file(READ "${out_dir}/checksums.sha256" checksums)
 if(NOT checksums MATCHES "[ \t]abi-layout\\.json")
   message(FATAL_ERROR "checksums.sha256 does not cover abi-layout.json")
 endif()
-if(NOT checksums MATCHES "[ \t]astral-smoke\\.zip")
+if(NOT checksums MATCHES "[ \t]dependency-manifest\\.json")
+  message(FATAL_ERROR "checksums.sha256 does not cover dependency-manifest.json")
+endif()
+if(NOT checksums MATCHES "[ \t]astral-0\\.1\\.0-linux-x86_64\\.zip")
   message(FATAL_ERROR "checksums.sha256 does not cover packaged artifacts")
+endif()
+
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_artifacts.sh" --dist "${out_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE validate_result
+  ERROR_VARIABLE validate_error
+)
+if(NOT validate_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_artifacts.sh failed: ${validate_error}")
 endif()
 
 message(STATUS "gate_release_metadata: OK")

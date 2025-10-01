@@ -87,7 +87,7 @@ fi
 : > "${checksums}"
 while IFS= read -r file; do
   base="$(basename "${file}")"
-  if [[ "${base}" == "$(basename "${manifest}")" || "${base}" == "$(basename "${checksums}")" ]]; then
+  if [[ "${base}" == "$(basename "${checksums}")" ]]; then
     continue
   fi
   (cd "${out_dir}" && hash_file "${base}") >> "${checksums}"
