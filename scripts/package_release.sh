@@ -167,4 +167,18 @@ if [[ "${do_sign}" -eq 1 ]]; then
   "${root_dir}/scripts/sign_release_artifacts.sh" "${sign_args[@]}"
 fi
 
+validate_args=(--dist "${out_dir}")
+if [[ "${do_unity}" -eq 1 ]]; then
+  validate_args+=(--expect-unity)
+fi
+if [[ "${do_unreal}" -eq 1 ]]; then
+  validate_args+=(--expect-unreal)
+fi
+if [[ "${do_sign}" -eq 1 ]]; then
+  validate_args+=(--require-signature)
+fi
+
+echo "[package_release] Validate release artifacts"
+"${root_dir}/scripts/validate_release_artifacts.sh" "${validate_args[@]}"
+
 echo "[package_release] Done. Artifacts in: ${out_dir}"

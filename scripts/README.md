@@ -187,6 +187,8 @@ gpg --verify dist/checksums.sha256.asc dist/checksums.sha256
 (cd dist && sha256sum -c checksums.sha256)
 ```
 
+`package_release.sh` runs the artifact verifier automatically before reporting success.
+
 Validate release notes before publishing a release candidate:
 
 ```bash
