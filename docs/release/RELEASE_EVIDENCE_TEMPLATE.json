@@ -1,0 +1,118 @@
+{
+  "schema": "astral.release.evidence.v1",
+  "release": {
+    "version": "0.1.0",
+    "git_commit": "<release-candidate-commit>"
+  },
+  "evidence": {
+    "native_dev_ctest": {
+      "status": "pass",
+      "command": "cmake --preset dev && cmake --build --preset dev -j && ctest --preset dev -j --output-on-failure",
+      "artifacts": [
+        "logs/native-dev-ctest.log"
+      ]
+    },
+    "native_release_ctest": {
+      "status": "pass",
+      "command": "cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure",
+      "artifacts": [
+        "logs/native-release-ctest.log"
+      ]
+    },
+    "release_required_gates": {
+      "status": "pass",
+      "command": "ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench",
+      "artifacts": [
+        "logs/release-required-gates.log"
+      ]
+    },
+    "unreal_57_full_container": {
+      "status": "pass",
+      "command": "docker run --rm ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce ...",
+      "artifacts": [
+        "logs/unreal-57-full-container.log"
+      ]
+    },
+    "unreal_57_slim_container": {
+      "status": "pass",
+      "command": "docker run --rm ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 ...",
+      "artifacts": [
+        "logs/unreal-57-slim-container.log"
+      ]
+    },
+    "unreal_compatibility_matrix": {
+      "status": "pass",
+      "command": "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh",
+      "artifacts": [
+        "logs/unreal-compatibility-matrix.log"
+      ]
+    },
+    "unity_editmode_abi": {
+      "status": "pass",
+      "command": "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh",
+      "artifacts": [
+        "logs/unity-editmode-abi.log"
+      ]
+    },
+    "cuda_parity_matrix": {
+      "status": "pass",
+      "command": "./scripts/run_cuda_parity_matrix.sh --preset-set release --strict",
+      "artifacts": [
+        "logs/cuda-parity-matrix.log"
+      ]
+    },
+    "multimodal_validation": {
+      "status": "pass",
+      "command": "./scripts/run_multimodal_validation.sh --bench",
+      "artifacts": [
+        "logs/multimodal-validation.log"
+      ]
+    },
+    "hf_model_matrix": {
+      "status": "pass",
+      "command": "./scripts/run_hf_full_suite.sh",
+      "artifacts": [
+        "logs/hf-model-matrix.log"
+      ]
+    },
+    "windows_large_pages": {
+      "status": "pass",
+      "command": "<windows-runner-command>",
+      "artifacts": [
+        "logs/windows-large-pages.log"
+      ]
+    },
+    "release_artifacts": {
+      "status": "pass",
+      "command": "./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature",
+      "artifacts": [
+        "logs/release-artifacts.log",
+        "checksums.sha256",
+        "abi-layout.json",
+        "dependency-manifest.json"
+      ]
+    },
+    "release_signing": {
+      "status": "pass",
+      "command": "gh workflow run release-sign.yml ...",
+      "artifacts": [
+        "logs/release-signing.log",
+        "checksums.sha256.asc"
+      ]
+    },
+    "dependency_pins": {
+      "status": "pass",
+      "command": "./scripts/validate_dependency_pins.sh",
+      "artifacts": [
+        "logs/dependency-pins.log"
+      ]
+    },
+    "release_notes": {
+      "status": "pass",
+      "command": "./scripts/validate_release_notes.sh <release-notes.md>",
+      "artifacts": [
+        "release-notes.md"
+      ]
+    }
+  }
+}

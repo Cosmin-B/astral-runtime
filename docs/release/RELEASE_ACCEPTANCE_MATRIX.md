@@ -12,6 +12,7 @@ release candidate.
 | Required release gates | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench` | Yes |
 | Release metadata | `./scripts/generate_release_metadata.sh dist` | Yes |
 | Artifact verifier | `./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature` | Yes |
+| Evidence manifest | `python3 ./scripts/validate_release_evidence.py dist/release-evidence.json --base-dir dist` | Yes |
 | Release notes | `./scripts/validate_release_notes.sh <release-notes.md>` | Yes |
 | Dependency pins | `./scripts/validate_dependency_pins.sh` | Yes |
 
@@ -42,3 +43,15 @@ release candidate.
 | Unreal plugin package | ThirdParty native libraries, license/notice files, UE Automation evidence |
 | Signing | Protected `release-sign` workflow writes and verifies detached signatures for each `checksums.sha256` |
 | Rollback | Release notes identify previous known-good artifact and dependency pins |
+
+## Release Evidence Manifest
+
+Use `docs/release/RELEASE_EVIDENCE_TEMPLATE.json` as the starting point for
+`dist/release-evidence.json`. Every required lane must be marked `pass` and must
+point at a non-empty log or artifact under the release evidence directory. When a
+SHA-256 is supplied, the validator checks it against the referenced file.
+
+The manifest is a release-candidate artifact, not a source file to keep updating
+in the repository. It records the runs that happened for a candidate; it does not
+stand in for the external Unreal, Unity, CUDA, multimodal, signing, HF matrix, or
+Windows validation lanes.

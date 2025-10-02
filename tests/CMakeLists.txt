@@ -342,6 +342,23 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             )
             message(STATUS "Configured test: gate_dependency_pins")
         endif()
+
+        find_program(ASTRAL_PYTHON_EXECUTABLE python3)
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_evidence.cmake)
+            add_test(
+                NAME gate_release_evidence
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_evidence.cmake
+            )
+            set_tests_properties(gate_release_evidence PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_evidence")
+        endif()
     endif()
 endif()
 

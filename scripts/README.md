@@ -189,6 +189,18 @@ gpg --verify dist/checksums.sha256.asc dist/checksums.sha256
 
 `package_release.sh` runs the artifact verifier automatically before reporting success.
 
+Release candidates also need an evidence manifest that points at the logs and
+artifacts from every required lane. Start from
+`docs/release/RELEASE_EVIDENCE_TEMPLATE.json`, write the filled manifest next to
+the release artifacts, and validate it:
+
+```bash
+python3 ./scripts/validate_release_evidence.py dist/release-evidence.json --base-dir dist
+```
+
+The manifest records evidence. It does not replace the Unreal, Unity, CUDA,
+multimodal, signing, or Windows runner commands.
+
 Validate release notes before publishing a release candidate:
 
 ```bash
