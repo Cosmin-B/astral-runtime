@@ -283,6 +283,25 @@ The MTMD part fails before CTest if any required model/projector fixture is miss
 ./scripts/run_multimodal_validation.sh --bench
 ```
 
+## Windows Large Pages
+
+Run the Windows large-page validation script twice on a Windows host:
+
+```powershell
+pwsh -File .\scripts\run_windows_large_page_validation.ps1 -ExpectFallback
+```
+
+Then grant the test account `SeLockMemoryPrivilege`, start a fresh elevated
+shell so the token contains the new privilege, and run:
+
+```powershell
+pwsh -File .\scripts\run_windows_large_page_validation.ps1 -ExpectLargePages
+```
+
+The script writes `build/windows-large-pages/windows-large-pages.log` and
+`windows-privileges.txt`. Attach both logs to the release evidence manifest
+under the `windows_large_pages` lane.
+
 ## Interpreting Results
 
 ### PASS Criteria (per MASTER_SPEC § Performance Targets)

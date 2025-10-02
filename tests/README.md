@@ -64,6 +64,7 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_release_evidence`: smoke-checks the release evidence manifest validator, including a missing-lane failure.
 - `gate_release_required_plan`: checks the fast release gate preflight path and required release-candidate environment reporting.
 - `gate_release_sign_workflow`: checks that protected release signing validates downloaded evidence before importing signing credentials.
+- `gate_windows_large_page_runner`: checks that the Windows large-page validation runner and opt-in test expectations stay wired.
 - `gate_release_notes`: checks release notes include artifact, validation, engine, rollback, and known-gap evidence.
 - `gate_dependency_pins`: checks the committed release pin manifest against submodule and engine package versions.
 - `gate_allocations`: best-effort heap allocation interposition gate for steady-state decode/stream (runs mock always; CPU is opt-in via `ASTRAL_GATE_CPU_ALLOC=1`).
@@ -71,3 +72,9 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 `test_abi_invalid_args` is the fast public C ABI boundary matrix. It exercises
 null outputs, invalid handles, and empty plugin paths without requiring model
 fixtures.
+
+`test_platform` accepts two Windows-only validation environment hooks:
+`ASTRAL_TEST_EXPECT_LARGE_PAGES=1` requires explicit large-page allocation to
+succeed, while `ASTRAL_TEST_EXPECT_LARGE_PAGE_FALLBACK=1` requires fallback.
+Use `scripts/run_windows_large_page_validation.ps1` rather than setting those
+variables by hand.

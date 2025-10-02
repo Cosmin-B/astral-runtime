@@ -388,6 +388,20 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             )
             message(STATUS "Configured test: gate_release_sign_workflow")
         endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_windows_large_page_runner.cmake)
+            add_test(
+                NAME gate_windows_large_page_runner
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_windows_large_page_runner.cmake
+            )
+            set_tests_properties(gate_windows_large_page_runner PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;platform"
+            )
+            message(STATUS "Configured test: gate_windows_large_page_runner")
+        endif()
     endif()
 endif()
 

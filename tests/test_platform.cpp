@@ -12,6 +12,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 
 using namespace astral::platform;
 
@@ -95,7 +96,12 @@ TEST(vm_hugepages_fallback) {
 
 TEST(vm_large_page_reserve_fallback) {
     const size_t large_page_size = vm_large_page_size();
+    const bool expect_large_pages = std::getenv("ASTRAL_TEST_EXPECT_LARGE_PAGES") != nullptr;
+    const bool expect_large_page_fallback = std::getenv("ASTRAL_TEST_EXPECT_LARGE_PAGE_FALLBACK") != nullptr;
+    ASSERT_FALSE(expect_large_pages && expect_large_page_fallback);
+
     if (large_page_size == 0) {
+        ASSERT_FALSE(expect_large_pages);
         ASSERT_NULL(vm_reserve_large(2 * 1024 * 1024, nullptr));
         return;
     }
@@ -103,10 +109,12 @@ TEST(vm_large_page_reserve_fallback) {
     size_t actual_size = 0;
     void* addr = vm_reserve_large(large_page_size, &actual_size);
     if (addr == nullptr) {
+        ASSERT_FALSE(expect_large_pages);
         ASSERT_EQ(actual_size, 0u);
         return;
     }
 
+    ASSERT_FALSE(expect_large_page_fallback);
     ASSERT_GE(actual_size, large_page_size);
     memset(addr, 0xEF, large_page_size);
     auto* bytes = static_cast<unsigned char*>(addr);

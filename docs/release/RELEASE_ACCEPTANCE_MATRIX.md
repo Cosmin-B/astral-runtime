@@ -34,6 +34,7 @@ release candidate.
 | CUDA | `./scripts/run_cuda_parity_matrix.sh --preset-set release --strict` on a real GPU runner with `ASTRAL_TEST_CUDA_PARITY_INFER=1` and `ASTRAL_TEST_CUDA_E2E=1` | Yes |
 | Multimodal | `./scripts/run_multimodal_validation.sh --bench` with real vision and audio model/projector fixtures | Yes |
 | HF matrix | Pinned GGUF matrix logs and pass/fail summary | Yes |
+| Windows large pages | `pwsh -File .\scripts\run_windows_large_page_validation.ps1 -ExpectFallback`, then `-ExpectLargePages` from a token with `SeLockMemoryPrivilege` | Yes |
 
 ## Release Artifacts
 
