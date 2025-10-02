@@ -250,6 +250,23 @@ UNITY_EDITOR=/opt/Unity/Editor/Unity \
 
 The `--skip-engine`, `--skip-unreal`, and `--skip-unity` flags are for partial local diagnosis only. A release candidate should not use them.
 
+For a fast release-candidate preflight that prints the required lanes and checks
+that the release environment variables are present without starting builds or
+engine jobs:
+
+```bash
+ASTRAL_TEST_VISION_MODEL=/models/vision.gguf \
+ASTRAL_TEST_VISION_MEDIA=/models/mmproj-vision.gguf \
+ASTRAL_TEST_AUDIO_MODEL=/models/audio.gguf \
+ASTRAL_TEST_AUDIO_MEDIA=/models/mmproj-audio.gguf \
+UNREAL_54_EDITOR=/opt/Unreal-5.4/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNITY_EDITOR=/opt/Unity/Editor/Unity \
+  ./scripts/run_release_required_gates.sh --print-plan --cuda-strict --mtmd-bench
+```
+
 The CUDA part uses release-with-tests CUDA presets and requires a real CUDA runner:
 
 ```bash

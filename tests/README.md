@@ -62,6 +62,7 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_abi_layout_report`: compiles `include/astral_rt.h` and checks that a JSON struct size/alignment report can be generated for release evidence.
 - `gate_release_metadata`: checks that release metadata generation keeps packaged zips, `abi-layout.json`, and `dependency-manifest.json` covered by `checksums.sha256`, then runs the release artifact verifier.
 - `gate_release_evidence`: smoke-checks the release evidence manifest validator, including a missing-lane failure.
+- `gate_release_required_plan`: checks the fast release gate preflight path and required release-candidate environment reporting.
 - `gate_release_notes`: checks release notes include artifact, validation, engine, rollback, and known-gap evidence.
 - `gate_dependency_pins`: checks the committed release pin manifest against submodule and engine package versions.
 - `gate_allocations`: best-effort heap allocation interposition gate for steady-state decode/stream (runs mock always; CPU is opt-in via `ASTRAL_GATE_CPU_ALLOC=1`).

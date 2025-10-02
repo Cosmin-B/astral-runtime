@@ -1,0 +1,68 @@
+if(NOT DEFINED ASTRAL_SOURCE_DIR)
+  message(FATAL_ERROR "ASTRAL_SOURCE_DIR not set")
+endif()
+if(NOT DEFINED ASTRAL_BASH_EXECUTABLE)
+  message(FATAL_ERROR "ASTRAL_BASH_EXECUTABLE not set")
+endif()
+
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE missing_result
+  ERROR_VARIABLE missing_error
+)
+if(missing_result EQUAL 0)
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan accepted missing release environment")
+endif()
+if(NOT missing_error MATCHES "ASTRAL_TEST_VISION_MODEL")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not report missing MTMD environment: ${missing_error}")
+endif()
+
+set(plan_env
+  "ASTRAL_TEST_VISION_MODEL=/models/vision.gguf"
+  "ASTRAL_TEST_VISION_MEDIA=/models/mmproj-vision.gguf"
+  "ASTRAL_TEST_AUDIO_MODEL=/models/audio.gguf"
+  "ASTRAL_TEST_AUDIO_MEDIA=/models/mmproj-audio.gguf"
+  "UNREAL_54_EDITOR=/opt/Unreal-5.4/Engine/Binaries/Linux/UnrealEditor-Cmd"
+  "UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd"
+  "UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd"
+  "UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd"
+  "UNITY_EDITOR=/opt/Unity/Editor/Unity"
+)
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    ${plan_env}
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --cuda-strict --mtmd-bench
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE good_result
+  OUTPUT_VARIABLE good_output
+  ERROR_VARIABLE good_error
+)
+if(NOT good_result EQUAL 0)
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan rejected complete environment: ${good_error}")
+endif()
+if(NOT good_output MATCHES "plan environment OK")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not print success: ${good_output}")
+endif()
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_VISION_MODEL=/models/vision.gguf"
+    "ASTRAL_TEST_VISION_MEDIA=/models/mmproj-vision.gguf"
+    "ASTRAL_TEST_AUDIO_MODEL=/models/audio.gguf"
+    "ASTRAL_TEST_AUDIO_MEDIA=/models/mmproj-audio.gguf"
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --skip-engine
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE skip_result
+  OUTPUT_VARIABLE skip_output
+  ERROR_VARIABLE skip_error
+)
+if(NOT skip_result EQUAL 0)
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan --skip-engine rejected MTMD-only environment: ${skip_error}")
+endif()
+if(NOT skip_output MATCHES "skipped for local diagnosis")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan --skip-engine did not label skipped engine lanes: ${skip_output}")
+endif()
+
+message(STATUS "gate_release_required_plan: OK")

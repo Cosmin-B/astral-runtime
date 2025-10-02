@@ -359,6 +359,21 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             )
             message(STATUS "Configured test: gate_release_evidence")
         endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_required_plan.cmake)
+            add_test(
+                NAME gate_release_required_plan
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_required_plan.cmake
+            )
+            set_tests_properties(gate_release_required_plan PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_required_plan")
+        endif()
     endif()
 endif()
 
