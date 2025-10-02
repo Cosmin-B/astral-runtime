@@ -177,7 +177,10 @@ ASTRAL_RELEASE_SIGN_KEY=release@example.com ./scripts/sign_release_artifacts.sh 
 
 Protected release signing is handled by the manual `release-sign` GitHub Actions
 workflow. It signs checksum manifests from an existing artifact run in the
-`release` environment after release-note and dependency-pin validation.
+`release` environment after release-note, dependency-pin, and release-evidence
+validation. The downloaded artifact set must contain `release-evidence.json`
+next to `checksums.sha256`; the workflow validates it before importing the
+release signing key.
 
 Verification:
 

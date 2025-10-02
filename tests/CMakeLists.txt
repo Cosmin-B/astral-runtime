@@ -374,6 +374,20 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             )
             message(STATUS "Configured test: gate_release_required_plan")
         endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_sign_workflow.cmake)
+            add_test(
+                NAME gate_release_sign_workflow
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_sign_workflow.cmake
+            )
+            set_tests_properties(gate_release_sign_workflow PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_sign_workflow")
+        endif()
     endif()
 endif()
 

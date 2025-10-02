@@ -600,3 +600,4 @@ jobs:
             dist/abi-layout.json
             dist/checksums.sha256
             dist/dependency-manifest.json
+            dist/release-evidence.json

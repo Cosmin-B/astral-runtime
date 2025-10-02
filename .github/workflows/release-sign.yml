@@ -53,6 +53,20 @@ jobs:
           pattern: ${{ inputs.artifact_pattern }}
           path: release-artifacts
 
+      - name: Validate release evidence
+        run: |
+          shopt -s nullglob
+          evidence_manifests=(release-artifacts/*/release-evidence.json)
+          if [[ "${#evidence_manifests[@]}" -eq 0 ]]; then
+            echo "No release-evidence.json files found in downloaded artifacts" >&2
+            exit 1
+          fi
+          for evidence in "${evidence_manifests[@]}"; do
+            ./scripts/validate_release_evidence.py \
+              "${evidence}" \
+              --base-dir "$(dirname "${evidence}")"
+          done
+
       - name: Import release signing key
         env:
           ASTRAL_RELEASE_GPG_PRIVATE_KEY: ${{ secrets.ASTRAL_RELEASE_GPG_PRIVATE_KEY }}
@@ -108,3 +122,4 @@ jobs:
             release-artifacts/**/checksums.sha256.asc
             release-artifacts/**/dependency-manifest.json
             release-artifacts/**/abi-layout.json
+            release-artifacts/**/release-evidence.json
