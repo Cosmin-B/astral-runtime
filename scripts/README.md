@@ -287,6 +287,10 @@ The MTMD part fails before CTest if any required model/projector fixture is miss
 ./scripts/run_multimodal_validation.sh --bench
 ```
 
+The HF GGUF matrix is fail-hard by default: any `[bench] FAILED` row makes
+`run_hf_bench_matrix.sh` exit non-zero. Use `--allow-failures` only for local
+investigation, not for release evidence.
+
 ## Windows Large Pages
 
 Run the Windows large-page validation script twice on a Windows host:

@@ -135,6 +135,7 @@ def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(description="Parse Astral HF bench-matrix logs into CSV.")
     ap.add_argument("--in", dest="in_path", required=True, help="Input log file produced by scripts/run_hf_bench_matrix.sh")
     ap.add_argument("--out", dest="out_path", required=True, help="Output CSV path")
+    ap.add_argument("--require-pass", action="store_true", help="Fail when the log has no blocks or any failed block")
     args = ap.parse_args(argv)
 
     with open(args.in_path, "r", encoding="utf-8", errors="replace") as f:
@@ -142,6 +143,16 @@ def main(argv: List[str]) -> int:
 
     if not blocks:
         print(f"[parse] no blocks found in {args.in_path}", file=sys.stderr)
+        if args.require_pass:
+            return 1
+
+    if args.require_pass:
+        failed = [b for b in blocks if b.failed]
+        if failed:
+            print(f"[parse] failed HF matrix block(s): {len(failed)}", file=sys.stderr)
+            for block in failed[:10]:
+                print(f"[parse] failed preset={block.preset} backend={block.backend} model={_basename(block.model)}", file=sys.stderr)
+            return 1
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out_path)), exist_ok=True)
     write_csv(blocks, args.out_path)
@@ -150,4 +161,3 @@ def main(argv: List[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-
