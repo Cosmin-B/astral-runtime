@@ -66,6 +66,7 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_release_sign_workflow`: checks that protected release signing validates downloaded evidence before importing signing credentials.
 - `gate_windows_large_page_runner`: checks that the Windows large-page validation runner and opt-in test expectations stay wired.
 - `gate_unreal_automation_results`: smoke-checks the Unreal Automation result validator for pass, missing-report, and failing-log cases.
+- `gate_unity_editmode_results`: smoke-checks the Unity EditMode XML validator for pass, failed-result, and malformed-result cases.
 - `gate_release_notes`: checks release notes include artifact, validation, engine, rollback, and known-gap evidence.
 - `gate_dependency_pins`: checks the committed release pin manifest against submodule and engine package versions.
 - `gate_allocations`: best-effort heap allocation interposition gate for steady-state decode/stream (runs mock always; CPU is opt-in via `ASTRAL_GATE_CPU_ALLOC=1`).

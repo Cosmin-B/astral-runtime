@@ -306,6 +306,12 @@ The script writes `build/windows-large-pages/windows-large-pages.log` and
 `windows-privileges.txt`. Attach both logs to the release evidence manifest
 under the `windows_large_pages` lane.
 
+## Unity EditMode Results
+
+`run_unity_ci_tests.sh` validates `editmode-results.xml` after Unity exits. The
+XML must be well-formed, report zero failures, and include at least one passing
+test case.
+
 ## Interpreting Results
 
 ### PASS Criteria (per MASTER_SPEC § Performance Targets)

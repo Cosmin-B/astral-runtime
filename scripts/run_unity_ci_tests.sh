@@ -86,4 +86,7 @@ if [[ ! -s "${results_dir}/editmode-results.xml" ]]; then
   exit 1
 fi
 
+python3 "${root_dir}/scripts/validate_unity_editmode_results.py" \
+  "${results_dir}/editmode-results.xml"
+
 echo "[unity-ci] Results: ${results_dir}/editmode-results.xml"
