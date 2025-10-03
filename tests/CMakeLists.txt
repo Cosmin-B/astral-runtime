@@ -360,6 +360,22 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_release_evidence")
         endif()
 
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_automation_results.cmake)
+            add_test(
+                NAME gate_unreal_automation_results
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_automation_results.cmake
+            )
+            set_tests_properties(gate_unreal_automation_results PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_automation_results")
+        endif()
+
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_required_plan.cmake)
             add_test(
                 NAME gate_release_required_plan

@@ -100,4 +100,9 @@ echo "[unreal_ci] Report: ${report_dir}"
   -ReportOutputPath="${report_dir}" \
   -log="${log_file}"
 
+python3 "${root_dir}/scripts/validate_unreal_automation_results.py" \
+  --log "${log_file}" \
+  --report-dir "${report_dir}" \
+  --filter "${test_filter}"
+
 echo "[unreal_ci] Log: ${log_file}"

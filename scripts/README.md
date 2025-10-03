@@ -234,6 +234,10 @@ UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
 
 Each version writes separate reports under `build/unreal-ci-results/ue-<version>/`. Release-candidate runs should provide all four editors; `--allow-missing` is only for local discovery.
 
+`run_unreal_ci_tests.sh` validates the Unreal log and Automation report after
+the editor exits. A release-candidate run must leave a non-empty report and no
+AstralRT Automation failure markers.
+
 ## Required Release Gates
 
 `run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, the real MTMD media gate, Unreal 5.4+ Automation compatibility, and Unity EditMode ABI tests.
