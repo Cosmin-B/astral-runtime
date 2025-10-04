@@ -24,6 +24,44 @@ REQUIRED_LANES = (
     "release_notes",
 )
 
+REQUIRED_COMMAND_TOKENS = {
+    "release_required_gates": (
+        "run_release_required_gates.sh",
+        "--cuda-strict",
+        "--mtmd-bench",
+    ),
+    "unreal_57_full_container": (
+        "ghcr.io/epicgames/unreal-engine:dev-5.7.4",
+        "sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce",
+    ),
+    "unreal_57_slim_container": (
+        "ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4",
+        "sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6",
+    ),
+    "unreal_compatibility_matrix": (
+        "UNREAL_54_EDITOR",
+        "UNREAL_55_EDITOR",
+        "UNREAL_56_EDITOR",
+        "UNREAL_57_EDITOR",
+        "run_unreal_compatibility_matrix.sh",
+    ),
+    "unity_editmode_abi": ("UNITY_EDITOR", "run_unity_ci_tests.sh"),
+    "cuda_parity_matrix": (
+        "ASTRAL_TEST_CUDA_PARITY_INFER=1",
+        "ASTRAL_TEST_CUDA_E2E=1",
+        "run_cuda_parity_matrix.sh",
+        "--preset-set release",
+        "--strict",
+    ),
+    "multimodal_validation": ("run_multimodal_validation.sh", "--bench"),
+    "hf_model_matrix": ("run_hf_full_suite.sh",),
+    "windows_large_pages": ("run_windows_large_page_validation.ps1",),
+    "release_artifacts": ("validate_release_artifacts.sh", "--require-signature"),
+    "release_signing": ("release-sign",),
+    "dependency_pins": ("validate_dependency_pins.sh",),
+    "release_notes": ("validate_release_notes.sh",),
+}
+
 
 def fail(message):
     print(f"[release-evidence] {message}", file=sys.stderr)
@@ -100,6 +138,9 @@ def validate_manifest(data, base_dir):
         if lane.get("status") != "pass":
             raise ValueError(f"{lane_name}.status must be pass")
         require_text(lane.get("command"), f"{lane_name}.command")
+        for token in REQUIRED_COMMAND_TOKENS.get(lane_name, ()):
+            if token not in lane["command"]:
+                raise ValueError(f"{lane_name}.command must include {token}")
         validate_artifacts(lane_name, lane, base_dir)
 
 

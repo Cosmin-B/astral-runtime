@@ -48,17 +48,41 @@ file(COPY_FILE
 set(evidence_entries "")
 foreach(lane IN LISTS required_lanes)
   set(path "logs/${lane}.log")
+  set(command "smoke ${lane}")
   if(lane STREQUAL "release_artifacts")
     set(path "dist/checksums.sha256")
+    set(command "./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature")
   elseif(lane STREQUAL "release_signing")
     set(path "dist/checksums.sha256.asc")
+    set(command "gh workflow run release-sign.yml ...")
   elseif(lane STREQUAL "release_notes")
     set(path "docs/release/RELEASE_NOTES_TEMPLATE.md")
+    set(command "./scripts/validate_release_notes.sh release-notes.md")
+  elseif(lane STREQUAL "release_required_gates")
+    set(command "./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench")
+  elseif(lane STREQUAL "unreal_57_full_container")
+    set(command "docker run ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce")
+  elseif(lane STREQUAL "unreal_57_slim_container")
+    set(command "docker run ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6")
+  elseif(lane STREQUAL "unreal_compatibility_matrix")
+    set(command "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh")
+  elseif(lane STREQUAL "unity_editmode_abi")
+    set(command "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh")
+  elseif(lane STREQUAL "cuda_parity_matrix")
+    set(command "ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --strict")
+  elseif(lane STREQUAL "multimodal_validation")
+    set(command "./scripts/run_multimodal_validation.sh --bench")
+  elseif(lane STREQUAL "hf_model_matrix")
+    set(command "./scripts/run_hf_full_suite.sh")
+  elseif(lane STREQUAL "windows_large_pages")
+    set(command "pwsh -File ./scripts/run_windows_large_page_validation.ps1 -ExpectFallback; pwsh -File ./scripts/run_windows_large_page_validation.ps1 -ExpectLargePages")
+  elseif(lane STREQUAL "dependency_pins")
+    set(command "./scripts/validate_dependency_pins.sh")
   endif()
   string(APPEND evidence_entries
 "    \"${lane}\": {
       \"status\": \"pass\",
-      \"command\": \"smoke ${lane}\",
+      \"command\": \"${command}\",
       \"artifacts\": [\"${path}\"]
     }")
   if(NOT lane STREQUAL "release_notes")
@@ -120,6 +144,40 @@ if(bad_result EQUAL 0)
 endif()
 if(NOT bad_error MATCHES "missing required lane")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong reason: ${bad_error}")
+endif()
+
+set(bad_command_manifest "${out_dir}/bad-command-evidence.json")
+file(WRITE "${bad_command_manifest}"
+"{
+  \"schema\": \"astral.release.evidence.v1\",
+  \"release\": {
+    \"version\": \"0.1.0\",
+    \"git_commit\": \"gate-smoke\"
+  },
+  \"evidence\": {
+${evidence_entries}  }
+}
+")
+file(READ "${bad_command_manifest}" bad_command_text)
+string(REPLACE
+  "ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --strict"
+  "./scripts/run_cuda_parity_matrix.sh --preset-set release --strict"
+  bad_command_text
+  "${bad_command_text}"
+)
+file(WRITE "${bad_command_manifest}" "${bad_command_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_command_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_command_result
+  ERROR_VARIABLE bad_command_error
+)
+if(bad_command_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak CUDA evidence command")
+endif()
+if(NOT bad_command_error MATCHES "cuda_parity_matrix.command")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong bad-command reason: ${bad_command_error}")
 endif()
 
 file(READ "${ASTRAL_SOURCE_DIR}/docs/release/RELEASE_EVIDENCE_TEMPLATE.json" template_text)
