@@ -17,6 +17,8 @@ Options:
   --arch <list>     Override ASTRAL_CUDA_ARCHITECTURES (e.g. "120a-real" or "native")
   --preset-set <s>  Preset group: dev or release (default: dev)
   --strict          Enable strict token-id parity assertions
+  --allow-probes    Allow build/probe-only runs when real CUDA env flags are unset
+  --check-env       Check required env policy, then exit
   --help            Show help
 
 Environment:
@@ -36,12 +38,16 @@ EOF
 arch_override=""
 preset_set="dev"
 strict=0
+allow_probes=0
+check_env=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --arch) arch_override="${2:-}"; shift 2 ;;
     --preset-set) preset_set="${2:-}"; shift 2 ;;
     --strict) strict=1; shift ;;
+    --allow-probes) allow_probes=1; shift ;;
+    --check-env) check_env=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -53,6 +59,13 @@ if [[ -n "${arch_override}" ]]; then
 fi
 if [[ "${strict}" -eq 1 ]]; then
   common_args+=(--strict)
+fi
+if [[ "${allow_probes}" -eq 1 ]]; then
+  common_args+=(--allow-probes)
+fi
+if [[ "${check_env}" -eq 1 ]]; then
+  scripts/run_cuda_parity.sh --preset dev-cuda --check-env "${common_args[@]}"
+  exit $?
 fi
 
 case "${preset_set}" in

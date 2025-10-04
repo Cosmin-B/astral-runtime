@@ -14,10 +14,13 @@ Options:
   --preset <name>     CMake preset to use (default: dev-cuda)
   --arch <list>       Override ASTRAL_CUDA_ARCHITECTURES (e.g. "120a-real" or "native")
   --strict            Enable strict token-id parity assertions
+  --allow-probes      Allow build/probe-only runs when real CUDA env flags are unset
+  --check-env         Check required env policy, then exit
   --help              Show this help
 
 Environment:
   ASTRAL_TEST_CUDA_PARITY_INFER=1     Run the CPU-vs-CUDA inference parity section (requires tests/models/gpt2.Q2_K.gguf)
+  ASTRAL_TEST_CUDA_E2E=1              Run the CUDA side of test_cuda_e2e
   ASTRAL_TEST_CUDA_PARITY_STRICT=1    (same as --strict)
 
 Example:
@@ -28,12 +31,16 @@ EOF
 preset="dev-cuda"
 strict=0
 arch_override=""
+allow_probes=0
+check_env=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --preset) preset="${2:-}"; shift 2 ;;
     --arch) arch_override="${2:-}"; shift 2 ;;
     --strict) strict=1; shift ;;
+    --allow-probes) allow_probes=1; shift ;;
+    --check-env) check_env=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -41,6 +48,26 @@ done
 
 if [[ "${strict}" -eq 1 ]]; then
   export ASTRAL_TEST_CUDA_PARITY_STRICT=1
+fi
+
+if [[ "${allow_probes}" -ne 1 ]]; then
+  if [[ "${ASTRAL_TEST_CUDA_PARITY_INFER:-}" != "1" ]]; then
+    echo "Missing ASTRAL_TEST_CUDA_PARITY_INFER=1; pass --allow-probes only for local build discovery." >&2
+    exit 2
+  fi
+  if [[ "${ASTRAL_TEST_CUDA_E2E:-}" != "1" ]]; then
+    echo "Missing ASTRAL_TEST_CUDA_E2E=1; pass --allow-probes only for local build discovery." >&2
+    exit 2
+  fi
+fi
+
+if [[ "${check_env}" -eq 1 ]]; then
+  if [[ "${allow_probes}" -eq 1 ]]; then
+    echo "[cuda_parity] probe-only env policy OK"
+  else
+    echo "[cuda_parity] real CUDA env policy OK"
+  fi
+  exit 0
 fi
 
 # Prefer the system-installed toolkit under /usr/local/cuda when present (common on CUDA boxes).

@@ -408,6 +408,21 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_hf_matrix_log")
         endif()
 
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_cuda_parity_runner.cmake)
+            add_test(
+                NAME gate_cuda_parity_runner
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_cuda_parity_runner.cmake
+            )
+            set_tests_properties(gate_cuda_parity_runner PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;cuda"
+            )
+            message(STATUS "Configured test: gate_cuda_parity_runner")
+        endif()
+
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_required_plan.cmake)
             add_test(
                 NAME gate_release_required_plan

@@ -281,6 +281,10 @@ ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 \
   ./scripts/run_cuda_parity_matrix.sh --preset-set release --strict
 ```
 
+`run_cuda_parity.sh` and `run_cuda_parity_matrix.sh` require those two
+environment variables by default. `--allow-probes` is only for local CUDA build
+discovery where the real inference/e2e sections are intentionally disabled.
+
 The MTMD part fails before CTest if any required model/projector fixture is missing:
 
 ```bash
