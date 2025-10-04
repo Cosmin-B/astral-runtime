@@ -122,4 +122,16 @@ if(NOT bad_error MATCHES "missing required lane")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong reason: ${bad_error}")
 endif()
 
+file(READ "${ASTRAL_SOURCE_DIR}/docs/release/RELEASE_EVIDENCE_TEMPLATE.json" template_text)
+foreach(required
+  "cuda_parity_matrix"
+  "ASTRAL_TEST_CUDA_PARITY_INFER=1"
+  "ASTRAL_TEST_CUDA_E2E=1"
+  "run_cuda_parity_matrix.sh --preset-set release --strict"
+)
+  if(NOT template_text MATCHES "${required}")
+    message(FATAL_ERROR "RELEASE_EVIDENCE_TEMPLATE.json is missing CUDA evidence requirement: ${required}")
+  endif()
+endforeach()
+
 message(STATUS "gate_release_evidence: OK")
