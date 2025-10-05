@@ -195,9 +195,12 @@ Verification:
 
 ```bash
 ./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature
-gpg --verify dist/checksums.sha256.asc dist/checksums.sha256
 (cd dist && sha256sum -c checksums.sha256)
 ```
+
+When `--require-signature` is set, the artifact verifier cryptographically
+checks `checksums.sha256.asc` with `gpg --verify` or
+`checksums.sha256.minisig` with `minisign -Vm`.
 
 `package_release.sh` runs the artifact verifier automatically before reporting success.
 

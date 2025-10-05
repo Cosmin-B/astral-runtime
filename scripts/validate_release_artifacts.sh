@@ -18,7 +18,7 @@ Options:
   --dist <dir>          Release artifact directory (default: ./dist)
   --expect-unity       Require a Unity plugin zip
   --expect-unreal      Require an Unreal plugin zip
-  --require-signature  Require checksums.sha256.asc or checksums.sha256.minisig
+  --require-signature  Require and verify checksums.sha256.asc or checksums.sha256.minisig
   --help               Show help
 EOF
 }
@@ -103,7 +103,25 @@ if [[ "${expect_unreal}" -eq 1 ]]; then
 fi
 
 if [[ "${require_signature}" -eq 1 ]]; then
-  if [[ ! -s "${dist_dir}/checksums.sha256.asc" && ! -s "${dist_dir}/checksums.sha256.minisig" ]]; then
+  if [[ -s "${dist_dir}/checksums.sha256.asc" ]]; then
+    if ! command -v gpg >/dev/null 2>&1; then
+      echo "[release-artifacts] gpg is required to verify checksums.sha256.asc" >&2
+      exit 1
+    fi
+    gpg --batch --verify "${dist_dir}/checksums.sha256.asc" "${dist_dir}/checksums.sha256" >/dev/null 2>&1 || {
+      echo "[release-artifacts] checksum signature verification failed: ${dist_dir}/checksums.sha256.asc" >&2
+      exit 1
+    }
+  elif [[ -s "${dist_dir}/checksums.sha256.minisig" ]]; then
+    if ! command -v minisign >/dev/null 2>&1; then
+      echo "[release-artifacts] minisign is required to verify checksums.sha256.minisig" >&2
+      exit 1
+    fi
+    minisign -Vm "${dist_dir}/checksums.sha256" -x "${dist_dir}/checksums.sha256.minisig" >/dev/null 2>&1 || {
+      echo "[release-artifacts] checksum signature verification failed: ${dist_dir}/checksums.sha256.minisig" >&2
+      exit 1
+    }
+  else
     echo "[release-artifacts] missing checksum signature" >&2
     exit 1
   fi

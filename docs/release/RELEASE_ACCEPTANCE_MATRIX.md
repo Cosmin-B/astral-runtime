@@ -12,7 +12,7 @@ release candidate.
 | Release gate preflight | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --print-plan --cuda-strict --mtmd-bench` | Yes |
 | Required release gates | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench` | Yes |
 | Release metadata | `./scripts/generate_release_metadata.sh dist`, or `./scripts/package_release.sh ... --evidence <release-evidence.json>` for RC packaging | Yes |
-| Artifact verifier | `./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature` | Yes |
+| Artifact verifier | `./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature`; verifies `checksums.sha256.asc` with GPG or `checksums.sha256.minisig` with minisign | Yes |
 | Evidence manifest | `python3 ./scripts/validate_release_evidence.py dist/release-evidence.json --base-dir dist` | Yes |
 | Release notes | `./scripts/validate_release_notes.sh <release-notes.md>` | Yes |
 | Dependency pins | `./scripts/validate_dependency_pins.sh` | Yes |
@@ -43,7 +43,7 @@ release candidate.
 | Core runtime package | Zip in `dist/`, `checksums.sha256`, dependency manifest, ABI layout report |
 | Unity package | Native binaries, package metadata, license/notice files, ABI tests |
 | Unreal plugin package | ThirdParty native libraries, license/notice files, UE Automation evidence |
-| Signing | Protected `release-sign` workflow validates `release-evidence.json`, then writes and verifies detached signatures for each `checksums.sha256` |
+| Signing | Protected `release-sign` workflow validates `release-evidence.json`, then writes and verifies detached signatures for each `checksums.sha256`; artifact verification must also reject invalid checksum signatures |
 | Rollback | Release notes identify previous known-good artifact and dependency pins |
 
 ## Release Evidence Manifest

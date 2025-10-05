@@ -320,6 +320,22 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_release_metadata")
         endif()
 
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_artifact_signature.cmake)
+            add_test(
+                NAME gate_release_artifact_signature
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_artifact_signature.cmake
+            )
+            set_tests_properties(gate_release_artifact_signature PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_artifact_signature")
+        endif()
+
         if(EXISTS ${CMAKE_SOURCE_DIR}/scripts/validate_release_notes.sh)
             add_test(
                 NAME gate_release_notes
