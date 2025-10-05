@@ -64,7 +64,8 @@ jobs:
           for evidence in "${evidence_manifests[@]}"; do
             ./scripts/validate_release_evidence.py \
               "${evidence}" \
-              --base-dir "$(dirname "${evidence}")"
+              --base-dir "$(dirname "${evidence}")" \
+              --phase pre-sign
           done
 
       - name: Import release signing key

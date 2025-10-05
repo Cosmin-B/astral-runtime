@@ -145,10 +145,12 @@ Build + test and emit zip artifacts under `dist/`:
 This is what the CI “v0.1 desktop artifacts” job uses.
 
 For a release candidate with external gate evidence already collected, copy and
-validate that manifest into the artifact set:
+validate that manifest into the artifact set. Use `pre-sign` before the
+protected signing workflow has produced `checksums.sha256.asc`; use `complete`
+after signatures exist:
 
 ```bash
-./scripts/package_release.sh --preset release-with-tests --unity --unreal --evidence path/to/release-evidence.json
+./scripts/package_release.sh --preset release-with-tests --unity --unreal --evidence path/to/release-evidence.json --evidence-phase pre-sign
 ```
 
 The packaging script also writes release governance metadata:

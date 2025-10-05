@@ -180,6 +180,40 @@ if(NOT bad_command_error MATCHES "cuda_parity_matrix.command")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong bad-command reason: ${bad_command_error}")
 endif()
 
+set(pre_sign_manifest "${out_dir}/pre-sign-evidence.json")
+file(WRITE "${pre_sign_manifest}" "${bad_command_text}")
+file(READ "${good_manifest}" pre_sign_text)
+string(REGEX REPLACE
+  ",\n    \"release_signing\": \\{[^}]*\"artifacts\": \\[[^]]*\\]\n    \\}"
+  ""
+  pre_sign_text
+  "${pre_sign_text}"
+)
+file(WRITE "${pre_sign_manifest}" "${pre_sign_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${pre_sign_manifest}" --base-dir "${evidence_dir}" --phase pre-sign
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE pre_sign_result
+  ERROR_VARIABLE pre_sign_error
+)
+if(NOT pre_sign_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py rejected valid pre-sign evidence: ${pre_sign_error}")
+endif()
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${pre_sign_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE complete_missing_sign_result
+  ERROR_VARIABLE complete_missing_sign_error
+)
+if(complete_missing_sign_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted complete evidence without release_signing")
+endif()
+if(NOT complete_missing_sign_error MATCHES "release_signing")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong missing-signing reason: ${complete_missing_sign_error}")
+endif()
+
 file(READ "${ASTRAL_SOURCE_DIR}/docs/release/RELEASE_EVIDENCE_TEMPLATE.json" template_text)
 foreach(required
   "cuda_parity_matrix"

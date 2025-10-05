@@ -98,7 +98,8 @@
       "artifacts": [
         "logs/release-signing.log",
         "checksums.sha256.asc"
-      ]
+      ],
+      "phase": "complete"
     },
     "dependency_pins": {
       "status": "pass",

@@ -18,6 +18,7 @@ Options:
   --unity                  Also build+package Unity plugin and zip ./plugins/unity
   --unreal                 Also build+package Unreal plugin and zip ./plugins/unreal/AstralRT
   --evidence <path>        Copy and validate release-evidence.json into the output directory
+  --evidence-phase <p>     Evidence validation phase: pre-sign or complete (default: complete)
   --sign                   Sign dist/checksums.sha256 after metadata generation
   --sign-tool <tool>       Signing backend for --sign: gpg or minisign
   --sign-key <id-or-path>  GPG key id or minisign secret key path
@@ -39,6 +40,7 @@ do_sign=0
 sign_tool=""
 sign_key=""
 evidence_path=""
+evidence_phase="complete"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -49,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --unity) do_unity=1; shift ;;
     --unreal) do_unreal=1; shift ;;
     --evidence) evidence_path="${2:-}"; shift 2 ;;
+    --evidence-phase) evidence_phase="${2:-}"; shift 2 ;;
     --sign) do_sign=1; shift ;;
     --sign-tool) sign_tool="${2:-}"; shift 2 ;;
     --sign-key) sign_key="${2:-}"; shift 2 ;;
@@ -92,6 +95,10 @@ if [[ -n "${evidence_path}" ]]; then
     exit 2
   fi
 fi
+case "${evidence_phase}" in
+  complete|pre-sign) ;;
+  *) echo "Unknown --evidence-phase '${evidence_phase}' (expected complete or pre-sign)" >&2; exit 2 ;;
+esac
 
 os="unknown"
 arch="unknown"
@@ -202,7 +209,7 @@ echo "[package_release] Validate release artifacts"
 
 if [[ -n "${evidence_path}" ]]; then
   echo "[package_release] Validate release evidence"
-  "${root_dir}/scripts/validate_release_evidence.py" "${out_dir}/release-evidence.json" --base-dir "${out_dir}"
+  "${root_dir}/scripts/validate_release_evidence.py" "${out_dir}/release-evidence.json" --base-dir "${out_dir}" --phase "${evidence_phase}"
 fi
 
 echo "[package_release] Done. Artifacts in: ${out_dir}"

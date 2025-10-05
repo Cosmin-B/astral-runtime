@@ -53,6 +53,10 @@ Use `docs/release/RELEASE_EVIDENCE_TEMPLATE.json` as the starting point for
 point at a non-empty log or artifact under the release evidence directory. When a
 SHA-256 is supplied, the validator checks it against the referenced file.
 
+Validate with `--phase pre-sign` before the protected signing workflow has
+produced `checksums.sha256.asc`; validate with the default complete phase after
+signatures are present.
+
 The manifest is a release-candidate artifact, not a source file to keep updating
 in the repository. It records the runs that happened for a candidate; it does not
 stand in for the external Unreal, Unity, CUDA, multimodal, signing, HF matrix, or

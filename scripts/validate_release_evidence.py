@@ -24,6 +24,8 @@ REQUIRED_LANES = (
     "release_notes",
 )
 
+PRE_SIGN_EXCLUDED_LANES = ("release_signing",)
+
 REQUIRED_COMMAND_TOKENS = {
     "release_required_gates": (
         "run_release_required_gates.sh",
@@ -111,7 +113,7 @@ def validate_artifacts(lane_name, lane, base_dir):
                 raise ValueError(f"{field}.sha256 does not match: {path}")
 
 
-def validate_manifest(data, base_dir):
+def validate_manifest(data, base_dir, phase):
     if not isinstance(data, dict):
         raise ValueError("manifest root must be an object")
     if data.get("schema") != "astral.release.evidence.v1":
@@ -127,11 +129,15 @@ def validate_manifest(data, base_dir):
     if not isinstance(evidence, dict):
         raise ValueError("evidence must be an object")
 
-    missing = [lane for lane in REQUIRED_LANES if lane not in evidence]
+    required_lanes = REQUIRED_LANES
+    if phase == "pre-sign":
+        required_lanes = tuple(lane for lane in REQUIRED_LANES if lane not in PRE_SIGN_EXCLUDED_LANES)
+
+    missing = [lane for lane in required_lanes if lane not in evidence]
     if missing:
         raise ValueError(f"missing required lane(s): {', '.join(missing)}")
 
-    for lane_name in REQUIRED_LANES:
+    for lane_name in required_lanes:
         lane = evidence[lane_name]
         if not isinstance(lane, dict):
             raise ValueError(f"{lane_name} must be an object")
@@ -153,6 +159,12 @@ def main():
         "--base-dir",
         help="Directory artifact paths are relative to (default: manifest directory)",
     )
+    parser.add_argument(
+        "--phase",
+        choices=("complete", "pre-sign"),
+        default="complete",
+        help="Evidence phase to validate (default: complete)",
+    )
     args = parser.parse_args()
 
     manifest_path = Path(args.manifest)
@@ -161,7 +173,7 @@ def main():
     try:
         with manifest_path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
-        validate_manifest(data, base_dir)
+        validate_manifest(data, base_dir, args.phase)
     except OSError as exc:
         return fail(str(exc))
     except json.JSONDecodeError as exc:

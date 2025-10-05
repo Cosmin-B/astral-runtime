@@ -17,6 +17,7 @@ file(READ "${ci_workflow}" ci_text)
 foreach(required_regex
   "Validate release evidence"
   "validate_release_evidence.py"
+  "--phase pre-sign"
   "Import release signing key"
   "Sign checksum manifests"
 )
