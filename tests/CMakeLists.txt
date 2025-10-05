@@ -309,6 +309,7 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
                     -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
                     -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
                     -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
                     -DASTRAL_CXX_COMPILER=${CMAKE_CXX_COMPILER}
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_metadata.cmake
             )

@@ -17,6 +17,7 @@ Options:
   --out-dir <path>         Output directory for zips (default: ./dist)
   --unity                  Also build+package Unity plugin and zip ./plugins/unity
   --unreal                 Also build+package Unreal plugin and zip ./plugins/unreal/AstralRT
+  --evidence <path>        Copy and validate release-evidence.json into the output directory
   --sign                   Sign dist/checksums.sha256 after metadata generation
   --sign-tool <tool>       Signing backend for --sign: gpg or minisign
   --sign-key <id-or-path>  GPG key id or minisign secret key path
@@ -37,6 +38,7 @@ do_unreal=0
 do_sign=0
 sign_tool=""
 sign_key=""
+evidence_path=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -46,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     --out-dir) out_dir="${2:-}"; shift 2 ;;
     --unity) do_unity=1; shift ;;
     --unreal) do_unreal=1; shift ;;
+    --evidence) evidence_path="${2:-}"; shift 2 ;;
     --sign) do_sign=1; shift ;;
     --sign-tool) sign_tool="${2:-}"; shift 2 ;;
     --sign-key) sign_key="${2:-}"; shift 2 ;;
@@ -78,6 +81,17 @@ case "${out_dir}" in
   /*) ;;
   *) out_dir="${root_dir}/${out_dir}" ;;
 esac
+
+if [[ -n "${evidence_path}" ]]; then
+  case "${evidence_path}" in
+    /*) ;;
+    *) evidence_path="${root_dir}/${evidence_path}" ;;
+  esac
+  if [[ ! -s "${evidence_path}" ]]; then
+    echo "Release evidence manifest is missing or empty: ${evidence_path}" >&2
+    exit 2
+  fi
+fi
 
 os="unknown"
 arch="unknown"
@@ -151,6 +165,11 @@ if [[ "${do_unreal}" -eq 1 ]]; then
   cmake -E tar cf "${unreal_zip}" --format=zip -- "plugins/unreal/AstralRT" "LICENSE" "NOTICE" "docs/release"
 fi
 
+if [[ -n "${evidence_path}" ]]; then
+  echo "[package_release] Copy release evidence"
+  cmake -E copy "${evidence_path}" "${out_dir}/release-evidence.json"
+fi
+
 echo "[package_release] Generate release metadata"
 "${root_dir}/scripts/generate_abi_layout_report.sh" --out "${out_dir}/abi-layout.json"
 "${root_dir}/scripts/generate_release_metadata.sh" "${out_dir}"
@@ -180,5 +199,10 @@ fi
 
 echo "[package_release] Validate release artifacts"
 "${root_dir}/scripts/validate_release_artifacts.sh" "${validate_args[@]}"
+
+if [[ -n "${evidence_path}" ]]; then
+  echo "[package_release] Validate release evidence"
+  "${root_dir}/scripts/validate_release_evidence.py" "${out_dir}/release-evidence.json" --base-dir "${out_dir}"
+fi
 
 echo "[package_release] Done. Artifacts in: ${out_dir}"

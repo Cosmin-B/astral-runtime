@@ -11,7 +11,7 @@ release candidate.
 | Release native build/tests | `cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure` | Yes |
 | Release gate preflight | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --print-plan --cuda-strict --mtmd-bench` | Yes |
 | Required release gates | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench` | Yes |
-| Release metadata | `./scripts/generate_release_metadata.sh dist` | Yes |
+| Release metadata | `./scripts/generate_release_metadata.sh dist`, or `./scripts/package_release.sh ... --evidence <release-evidence.json>` for RC packaging | Yes |
 | Artifact verifier | `./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature` | Yes |
 | Evidence manifest | `python3 ./scripts/validate_release_evidence.py dist/release-evidence.json --base-dir dist` | Yes |
 | Release notes | `./scripts/validate_release_notes.sh <release-notes.md>` | Yes |

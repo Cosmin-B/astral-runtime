@@ -80,6 +80,10 @@ require_checksum_entry "abi-layout.json"
 require_checksum_entry "dependency-manifest.json"
 require_checksum_entry "${core_zip}"
 
+if [[ -s "${dist_dir}/release-evidence.json" ]]; then
+  require_checksum_entry "release-evidence.json"
+fi
+
 if [[ "${expect_unity}" -eq 1 ]]; then
   unity_zip="$(first_match 'astral-*-unity-plugin-*.zip')"
   if [[ -z "${unity_zip}" ]]; then

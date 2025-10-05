@@ -60,7 +60,7 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_shared_exports`: Linux shared-library export scan that allows only `astral_*` symbols declared with `ASTRAL_API` in `include/astral_rt.h`.
 - `gate_unreal_header_mirror`: verifies the tracked Unreal ThirdParty `astral_rt.h` mirror matches the root public ABI header exactly.
 - `gate_abi_layout_report`: compiles `include/astral_rt.h` and checks that a JSON struct size/alignment report can be generated for release evidence.
-- `gate_release_metadata`: checks that release metadata generation keeps packaged zips, `abi-layout.json`, and `dependency-manifest.json` covered by `checksums.sha256`, then runs the release artifact verifier.
+- `gate_release_metadata`: checks that release metadata generation keeps packaged zips, `abi-layout.json`, `dependency-manifest.json`, and optional `release-evidence.json` covered by `checksums.sha256`, then runs the release artifact and release-evidence verifiers.
 - `gate_release_evidence`: smoke-checks the release evidence manifest validator, including a missing-lane failure.
 - `gate_release_required_plan`: checks the fast release gate preflight path and required release-candidate environment reporting.
 - `gate_release_sign_workflow`: checks that protected release signing validates downloaded evidence before importing signing credentials.
