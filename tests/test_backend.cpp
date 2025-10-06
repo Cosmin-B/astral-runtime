@@ -173,7 +173,8 @@ TEST(backend_selection_cpu) {
     AstralHandle model;
     AstralErr err = astral_model_load(&model_desc, &model);
 
-    // May fail if model file doesn't exist, but should not crash
+    // Missing local fixtures surface as backend load errors in this smoke path.
+    ASSERT_TRUE(err == ASTRAL_OK || err == ASTRAL_E_BACKEND);
     if (err == ASTRAL_OK) {
         astral_model_release(model);
     }
@@ -201,8 +202,8 @@ TEST(backend_selection_gpu) {
     AstralHandle model;
     AstralErr err = astral_model_load(&model_desc, &model);
 
-    // May fail if no GPU backend available, which is expected
-    // Just verify it doesn't crash
+    // CPU-only hosts report backend load failure before a real GPU smoke exists.
+    ASSERT_TRUE(err == ASTRAL_OK || err == ASTRAL_E_BACKEND);
     if (err == ASTRAL_OK) {
         astral_model_release(model);
     }

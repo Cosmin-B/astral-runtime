@@ -107,6 +107,14 @@ set(for_safety_phrase "for")
 string(APPEND for_safety_phrase " safety")
 set(just_in_case_phrase "just")
 string(APPEND just_in_case_phrase " in case")
+set(no_assertion_phrase "No")
+string(APPEND no_assertion_phrase " assertion")
+set(just_verify_phrase "Just")
+string(APPEND just_verify_phrase " verify")
+set(just_verify_lower_phrase "just")
+string(APPEND just_verify_lower_phrase " verify")
+set(should_not_crash_phrase "should")
+string(APPEND should_not_crash_phrase " not crash")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -122,6 +130,10 @@ set(UNREVIEWED_PROSE_STRINGS
   "${this_function_phrase}"
   "${for_safety_phrase}"
   "${just_in_case_phrase}"
+  "${no_assertion_phrase}"
+  "${just_verify_phrase}"
+  "${just_verify_lower_phrase}"
+  "${should_not_crash_phrase}"
 )
 
 foreach(path IN LISTS FILES)

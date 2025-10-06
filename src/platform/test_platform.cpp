@@ -26,7 +26,7 @@ void test_vm_basic() {
   vm_commit(addr, kCommitSize);
   printf("  Committed %zu bytes\n", kCommitSize);
 
-  // Write to committed region (should not crash)
+  // Touch committed pages.
   memset(addr, 0xAB, kCommitSize);
   printf("  Wrote to committed region (OK)\n");
 

@@ -29,7 +29,7 @@ TEST(vm_reserve_commit_release) {
     constexpr size_t kCommitSize = 1 * 1024 * 1024;
     vm_commit(addr, kCommitSize);
 
-    // Write to committed region (should not crash)
+    // Touch committed pages.
     memset(addr, 0xAB, kCommitSize);
 
     // Verify write
@@ -81,9 +81,9 @@ TEST(vm_hugepages_fallback) {
     // Commit entire region
     vm_commit(addr, kSize);
 
-    // Try to use huge pages (may fail, which is acceptable)
-    bool huge_pages = vm_try_hugepages(addr, kSize);
-    // No assertion here - this is best-effort
+    // Transparent huge-page promotion is advisory; byte access is the contract.
+    const bool huge_pages = vm_try_hugepages(addr, kSize);
+    (void)huge_pages;
 
     // Write to region (should work regardless of huge page status)
     memset(addr, 0xCD, kSize);
@@ -173,13 +173,12 @@ TEST(vm_reserve_huge_allocation_fails) {
     constexpr size_t kHugeSize = 1ULL << 50; // 1 PB
     void* addr = vm_reserve(kHugeSize);
 
-    // On some systems this might succeed (address space is cheap)
-    // but on most it should fail
+    // Overcommitting hosts can hand out address space for this request.
     if (addr != nullptr) {
         vm_release(addr, kHugeSize);
+        return;
     }
-    // No assertion - behavior is platform-dependent
-    // Just verify no crash
+    ASSERT_NULL(addr);
 }
 
 // Test decommit without prior commit (should be safe no-op)
