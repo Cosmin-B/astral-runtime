@@ -9,6 +9,7 @@ set(SCAN_DIRS
   src
   tests
   benchmarks
+  cmake
   docs
   plugins
   scripts

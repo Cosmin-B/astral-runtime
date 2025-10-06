@@ -33,6 +33,12 @@ add_custom_target(astral_unreal_plugin_package ALL
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           "$<TARGET_FILE:astral_rt>"
           "${ASTRAL_UE_OUT_LIB_DIR}/$<TARGET_FILE_NAME:astral_rt>"
+  COMMAND ${CMAKE_COMMAND}
+          -DASTRAL_SOURCE_HEADER=${CMAKE_SOURCE_DIR}/include/astral_rt.h
+          -DASTRAL_PACKAGED_HEADER=${ASTRAL_UE_INCLUDE_DIR}/astral_rt.h
+          -DASTRAL_SOURCE_LIBRARY=$<TARGET_FILE:astral_rt>
+          -DASTRAL_PACKAGED_LIBRARY=${ASTRAL_UE_OUT_LIB_DIR}/$<TARGET_FILE_NAME:astral_rt>
+          -P "${CMAKE_SOURCE_DIR}/cmake/validate_unreal_thirdparty_provenance.cmake"
   DEPENDS astral_rt
   COMMENT "Packaging AstralRT Unreal plugin ThirdParty artifacts"
   VERBATIM

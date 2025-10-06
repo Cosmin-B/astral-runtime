@@ -16,6 +16,10 @@ After this, the plugin will contain:
 - `AstralRT/Source/ThirdParty/AstralCore/include/astral_rt.h`
 - `AstralRT/Source/ThirdParty/AstralCore/lib/<Platform>/*`
 
+The package target hashes the staged header and native library after copy, then
+fails if either one differs from the current source header or built `astral_rt`
+target.
+
 ## Use in a UE project
 
 Copy `astral/plugins/unreal/AstralRT/` into your Unreal project:
