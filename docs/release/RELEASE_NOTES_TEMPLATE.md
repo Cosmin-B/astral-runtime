@@ -16,7 +16,9 @@
 - Dependency manifest: `dependency-manifest.json`
 - ABI layout report: `abi-layout.json`
 - Checksums: `checksums.sha256`
-- Signature: <checksums signature file or signed-waiver owner>
+- Checksum signature: <checksums.sha256.asc or checksums.sha256.minisig>
+- Signing key or fingerprint: <public verification key URL or fingerprint>
+- Signature verification command: `./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature`
 
 ## Validation Evidence
 

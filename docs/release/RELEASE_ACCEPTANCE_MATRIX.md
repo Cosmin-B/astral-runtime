@@ -46,6 +46,10 @@ release candidate.
 | Signing | Protected `release-sign` workflow validates `release-evidence.json`, then writes and verifies detached signatures for each `checksums.sha256`; artifact verification must also reject invalid checksum signatures |
 | Rollback | Release notes identify previous known-good artifact and dependency pins |
 
+Release notes must name the checksum signature file, identify the public
+verification key or signer fingerprint, and include the exact checksum signature
+verification command used for the release candidate.
+
 ## Release Evidence Manifest
 
 Use `docs/release/RELEASE_EVIDENCE_TEMPLATE.json` as the starting point for
