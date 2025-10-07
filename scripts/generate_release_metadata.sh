@@ -7,6 +7,7 @@ out_dir="${1:-${root_dir}/dist}"
 mkdir -p "${out_dir}"
 
 manifest="${out_dir}/dependency-manifest.json"
+sbom="${out_dir}/release-sbom.spdx.json"
 checksums="${out_dir}/checksums.sha256"
 
 version="$(sed -n 's/^project(AstralRT VERSION \([0-9][0-9.]*\).*/\1/p' "${root_dir}/CMakeLists.txt" | head -n 1)"
@@ -75,6 +76,10 @@ cat > "${manifest}" <<EOF
 }
 EOF
 
+python3 "${root_dir}/scripts/generate_release_sbom.py" \
+  --manifest "${manifest}" \
+  --out "${sbom}"
+
 if command -v sha256sum >/dev/null 2>&1; then
   hash_file() { sha256sum "$1"; }
 elif command -v shasum >/dev/null 2>&1; then
@@ -94,4 +99,5 @@ while IFS= read -r file; do
 done < <(find "${out_dir}" -maxdepth 1 -type f | sort)
 
 echo "[release_metadata] Manifest: ${manifest}"
+echo "[release_metadata] SBOM: ${sbom}"
 echo "[release_metadata] Checksums: ${checksums}"

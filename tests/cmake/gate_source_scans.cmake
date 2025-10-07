@@ -25,6 +25,7 @@ set(SCAN_GLOBS
   "*.md"
   "*.txt"
   "*.sh"
+  "*.py"
   "*.cmake"
   "CMakeLists.txt"
   "*.json"

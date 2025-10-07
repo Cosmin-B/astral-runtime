@@ -32,15 +32,17 @@ The release packaging flow writes:
 
 - `dist/abi-layout.json`
 - `dist/dependency-manifest.json`
-- `dist/checksums.sha256`, covering packaged zips, `abi-layout.json`, and `dependency-manifest.json`
+- `dist/release-sbom.spdx.json`
+- `dist/checksums.sha256`, covering packaged zips, `abi-layout.json`, `dependency-manifest.json`, and `release-sbom.spdx.json`
 - `dist/checksums.sha256.asc` when signed with GPG
 - `dist/checksums.sha256.minisig` when signed with minisign
 
 The generated manifest records the Astral version, source commit, dirty state,
-submodule commits, and engine package versions. `abi-layout.json` records public
-C ABI struct sizes and alignments for the release host. `checksums.sha256`
-covers files already present in the output directory, including the generated
-dependency manifest.
+submodule commits, and engine package versions. `release-sbom.spdx.json` is a
+small SPDX 2.3 JSON SBOM generated from that manifest. `abi-layout.json` records
+public C ABI struct sizes and alignments for the release host. `checksums.sha256`
+covers files already present in the output directory, including generated
+metadata.
 
 ## Signing
 

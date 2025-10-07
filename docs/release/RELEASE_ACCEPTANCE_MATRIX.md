@@ -40,7 +40,7 @@ release candidate.
 
 | Artifact | Required evidence |
 |---|---|
-| Core runtime package | Zip in `dist/`, `checksums.sha256`, dependency manifest, ABI layout report |
+| Core runtime package | Zip in `dist/`, `checksums.sha256`, dependency manifest, SPDX SBOM, ABI layout report |
 | Unity package | Native binaries, package metadata, license/notice files, ABI tests |
 | Unreal plugin package | ThirdParty native libraries, license/notice files, UE Automation evidence |
 | Signing | Protected `release-sign` workflow validates `release-evidence.json`, then writes and verifies detached signatures for each `checksums.sha256`; artifact verification must also reject invalid checksum signatures |

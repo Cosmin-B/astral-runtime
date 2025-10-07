@@ -62,6 +62,7 @@ first_match() {
 
 require_file "${dist_dir}/abi-layout.json"
 require_file "${dist_dir}/dependency-manifest.json"
+require_file "${dist_dir}/release-sbom.spdx.json"
 require_file "${dist_dir}/checksums.sha256"
 
 core_zip="$(first_match 'astral-*-linux-*.zip')"
@@ -78,6 +79,7 @@ fi
 
 require_checksum_entry "abi-layout.json"
 require_checksum_entry "dependency-manifest.json"
+require_checksum_entry "release-sbom.spdx.json"
 require_checksum_entry "${core_zip}"
 
 if [[ -s "${dist_dir}/release-evidence.json" ]]; then

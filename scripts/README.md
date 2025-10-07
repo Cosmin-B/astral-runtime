@@ -157,6 +157,7 @@ The packaging script also writes release governance metadata:
 
 - `dist/abi-layout.json`
 - `dist/dependency-manifest.json`
+- `dist/release-sbom.spdx.json`
 - `dist/checksums.sha256`
 
 To regenerate metadata for an existing output directory:

@@ -155,6 +155,7 @@ endif()
 set(required_files
   "${out_dir}/abi-layout.json"
   "${out_dir}/dependency-manifest.json"
+  "${out_dir}/release-sbom.spdx.json"
   "${out_dir}/checksums.sha256"
 )
 foreach(path IN LISTS required_files)
@@ -170,11 +171,25 @@ endif()
 if(NOT checksums MATCHES "[ \t]dependency-manifest\\.json")
   message(FATAL_ERROR "checksums.sha256 does not cover dependency-manifest.json")
 endif()
+if(NOT checksums MATCHES "[ \t]release-sbom\\.spdx\\.json")
+  message(FATAL_ERROR "checksums.sha256 does not cover release-sbom.spdx.json")
+endif()
 if(NOT checksums MATCHES "[ \t]astral-0\\.1\\.0-linux-x86_64\\.zip")
   message(FATAL_ERROR "checksums.sha256 does not cover packaged artifacts")
 endif()
 if(NOT checksums MATCHES "[ \t]release-evidence\\.json")
   message(FATAL_ERROR "checksums.sha256 does not cover release-evidence.json")
+endif()
+
+file(READ "${out_dir}/release-sbom.spdx.json" sbom)
+if(NOT sbom MATCHES "\"spdxVersion\"[ \t\r\n]*:[ \t\r\n]*\"SPDX-2\\.3\"")
+  message(FATAL_ERROR "release-sbom.spdx.json is missing SPDX-2.3 marker")
+endif()
+if(NOT sbom MATCHES "\"name\"[ \t\r\n]*:[ \t\r\n]*\"AstralRT\"")
+  message(FATAL_ERROR "release-sbom.spdx.json does not list AstralRT")
+endif()
+if(NOT sbom MATCHES "\"name\"[ \t\r\n]*:[ \t\r\n]*\"llama\\.cpp\"")
+  message(FATAL_ERROR "release-sbom.spdx.json does not list llama.cpp")
 endif()
 
 execute_process(
