@@ -39,6 +39,7 @@ endforeach()
 file(WRITE "${evidence_dir}/dist/checksums.sha256" "checksums\n")
 file(WRITE "${evidence_dir}/dist/abi-layout.json" "{}\n")
 file(WRITE "${evidence_dir}/dist/dependency-manifest.json" "{}\n")
+file(WRITE "${evidence_dir}/dist/release-sbom.spdx.json" "{}\n")
 file(WRITE "${evidence_dir}/dist/checksums.sha256.asc" "signature\n")
 file(COPY_FILE
   "${ASTRAL_SOURCE_DIR}/docs/release/RELEASE_NOTES_TEMPLATE.md"
@@ -48,15 +49,19 @@ file(COPY_FILE
 set(evidence_entries "")
 foreach(lane IN LISTS required_lanes)
   set(path "logs/${lane}.log")
+  set(artifacts "[\"${path}\"]")
   set(command "smoke ${lane}")
   if(lane STREQUAL "release_artifacts")
     set(path "dist/checksums.sha256")
+    set(artifacts "[\"dist/checksums.sha256\", \"dist/abi-layout.json\", \"dist/dependency-manifest.json\", \"dist/release-sbom.spdx.json\"]")
     set(command "./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature")
   elseif(lane STREQUAL "release_signing")
     set(path "dist/checksums.sha256.asc")
+    set(artifacts "[\"${path}\"]")
     set(command "gh workflow run release-sign.yml ...")
   elseif(lane STREQUAL "release_notes")
     set(path "docs/release/RELEASE_NOTES_TEMPLATE.md")
+    set(artifacts "[\"${path}\"]")
     set(command "./scripts/validate_release_notes.sh release-notes.md")
   elseif(lane STREQUAL "release_required_gates")
     set(command "./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench")
@@ -83,7 +88,7 @@ foreach(lane IN LISTS required_lanes)
 "    \"${lane}\": {
       \"status\": \"pass\",
       \"command\": \"${command}\",
-      \"artifacts\": [\"${path}\"]
+      \"artifacts\": ${artifacts}
     }")
   if(NOT lane STREQUAL "release_notes")
     string(APPEND evidence_entries ",\n")

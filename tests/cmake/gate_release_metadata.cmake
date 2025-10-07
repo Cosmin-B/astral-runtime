@@ -121,7 +121,7 @@ file(WRITE "${out_dir}/release-evidence.json"
     \"release_artifacts\": {
       \"status\": \"pass\",
       \"command\": \"./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature\",
-      \"artifacts\": [\"checksums.sha256\", \"abi-layout.json\", \"dependency-manifest.json\"]
+      \"artifacts\": [\"checksums.sha256\", \"abi-layout.json\", \"dependency-manifest.json\", \"release-sbom.spdx.json\"]
     },
     \"release_signing\": {
       \"status\": \"pass\",

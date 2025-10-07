@@ -89,7 +89,8 @@
         "logs/release-artifacts.log",
         "checksums.sha256",
         "abi-layout.json",
-        "dependency-manifest.json"
+        "dependency-manifest.json",
+        "release-sbom.spdx.json"
       ]
     },
     "release_signing": {
