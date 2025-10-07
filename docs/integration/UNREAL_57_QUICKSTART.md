@@ -1,0 +1,110 @@
+# Unreal 5.7 Quickstart
+
+This path is for the AstralRT Unreal plugin on Linux with Unreal Engine 5.7 as
+the production target. It builds the native Astral runtime, stages the
+ThirdParty files into the plugin, and runs the same Automation entrypoint used
+by CI.
+
+Real release sign-off still requires access to Epic's UE images or installed
+editors. The local native build proves the plugin package is current; it does
+not replace a real UnrealEditor run.
+
+## Prerequisites
+
+- A checkout with submodules initialized.
+- CMake and a C++20 compiler for the native package build.
+- Unreal Engine 5.7.4 for the production lane.
+- Access to Epic's GitHub Container Registry packages for the container lanes.
+- Unreal 5.4, 5.5, 5.6, and 5.7 editor paths for compatibility evidence.
+
+UE 5.7 Linux validation should report clang `20.1.8` from Epic's Linux toolchain
+metadata. The container wrapper prints `Build.version`, `Linux_SDK.json`, and
+`clang --version` before running Automation.
+
+## Build The ThirdParty Package
+
+From the Astral repo root:
+
+```bash
+cmake --preset unreal-plugin
+cmake --build --preset unreal-plugin -j
+```
+
+The package target stages:
+
+- `plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/include/astral_rt.h`
+- `plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/lib/<Platform>/...`
+
+The build hashes the staged header and native library after copy. A successful
+build prints `Unreal ThirdParty provenance OK`, which means the staged plugin
+files match the current source header and built `astral_rt` target.
+
+## Install In A Project
+
+For a project-level install, copy the plugin directory:
+
+```bash
+mkdir -p /path/to/MyProject/Plugins
+cp -a plugins/unreal/AstralRT /path/to/MyProject/Plugins/AstralRT
+```
+
+The repo CI path can stage a sidecar project for you. Leave
+`ASTRAL_UNREAL_PROJECT` unset to use `build/unreal-ci-project`, or point it at
+an existing project that already has `Plugins/AstralRT`.
+
+## Run Local Automation
+
+Use an installed UnrealEditor or UnrealEditor-Cmd:
+
+```bash
+UNREAL_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
+  ./scripts/run_unreal_ci_tests.sh
+```
+
+The runner rebuilds the native package unless told otherwise, stages the plugin,
+runs `AstralRT.*` Automation, and validates that the log/report are non-empty
+and free of clear Automation failure markers.
+
+## Run UE 5.7 Containers
+
+Slim image:
+
+```bash
+docker pull ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6
+./scripts/run_unreal_container_ci.sh --variant slim
+```
+
+Full image:
+
+```bash
+docker pull ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce
+./scripts/run_unreal_container_ci.sh --variant full
+```
+
+Use `--skip-native-build` only when the ThirdParty package was already rebuilt
+and the provenance check has passed in the same workspace.
+
+## Run The Compatibility Matrix
+
+```bash
+UNREAL_54_EDITOR=/opt/Unreal-5.4/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
+  ./scripts/run_unreal_compatibility_matrix.sh
+```
+
+The matrix is required release evidence for UE 5.4+ support. Do not mark Unreal
+support production-ready from the native package build alone.
+
+## Evidence To Keep
+
+For release candidates, keep the logs from:
+
+- `cmake --build --preset unreal-plugin -j`
+- `./scripts/run_unreal_container_ci.sh --variant slim`
+- `./scripts/run_unreal_container_ci.sh --variant full`
+- `./scripts/run_unreal_compatibility_matrix.sh`
+
+Record those files in `release-evidence.json` using
+`docs/release/RELEASE_EVIDENCE_TEMPLATE.json`.

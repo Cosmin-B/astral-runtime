@@ -2,6 +2,9 @@
 
 `ci/unreal/AstralCiUnrealProject/` is a tiny UE project scaffold for the plugin Automation tests under `plugins/unreal/AstralRT/Source/AstralRT/Private/Tests/`.
 
+For the shortest production-target path, start with
+[`docs/integration/UNREAL_57_QUICKSTART.md`](../../docs/integration/UNREAL_57_QUICKSTART.md).
+
 The production target is Unreal Engine 5.7 with UE 5.4+ compatibility. On Linux, the expected 5.7 toolchain is clang 20.1.8, matching Epic's 5.7 development images such as `ghcr.io/epicgames/unreal-engine:dev-5.7.4` and `ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4` when access is configured.
 
 ## Setup
