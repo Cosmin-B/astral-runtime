@@ -23,6 +23,7 @@ set(required_lanes
   native_dev_ctest
   native_release_ctest
   release_required_gates
+  sanitizer_validation
   unreal_57_full_container
   unreal_57_slim_container
   unreal_compatibility_matrix
@@ -39,6 +40,8 @@ set(required_lanes
 foreach(lane IN LISTS required_lanes)
   file(WRITE "${out_dir}/logs/${lane}.log" "${lane} passed\n")
 endforeach()
+file(WRITE "${out_dir}/logs/asan.log" "asan passed\n")
+file(WRITE "${out_dir}/logs/tsan.log" "tsan passed\n")
 file(WRITE "${out_dir}/checksums.sha256.asc" "signature\n")
 file(WRITE "${out_dir}/release-notes.md" "release notes\n")
 
@@ -77,6 +80,11 @@ file(WRITE "${out_dir}/release-evidence.json"
       \"status\": \"pass\",
       \"command\": \"./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench\",
       \"artifacts\": [\"logs/release_required_gates.log\"]
+    },
+    \"sanitizer_validation\": {
+      \"status\": \"pass\",
+      \"command\": \"./scripts/run_asan.sh && ./scripts/run_tsan.sh\",
+      \"artifacts\": [\"logs/asan.log\", \"logs/tsan.log\"]
     },
     \"unreal_57_full_container\": {
       \"status\": \"pass\",

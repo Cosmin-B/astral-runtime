@@ -19,6 +19,7 @@ set(required_lanes
   native_dev_ctest
   native_release_ctest
   release_required_gates
+  sanitizer_validation
   unreal_57_full_container
   unreal_57_slim_container
   unreal_compatibility_matrix
@@ -36,6 +37,8 @@ set(required_lanes
 foreach(lane IN LISTS required_lanes)
   file(WRITE "${evidence_dir}/logs/${lane}.log" "${lane} passed\n")
 endforeach()
+file(WRITE "${evidence_dir}/logs/asan.log" "asan passed\n")
+file(WRITE "${evidence_dir}/logs/tsan.log" "tsan passed\n")
 file(WRITE "${evidence_dir}/dist/checksums.sha256" "checksums\n")
 file(WRITE "${evidence_dir}/dist/abi-layout.json" "{}\n")
 file(WRITE "${evidence_dir}/dist/dependency-manifest.json" "{}\n")
@@ -65,6 +68,9 @@ foreach(lane IN LISTS required_lanes)
     set(command "./scripts/validate_release_notes.sh release-notes.md")
   elseif(lane STREQUAL "release_required_gates")
     set(command "./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench")
+  elseif(lane STREQUAL "sanitizer_validation")
+    set(artifacts "[\"logs/asan.log\", \"logs/tsan.log\"]")
+    set(command "./scripts/run_asan.sh && ./scripts/run_tsan.sh")
   elseif(lane STREQUAL "unreal_57_full_container")
     set(command "docker run ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce")
   elseif(lane STREQUAL "unreal_57_slim_container")
@@ -185,6 +191,29 @@ if(NOT bad_command_error MATCHES "cuda_parity_matrix.command")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong bad-command reason: ${bad_command_error}")
 endif()
 
+set(bad_sanitizer_manifest "${out_dir}/bad-sanitizer-evidence.json")
+file(READ "${good_manifest}" bad_sanitizer_text)
+string(REPLACE
+  "./scripts/run_asan.sh && ./scripts/run_tsan.sh"
+  "./scripts/run_asan.sh"
+  bad_sanitizer_text
+  "${bad_sanitizer_text}"
+)
+file(WRITE "${bad_sanitizer_manifest}" "${bad_sanitizer_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_sanitizer_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_sanitizer_result
+  ERROR_VARIABLE bad_sanitizer_error
+)
+if(bad_sanitizer_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak sanitizer evidence command")
+endif()
+if(NOT bad_sanitizer_error MATCHES "sanitizer_validation.command")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong sanitizer-command reason: ${bad_sanitizer_error}")
+endif()
+
 set(pre_sign_manifest "${out_dir}/pre-sign-evidence.json")
 file(WRITE "${pre_sign_manifest}" "${bad_command_text}")
 file(READ "${good_manifest}" pre_sign_text)
@@ -221,6 +250,9 @@ endif()
 
 file(READ "${ASTRAL_SOURCE_DIR}/docs/release/RELEASE_EVIDENCE_TEMPLATE.json" template_text)
 foreach(required
+  "sanitizer_validation"
+  "run_asan.sh"
+  "run_tsan.sh"
   "cuda_parity_matrix"
   "ASTRAL_TEST_CUDA_PARITY_INFER=1"
   "ASTRAL_TEST_CUDA_E2E=1"

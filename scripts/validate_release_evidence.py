@@ -10,6 +10,7 @@ REQUIRED_LANES = (
     "native_dev_ctest",
     "native_release_ctest",
     "release_required_gates",
+    "sanitizer_validation",
     "unreal_57_full_container",
     "unreal_57_slim_container",
     "unreal_compatibility_matrix",
@@ -31,6 +32,10 @@ REQUIRED_COMMAND_TOKENS = {
         "run_release_required_gates.sh",
         "--cuda-strict",
         "--mtmd-bench",
+    ),
+    "sanitizer_validation": (
+        "run_asan.sh",
+        "run_tsan.sh",
     ),
     "unreal_57_full_container": (
         "ghcr.io/epicgames/unreal-engine:dev-5.7.4",

@@ -26,6 +26,14 @@
         "logs/release-required-gates.log"
       ]
     },
+    "sanitizer_validation": {
+      "status": "pass",
+      "command": "./scripts/run_asan.sh && ./scripts/run_tsan.sh",
+      "artifacts": [
+        "logs/asan.log",
+        "logs/tsan.log"
+      ]
+    },
     "unreal_57_full_container": {
       "status": "pass",
       "command": "docker run --rm ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce ...",
