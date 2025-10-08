@@ -23,6 +23,7 @@ Run the sanitizer lane:
 
 ```bash
 ./scripts/run_asan.sh
+./scripts/run_tsan.sh
 ```
 
 Run Valgrind Memcheck on the allocation gate:

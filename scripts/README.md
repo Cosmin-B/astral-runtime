@@ -38,7 +38,23 @@ brew install valgrind
 
 ---
 
-#### 2. Valgrind Memcheck (Comprehensive)
+#### 2. ThreadSanitizer
+Race detection for the maintained concurrency and memory tests.
+
+```bash
+./scripts/run_tsan.sh
+```
+
+**Detects**:
+- Data races in concurrency primitives
+- Races in memory test paths
+- Lock-order failures reported by ThreadSanitizer
+
+**Output**: CTest output for tests labeled `tsan`.
+
+---
+
+#### 3. Valgrind Memcheck (Comprehensive)
 **Most thorough leak detection** - runs 10-20x slower.
 
 ```bash
@@ -68,7 +84,7 @@ cat valgrind_memcheck.log
 
 ---
 
-#### 3. Valgrind Massif (Heap Profiler)
+#### 4. Valgrind Massif (Heap Profiler)
 **Heap growth analysis** - critical for detecting allocations in hot paths.
 
 ```bash
@@ -105,6 +121,7 @@ review before a release candidate.
 ```bash
 # Run in order (fastest to slowest):
 ./scripts/run_asan.sh          # ~2x slowdown, 1 minute
+./scripts/run_tsan.sh          # race checks for concurrency/memory tests
 ./scripts/run_valgrind.sh      # ~15x slowdown, 5-10 minutes
 ./scripts/run_massif.sh        # ~20x slowdown, 10-15 minutes
 ```
@@ -426,6 +443,13 @@ This is expected with Valgrind (10-20x slowdown). For faster validation:
 - Runs `gate_allocations` and `gate_rss_cap` through CTest.
 - Exit code: 0 (pass), non-zero (fail)
 
+### run_tsan.sh
+- Creates separate build directory: `build/tsan`
+- Compiles with: `-fsanitize=thread`
+- Builds `test_concurrency_tsan` and `test_memory_tsan`.
+- Runs tests labeled `tsan` through CTest.
+- Exit code: 0 (pass), non-zero (fail)
+
 ### run_valgrind.sh
 - Uses existing build: `build/dev`
 - Runs `gate_allocations`
@@ -482,7 +506,6 @@ Note: This is an illustrative snippet. The repo’s actual CI is in `.github/wor
 - [ ] Add automated regression testing
 - [ ] Add HTML report generation
 - [ ] Add benchmark comparison (before/after)
-- [ ] Add thread sanitizer (TSan) for concurrency validation
 
 ---
 
@@ -500,6 +523,7 @@ Note: This is an illustrative snippet. The repo’s actual CI is in `.github/wor
 
 **Sanitizer Documentation**:
 - https://github.com/google/sanitizers/wiki/AddressSanitizer
+- https://github.com/google/sanitizers/wiki/ThreadSanitizerCppManual
 - https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
 
 ---
