@@ -8,15 +8,17 @@ usage() {
   cat <<'EOF'
 Usage: scripts/run_release_required_gates.sh [options]
 
-Runs the hard release-candidate gates that must not be treated as best-effort:
-native release tests, CUDA parity/e2e matrix, real MTMD media validation,
-Unreal Automation compatibility, and Unity EditMode ABI validation.
+Runs the hard release-candidate gates that must not be treated as optional:
+native release tests, ASAN/UBSAN and TSan validation, CUDA parity/e2e matrix,
+real MTMD media validation, Unreal Automation compatibility, and Unity EditMode
+ABI validation.
 
 Options:
   --cuda-arch <list>    Override ASTRAL_CUDA_ARCHITECTURES for CUDA presets
   --cuda-strict         Enable strict CUDA token-id parity assertions
   --mtmd-bench         Require MTMD feature bench media feed rows
   --print-plan         Print required lanes and environment checks, then exit
+  --skip-sanitizers    Skip ASAN/UBSAN and TSan lanes
   --skip-engine         Skip both Unreal and Unity engine gates
   --skip-unreal         Skip the Unreal 5.4+ compatibility matrix
   --skip-unity          Skip the Unity EditMode ABI lane
@@ -37,6 +39,7 @@ EOF
 cuda_arch=""
 cuda_strict=0
 mtmd_bench=0
+run_sanitizers=1
 run_unreal=1
 run_unity=1
 print_plan=0
@@ -47,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --cuda-strict) cuda_strict=1; shift ;;
     --mtmd-bench) mtmd_bench=1; shift ;;
     --print-plan) print_plan=1; shift ;;
+    --skip-sanitizers) run_sanitizers=0; shift ;;
     --skip-engine) run_unreal=0; run_unity=0; shift ;;
     --skip-unreal) run_unreal=0; shift ;;
     --skip-unity) run_unity=0; shift ;;
@@ -71,6 +75,11 @@ print_release_plan() {
 
   echo "[release-gate] plan"
   echo "  native release tests: cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure"
+  if [[ "${run_sanitizers}" -eq 1 ]]; then
+    echo "  sanitizers: scripts/run_asan.sh && scripts/run_tsan.sh"
+  else
+    echo "  sanitizers: skipped for local diagnosis"
+  fi
   echo "  CUDA matrix: ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 scripts/run_cuda_parity_matrix.sh ${cuda_args[*]}"
   echo "  MTMD validation: scripts/run_multimodal_validation.sh ${mtmd_args[*]}"
   if [[ "${run_unreal}" -eq 1 ]]; then
@@ -131,6 +140,16 @@ echo "[release-gate] Native release tests"
 cmake --preset release-with-tests
 cmake --build --preset release-with-tests -j
 ctest --preset release-with-tests -j --output-on-failure
+
+if [[ "${run_sanitizers}" -eq 1 ]]; then
+  echo "[release-gate] ASAN/UBSAN validation"
+  scripts/run_asan.sh
+
+  echo "[release-gate] ThreadSanitizer validation"
+  scripts/run_tsan.sh
+else
+  echo "[release-gate] sanitizer validation skipped"
+fi
 
 echo "[release-gate] CUDA release matrix"
 ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 \

@@ -45,6 +45,9 @@ endif()
 if(NOT good_output MATCHES "plan environment OK")
   message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not print success: ${good_output}")
 endif()
+if(NOT good_output MATCHES "sanitizers: scripts/run_asan\\.sh && scripts/run_tsan\\.sh")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not require sanitizer lanes: ${good_output}")
+endif()
 
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E env
@@ -63,6 +66,22 @@ if(NOT skip_result EQUAL 0)
 endif()
 if(NOT skip_output MATCHES "skipped for local diagnosis")
   message(FATAL_ERROR "run_release_required_gates.sh --print-plan --skip-engine did not label skipped engine lanes: ${skip_output}")
+endif()
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    ${plan_env}
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --skip-sanitizers
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE skip_sanitizers_result
+  OUTPUT_VARIABLE skip_sanitizers_output
+  ERROR_VARIABLE skip_sanitizers_error
+)
+if(NOT skip_sanitizers_result EQUAL 0)
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan --skip-sanitizers rejected complete environment: ${skip_sanitizers_error}")
+endif()
+if(NOT skip_sanitizers_output MATCHES "sanitizers: skipped for local diagnosis")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan --skip-sanitizers did not label sanitizer skip: ${skip_sanitizers_output}")
 endif()
 
 message(STATUS "gate_release_required_plan: OK")

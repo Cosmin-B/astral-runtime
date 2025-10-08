@@ -270,7 +270,7 @@ AstralRT Automation failure markers.
 
 ## Required Release Gates
 
-`run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, the real MTMD media gate, Unreal 5.4+ Automation compatibility, and Unity EditMode ABI tests.
+`run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, ASAN/UBSAN, TSan, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, the real MTMD media gate, Unreal 5.4+ Automation compatibility, and Unity EditMode ABI tests.
 
 ```bash
 ASTRAL_TEST_VISION_MODEL=/models/vision.gguf \
@@ -285,7 +285,9 @@ UNITY_EDITOR=/opt/Unity/Editor/Unity \
   ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench
 ```
 
-The `--skip-engine`, `--skip-unreal`, and `--skip-unity` flags are for partial local diagnosis only. A release candidate should not use them.
+The `--skip-sanitizers`, `--skip-engine`, `--skip-unreal`, and `--skip-unity`
+flags are for partial local diagnosis only. A release candidate should not use
+them.
 
 For a fast release-candidate preflight that prints the required lanes and checks
 that the release environment variables are present without starting builds or
