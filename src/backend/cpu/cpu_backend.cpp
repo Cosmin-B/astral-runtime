@@ -894,7 +894,7 @@ void* cpu_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
         return nullptr;
     }
 
-    // Initialize llama.cpp backend (reference-counted; best-effort, not a hot path).
+    // Reference-counted llama.cpp backend init sits outside decode hot paths.
     llama_backend_ref();
 
     llama_model_params model_params = llama_model_default_params();

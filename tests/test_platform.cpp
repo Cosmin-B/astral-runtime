@@ -70,7 +70,7 @@ TEST(vm_commit_incremental) {
     vm_release(addr, kSize);
 }
 
-// Test huge pages (best-effort, may fail)
+// Huge-page commit may fall back to regular pages; the committed region must still be usable.
 TEST(vm_hugepages_fallback) {
     constexpr size_t kHugePageSize = 2 * 1024 * 1024; // 2MB
     constexpr size_t kSize = 4 * kHugePageSize;       // 8MB

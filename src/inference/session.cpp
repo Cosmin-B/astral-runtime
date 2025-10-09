@@ -1853,7 +1853,7 @@ void decode_loop(Session* session) {
     // Transition to terminal state.
     session->t_end_ticks = get_ticks();
 
-    // Coarse plots (best-effort).
+    // Emit terminal session timing plots when Tracy is enabled.
 #if ASTRAL_ENABLE_TRACY
     if (session->t_end_ticks > session->t_start_ticks) {
         const uint64_t dt_ticks = session->t_end_ticks - session->t_start_ticks;

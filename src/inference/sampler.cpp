@@ -473,7 +473,7 @@ uint32_t sample_token(const float* logits,
             heap_sift_down(scratch_ids, scratch_vals, 0, end - 1);
         }
 
-        // Apply grammar constraints at candidate level (best-effort).
+        // Let grammar filter the bounded candidate set before weighting.
         if (grammar_ctx != nullptr && grammar_apply != nullptr && heap_size > 0) {
             (void)grammar_apply(grammar_ctx, scratch_ids, scratch_vals, static_cast<uint32_t>(heap_size));
         }
@@ -903,7 +903,7 @@ uint32_t sample_token(const float* logits,
         heap_sift_down(scratch_ids, scratch_vals, 0, end - 1);
     }
 
-    // Apply grammar constraints at candidate level (best-effort).
+    // Let grammar filter the bounded candidate set before weighting.
     if (grammar_ctx != nullptr && grammar_apply != nullptr && heap_size > 0) {
         (void)grammar_apply(grammar_ctx, scratch_ids, scratch_vals, static_cast<uint32_t>(heap_size));
     }

@@ -117,6 +117,18 @@ set(just_verify_lower_phrase "just")
 string(APPEND just_verify_lower_phrase " verify")
 set(should_not_crash_phrase "should")
 string(APPEND should_not_crash_phrase " not crash")
+set(best_effort_basis_phrase "best")
+string(APPEND best_effort_basis_phrase "-effort basis")
+set(best_effort_may_fail_phrase "best")
+string(APPEND best_effort_may_fail_phrase "-effort, may fail")
+set(coarse_plots_best_effort_phrase "Coarse plots (best")
+string(APPEND coarse_plots_best_effort_phrase "-effort)")
+set(init_penalty_best_effort_phrase "Init penalty state from prompt once (best")
+string(APPEND init_penalty_best_effort_phrase "-effort)")
+set(grammar_constraints_best_effort_phrase "Apply grammar constraints at candidate level (best")
+string(APPEND grammar_constraints_best_effort_phrase "-effort)")
+set(reference_counted_best_effort_phrase "Initialize llama.cpp")
+string(APPEND reference_counted_best_effort_phrase " backend")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -136,6 +148,12 @@ set(UNREVIEWED_PROSE_STRINGS
   "${just_verify_phrase}"
   "${just_verify_lower_phrase}"
   "${should_not_crash_phrase}"
+  "${best_effort_basis_phrase}"
+  "${best_effort_may_fail_phrase}"
+  "${coarse_plots_best_effort_phrase}"
+  "${init_penalty_best_effort_phrase}"
+  "${grammar_constraints_best_effort_phrase}"
+  "${reference_counted_best_effort_phrase}"
 )
 
 foreach(path IN LISTS FILES)

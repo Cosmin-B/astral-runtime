@@ -248,7 +248,7 @@ inline void process_logits_for_conv(ModelExecutor* ex,
         return;
     }
 
-    // Init penalty state from prompt once (best-effort).
+    // Seed repetition penalties from the prompt when the token-count table is available.
     if (ensure_penalty_state(conv) == ASTRAL_OK && conv->token_counts != nullptr &&
         conv->total_tokens == 0 && conv->prompt_count > 0) {
         penalty_state_clear(conv);
