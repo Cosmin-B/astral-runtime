@@ -377,7 +377,10 @@ The package includes small, focused Unity EditMode tests under `Tests/Editor/`:
 - Mock-backend smoke (init → model → session → decode → stream → reset → repeat).
 - Mock media feed + multimodal embedding smoke (mock backend; no GGUF required).
 
-These tests skip gracefully if the native `astral_rt` library is not present in the Editor.
+Release and CI runs must provide a native `astral_rt` library for the Editor.
+`scripts/run_unity_ci_tests.sh` fails before Unity starts when the platform
+binary is missing or empty, then validates the EditMode XML result after Unity
+exits.
 
 ## License
 

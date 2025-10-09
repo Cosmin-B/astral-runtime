@@ -129,6 +129,10 @@ set(grammar_constraints_best_effort_phrase "Apply grammar constraints at candida
 string(APPEND grammar_constraints_best_effort_phrase "-effort)")
 set(reference_counted_best_effort_phrase "Initialize llama.cpp")
 string(APPEND reference_counted_best_effort_phrase " backend")
+set(skip_gracefully_phrase "skip")
+string(APPEND skip_gracefully_phrase " gracefully")
+set(skips_if_native_missing_phrase "skips if native")
+string(APPEND skips_if_native_missing_phrase " lib missing")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -154,6 +158,8 @@ set(UNREVIEWED_PROSE_STRINGS
   "${init_penalty_best_effort_phrase}"
   "${grammar_constraints_best_effort_phrase}"
   "${reference_counted_best_effort_phrase}"
+  "${skip_gracefully_phrase}"
+  "${skips_if_native_missing_phrase}"
 )
 
 foreach(path IN LISTS FILES)

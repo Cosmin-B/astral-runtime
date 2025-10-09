@@ -31,7 +31,7 @@ This directory is a Unity Package Manager package that wraps Astral's C ABI for 
 - `Samples~/BasicChat/BasicChatExample.cs`
 
 **Tests**
-- `Tests/Editor/AstralAbiTests.cs`: ABI layout + mock-backend smoke (skips if native lib missing)
+- `Tests/Editor/AstralAbiTests.cs`: ABI layout + mock-backend smoke; CI runs require the native `astral_rt` plugin to be present.
 
 ## ABI notes
 
