@@ -39,13 +39,16 @@ Notes:
 | `mock` | ✅ | ✅ | ✅ |
 
 Notes:
-- CUDA is a v0.1 “best-effort scaffold”; determinism policy + parity checks are tracked in `docs/CUDA_PARITY.md`.
+- CUDA support is implemented through llama.cpp GGML_CUDA offload. Production
+  release sign-off still requires the real CUDA parity/e2e matrix in
+  `docs/CUDA_PARITY.md`.
 - CUDA builds support multiple ggml-cuda kernel selection modes:
   - Default “auto” selection (`dev-cuda` / `release-cuda`)
   - Forced cuBLAS (`dev-cuda-cublas`)
   - Forced MMQ kernels (`dev-cuda-mmq`)
   - Validate all three modes via `scripts/run_cuda_parity_matrix.sh` (see `docs/CUDA_PARITY.md`).
-- CUDA builds support multi-GPU selection/split via `AstralModelDesc` gpu_* fields (best-effort).
+- CUDA builds expose multi-GPU selection/split fields through `AstralModelDesc`;
+  release sign-off still needs real multi-GPU routing evidence.
 
 ## Model loading (PATH / MEMORY / IO)
 

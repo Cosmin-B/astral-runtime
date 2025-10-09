@@ -133,6 +133,13 @@ set(skip_gracefully_phrase "skip")
 string(APPEND skip_gracefully_phrase " gracefully")
 set(skips_if_native_missing_phrase "skips if native")
 string(APPEND skips_if_native_missing_phrase " lib missing")
+set(cuda_machine_best_effort_phrase "CUDA machine tests")
+string(APPEND cuda_machine_best_effort_phrase " (manual/CI best-effort)")
+set(cuda_bench_best_effort_phrase "best")
+string(APPEND cuda_bench_best_effort_phrase "-effort CUDA bench runs")
+set(cuda_scaffold_best_effort_phrase "CUDA is a v0.1")
+string(APPEND cuda_scaffold_best_effort_phrase " ")
+string(APPEND cuda_scaffold_best_effort_phrase "\"best-effort scaffold\"")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -160,6 +167,9 @@ set(UNREVIEWED_PROSE_STRINGS
   "${reference_counted_best_effort_phrase}"
   "${skip_gracefully_phrase}"
   "${skips_if_native_missing_phrase}"
+  "${cuda_machine_best_effort_phrase}"
+  "${cuda_bench_best_effort_phrase}"
+  "${cuda_scaffold_best_effort_phrase}"
 )
 
 foreach(path IN LISTS FILES)
