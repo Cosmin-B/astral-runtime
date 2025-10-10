@@ -263,4 +263,18 @@ foreach(required
   endif()
 endforeach()
 
+file(READ "${ASTRAL_SOURCE_DIR}/docs/release/RELEASE_ACCEPTANCE_MATRIX.md" acceptance_text)
+foreach(required
+  "Sanitizer validation"
+  "sanitizer_validation"
+  "run_asan.sh"
+  "run_tsan.sh"
+  "ASAN/UBSAN"
+  "TSan"
+)
+  if(NOT acceptance_text MATCHES "${required}")
+    message(FATAL_ERROR "RELEASE_ACCEPTANCE_MATRIX.md is missing sanitizer release evidence requirement: ${required}")
+  endif()
+endforeach()
+
 message(STATUS "gate_release_evidence: OK")

@@ -9,6 +9,7 @@ release candidate.
 |---|---|---|
 | Debug native build/tests | `cmake --preset dev && cmake --build --preset dev -j && ctest --preset dev -j --output-on-failure` | Yes |
 | Release native build/tests | `cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure` | Yes |
+| Sanitizer validation | `./scripts/run_asan.sh && ./scripts/run_tsan.sh` for ASAN/UBSAN and TSan evidence | Yes |
 | Release gate preflight | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --print-plan --cuda-strict --mtmd-bench` | Yes |
 | Required release gates | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench` | Yes |
 | Release metadata | `./scripts/generate_release_metadata.sh dist`, or `./scripts/package_release.sh ... --evidence <release-evidence.json>` for RC packaging | Yes |
@@ -55,7 +56,9 @@ verification command used for the release candidate.
 Use `docs/release/RELEASE_EVIDENCE_TEMPLATE.json` as the starting point for
 `dist/release-evidence.json`. Every required lane must be marked `pass` and must
 point at a non-empty log or artifact under the release evidence directory. When a
-SHA-256 is supplied, the validator checks it against the referenced file.
+SHA-256 is supplied, the validator checks it against the referenced file. The
+`sanitizer_validation` lane records the ASAN/UBSAN log from `run_asan.sh` and
+the TSan log from `run_tsan.sh`.
 
 Validate with `--phase pre-sign` before the protected signing workflow has
 produced `checksums.sha256.asc`; validate with the default complete phase after
