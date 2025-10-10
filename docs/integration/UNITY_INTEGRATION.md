@@ -4,9 +4,9 @@ Implementation note: this document is a design/spec. For the current, shippable 
 
 ## Goals
 
-1. **Zero GC Allocations**: No managed heap allocations during token streaming (steady state)
-2. **Burst Compatibility**: All hot-path data structures compatible with Burst compiler
-3. **IL2CPP Safety**: No reflection, no dynamic code generation
+1. **Caller-owned stream buffers**: Read token bytes into `NativeArray<byte>` buffers without converting every token to a managed string.
+2. **Burst-friendly job wrappers**: Keep job data blittable and pass native handles explicitly.
+3. **IL2CPP constraints**: Avoid reflection and dynamic code generation in native-handle wrappers.
 4. **Platform Coverage**: Windows, macOS, Linux, Android (armv7/arm64), iOS (arm64)
 5. **Native Allocator Passthrough**: Use Unity's `Allocator.Persistent` for session-local allocations
 
@@ -394,7 +394,7 @@ namespace Astral
                 throw new AstralException($"Failed to create session: {err}");
             }
 
-            // Pre-allocate token buffer (no GC allocations during streaming)
+            // Allocate the token buffer before polling the stream.
             tokenBuffer = new NativeArray<byte>(4096, Allocator.Persistent);
         }
 
@@ -649,7 +649,7 @@ public class BasicChatExample : MonoBehaviour
     {
         if (session == null || !session.IsValid) return;
 
-        // Read tokens (no GC allocation)
+        // Convenience path: converts token bytes to a managed string.
         string token = session.StreamReadString(timeoutMs: 10);
         if (!string.IsNullOrEmpty(token))
         {
@@ -732,9 +732,9 @@ job.bytesRead.Dispose();
 ## Performance Best Practices
 
 1. **Pre-allocate Buffers**: Create all `NativeArray<byte>` at init, not per-frame
-2. **Avoid `StreamReadString()`**: Use `StreamRead()` with `NativeArray` for zero-copy
-3. **Burst Compile Jobs**: Use `StreamReadJob` for maximum throughput
-4. **Profile Allocations**: Use Unity Profiler → Memory Profiler → GC.Alloc to verify zero allocations
+2. **Prefer `StreamRead()` in polling loops**: Use caller-owned `NativeArray` buffers when managed strings are not needed.
+3. **Burst Compile Jobs**: Use `StreamReadJob` where job scheduling fits the caller's frame model.
+4. **Profile Allocations**: Use Unity Profiler Memory views to check whether token polling allocates.
 5. **Thread Affinity**: Pin decode thread to performance cores on mobile (optional)
 
 ## Troubleshooting

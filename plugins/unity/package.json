@@ -2,7 +2,7 @@
   "name": "com.astral.runtime",
   "version": "0.1.0",
   "displayName": "Astral Runtime",
-  "description": "High-performance LLM inference for Unity. Zero GC allocations, Burst-compatible, IL2CPP safe. CPU/GPU backends for LLaMA-class models.",
+  "description": "Unity bindings and package layout for Astral Runtime, including native C ABI wrappers, streaming session APIs, embeddings, and CPU/CUDA backend packaging support.",
   "unity": "2021.3",
   "unityRelease": "0f1",
   "license": "SEE LICENSE IN LICENSE",
@@ -17,7 +17,7 @@
     "llama",
     "gguf",
     "native",
-    "high-performance"
+    "unity"
   ],
   "author": {
     "name": "Astral Runtime Contributors"

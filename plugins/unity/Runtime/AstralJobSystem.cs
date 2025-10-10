@@ -1,8 +1,8 @@
-// Astral Unity Jobs System Integration
-// Burst-compatible jobs for polling token streams on worker threads
+// Astral Unity Jobs System integration.
+// Jobs poll token streams on worker threads with caller-owned NativeArray buffers.
 //
-// Design: Uses Unity Jobs System for async token streaming
-// Performance: Burst-compiled, zero GC allocations
+// Design: Use Unity Jobs System for async token streaming.
+// Allocation model: callers own NativeArray buffers before scheduling.
 // Thread-safety: NativeArray owns the cross-thread byte buffers.
 
 using System;
@@ -27,9 +27,9 @@ namespace Astral.Runtime
     /// - No shared state between jobs
     ///
     /// PERFORMANCE:
-    /// - Burst-compiled for maximum throughput
-    /// - Zero GC allocations
-    /// - Lock-free reads from SPSC ring buffer
+    /// - Burst compiles the job wrapper.
+    /// - Caller-owned buffers avoid per-token managed string conversion.
+    /// - Native stream reads come from the runtime SPSC queue.
     /// </summary>
     [BurstCompile(CompileSynchronously = true)]
     public struct AstralStreamReadJob : IJob
@@ -124,7 +124,7 @@ namespace Astral.Runtime
     /// DESIGN PATTERNS:
     /// - All methods return JobHandle for dependency chaining
     /// - All NativeArrays must be disposed by caller after job completes
-    /// - Burst compilation enabled for maximum performance
+    /// - Job data stays blittable for Burst-compatible scheduling.
     ///
     /// USAGE PATTERN:
     ///   // Schedule decode job

@@ -142,6 +142,24 @@ string(APPEND cuda_scaffold_best_effort_phrase " ")
 string(APPEND cuda_scaffold_best_effort_phrase "\"best-effort scaffold\"")
 set(stale_release_matrix_phrase "Define the release")
 string(APPEND stale_release_matrix_phrase " acceptance matrix")
+set(unity_high_performance_phrase "High-performance LLM")
+string(APPEND unity_high_performance_phrase " inference for Unity")
+set(unity_zero_gc_phrase "Zero GC")
+string(APPEND unity_zero_gc_phrase " Allocations")
+set(unity_profiler_validated_phrase "validated with Unity")
+string(APPEND unity_profiler_validated_phrase " Profiler")
+set(unity_il2cpp_safe_phrase "IL2CPP")
+string(APPEND unity_il2cpp_safe_phrase " safe")
+set(unity_raii_pattern_phrase "RAII")
+string(APPEND unity_raii_pattern_phrase " Pattern")
+set(unity_pinvoke_all_tested_phrase "All P/Invoke")
+string(APPEND unity_pinvoke_all_tested_phrase " declarations tested")
+set(unity_zero_alloc_streaming_phrase "Zero-Allocation")
+string(APPEND unity_zero_alloc_streaming_phrase " Streaming")
+set(unity_zero_gc_allocation_phrase "zero GC")
+string(APPEND unity_zero_gc_allocation_phrase " allocation")
+set(unity_maximum_performance_phrase "maximum")
+string(APPEND unity_maximum_performance_phrase " performance")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -173,6 +191,15 @@ set(UNREVIEWED_PROSE_STRINGS
   "${cuda_bench_best_effort_phrase}"
   "${cuda_scaffold_best_effort_phrase}"
   "${stale_release_matrix_phrase}"
+  "${unity_high_performance_phrase}"
+  "${unity_zero_gc_phrase}"
+  "${unity_profiler_validated_phrase}"
+  "${unity_il2cpp_safe_phrase}"
+  "${unity_raii_pattern_phrase}"
+  "${unity_pinvoke_all_tested_phrase}"
+  "${unity_zero_alloc_streaming_phrase}"
+  "${unity_zero_gc_allocation_phrase}"
+  "${unity_maximum_performance_phrase}"
 )
 
 foreach(path IN LISTS FILES)

@@ -210,10 +210,9 @@ namespace Astral.Runtime.Examples
         }
 
         /// <summary>
-        /// Run inference with zero-allocation streaming.
-        ///  No GC allocations during token streaming.
+        /// Run inference by reading token bytes into a caller-owned NativeArray.
         /// </summary>
-        public void RunInferenceZeroAlloc()
+        public void RunInferenceNativeArray()
         {
             if (m_model == null || !m_model.IsValid)
             {
@@ -221,10 +220,10 @@ namespace Astral.Runtime.Examples
                 return;
             }
 
-            StartCoroutine(RunInferenceZeroAllocCoroutine());
+            StartCoroutine(RunInferenceNativeArrayCoroutine());
         }
 
-        private IEnumerator RunInferenceZeroAllocCoroutine()
+        private IEnumerator RunInferenceNativeArrayCoroutine()
         {
             AstralSession session = null;
             NativeArray<byte> buffer = new NativeArray<byte>(4096, Allocator.Persistent);
@@ -250,17 +249,17 @@ namespace Astral.Runtime.Examples
                 // Start decode
                 session.Decode();
 
-                Debug.Log("[AstralExample] Inference started (zero-alloc mode)");
+                Debug.Log("[AstralExample] Inference started (NativeArray stream mode)");
 
-                // Stream tokens (zero GC allocation)
+                // Stream tokens into the caller-owned byte buffer.
                 while (true)
                 {
                     int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
 
                     if (bytesRead > 0)
                     {
-                        // Process token bytes (no string allocation)
-                        // In production: write to GPU texture, append to TextMesh, etc.
+                        // Process token bytes directly. A real game can route them
+                        // to UI, gameplay state, or a render-side buffer.
                         unsafe
                         {
                             fixed (byte* ptr = &buffer[0])

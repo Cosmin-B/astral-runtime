@@ -649,7 +649,7 @@ namespace Astral.Runtime
 
         /// <summary>
         /// Read tokens from stream into internal buffer (convenience method).
-        ///  Allocates managed string (use ReadStream(NativeArray) for zero-alloc).
+        ///  Allocates a managed string; use ReadStream(NativeArray) when the caller can consume UTF-8 bytes directly.
         /// </summary>
         /// <param name="timeoutMs">Timeout in milliseconds</param>
         /// <returns>UTF-8 decoded string, or null if no data available</returns>

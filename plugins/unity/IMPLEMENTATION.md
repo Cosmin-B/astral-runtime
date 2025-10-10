@@ -1,6 +1,6 @@
 # Astral Unity Plugin - Implementation Summary
 
-Unity C# plugin wrapper for Astral runtime with zero GC allocation targets, Burst-compatible data paths, and IL2CPP-safe ABI declarations.
+Unity C# plugin wrapper for Astral runtime with NativeArray stream buffers, Burst-friendly job data, and static P/Invoke ABI declarations.
 
 ## File Structure
 
@@ -15,7 +15,7 @@ plugins/unity/
 │   ├── AstralRuntime.cs             # Runtime initialization/shutdown
 │   ├── AstralModel.cs               # Model wrapper (IDisposable native handle)
 │   ├── AstralSession.cs             # Session wrapper (streaming support)
-│   ├── AstralExample.cs             # Example usage (blocking, streaming, zero-alloc)
+│   ├── AstralExample.cs             # Example usage (blocking, streaming, NativeArray)
 │   └── Plugins/
 │       ├── README.md                # Native plugin build instructions
 │       ├── x86_64/
@@ -90,21 +90,21 @@ using var session = AstralSession.Create(model);
 
 **Rationale**: Unity's garbage collector is non-deterministic. Explicit disposal ensures native resources are freed immediately, preventing memory leaks.
 
-### 5. Zero-Allocation Streaming
+### 5. NativeArray Streaming
 
-**Hot paths use `NativeArray<byte>` to avoid GC allocations**:
+**Streaming paths can read into caller-owned `NativeArray<byte>` buffers**:
 
 ```csharp
 // Pre-allocated buffer (persistent allocator)
 NativeArray<byte> buffer = new NativeArray<byte>(4096, Allocator.Persistent);
 
-// Read stream (zero GC allocation)
+// Read stream into the persistent buffer.
 int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
 ```
 
-**Rationale**: Unity's GC triggers long pauses (100ms+) during token streaming. `NativeArray` is allocated from native heap (no GC pressure).
+**Rationale**: Keeping token bytes in caller-owned native buffers avoids converting each token to a managed string inside the polling loop.
 
-### 6. IL2CPP Safety
+### 6. IL2CPP Constraints
 
 **All P/Invoke functions are statically declared** (no dynamic loading):
 
@@ -154,7 +154,7 @@ session.ReadStream(buffer);
 
 - [x] Deterministic native handle release through `IDisposable`
 - [x] Finalizers warn if not disposed properly
-- [x] Zero GC allocations in streaming paths (validated with Unity Profiler)
+- [x] `ReadStream(NativeArray<byte>)` reads into caller-owned buffers without converting tokens to managed strings.
 
 ### Platform Support
 
@@ -164,7 +164,7 @@ session.ReadStream(buffer);
 - [x] Android ARM64 (API Level 21+)
 - [x] iOS ARM64 (iOS 12.0+)
 
-### IL2CPP Safety
+### IL2CPP Constraints
 
 - [x] Static P/Invoke declarations (no dynamic loading)
 - [x] iOS uses `__Internal` for static linking
@@ -227,10 +227,10 @@ IEnumerator StreamInference()
 }
 ```
 
-### 3. Zero-Allocation Streaming
+### 3. NativeArray Streaming
 
 ```csharp
-IEnumerator StreamZeroAlloc()
+IEnumerator StreamNativeArray()
 {
     using var model = AstralModel.Load("/path/to/model.gguf");
     using var session = AstralSession.Create(model);
@@ -244,7 +244,7 @@ IEnumerator StreamZeroAlloc()
 
     session.Decode();
 
-    // Stream tokens (zero GC allocation)
+    // Stream tokens into the caller-owned buffer.
     while (true)
     {
         int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
@@ -320,7 +320,7 @@ public IEnumerator TestStreamingInference()
 
 ```csharp
 [UnityTest]
-public IEnumerator TestZeroGCAllocationStreaming()
+public IEnumerator TestNativeArrayStreamingAllocationBudget()
 {
     // Enable Deep Profiling
     using var model = AstralModel.Load(TestModelPath);
@@ -342,7 +342,7 @@ public IEnumerator TestZeroGCAllocationStreaming()
     long gcAfter = GC.GetTotalMemory(false);
     long gcDelta = gcAfter - gcBefore;
 
-    // Assert: Zero GC allocations during streaming
+    // Assert: NativeArray streaming stays inside the allocation budget.
     Assert.Less(gcDelta, 1024); // Allow 1KB tolerance for GC bookkeeping
 }
 ```
@@ -425,7 +425,7 @@ public static class StructSizeValidator
 ```
 Unity Profiler > CPU Usage > Deep Profile
 Look for: GC.Alloc in streaming loop
-Expected: Zero allocations during ReadStream()
+Expected: no per-token managed string allocation during ReadStream()
 ```
 
 ## Future Enhancements
@@ -454,7 +454,7 @@ Expected: Zero allocations during ReadStream()
 This implementation follows Astral's core design principles:
 
 - **Data-Oriented Design**: Arrays of structs, cache-friendly memory layout
-- **Zero Hot Path Allocations**: `NativeArray` for streaming, no GC pressure
+- **Caller-Owned Stream Buffers**: `NativeArray` for streaming, no per-token managed string conversion
 - **Stable C ABI**: POD structs, explicit memory ordering, no exceptions
 - **UTF-8 Everywhere**: No encoding conversions, no NUL termination
 

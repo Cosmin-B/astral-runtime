@@ -1,15 +1,17 @@
 # Astral Runtime - Unity Plugin
 
-High-performance LLM inference for Unity. Zero GC allocations, Burst-compatible, IL2CPP safe.
+Unity bindings and package layout for Astral Runtime. The package exposes native
+runtime initialization, model/session handles, streaming reads, embeddings, and
+mock media tests through the public C ABI.
 
 ## Features
 
-- **Zero GC Allocations**: No garbage collection during token streaming (validated with Unity Profiler)
-- **Burst Compatible**: Hot paths use `NativeArray<byte>` and unsafe code for maximum performance
-- **IL2CPP Safe**: All P/Invoke declarations tested on iOS, Android, Windows, Linux, macOS
+- **NativeArray streaming path**: `ReadStream(NativeArray<byte>)` reads UTF-8 bytes into caller-owned buffers.
+- **Burst-friendly job wrappers**: Job structs use blittable fields and `NativeArray` buffers.
+- **Explicit P/Invoke ABI**: Declarations use the public C ABI and EditMode tests check key struct layouts.
 - **Streaming Support**: Real-time token streaming with backpressure control
-- **RAII Pattern**: Automatic resource cleanup via `IDisposable`
-- **Thread-Safe**: Lock-free concurrency for multi-session inference
+- **Deterministic ownership**: Native handles are released through `IDisposable`.
+- **Thread ownership**: Native buffers are owned by `NativeArray`; session concurrency still needs real Unity runner evidence.
 - **Portable**: armv7, armv8, arm64, x86-64 support
 
 ## Requirements
@@ -98,13 +100,13 @@ IEnumerator RunInference(AstralModel model, string prompt)
 }
 ```
 
-### 4. Zero-Allocation Streaming (Advanced)
+### 4. NativeArray Streaming
 
 ```csharp
 using Astral.Runtime;
 using Unity.Collections;
 
-IEnumerator RunInferenceZeroAlloc(AstralModel model, string prompt)
+IEnumerator RunInferenceNativeArray(AstralModel model, string prompt)
 {
     using var session = AstralSession.Create(model);
     using var buffer = new NativeArray<byte>(4096, Allocator.Persistent);
@@ -113,7 +115,7 @@ IEnumerator RunInferenceZeroAlloc(AstralModel model, string prompt)
     session.Feed(prompt, finalize: true);
     session.Decode();
 
-    // Stream tokens (zero GC allocation)
+    // Stream tokens into a caller-owned byte buffer.
     while (true)
     {
         int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
@@ -364,7 +366,7 @@ See `Runtime/AstralExample.cs` for comprehensive usage examples:
 
 - **Basic Inference**: Simple blocking inference
 - **Streaming Inference**: Real-time token streaming with coroutines
-- **Zero-Allocation Streaming**: Maximum performance with `NativeArray`
+- **NativeArray Streaming**: Read token bytes into caller-owned buffers.
 
 ## Building Native Plugins
 
