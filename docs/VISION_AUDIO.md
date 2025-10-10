@@ -25,8 +25,8 @@ media.source_kind = ASTRAL_MODEL_SOURCE_PATH;
 media.media_path = span_from_cstr("/path/to/mmproj-or-media.gguf");
 media.flags = 0; // or ASTRAL_MEDIA_FLAG_USE_GPU / ASTRAL_MEDIA_FLAG_WARMUP
 media.gpu_route_flags = 0; // optional: ASTRAL_GPU_ROUTE_DEVICE / DEVICE_MASK / STREAM
-media.gpu_device = 0;      // CUDA device index (best-effort)
-media.gpu_device_mask = 0; // bitset of allowed devices (best-effort)
+media.gpu_device = 0;      // CUDA device index request when DEVICE is set
+media.gpu_device_mask = 0; // allowed-device bitset request when DEVICE_MASK is set
 media.gpu_stream = nullptr; // backend-specific stream handle (optional)
 
 astral_model_media_init(model, &media);
@@ -39,13 +39,13 @@ The `media_path` is model-specific (typically a projector/encoder GGUF). If medi
 ### `AstralImageDesc`
 - RGB8 / RGBA8 / RGB_F32 pixel formats
 - `row_stride` is bytes; 0 means tightly packed
-- Optional GPU routing fields (`gpu_device`, `gpu_device_mask`, `gpu_stream`) are best-effort
+- GPU routing fields are advisory requests; set `gpu_route_flags` for the fields the caller wants the backend to consume
 - caller owns pixel memory for the duration of the feed/enqueue call
 
 ### `AstralAudioDesc`
 - PCM F32 or I16
 - `frame_count` is per-channel frames
-- Optional GPU routing fields (`gpu_device`, `gpu_device_mask`, `gpu_stream`) are best-effort
+- GPU routing fields are advisory requests; set `gpu_route_flags` for the fields the caller wants the backend to consume
 - caller owns sample memory for the duration of the feed/enqueue call
 
 ## Multi-GPU (CUDA model load)
@@ -55,7 +55,7 @@ For CUDA builds, `AstralModelDesc` exposes multi-GPU selection knobs (device ind
 - `gpu_main` and `gpu_split_mode` (none/layer/row)
 - `gpu_tensor_split` for explicit split ratios
 
-Set `gpu_flags` to indicate which fields are active. These settings are best-effort and currently apply to the llama.cpp CUDA backend.
+Set `gpu_flags` to indicate which fields are active. The llama.cpp CUDA backend consumes the supported model-load fields; release sign-off still requires real multi-GPU routing evidence.
 
 ## Sessions and conversations
 

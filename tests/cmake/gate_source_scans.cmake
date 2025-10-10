@@ -160,6 +160,20 @@ set(unity_zero_gc_allocation_phrase "zero GC")
 string(APPEND unity_zero_gc_allocation_phrase " allocation")
 set(unity_maximum_performance_phrase "maximum")
 string(APPEND unity_maximum_performance_phrase " performance")
+set(multimodal_optin_best_effort_phrase "opt-in.*best")
+string(APPEND multimodal_optin_best_effort_phrase "-effort")
+set(model_source_desktop_best_effort_phrase "desktop .best")
+string(APPEND model_source_desktop_best_effort_phrase "-effort.")
+set(media_feed_best_effort_phrase "media init.*best")
+string(APPEND media_feed_best_effort_phrase "-effort")
+set(gpu_device_best_effort_phrase "CUDA device index .best")
+string(APPEND gpu_device_best_effort_phrase "-effort.")
+set(gpu_mask_best_effort_phrase "allowed devices .best")
+string(APPEND gpu_mask_best_effort_phrase "-effort.")
+set(gpu_fields_best_effort_phrase "gpu_stream.*are best")
+string(APPEND gpu_fields_best_effort_phrase "-effort")
+set(gpu_settings_best_effort_phrase "settings are best")
+string(APPEND gpu_settings_best_effort_phrase "-effort")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -200,6 +214,13 @@ set(UNREVIEWED_PROSE_STRINGS
   "${unity_zero_alloc_streaming_phrase}"
   "${unity_zero_gc_allocation_phrase}"
   "${unity_maximum_performance_phrase}"
+  "${multimodal_optin_best_effort_phrase}"
+  "${model_source_desktop_best_effort_phrase}"
+  "${media_feed_best_effort_phrase}"
+  "${gpu_device_best_effort_phrase}"
+  "${gpu_mask_best_effort_phrase}"
+  "${gpu_fields_best_effort_phrase}"
+  "${gpu_settings_best_effort_phrase}"
 )
 
 foreach(path IN LISTS FILES)

@@ -23,7 +23,7 @@ If you are comparing to external frameworks, see `docs/FEATURE_PARITY.md`. This 
 | Exceptions across ABI | ✅ (caught at ABI) | ✅ (caught at ABI) | ✅ (presets build with `ASTRAL_NO_EXCEPTIONS=ON`) |
 | Dynamic backends (`dlopen`/`LoadLibrary`) | ✅ (optional) | ✅ (optional) | ❌ (presets disable) |
 | JSON-schema grammar helper | ✅ (optional) | ✅ (optional) | ❌ (presets disable) |
-| Multimodal media (`ASTRAL_ENABLE_MTMD`) | ⚠️ (opt-in) | ⚠️ (opt-in; best-effort) | ❌ |
+| Multimodal media (`ASTRAL_ENABLE_MTMD`) | ⚠️ (opt-in; real fixtures required for release) | ⚠️ (opt-in; CUDA media routing still needs real fixture evidence) | ❌ |
 
 Notes:
 - Embedded presets are intended to be “no VM / no dynamic loader / no JSON-schema grammar” by default (`docs/EMBEDDED_PROFILE.md`).
@@ -60,7 +60,7 @@ Notes:
 | `IO` (`astral_model_load2(IO)`) | ⚠️ | ⚠️ | 🧪 |
 
 Caveats (MEMORY/IO):
-- Current llama.cpp no longer exposes an in-memory loader API that Astral can call directly, so CPU/CUDA providers currently **materialize to a temp file** and then call `llama_model_load_from_file` on desktop (best-effort).
+- Current llama.cpp no longer exposes an in-memory loader API that Astral can call directly, so CPU/CUDA providers currently **materialize to a temp file** and then call `llama_model_load_from_file` on desktop.
 - This means MEMORY/IO is **not yet a hard guarantee** of “no filesystem/syscalls” in embedded mode; making that guarantee is tracked under the embedded pillars work.
 
 ## Inference features (sessions)
@@ -72,7 +72,7 @@ Caveats (MEMORY/IO):
 | Logprobs meta stream (`set_logprobs` + `stream_read_meta`) | ✅ | ✅ | ✅ |
 | Stop sequences (tokenized) | ✅ | ✅ | ✅ |
 | Slots (`astral_session_set_slot`) | ✅ (provider-dependent) | ✅ (provider-dependent) | ✅ (provider-dependent) |
-| Image/audio prompt feed (`astral_session_feed_image/audio`) | ⚠️ (mtmd + media init) | ⚠️ (best-effort) | ❌ |
+| Image/audio prompt feed (`astral_session_feed_image/audio`) | ⚠️ (mtmd + media init; real fixtures required for release) | ⚠️ (mtmd + media init; CUDA routing still needs real fixture evidence) | ❌ |
 | KV/state save/load (`state_size/save/load`) | ✅ | ✅ | ✅ |
 | KV/state deterministic continuation | ✅ | ✅ | ✅ |
 | GBNF grammar (`set_grammar_gbnf`) | ✅ | ✅ | ✅ |
