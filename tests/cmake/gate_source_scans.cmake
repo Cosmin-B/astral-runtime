@@ -140,6 +140,8 @@ string(APPEND cuda_bench_best_effort_phrase "-effort CUDA bench runs")
 set(cuda_scaffold_best_effort_phrase "CUDA is a v0.1")
 string(APPEND cuda_scaffold_best_effort_phrase " ")
 string(APPEND cuda_scaffold_best_effort_phrase "\"best-effort scaffold\"")
+set(stale_release_matrix_phrase "Define the release")
+string(APPEND stale_release_matrix_phrase " acceptance matrix")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -170,6 +172,7 @@ set(UNREVIEWED_PROSE_STRINGS
   "${cuda_machine_best_effort_phrase}"
   "${cuda_bench_best_effort_phrase}"
   "${cuda_scaffold_best_effort_phrase}"
+  "${stale_release_matrix_phrase}"
 )
 
 foreach(path IN LISTS FILES)
