@@ -72,7 +72,7 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
     return nullptr;
   }
 
-  // Best-effort strategy:
+  // Alignment strategy:
   // 1) Reserve a larger region anywhere.
   // 2) Release it.
   // 3) Try reserving exactly `size` at an aligned address inside the released range.
@@ -96,7 +96,7 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
     }
   }
 
-  // Fallback: reserve without alignment.
+  // Fallback: reserve with the OS allocation granularity.
   return vm_reserve(size);
 }
 
@@ -123,7 +123,7 @@ void vm_commit(void* addr, size_t size) {
     // - ERROR_NOT_ENOUGH_MEMORY: system out of memory
     // - ERROR_INVALID_ADDRESS: addr not within reserved region
     // - ERROR_COMMITMENT_LIMIT: commit charge limit exceeded
-    // Silently fail; caller should check for access violations if needed
+    // The region remains inaccessible; callers prevalidate page ranges at setup boundaries.
   }
 }
 

@@ -182,6 +182,16 @@ set(executor_tuning_best_effort_phrase "This is best")
 string(APPEND executor_tuning_best_effort_phrase "-effort")
 set(unity_cuda_config_best_effort_phrase "CUDA multi-GPU config .best")
 string(APPEND unity_cuda_config_best_effort_phrase "-effort.")
+set(vm_aligned_best_effort_phrase "requested alignment .best")
+string(APPEND vm_aligned_best_effort_phrase "-effort")
+set(vm_huge_best_effort_phrase "This is a best")
+string(APPEND vm_huge_best_effort_phrase "-effort operation")
+set(vm_silently_fail_phrase "may silently")
+string(APPEND vm_silently_fail_phrase " fail")
+set(vm_silent_fail_comment_phrase "Silently")
+string(APPEND vm_silent_fail_comment_phrase " fail")
+set(vm_commit_best_effort_phrase "vm_commit.*best")
+string(APPEND vm_commit_best_effort_phrase "-effort")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -233,6 +243,11 @@ set(UNREVIEWED_PROSE_STRINGS
   "${model_limits_best_effort_phrase}"
   "${executor_tuning_best_effort_phrase}"
   "${unity_cuda_config_best_effort_phrase}"
+  "${vm_aligned_best_effort_phrase}"
+  "${vm_huge_best_effort_phrase}"
+  "${vm_silently_fail_phrase}"
+  "${vm_silent_fail_comment_phrase}"
+  "${vm_commit_best_effort_phrase}"
 )
 
 foreach(path IN LISTS FILES)

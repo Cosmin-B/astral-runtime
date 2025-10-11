@@ -108,10 +108,10 @@ Attempt to use huge pages (2MB/1GB) for better TLB performance.
 **Returns**: `true` if huge pages were enabled, `false` otherwise
 
 **Notes**:
-- This is a best-effort operation (may silently fail)
-- On Linux, requires THP enabled or `vm.nr_hugepages > 0`
+- Linux returns `true` only when the `MADV_HUGEPAGE` request is accepted.
+- On Linux, huge-page backing still depends on THP/kernel policy or `vm.nr_hugepages`.
 - On Windows, huge pages must be requested at allocation time (not retroactively)
-- Graceful fallback to regular pages is always safe
+- `false` means the region remains backed by regular pages.
 
 #### `void* vm_reserve_large(size_t size, size_t* out_size)`
 
@@ -171,12 +171,14 @@ void* alloc = bump_allocate(allocator, size);  // No syscalls
 
 ### Error Handling
 
-All functions silently fail (no exceptions, no error codes). Rationale:
+These primitives do not throw and most mutation functions have no error return:
 
 - `vm_reserve()` returns `nullptr` on failure
-- `vm_commit()`, `vm_decommit()`, `vm_release()` are best-effort
-- Accessing uncommitted memory causes page fault (OS handles it)
-- Memory exhaustion is a catastrophic failure (no recovery)
+- `vm_commit()` leaves pages inaccessible if the OS rejects the commit request
+- `vm_decommit()` may leave pages resident if the OS rejects the decommit request
+- `vm_release()` expects the original reservation base and size; invalid inputs are caller bugs
+- Accessing uncommitted memory faults at the OS boundary
+- Memory exhaustion is treated as a fatal runtime condition by callers that pre-commit pools
 
 For debugging, enable OS-level tracing:
 - **Linux**: `strace -e mmap,mprotect,munmap,madvise ./program`

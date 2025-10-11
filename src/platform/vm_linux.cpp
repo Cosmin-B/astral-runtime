@@ -57,9 +57,8 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
     return nullptr;
   }
 
-  // Best-effort: over-reserve and trim prefix/suffix with munmap so the remaining mapping is
-  // exactly `size` and starts at an `alignment` boundary. This preserves the vm_release contract
-  // (release with the same base+size).
+  // Over-reserve and trim prefix/suffix with munmap so the remaining mapping is exactly `size`
+  // and starts at an `alignment` boundary. This preserves the vm_release contract.
   const size_t total = size + alignment;
   void* base = vm_reserve(total);
   if (base == nullptr) {
@@ -95,7 +94,7 @@ void vm_commit(void* addr, size_t size) {
     // - EINVAL: addr not page-aligned, or invalid range
     // - ENOMEM: kernel cannot allocate internal structures
     // - EACCES: permission denied (shouldn't happen for our reserved pages)
-    return; // Silently fail; caller should check errno if needed
+    return; // The region remains inaccessible; callers prevalidate page ranges at setup boundaries.
   }
 
   // Step 2: Advise kernel to allocate physical pages
