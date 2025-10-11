@@ -192,6 +192,12 @@ set(vm_silent_fail_comment_phrase "Silently")
 string(APPEND vm_silent_fail_comment_phrase " fail")
 set(vm_commit_best_effort_phrase "vm_commit.*best")
 string(APPEND vm_commit_best_effort_phrase "-effort")
+set(alloc_best_effort_phrase "best")
+string(APPEND alloc_best_effort_phrase "-effort heap allocation")
+set(allocation_portable_best_effort_phrase "allocations.*best")
+string(APPEND allocation_portable_best_effort_phrase "-effort portable")
+set(io_portable_best_effort_phrase "I/O syscalls.*best")
+string(APPEND io_portable_best_effort_phrase "-effort portable")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -248,6 +254,9 @@ set(UNREVIEWED_PROSE_STRINGS
   "${vm_silently_fail_phrase}"
   "${vm_silent_fail_comment_phrase}"
   "${vm_commit_best_effort_phrase}"
+  "${alloc_best_effort_phrase}"
+  "${allocation_portable_best_effort_phrase}"
+  "${io_portable_best_effort_phrase}"
 )
 
 foreach(path IN LISTS FILES)

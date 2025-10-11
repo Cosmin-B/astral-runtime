@@ -501,7 +501,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 message(STATUS "========================================")
 
-# Gate: no allocations in steady-state decode/stream (best-effort portable).
+# Gate: no tracked heap allocations in steady-state decode/stream.
 if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
     add_executable(gate_allocations
         gate_allocations.cpp
@@ -547,7 +547,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allo
     message(STATUS "Configured test: gate_allocations")
 endif()
 
-# Gate: no steady-state I/O syscalls in decode/stream (best-effort portable).
+# Gate: no tracked steady-state I/O syscalls in decode/stream.
 if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
     add_executable(gate_io_syscalls
         gate_io_syscalls.cpp

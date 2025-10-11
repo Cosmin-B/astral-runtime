@@ -6,7 +6,7 @@ the maintained runtime paths:
 - `test_memory`: unit coverage for memory primitives and allocator behavior.
 - `test_arena`: runtime arena creation, reset, and reserve behavior.
 - `gate_allocations`: steady-state allocation guard for mock streaming paths, with
-  optional CPU-model coverage through `ASTRAL_GATE_CPU_ALLOC=1`.
+  CPU-model coverage enabled by `ASTRAL_GATE_CPU_ALLOC=1`.
 - `gate_rss_cap`: process RSS cap check for embedded-style validation.
 - `test_memory_tsan`: ThreadSanitizer variant for memory tests on supported
   compilers.
