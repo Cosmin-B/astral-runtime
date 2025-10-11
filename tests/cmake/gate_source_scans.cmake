@@ -174,6 +174,14 @@ set(gpu_fields_best_effort_phrase "gpu_stream.*are best")
 string(APPEND gpu_fields_best_effort_phrase "-effort")
 set(gpu_settings_best_effort_phrase "settings are best")
 string(APPEND gpu_settings_best_effort_phrase "-effort")
+set(handle_valid_best_effort_phrase "use-after-free detection is best")
+string(APPEND handle_valid_best_effort_phrase "-effort")
+set(model_limits_best_effort_phrase "Query model limits .best")
+string(APPEND model_limits_best_effort_phrase "-effort")
+set(executor_tuning_best_effort_phrase "This is best")
+string(APPEND executor_tuning_best_effort_phrase "-effort")
+set(unity_cuda_config_best_effort_phrase "CUDA multi-GPU config .best")
+string(APPEND unity_cuda_config_best_effort_phrase "-effort.")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -221,6 +229,10 @@ set(UNREVIEWED_PROSE_STRINGS
   "${gpu_mask_best_effort_phrase}"
   "${gpu_fields_best_effort_phrase}"
   "${gpu_settings_best_effort_phrase}"
+  "${handle_valid_best_effort_phrase}"
+  "${model_limits_best_effort_phrase}"
+  "${executor_tuning_best_effort_phrase}"
+  "${unity_cuda_config_best_effort_phrase}"
 )
 
 foreach(path IN LISTS FILES)

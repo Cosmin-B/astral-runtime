@@ -398,7 +398,7 @@ ASTRAL_API void ASTRAL_CALL astral_shutdown(void);
  * Thread-safety: Safe to call from any thread.
  *
  * NOTE: A handle being "valid" only means it's non-null and the internal magic matches.
- * It does NOT guarantee the resource hasn't been freed (use-after-free detection is best-effort).
+ * It does not prove lifetime ownership; passing a freed handle is invalid API usage and can alias reused memory.
  *
  * @param handle Handle to validate
  * @return 1 if valid, 0 if invalid
@@ -641,7 +641,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_info(AstralHandle model, AstralMod
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_caps(AstralHandle model, AstralCaps* out_caps);
 
 /**
- * Query model limits (best-effort; fields may be 0 if unknown).
+ * Query model limits. Providers write 0 for limits they cannot report.
  *
  * Thread-safety: Safe to call from multiple threads.
  */
@@ -772,7 +772,7 @@ typedef struct AstralExecutorDesc {
  *
  * Notes:
  * - `size` must be set to sizeof(AstralExecutorTuning).
- * - This is best-effort: if the executor is not yet created, returns ASTRAL_E_STATE.
+ * - If the executor is not yet created, the runtime returns ASTRAL_E_STATE without changing tuning.
  */
 typedef struct AstralExecutorTuning {
     uint32_t size;                            // sizeof(AstralExecutorTuning)

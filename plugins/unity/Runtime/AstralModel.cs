@@ -72,7 +72,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Query model limits (best-effort; fields may be 0 if unknown).
+        /// Query model limits. Providers write 0 for limits they cannot report.
         /// Thread-safety: Safe to call from multiple threads.
         /// </summary>
         public AstralNative.AstralModelLimits GetLimits()
