@@ -92,7 +92,7 @@ Astral exposes `astral_model_load2()` with `AstralModelDesc` to select a model s
 
 Status:
 - Built-in CPU provider supports `MEMORY` and `IO` sources by routing GGUF parsing + tensor reads through callbacks (no path required).
-- In embedded presets, `MEMORY`/`IO` modes do not rely on mmap. For fastest startup on desktops, prefer `PATH` + mmap; for `MEMORY`/`IO`, the CPU backend can optionally materialize a temporary file to enable mmap (`ASTRAL_CPU_MEMORY_SOURCE_MMAP`, best-effort; disabled in embedded presets).
+- In embedded presets, `MEMORY`/`IO` modes do not rely on mmap. For fastest startup on desktops, prefer `PATH` + mmap; when `ASTRAL_CPU_MEMORY_SOURCE_MMAP=ON` in a desktop build, the CPU backend may materialize `MEMORY`/`IO` input to a temporary file so llama.cpp can use file-backed mmap. Embedded presets keep that switch disabled.
 
 Current limitations:
 - Split GGUF models are not supported for `IO`/`MEMORY` sources (single-file only).

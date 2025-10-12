@@ -204,6 +204,8 @@ set(slot_reset_best_effort_phrase "session_slot_reset.*best")
 string(APPEND slot_reset_best_effort_phrase "-effort")
 set(provider_slot_best_effort_phrase "Best")
 string(APPEND provider_slot_best_effort_phrase "-effort: clear slot state")
+set(memory_source_mmap_best_effort_phrase "ASTRAL_CPU_MEMORY_SOURCE_MMAP.*best")
+string(APPEND memory_source_mmap_best_effort_phrase "-effort")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -266,6 +268,7 @@ set(UNREVIEWED_PROSE_STRINGS
   "${worker_id_best_effort_phrase}"
   "${slot_reset_best_effort_phrase}"
   "${provider_slot_best_effort_phrase}"
+  "${memory_source_mmap_best_effort_phrase}"
 )
 
 foreach(path IN LISTS FILES)
