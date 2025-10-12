@@ -270,7 +270,7 @@ TEST(provider_plugin_cpu_llama_load_and_run) {
 
     const char* gguf = find_test_model_path();
     if (gguf == nullptr) {
-        // No GGUF present; skip.
+        // CPU llama runtime coverage needs a GGUF fixture; sample-provider loading is covered above.
         ASSERT_TRUE(true);
         return;
     }

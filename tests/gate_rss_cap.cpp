@@ -120,7 +120,7 @@ TEST(gate_rss_cap) {
 
     const char* gguf = find_test_model_path();
     if (gguf == nullptr) {
-        // No GGUF present; skip RSS cap for now.
+        // Model RSS sampling only runs when a GGUF fixture is configured; mock-default lanes have no model load.
         ASSERT_TRUE(true);
         return;
     }

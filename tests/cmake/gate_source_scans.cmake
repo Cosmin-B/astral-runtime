@@ -206,6 +206,12 @@ set(provider_slot_best_effort_phrase "Best")
 string(APPEND provider_slot_best_effort_phrase "-effort: clear slot state")
 set(memory_source_mmap_best_effort_phrase "ASTRAL_CPU_MEMORY_SOURCE_MMAP.*best")
 string(APPEND memory_source_mmap_best_effort_phrase "-effort")
+set(no_gguf_skip_phrase "No GGUF")
+string(APPEND no_gguf_skip_phrase " present.*skip")
+set(skip_rss_cap_now_phrase "skip RSS")
+string(APPEND skip_rss_cap_now_phrase " cap for now")
+set(optional_inference_parity_phrase "optional inference")
+string(APPEND optional_inference_parity_phrase " parity section")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -269,6 +275,9 @@ set(UNREVIEWED_PROSE_STRINGS
   "${slot_reset_best_effort_phrase}"
   "${provider_slot_best_effort_phrase}"
   "${memory_source_mmap_best_effort_phrase}"
+  "${no_gguf_skip_phrase}"
+  "${skip_rss_cap_now_phrase}"
+  "${optional_inference_parity_phrase}"
 )
 
 foreach(path IN LISTS FILES)
