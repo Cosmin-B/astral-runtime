@@ -439,7 +439,7 @@ void conv_destroy(Conversation* conv) {
             }
         }
 
-        // Best-effort: clear slot state on provider.
+        // Clear provider-owned slot state when the backend exposes slot reset.
         if (model && model->backend && model->backend->ops && model->backend->ops->session_slot_reset &&
             ex->backend_session_ctx) {
             (void)model->backend->ops->session_slot_reset(ex->backend_session_ctx, sid);

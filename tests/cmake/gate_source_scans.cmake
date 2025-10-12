@@ -198,6 +198,12 @@ set(allocation_portable_best_effort_phrase "allocations.*best")
 string(APPEND allocation_portable_best_effort_phrase "-effort portable")
 set(io_portable_best_effort_phrase "I/O syscalls.*best")
 string(APPEND io_portable_best_effort_phrase "-effort portable")
+set(worker_id_best_effort_phrase "worker_id.*best")
+string(APPEND worker_id_best_effort_phrase "-effort")
+set(slot_reset_best_effort_phrase "session_slot_reset.*best")
+string(APPEND slot_reset_best_effort_phrase "-effort")
+set(provider_slot_best_effort_phrase "Best")
+string(APPEND provider_slot_best_effort_phrase "-effort: clear slot state")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -257,6 +263,9 @@ set(UNREVIEWED_PROSE_STRINGS
   "${alloc_best_effort_phrase}"
   "${allocation_portable_best_effort_phrase}"
   "${io_portable_best_effort_phrase}"
+  "${worker_id_best_effort_phrase}"
+  "${slot_reset_best_effort_phrase}"
+  "${provider_slot_best_effort_phrase}"
 )
 
 foreach(path IN LISTS FILES)

@@ -19,7 +19,7 @@ AstralErr submit_work(WorkFn fn, void* user);
 // This is used to enforce "one session ↔ one worker thread" so per-session scratch/allocators
 // are not touched concurrently by multiple workers.
 //
-// `worker_id` is best-effort: it is normalized to the current worker count.
+// `worker_id` is normalized with modulo thread_count before enqueue.
 AstralErr submit_work_affine(uint32_t worker_id, WorkFn fn, void* user);
 
 } // namespace astral::core
