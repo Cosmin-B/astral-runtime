@@ -218,6 +218,10 @@ set(real_cuda_best_effort_phrase "Real CUDA remains best")
 string(APPEND real_cuda_best_effort_phrase "-effort")
 set(promote_cuda_best_effort_phrase "Promote CUDA validation from best")
 string(APPEND promote_cuda_best_effort_phrase "-effort")
+set(unreal_high_performance_phrase "High-performance LLM")
+string(APPEND unreal_high_performance_phrase " inference for Unreal")
+set(unreal_automation_optional_phrase "Unreal Automation [(]")
+string(APPEND unreal_automation_optional_phrase "Optional[)]")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -287,6 +291,8 @@ set(UNREVIEWED_PROSE_STRINGS
   "${cuda_best_effort_ci_job_phrase}"
   "${real_cuda_best_effort_phrase}"
   "${promote_cuda_best_effort_phrase}"
+  "${unreal_high_performance_phrase}"
+  "${unreal_automation_optional_phrase}"
 )
 
 foreach(path IN LISTS FILES)

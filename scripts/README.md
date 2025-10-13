@@ -240,9 +240,9 @@ Validate release notes before publishing a release candidate:
 ./scripts/validate_release_notes.sh docs/release/RELEASE_NOTES_TEMPLATE.md
 ```
 
-## Unreal Automation (Optional)
+## Unreal Automation
 
-Build the Unreal ThirdParty package, then run the plugin Automation tests through Unreal:
+Build the Unreal ThirdParty package, then run the plugin Automation tests through Unreal. This is a local developer check when one editor is configured, and release-candidate evidence when the UE 5.4+ matrix is run with every supported editor.
 
 ```bash
 cmake --preset unreal-plugin

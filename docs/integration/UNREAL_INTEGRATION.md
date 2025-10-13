@@ -83,7 +83,7 @@ Plugins/
   "Version": 1,
   "VersionName": "0.1.0",
   "FriendlyName": "Astral Runtime",
-  "Description": "High-performance LLM inference for Unreal Engine",
+  "Description": "Native LLM runtime bindings for Unreal Engine",
   "Category": "AI",
   "CreatedBy": "Astral Team",
   "CreatedByURL": "",
