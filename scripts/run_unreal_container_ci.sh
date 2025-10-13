@@ -9,6 +9,7 @@ slim_image="ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4"
 slim_digest="sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
 
 container_engine="${CONTAINER_ENGINE:-docker}"
+pull_timeout_seconds="${ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS:-120}"
 variant="slim"
 image=""
 digest=""
@@ -35,12 +36,48 @@ Options:
 
 Environment:
   CONTAINER_ENGINE          Container CLI (default: docker)
+  ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS
+                            Pull timeout in seconds (default: 120)
   UNREAL_EDITOR             Same as --editor
   UNREAL_TEST_FILTER        Same as --filter
 
 The default images are private Epic GHCR packages. Authenticate Docker with an
 Epic-linked GitHub account before running this script.
 EOF
+}
+
+is_epic_ghcr_image() {
+  [[ "$1" == ghcr.io/epicgames/unreal-engine:* || "$1" == ghcr.io/epicgames/unreal-engine@sha256:* ]]
+}
+
+has_ghcr_auth_config() {
+  if [[ -n "${DOCKER_AUTH_CONFIG:-}" && "${DOCKER_AUTH_CONFIG}" == *"ghcr.io"* ]]; then
+    return 0
+  fi
+
+  local docker_config_dir="${DOCKER_CONFIG:-${HOME:-}/.docker}"
+  local docker_config="${docker_config_dir}/config.json"
+  if [[ ! -f "${docker_config}" ]]; then
+    return 1
+  fi
+
+  grep -Eq '"ghcr[.]io"|"credsStore"|"credHelpers"' "${docker_config}"
+}
+
+fail_epic_ghcr_auth() {
+  cat >&2 <<EOF
+Epic Unreal container access is not configured for ${container_engine}.
+Authenticate with an Epic-linked GitHub account that can read ghcr.io/epicgames/unreal-engine, then rerun this command.
+Image: ${image_ref}
+EOF
+}
+
+pull_container_image() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${pull_timeout_seconds}" "${container_engine}" pull "${image_ref}" </dev/null
+  else
+    "${container_engine}" pull "${image_ref}" </dev/null
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -113,7 +150,18 @@ if [[ -n "${digest}" && "${image}" != *@sha256:* ]]; then
 fi
 
 if [[ "${pull_image}" -eq 1 ]]; then
-  "${container_engine}" pull "${image_ref}"
+  if is_epic_ghcr_image "${image_ref}" && ! has_ghcr_auth_config; then
+    fail_epic_ghcr_auth
+    exit 2
+  fi
+  echo "[unreal_container] Pull image: ${image_ref}"
+  if ! pull_container_image; then
+    cat >&2 <<EOF
+Unable to pull Unreal container image: ${image_ref}
+Authenticate ${container_engine} with an Epic-linked GitHub account that can read ghcr.io/epicgames/unreal-engine, then rerun this command.
+EOF
+    exit 2
+  fi
 fi
 
 image_digests="$("${container_engine}" image inspect "${image_ref}" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null || true)"
