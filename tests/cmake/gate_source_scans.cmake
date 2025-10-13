@@ -212,6 +212,12 @@ set(skip_rss_cap_now_phrase "skip RSS")
 string(APPEND skip_rss_cap_now_phrase " cap for now")
 set(optional_inference_parity_phrase "optional inference")
 string(APPEND optional_inference_parity_phrase " parity section")
+set(cuda_best_effort_ci_job_phrase "best")
+string(APPEND cuda_best_effort_ci_job_phrase "-effort CI job")
+set(real_cuda_best_effort_phrase "Real CUDA remains best")
+string(APPEND real_cuda_best_effort_phrase "-effort")
+set(promote_cuda_best_effort_phrase "Promote CUDA validation from best")
+string(APPEND promote_cuda_best_effort_phrase "-effort")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -278,6 +284,9 @@ set(UNREVIEWED_PROSE_STRINGS
   "${no_gguf_skip_phrase}"
   "${skip_rss_cap_now_phrase}"
   "${optional_inference_parity_phrase}"
+  "${cuda_best_effort_ci_job_phrase}"
+  "${real_cuda_best_effort_phrase}"
+  "${promote_cuda_best_effort_phrase}"
 )
 
 foreach(path IN LISTS FILES)
