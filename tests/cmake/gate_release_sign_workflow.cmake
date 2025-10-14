@@ -15,11 +15,17 @@ file(READ "${workflow}" text)
 file(READ "${ci_workflow}" ci_text)
 
 foreach(required_regex
+  "environment:[ \t\n\r]+release"
   "Validate release evidence"
   "validate_release_evidence.py"
   "--phase pre-sign"
   "Import release signing key"
   "Sign checksum manifests"
+  "secrets[.]ASTRAL_RELEASE_GPG_PRIVATE_KEY"
+  "secrets[.]ASTRAL_RELEASE_GPG_PASSPHRASE"
+  "secrets[.]ASTRAL_RELEASE_GPG_KEY_ID"
+  "test -n \\\"[$]\\{ASTRAL_RELEASE_SIGN_KEY\\}\\\""
+  "trap 'rm -f \\\"[$]\\{ASTRAL_RELEASE_GPG_PASSPHRASE_FILE\\}\\\"' EXIT"
 )
   if(NOT text MATCHES "${required_regex}")
     message(FATAL_ERROR "release-sign workflow is missing required text: ${required_regex}")

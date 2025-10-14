@@ -85,8 +85,10 @@ jobs:
           ASTRAL_RELEASE_SIGN_KEY: ${{ secrets.ASTRAL_RELEASE_GPG_KEY_ID }}
           ASTRAL_RELEASE_GPG_PASSPHRASE_FILE: ${{ github.workspace }}/.release-passphrase
         run: |
+          test -n "${ASTRAL_RELEASE_SIGN_KEY}"
           cp ~/.gnupg/release-passphrase "${ASTRAL_RELEASE_GPG_PASSPHRASE_FILE}"
           chmod 600 "${ASTRAL_RELEASE_GPG_PASSPHRASE_FILE}"
+          trap 'rm -f "${ASTRAL_RELEASE_GPG_PASSPHRASE_FILE}"' EXIT
           shopt -s nullglob
           manifests=(release-artifacts/*/checksums.sha256)
           if [[ "${#manifests[@]}" -eq 0 ]]; then
