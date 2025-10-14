@@ -11,6 +11,10 @@ if ($ExpectLargePages -and $ExpectFallback) {
     throw "Use only one of -ExpectLargePages or -ExpectFallback."
 }
 
+if (-not $IsWindows) {
+    throw "Windows large-page validation requires a Windows host."
+}
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Split-Path -Parent $ScriptDir
 Set-Location $RootDir
@@ -39,6 +43,10 @@ function Invoke-Logged {
 "Preset: $Preset" | Add-Content -Path $log
 "ExpectLargePages: $ExpectLargePages" | Add-Content -Path $log
 "ExpectFallback: $ExpectFallback" | Add-Content -Path $log
+"OS: $([System.Environment]::OSVersion.VersionString)" | Add-Content -Path $log
+"PowerShell: $($PSVersionTable.PSVersion)" | Add-Content -Path $log
+"cmake: $((cmake --version | Select-Object -First 1) -replace '\r', '')" | Add-Content -Path $log
+"ctest: $((ctest --version | Select-Object -First 1) -replace '\r', '')" | Add-Content -Path $log
 
 whoami /all | Tee-Object -FilePath $priv | Out-Null
 "Privilege report: $priv" | Add-Content -Path $log

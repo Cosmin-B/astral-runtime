@@ -9,6 +9,11 @@ endif()
 
 file(READ "${script}" script_text)
 foreach(required
+  "Windows large-page validation requires a Windows host"
+  "System.Environment]::OSVersion.VersionString"
+  "PSVersionTable.PSVersion"
+  "cmake --version"
+  "ctest --version"
   "ASTRAL_TEST_EXPECT_LARGE_PAGES"
   "ASTRAL_TEST_EXPECT_LARGE_PAGE_FALLBACK"
   "whoami /all"
