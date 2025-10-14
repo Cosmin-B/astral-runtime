@@ -38,7 +38,14 @@ if [[ -z "${unity_editor}" ]]; then
   echo "Missing Unity editor path. Set UNITY_EDITOR or pass --editor." >&2
   exit 2
 fi
-if [[ ! -x "${unity_editor}" ]]; then
+if [[ "${unity_editor}" == */* ]]; then
+  if [[ ! -x "${unity_editor}" ]]; then
+    echo "Unity editor is not executable: ${unity_editor}" >&2
+    exit 2
+  fi
+elif command -v "${unity_editor}" >/dev/null 2>&1; then
+  unity_editor="$(command -v "${unity_editor}")"
+else
   echo "Unity editor is not executable: ${unity_editor}" >&2
   exit 2
 fi
@@ -70,6 +77,10 @@ fi
 
 mkdir -p "${results_dir}"
 rm -f "${results_dir}/editmode-results.xml"
+
+echo "[unity-ci] Editor: ${unity_editor}"
+echo "[unity-ci] Project: ${project_dir}"
+echo "[unity-ci] Results: ${results_dir}/editmode-results.xml"
 
 ASTRAL_UNITY_REQUIRE_NATIVE=1 "${unity_editor}" \
   -batchmode \

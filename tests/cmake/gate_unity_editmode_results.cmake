@@ -8,6 +8,23 @@ if(NOT DEFINED ASTRAL_PYTHON_EXECUTABLE)
   message(FATAL_ERROR "ASTRAL_PYTHON_EXECUTABLE not set")
 endif()
 
+set(unity_runner "${ASTRAL_SOURCE_DIR}/scripts/run_unity_ci_tests.sh")
+if(NOT EXISTS "${unity_runner}")
+  message(FATAL_ERROR "Unity CI runner is missing: ${unity_runner}")
+endif()
+file(READ "${unity_runner}" unity_runner_text)
+foreach(required
+  "command -v \\\"[$]\\{unity_editor\\}\\\""
+  "unity_editor=\\\"[$]\\(command -v \\\"[$]\\{unity_editor\\}\\\"\\)\\\""
+  "\\[unity-ci\\] Editor:"
+  "\\[unity-ci\\] Project:"
+  "\\[unity-ci\\] Results:"
+)
+  if(NOT unity_runner_text MATCHES "${required}")
+    message(FATAL_ERROR "Unity CI runner is missing preflight text: ${required}")
+  endif()
+endforeach()
+
 set(out_dir "${ASTRAL_BUILD_DIR}/unity-results-gate")
 file(REMOVE_RECURSE "${out_dir}")
 file(MAKE_DIRECTORY "${out_dir}")
