@@ -1,10 +1,10 @@
-# Astral: High-Performance LLM Inference for Game Engines
+# Astral: Native LLM Runtime for Game Engines
 
-Astral is a C++20 high-performance inference layer on top of LLaMA-class backends, designed specifically for real-time game engines (Unity, Unreal Engine 5). Built with zero-allocation hot paths, lock-free concurrency, and explicit memory control.
+Astral is a C++20 native inference layer on top of LLaMA-class backends, designed for real-time game engines (Unity, Unreal Engine 5). The runtime emphasizes allocation-gated hot paths, explicit concurrency primitives, and predictable memory ownership.
 
 ## Key Features
 
-- **Zero-Allocation Hot Paths**: No dynamic allocations during token streaming, decoding, or sampling
+- **Allocation-Gated Hot Paths**: Release gates track steady-state heap behavior for token streaming, decoding, and sampling
 - **CAS-Free Concurrency Primitives**: Bounded MPMC queue (ticket + per-slot sequence) and SPSC token rings; ARM-friendly WFE/SEV waiting
 - **C ABI Surface**: Clean separation between C ABI and C++ implementation; v0.1 (ABI may still evolve until v1.0)
 - **Engine-Native Integration**: Direct use of Unity `NativeArray` and Unreal `FMemory` allocators

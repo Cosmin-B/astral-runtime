@@ -222,6 +222,8 @@ set(unreal_high_performance_phrase "High-performance LLM")
 string(APPEND unreal_high_performance_phrase " inference for Unreal")
 set(unreal_automation_optional_phrase "Unreal Automation [(]")
 string(APPEND unreal_automation_optional_phrase "Optional[)]")
+set(root_high_performance_headline_phrase "High-Performance LLM")
+string(APPEND root_high_performance_headline_phrase " Inference")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -293,6 +295,7 @@ set(UNREVIEWED_PROSE_STRINGS
   "${promote_cuda_best_effort_phrase}"
   "${unreal_high_performance_phrase}"
   "${unreal_automation_optional_phrase}"
+  "${root_high_performance_headline_phrase}"
 )
 
 foreach(path IN LISTS FILES)
