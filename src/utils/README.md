@@ -179,7 +179,7 @@ All strings in Astral are UTF-8. NO UTF-16, NO Latin-1.
 - No NUL termination assumed
 - Validation rejects non-canonical encodings
 
-### Zero Allocations in Hot Paths
+### Hot Path Allocation Boundaries
 
 - UTF-8 validation: No allocations (stack-based state machine)
 - String builder: Allocates from `FrameAllocator` only

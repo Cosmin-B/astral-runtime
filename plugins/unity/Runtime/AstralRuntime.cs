@@ -191,13 +191,13 @@ namespace Astral.Runtime
         };
 
         /// <summary>
-        /// High-performance desktop configuration.
+        /// Desktop preset with a larger native reservation and huge-page attempts enabled.
         /// </summary>
         public static AstralConfig HighPerformance => new AstralConfig
         {
             reserveBytes = 4UL << 30,    // 4GB
             threadCount = 0,             // Auto-detect (usually physical cores - 1)
-            enableHugePages = true,      // Try huge pages for better performance
+            enableHugePages = true,      // Request large pages when the OS grants them
             useUnityAllocator = true,
             enableLogging = true,
             maxLogLevel = AstralNative.ASTRAL_LOG_INFO

@@ -355,7 +355,7 @@ namespace Astral.Runtime
         };
 
         /// <summary>
-        /// High-performance desktop configuration.
+        /// Desktop preset with a larger context and batch size.
         /// </summary>
         public static AstralModelConfig HighPerformance => new AstralModelConfig
         {

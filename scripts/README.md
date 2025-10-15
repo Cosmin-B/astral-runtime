@@ -360,8 +360,8 @@ test case.
    - Valgrind: "definitely lost: 0 bytes"
    - ASAN: Exit code 0
 
-2. **Zero Hot Path Allocations**
-   - Custom allocator: "Decode hot path: ZERO allocations"
+2. **Allocation-Gated Hot Paths**
+   - Custom allocator: "Decode hot path: no tracked allocations"
    - Massif: Flat heap during decode iterations
 
 3. **No Memory Errors**

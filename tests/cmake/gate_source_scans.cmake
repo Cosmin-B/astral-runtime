@@ -226,6 +226,14 @@ set(root_high_performance_headline_phrase "High-Performance LLM")
 string(APPEND root_high_performance_headline_phrase " Inference")
 set(public_abi_high_performance_phrase "Stable C interface for high")
 string(APPEND public_abi_high_performance_phrase "-performance LLM inference")
+set(memory_high_performance_phrase "High")
+string(APPEND memory_high_performance_phrase "-performance memory allocators")
+set(memory_zero_allocation_hot_path_phrase "Zero Hot Path")
+string(APPEND memory_zero_allocation_hot_path_phrase " Allocations")
+set(utils_zero_allocations_hot_paths_phrase "Zero Allocations")
+string(APPEND utils_zero_allocations_hot_paths_phrase " in Hot Paths")
+set(unity_high_performance_config_phrase "High")
+string(APPEND unity_high_performance_config_phrase "-performance desktop configuration")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -299,6 +307,10 @@ set(UNREVIEWED_PROSE_STRINGS
   "${unreal_automation_optional_phrase}"
   "${root_high_performance_headline_phrase}"
   "${public_abi_high_performance_phrase}"
+  "${memory_high_performance_phrase}"
+  "${memory_zero_allocation_hot_path_phrase}"
+  "${utils_zero_allocations_hot_paths_phrase}"
+  "${unity_high_performance_config_phrase}"
 )
 
 foreach(path IN LISTS FILES)

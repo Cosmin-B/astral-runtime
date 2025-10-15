@@ -363,7 +363,7 @@ void AMyActor::OnToken(const FString& Token) {
 - **Virtual Reserve**: Reserve 2GB address space, commit pages on demand
 - **Frame Allocators**: Bump allocators per session; reset after each decode frame
 - **Object Pools**: Lock-free pools for tokens, callbacks (16-64 byte objects)
-- **Zero Hot Path Allocations**: All inference operations use pre-allocated memory
+- **Allocation-Gated Hot Paths**: Maintained tests track steady-state heap calls in decode, sampling, and streaming paths
 
 See [Memory Architecture](docs/architecture/MEMORY_ARCHITECTURE.md) for details.
 
@@ -410,7 +410,7 @@ Specialized sub-agent prompts for focused development:
 
 - **C++20**: No modules, no RTTI across ABI, no STL containers
 - **Explicit Memory Ordering**: Always specify `memory_order_*`
-- **Zero Allocations**: Profile and validate with Valgrind/ASAN
+- **Allocation Gates**: Profile and validate tracked heap behavior with the allocation, ASAN, and Valgrind gates
 - **Cache-Line Alignment**: 64 bytes for hot atomics
 - **Platform Support**: Test on x86-64 and ARM (strong/weak memory models)
 
