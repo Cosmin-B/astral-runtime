@@ -1,7 +1,7 @@
 /**
  * astral_rt.h - Astral Runtime C ABI
  *
- * Stable C interface for high-performance LLM inference.
+ * Stable C interface for the Astral native runtime.
  * All functions return error codes; no exceptions.
  * All strings are UTF-8 spans (pointer + length).
  *

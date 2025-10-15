@@ -224,6 +224,8 @@ set(unreal_automation_optional_phrase "Unreal Automation [(]")
 string(APPEND unreal_automation_optional_phrase "Optional[)]")
 set(root_high_performance_headline_phrase "High-Performance LLM")
 string(APPEND root_high_performance_headline_phrase " Inference")
+set(public_abi_high_performance_phrase "Stable C interface for high")
+string(APPEND public_abi_high_performance_phrase "-performance LLM inference")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -296,6 +298,7 @@ set(UNREVIEWED_PROSE_STRINGS
   "${unreal_high_performance_phrase}"
   "${unreal_automation_optional_phrase}"
   "${root_high_performance_headline_phrase}"
+  "${public_abi_high_performance_phrase}"
 )
 
 foreach(path IN LISTS FILES)
