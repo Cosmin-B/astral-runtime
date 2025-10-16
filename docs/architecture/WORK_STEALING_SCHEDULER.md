@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines a **custom, minimal-dependency task scheduler** with work-stealing, fiber-based task continuations, and lock-free synchronization. These patterns enable building high-performance parallel execution without relying on external threading libraries.
+This document outlines a **custom, minimal-dependency task scheduler** with work-stealing, fiber-based task continuations, and lock-free synchronization. These patterns keep parallel execution policy explicit without relying on external threading libraries.
 
 ## Architecture Overview
 

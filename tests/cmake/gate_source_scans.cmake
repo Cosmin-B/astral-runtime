@@ -235,6 +235,10 @@ string(APPEND utils_zero_allocations_hot_paths_phrase " in Hot Paths")
 set(unity_high_performance_config_phrase "High")
 string(APPEND unity_high_performance_config_phrase "-performance desktop configuration")
 set(unity_placeholder_binary_phrase "[(]placeholder[)]")
+set(high_performance_infrastructure_phrase "high")
+string(APPEND high_performance_infrastructure_phrase "-performance infrastructure")
+set(high_performance_parallel_phrase "high")
+string(APPEND high_performance_parallel_phrase "-performance parallel execution")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -313,6 +317,8 @@ set(UNREVIEWED_PROSE_STRINGS
   "${utils_zero_allocations_hot_paths_phrase}"
   "${unity_high_performance_config_phrase}"
   "${unity_placeholder_binary_phrase}"
+  "${high_performance_infrastructure_phrase}"
+  "${high_performance_parallel_phrase}"
 )
 
 foreach(path IN LISTS FILES)
