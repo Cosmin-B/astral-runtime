@@ -1756,7 +1756,7 @@ AstralErr cpu_session_batch_eval(void* session_ctx,
             outputs += 1u;
         }
 
-        // Best-effort slot position tracking (used by state save/load callers).
+        // Track the highest consumed slot position used by state save/load callers.
         const uint32_t next = t.pos + 1u;
         if (next > static_cast<uint32_t>(session->slot_pos[t.slot_id])) {
             session->slot_pos[t.slot_id] = static_cast<int32_t>(next);
@@ -2399,6 +2399,8 @@ AstralErr cpu_session_adapter_add(void* session_ctx, void* adapter_ctx, float sc
 }
 
 void* cpu_embedder_create(void* model_ctx, AstralErr* out_err) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_create");
+
     if (out_err == nullptr) {
         return nullptr;
     }
@@ -2455,6 +2457,8 @@ void* cpu_embedder_create(void* model_ctx, AstralErr* out_err) {
 }
 
 void cpu_embedder_destroy(void* embedder_ctx) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_destroy");
+
     if (embedder_ctx == nullptr) {
         return;
     }
@@ -2467,6 +2471,8 @@ void cpu_embedder_destroy(void* embedder_ctx) {
 }
 
 AstralErr cpu_embedder_reset(void* embedder_ctx) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_reset");
+
     if (embedder_ctx == nullptr) {
         return ASTRAL_E_INVALID;
     }
@@ -2486,6 +2492,8 @@ AstralErr cpu_embedder_reset(void* embedder_ctx) {
 }
 
 AstralErr cpu_embedder_embed(void* embedder_ctx, const int32_t* tokens, uint32_t count, float* out_vec, uint32_t vec_dim) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_embed_text");
+
     if (embedder_ctx == nullptr || out_vec == nullptr) {
         return ASTRAL_E_INVALID;
     }
@@ -2570,6 +2578,8 @@ AstralErr cpu_embedder_embed_multimodal(void* embedder_ctx,
                                         uint32_t vec_dim);
 
 AstralErr cpu_embedder_embed_image(void* embedder_ctx, const AstralImageDesc* image, float* out_vec, uint32_t vec_dim) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_embed_image");
+
 #if !ASTRAL_ENABLE_MTMD
     (void)embedder_ctx;
     (void)image;
@@ -2582,6 +2592,8 @@ AstralErr cpu_embedder_embed_image(void* embedder_ctx, const AstralImageDesc* im
 }
 
 AstralErr cpu_embedder_embed_audio(void* embedder_ctx, const AstralAudioDesc* audio, float* out_vec, uint32_t vec_dim) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_embed_audio");
+
 #if !ASTRAL_ENABLE_MTMD
     (void)embedder_ctx;
     (void)audio;
@@ -2599,6 +2611,8 @@ AstralErr cpu_embedder_embed_multimodal(void* embedder_ctx,
                                         const AstralAudioDesc* audio,
                                         float* out_vec,
                                         uint32_t vec_dim) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_embed_multimodal");
+
 #if !ASTRAL_ENABLE_MTMD
     (void)embedder_ctx;
     (void)text;
