@@ -234,6 +234,7 @@ set(utils_zero_allocations_hot_paths_phrase "Zero Allocations")
 string(APPEND utils_zero_allocations_hot_paths_phrase " in Hot Paths")
 set(unity_high_performance_config_phrase "High")
 string(APPEND unity_high_performance_config_phrase "-performance desktop configuration")
+set(unity_placeholder_binary_phrase "[(]placeholder[)]")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -311,6 +312,7 @@ set(UNREVIEWED_PROSE_STRINGS
   "${memory_zero_allocation_hot_path_phrase}"
   "${utils_zero_allocations_hot_paths_phrase}"
   "${unity_high_performance_config_phrase}"
+  "${unity_placeholder_binary_phrase}"
 )
 
 foreach(path IN LISTS FILES)

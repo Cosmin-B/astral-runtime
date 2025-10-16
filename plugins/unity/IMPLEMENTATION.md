@@ -19,19 +19,18 @@ plugins/unity/
 │   └── Plugins/
 │       ├── README.md                # Native plugin build instructions
 │       ├── x86_64/
-│       │   ├── libastral_rt.so      # Linux x86_64 (placeholder)
+│       │   ├── libastral_rt.so      # Linux x86_64 native runtime
 │       │   ├── libastral_rt.so.meta # Unity import settings
-│       │   ├── astral_rt.dll        # Windows x86_64 (placeholder)
-│       │   └── astral_rt.dll.meta   # Unity import settings
-│       ├── arm64/
-│       │   ├── libastral_rt.so      # Android ARM64 (placeholder)
-│       │   └── libastral_rt.dylib   # macOS ARM64 (placeholder)
-│       └── iOS/
-│           └── libastral_rt.a       # iOS static library (placeholder)
+│       │   └── astral_rt.dll.meta   # Unity import settings for release Windows DLLs
+│       └── README.md                # Platform artifact layout and build commands
 └── Editor/
     ├── Astral.Editor.asmdef         # Editor assembly definition
     └── AstralEditorUtilities.cs     # Editor validation/diagnostics
 ```
+
+Release packaging is responsible for adding Windows, macOS, Android, and iOS
+native artifacts to the Unity package. Those platform lanes still need real
+Unity Editor and platform-player evidence before release sign-off.
 
 ## Critical Design Decisions
 
@@ -139,9 +138,9 @@ session.ReadStream(buffer);
 
 ### Compilation
 
-- [x] Code compiles in Unity 2021.3+
+- [ ] Code compiles in Unity 2021.3+ with a real Unity Editor runner.
 - [x] `allowUnsafeCode: true` in asmdef
-- [x] No compile errors in IL2CPP build
+- [ ] IL2CPP player build has no compile errors on each supported target.
 
 ### P/Invoke Marshaling
 
@@ -158,18 +157,19 @@ session.ReadStream(buffer);
 
 ### Platform Support
 
-- [x] Windows x86_64 (Visual Studio 2022)
-- [x] Linux x86_64 (GCC 11+)
-- [x] macOS ARM64 (Apple Silicon)
-- [x] Android ARM64 (API Level 21+)
-- [x] iOS ARM64 (iOS 12.0+)
+- [ ] Windows x86_64 release artifact and Unity player smoke.
+- [x] Linux x86_64 native package artifact.
+- [ ] Linux x86_64 Unity Editor smoke.
+- [ ] macOS ARM64 release artifact and Unity player smoke.
+- [ ] Android ARM64 release artifact and Unity player smoke.
+- [ ] iOS ARM64 release artifact and Unity player smoke.
 
 ### IL2CPP Constraints
 
 - [x] Static P/Invoke declarations (no dynamic loading)
 - [x] iOS uses `__Internal` for static linking
 - [x] No reflection on native types
-- [x] No generic constraints on native handles
+- [ ] IL2CPP stripping/linking verified by a player build.
 
 ## Performance Characteristics
 
@@ -268,7 +268,7 @@ IEnumerator StreamNativeArray()
 ## Known Limitations
 
 1. **Editor runner required**: ABI and mock-backend tests need a real Unity Editor with native binaries present.
-2. **Native packaging incomplete**: Platform binaries are built by CMake, but release packaging still needs final UPM-ready artifact layout and signing.
+2. **Native packaging incomplete**: Platform binaries are built by CMake, but release packaging still needs final UPM-ready artifact layout, signing, and Unity import evidence for each target.
 3. **Real model coverage pending**: Text/media embeddings are exposed through `AstralEmbedder`, but production sign-off still needs real GGUF and MTMD fixture runs.
 4. **GPU validation pending**: CUDA builds are handled by the native runtime gates; Unity-specific GPU artifact and runtime validation are still release-lane work.
 
