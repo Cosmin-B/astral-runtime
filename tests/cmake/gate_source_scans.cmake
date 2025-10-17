@@ -400,4 +400,19 @@ if(EXISTS "${unreal_session_file}")
   endif()
 endif()
 
+set(unreal_embedder_file "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralEmbedder.cpp")
+if(EXISTS "${unreal_embedder_file}")
+  file(READ "${unreal_embedder_file}" unreal_embedder_content)
+  foreach(scope_name
+      AstralRT_Embedder_EnqueueUtf8Bytes
+      AstralRT_Embedder_EnqueueImage
+      AstralRT_Embedder_EnqueueAudio
+      AstralRT_Embedder_EnqueueMultimodal
+      AstralRT_Embedder_Collect)
+    if(NOT unreal_embedder_content MATCHES "TRACE_CPUPROFILER_EVENT_SCOPE\\(${scope_name}\\)")
+      message(FATAL_ERROR "Unreal embedder must keep CPU profiler scope ${scope_name}")
+    endif()
+  endforeach()
+endif()
+
 message(STATUS "gate_source_scans: OK (${FILES_LEN} files)")

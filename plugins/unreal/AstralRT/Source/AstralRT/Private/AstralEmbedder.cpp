@@ -3,6 +3,7 @@
 #include "IAstralRT.h"
 
 #include "Containers/UnrealString.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "astral_rt.h"
 
@@ -14,6 +15,8 @@ void UAstralEmbedder::BeginDestroy()
 
 bool UAstralEmbedder::Create(UAstralModel* Model)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Create);
+
     Destroy();
 
     if (Model == nullptr || !Model->IsValid())
@@ -54,6 +57,8 @@ bool UAstralEmbedder::Create(UAstralModel* Model)
 
 void UAstralEmbedder::Destroy()
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Destroy);
+
     if (EmbedderHandle == 0)
     {
         ModelHandle = 0;
@@ -73,6 +78,8 @@ void UAstralEmbedder::Destroy()
 
 bool UAstralEmbedder::EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& OutTicket)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueUtf8Bytes);
+
     OutTicket = 0;
     if (EmbedderHandle == 0)
     {
@@ -96,6 +103,8 @@ bool UAstralEmbedder::EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& Ou
 
 bool UAstralEmbedder::EnqueueImage(const FAstralImageDesc& Image, int64& OutTicket)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueImage);
+
     OutTicket = 0;
     if (EmbedderHandle == 0)
     {
@@ -133,6 +142,8 @@ bool UAstralEmbedder::EnqueueImage(const FAstralImageDesc& Image, int64& OutTick
 
 bool UAstralEmbedder::EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTicket)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueAudio);
+
     OutTicket = 0;
     if (EmbedderHandle == 0)
     {
@@ -192,6 +203,8 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
                                         bool bUseAudio,
                                         int64& OutTicket)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueMultimodal);
+
     OutTicket = 0;
     if (EmbedderHandle == 0)
     {
@@ -278,6 +291,8 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
 
 bool UAstralEmbedder::Collect(int64 Ticket, TArray<float>& OutVector)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Collect);
+
     if (EmbedderHandle == 0 || Ticket <= 0 || EmbeddingDim <= 0)
     {
         return false;
@@ -296,6 +311,8 @@ bool UAstralEmbedder::Collect(int64 Ticket, TArray<float>& OutVector)
 
 bool UAstralEmbedder::EmbedUtf8Bytes(const TArray<uint8>& Utf8Bytes, TArray<float>& OutVector)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EmbedUtf8Bytes);
+
     int64 Ticket = 0;
     if (!EnqueueUtf8Bytes(Utf8Bytes, Ticket))
     {
@@ -306,6 +323,8 @@ bool UAstralEmbedder::EmbedUtf8Bytes(const TArray<uint8>& Utf8Bytes, TArray<floa
 
 bool UAstralEmbedder::EmbedText(const FString& Text, TArray<float>& OutVector)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EmbedText);
+
     FTCHARToUTF8 Utf8(*Text);
     TArray<uint8> Bytes;
     Bytes.Append(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
