@@ -2,6 +2,7 @@
 
 #include "Containers/StringBuilder.h"
 #include "Containers/UnrealString.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "astral_rt.h"
 
@@ -18,6 +19,8 @@ bool FAstralSessionStreamPump::Tick(
     FAstralTokenReceived& OnTokenReceived
 )
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_StreamPump_Tick);
+
     const bool want_tick_utf8 =
         StreamBytesNative.IsBound() || OnBytesReceived.IsBound() || OnTokenReceived.IsBound() || StreamTextNative.IsBound();
 

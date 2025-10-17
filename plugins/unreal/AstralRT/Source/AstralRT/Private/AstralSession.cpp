@@ -5,6 +5,7 @@
 
 #include "Containers/Ticker.h"
 #include "Containers/UnrealString.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "astral_rt.h"
 
@@ -397,6 +398,8 @@ FAstralStats UAstralSession::GetStats() const
 
 bool UAstralSession::TickStream(float DeltaTime)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Session_TickStream);
+
     (void)DeltaTime;
 
     if (SessionHandle == 0)
