@@ -329,7 +329,7 @@ AstralErr ensure_penalty_state(Session* session) {
 
     if (session->sampler_cfg.penalize_nl != 0 && session->token_nl < 0 && session->model != nullptr &&
         session->model->backend != nullptr && session->model->backend->ops != nullptr) {
-        // Best-effort: resolve a single-token "\\n".
+        // Resolve a single-token "\\n" when the backend tokenizer exposes one.
         int32_t tok = -1;
         uint32_t out_count = 0;
         const uint8_t nl = static_cast<uint8_t>('\n');

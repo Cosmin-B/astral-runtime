@@ -317,7 +317,7 @@ target_compile_features(astral_platform PUBLIC cxx_std_20)
 | `vm_commit()` | 10-100 μs | Page fault + syscall |
 | `vm_decommit()` | 5-50 μs | Syscall + TLB flush |
 | `vm_release()` | 1-10 μs | Syscall overhead |
-| `vm_try_hugepages()` | 10-100 μs | Best-effort hint |
+| `vm_try_hugepages()` | 10-100 us | Kernel may reject the promotion request |
 
 **Conclusion**: Never call in hot paths (decode/sampling loops).
 

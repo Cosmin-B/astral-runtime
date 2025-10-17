@@ -1085,9 +1085,7 @@ AstralErr conv_stats(Conversation* conv, AstralConvStats* out_stats) {
     out_stats->_padding0 = 0;
     out_stats->generated_tokens = conv->total_tokens;
 
-    // Best-effort timing:
-    // - first token time is only meaningful after at least one token is produced
-    // - throughput is only meaningful once we have a time window
+    // Timing fields stay zero until the producer records enough samples.
     out_stats->t_first_token_ms = 0.0;
     out_stats->tok_per_s = 0.0;
 

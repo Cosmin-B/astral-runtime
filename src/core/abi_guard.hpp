@@ -2,7 +2,7 @@
 
 #include "error.hpp"
 
-// Best-effort "no exceptions cross the C ABI" guarantee.
+// Translate unexpected C++ exceptions before control returns across the C ABI.
 //
 // Notes:
 // - This does not remove exception support from the binary; it catches and translates.

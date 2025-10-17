@@ -239,6 +239,20 @@ set(high_performance_infrastructure_phrase "high")
 string(APPEND high_performance_infrastructure_phrase "-performance infrastructure")
 set(high_performance_parallel_phrase "high")
 string(APPEND high_performance_parallel_phrase "-performance parallel execution")
+set(best_effort_timing_phrase "Best")
+string(APPEND best_effort_timing_phrase "-effort timing")
+set(best_effort_queue_depth_phrase "Best")
+string(APPEND best_effort_queue_depth_phrase "-effort queue depth tracking")
+set(best_effort_no_exceptions_phrase "Best")
+string(APPEND best_effort_no_exceptions_phrase "-effort \"no exceptions cross the C ABI\"")
+set(best_effort_cleanup_phrase "Best")
+string(APPEND best_effort_cleanup_phrase "-effort cleanup")
+set(best_effort_global_new_phrase "Best")
+string(APPEND best_effort_global_new_phrase "-effort global new tracking")
+set(best_effort_newline_phrase "Best")
+string(APPEND best_effort_newline_phrase "-effort: resolve a single-token")
+set(best_effort_hint_phrase "Best")
+string(APPEND best_effort_hint_phrase "-effort hint")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -319,6 +333,13 @@ set(UNREVIEWED_PROSE_STRINGS
   "${unity_placeholder_binary_phrase}"
   "${high_performance_infrastructure_phrase}"
   "${high_performance_parallel_phrase}"
+  "${best_effort_timing_phrase}"
+  "${best_effort_queue_depth_phrase}"
+  "${best_effort_no_exceptions_phrase}"
+  "${best_effort_cleanup_phrase}"
+  "${best_effort_global_new_phrase}"
+  "${best_effort_newline_phrase}"
+  "${best_effort_hint_phrase}"
 )
 
 foreach(path IN LISTS FILES)

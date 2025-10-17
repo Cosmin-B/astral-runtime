@@ -755,7 +755,7 @@ static inline void bind_worker_tls(uint32_t idx) {
 	            return;
 	        }
 #if ASTRAL_ENABLE_TRACY
-        // Best-effort queue depth tracking for profiling/visualization.
+        // Profiling counter mirrors successful dequeue operations.
         const uint32_t depth = g_runtime.work_queue_depth.fetch_sub(1, std::memory_order_relaxed) - 1;
         ASTRAL_PLOT("astral.work_queue_depth", static_cast<double>(depth));
 #endif

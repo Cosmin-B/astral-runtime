@@ -371,7 +371,7 @@ static void run_no_alloc_gate_for_embeddings(const char* backend_name, const cha
 
 } // namespace
 
-// Best-effort global new tracking (also useful when malloc wrapping isn't available).
+// Global new tracking covers builds where malloc wrapping is not available.
 void* operator new(std::size_t size) {
     if (g_tracking_enabled.load(std::memory_order_relaxed)) {
         g_new_calls.fetch_add(1, std::memory_order_relaxed);

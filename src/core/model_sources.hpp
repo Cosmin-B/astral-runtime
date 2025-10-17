@@ -24,11 +24,10 @@ AstralErr model_source_register(const ModelSource& source, uint64_t* out_id, cha
 // Returns true if an entry was found and consumed.
 bool model_source_take(uint64_t id, ModelSource* out_source);
 
-// Best-effort cleanup if a backend did not consume the source.
+// Cleanup path when a backend rejects a registered model source.
 void model_source_release(uint64_t id);
 
 // Debug/cleanup helper.
 bool model_source_present(uint64_t id);
 
 } // namespace astral::core
-
