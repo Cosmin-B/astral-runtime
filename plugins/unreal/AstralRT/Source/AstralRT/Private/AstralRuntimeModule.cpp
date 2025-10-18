@@ -1,4 +1,5 @@
 #include "IAstralRT.h"
+#include "AstralLog.h"
 
 #include "Modules/ModuleManager.h"
 #include "HAL/UnrealMemory.h"
@@ -6,9 +7,9 @@
 
 #include "astral_rt.h"
 
-namespace {
+DEFINE_LOG_CATEGORY(LogAstralRT);
 
-DEFINE_LOG_CATEGORY_STATIC(LogAstralRT, Log, All);
+namespace {
 
 static void* UEAlloc(void* user, size_t size, size_t align) {
     (void)user;
@@ -81,12 +82,12 @@ public:
         if (Err != ASTRAL_OK)
         {
             bInitialized = false;
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_init failed (%d)"), static_cast<int32>(Err));
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_init failed (%d)"), static_cast<int32>(Err));
             return;
         }
 
         bInitialized = true;
-        UE_LOG(LogTemp, Log, TEXT("AstralRT: Initialized"));
+        UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Initialized"));
     }
 
     virtual void ShutdownModule() override
@@ -95,7 +96,7 @@ public:
         {
             astral_shutdown();
             bInitialized = false;
-            UE_LOG(LogTemp, Log, TEXT("AstralRT: Shutdown"));
+            UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Shutdown"));
         }
     }
 

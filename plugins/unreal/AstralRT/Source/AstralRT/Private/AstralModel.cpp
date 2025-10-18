@@ -1,4 +1,5 @@
 #include "AstralModel.h"
+#include "AstralLog.h"
 #include "IAstralRT.h"
 
 #include "Containers/UnrealString.h"
@@ -18,7 +19,7 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
 
     if (!IAstralRT::IsAvailable() || !IAstralRT::Get().IsInitialized())
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: runtime not initialized"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: runtime not initialized"));
         return false;
     }
 
@@ -52,7 +53,7 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
     if (Err != ASTRAL_OK)
     {
         const char* Last = astral_last_error();
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_model_load failed (%d): %s"),
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_model_load failed (%d): %s"),
                static_cast<int32>(Err),
                Last ? UTF8_TO_TCHAR(Last) : TEXT("<no error>"));
         return false;

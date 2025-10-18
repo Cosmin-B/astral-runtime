@@ -1,4 +1,5 @@
 #include "AstralSessionStreamPump.h"
+#include "AstralLog.h"
 
 #include "Containers/StringBuilder.h"
 #include "Containers/UnrealString.h"
@@ -45,7 +46,7 @@ bool FAstralSessionStreamPump::Tick(
 
         if (BytesRead < 0)
         {
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_stream_read failed (%d)"), BytesRead);
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_stream_read failed (%d)"), BytesRead);
             stop_ticker = true;
             break;
         }

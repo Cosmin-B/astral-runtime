@@ -1,4 +1,5 @@
 #include "AstralEmbedder.h"
+#include "AstralLog.h"
 #include "AstralModel.h"
 #include "IAstralRT.h"
 
@@ -21,20 +22,20 @@ bool UAstralEmbedder::Create(UAstralModel* Model)
 
     if (Model == nullptr || !Model->IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: invalid model for embedder"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: invalid model for embedder"));
         return false;
     }
 
     if (!IAstralRT::IsAvailable() || !IAstralRT::Get().IsInitialized())
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: runtime not initialized"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: runtime not initialized"));
         return false;
     }
 
     int32 Dim = 0;
     if (!Model->GetEmbeddingDim(Dim) || Dim <= 0)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: model does not report a valid embedding dim"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: model does not report a valid embedding dim"));
         return false;
     }
 
@@ -43,7 +44,7 @@ bool UAstralEmbedder::Create(UAstralModel* Model)
     if (Err != ASTRAL_OK || Out == 0)
     {
         const char* Last = astral_last_error();
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_embed_create failed (%d): %s"),
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_embed_create failed (%d): %s"),
                static_cast<int32>(Err),
                Last ? UTF8_TO_TCHAR(Last) : TEXT("<no error>"));
         return false;

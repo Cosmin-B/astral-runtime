@@ -1,4 +1,5 @@
 #include "AstralSession.h"
+#include "AstralLog.h"
 #include "AstralSessionStreamPump.h"
 #include "AstralModel.h"
 #include "IAstralRT.h"
@@ -53,19 +54,19 @@ bool UAstralSession::Create(UAstralModel* Model, const FAstralSessionDesc& Desc)
 {
     if (SessionHandle != 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session already created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session already created"));
         return false;
     }
 
     if (Model == nullptr || !Model->IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: invalid model"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: invalid model"));
         return false;
     }
 
     if (!IAstralRT::IsAvailable() || !IAstralRT::Get().IsInitialized())
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: runtime not initialized"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: runtime not initialized"));
         return false;
     }
 
@@ -82,7 +83,7 @@ bool UAstralSession::Create(UAstralModel* Model, const FAstralSessionDesc& Desc)
     const AstralErr Err = astral_session_create(&NativeDesc, &Out);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_create failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_create failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -103,7 +104,7 @@ bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinali
 {
     if (SessionHandle == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
     }
 
@@ -115,7 +116,7 @@ bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinali
         astral_session_feed(static_cast<AstralHandle>(SessionHandle), Span, bFinalize ? 1 : 0);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_feed failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_feed failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -126,13 +127,13 @@ bool UAstralSession::FeedImage(const FAstralImageDesc& Image, bool bFinalize)
 {
     if (SessionHandle == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
     }
 
     if (Image.Pixels.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: image pixels are empty"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: image pixels are empty"));
         return false;
     }
 
@@ -154,7 +155,7 @@ bool UAstralSession::FeedImage(const FAstralImageDesc& Image, bool bFinalize)
         astral_session_feed_image(static_cast<AstralHandle>(SessionHandle), &Native, bFinalize ? 1 : 0);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_feed_image failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_feed_image failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -165,13 +166,13 @@ bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
 {
     if (SessionHandle == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
     }
 
     if (Audio.Samples.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: audio samples are empty"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: audio samples are empty"));
         return false;
     }
 
@@ -180,7 +181,7 @@ bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
     Native.format = static_cast<AstralAudioFormat>(Audio.Format);
     if (Audio.Channels == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: audio channels must be > 0"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: audio channels must be > 0"));
         return false;
     }
 
@@ -191,7 +192,7 @@ bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
         const uint64 TotalSamples = static_cast<uint64>(Audio.Samples.Num()) / BytesPerSample;
         if (TotalSamples % Audio.Channels != 0)
         {
-            UE_LOG(LogTemp, Warning, TEXT("AstralRT: audio samples not aligned to channels"));
+            UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: audio samples not aligned to channels"));
             return false;
         }
         FrameCount = TotalSamples / Audio.Channels;
@@ -212,7 +213,7 @@ bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
         astral_session_feed_audio(static_cast<AstralHandle>(SessionHandle), &Native, bFinalize ? 1 : 0);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_feed_audio failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_feed_audio failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -223,14 +224,14 @@ bool UAstralSession::Decode()
 {
     if (SessionHandle == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
     }
 
     const AstralErr Err = astral_session_decode(static_cast<AstralHandle>(SessionHandle));
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_decode failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_decode failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -275,7 +276,7 @@ bool UAstralSession::Reset(const FAstralSessionDesc& Desc)
     const AstralErr Err = astral_session_reset(static_cast<AstralHandle>(SessionHandle), &NativeDesc);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_reset failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_reset failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 

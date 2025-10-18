@@ -415,4 +415,22 @@ if(EXISTS "${unreal_embedder_file}")
   endforeach()
 endif()
 
+file(GLOB_RECURSE unreal_plugin_source_files
+  "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/*.h"
+  "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/*.h"
+  "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/*.cpp"
+)
+foreach(unreal_plugin_source IN LISTS unreal_plugin_source_files)
+  if(NOT unreal_plugin_source MATCHES "/Private/Tests/")
+    file(STRINGS "${unreal_plugin_source}" unreal_plugin_lines)
+    set(unreal_plugin_line_no 0)
+    foreach(unreal_plugin_line IN LISTS unreal_plugin_lines)
+      math(EXPR unreal_plugin_line_no "${unreal_plugin_line_no} + 1")
+      if(unreal_plugin_line MATCHES "UE_LOG\\(LogTemp")
+        message(FATAL_ERROR "Use LogAstralRT instead of LogTemp in ${unreal_plugin_source}:${unreal_plugin_line_no}")
+      endif()
+    endforeach()
+  endif()
+endforeach()
+
 message(STATUS "gate_source_scans: OK (${FILES_LEN} files)")
