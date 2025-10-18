@@ -8,11 +8,12 @@
 class UAstralModel;
 
 /**
- * Embeddings wrapper that owns an Astral embedder handle.
+ * UObject owner for a native Astral embedder handle.
  *
- * Notes:
- * - This is a pull-based API (enqueue + collect) with a convenience synchronous Embed* path.
- * - For low-overhead code, prefer `EmbedUtf8Bytes` to avoid FString conversions.
+ * The enqueue/collect API exposes native ticket flow for callers that batch
+ * work. The synchronous Embed* helpers are convenience wrappers around that
+ * path. For low-overhead C++ code, prefer EmbedUtf8Bytes to avoid FString
+ * conversion and temporary byte arrays.
  */
 UCLASS(BlueprintType)
 class ASTRALRT_API UAstralEmbedder : public UObject
@@ -20,31 +21,35 @@ class ASTRALRT_API UAstralEmbedder : public UObject
     GENERATED_BODY()
 
 public:
+    /** Create an embedder from a loaded embeddings-capable model. Replaces any existing handle. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Create(UAstralModel* Model);
 
+    /** Destroy the native embedder handle and clear cached dimension state. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     void Destroy();
 
+    /** True while this object owns a live native embedder handle. */
     UFUNCTION(BlueprintPure, Category = "Astral")
     bool IsValid() const { return EmbedderHandle != 0; }
 
+    /** Vector dimension cached at Create time. */
     UFUNCTION(BlueprintPure, Category = "Astral")
     int32 GetDim() const { return EmbeddingDim; }
 
-    /** Enqueue UTF-8 bytes (no FString conversion). */
+    /** Enqueue caller-owned UTF-8 bytes and return a native ticket. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& OutTicket);
 
-    /** Enqueue image for embedding. */
+    /** Enqueue image bytes for embedding. Pixel data must be valid for the call duration. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EnqueueImage(const FAstralImageDesc& Image, int64& OutTicket);
 
-    /** Enqueue audio for embedding. */
+    /** Enqueue audio bytes for embedding. FrameCount may be inferred from sample data. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTicket);
 
-    /** Enqueue multimodal input (text + optional image/audio) for embedding. */
+    /** Enqueue text with image and/or audio payloads when the model media projector supports them. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EnqueueMultimodal(const FString& Text,
                            const FAstralImageDesc& Image,
@@ -53,15 +58,15 @@ public:
                            bool bUseAudio,
                            int64& OutTicket);
 
-    /** Collect embedding for a previously enqueued ticket. */
+    /** Collect a vector for a previously enqueued ticket. OutVector is resized to GetDim(). */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Collect(int64 Ticket, TArray<float>& OutVector);
 
-    /** Synchronous: enqueue + collect using UTF-8 bytes. */
+    /** Enqueue and collect in one call using caller-owned UTF-8 bytes. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EmbedUtf8Bytes(const TArray<uint8>& Utf8Bytes, TArray<float>& OutVector);
 
-    /** Synchronous: enqueue + collect (convenience; converts FString to UTF-8). */
+    /** Enqueue and collect in one call after converting FString to UTF-8. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EmbedText(const FString& Text, TArray<float>& OutVector);
 
