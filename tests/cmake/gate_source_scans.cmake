@@ -433,4 +433,19 @@ foreach(unreal_plugin_source IN LISTS unreal_plugin_source_files)
   endif()
 endforeach()
 
+foreach(unreal_doc
+    "${ROOT}/docs/integration/UNREAL_INTEGRATION.md"
+    "${ROOT}/plugins/unreal/AstralRT/README.md")
+  if(EXISTS "${unreal_doc}")
+    file(STRINGS "${unreal_doc}" unreal_doc_lines)
+    set(unreal_doc_line_no 0)
+    foreach(unreal_doc_line IN LISTS unreal_doc_lines)
+      math(EXPR unreal_doc_line_no "${unreal_doc_line_no} + 1")
+      if(unreal_doc_line MATCHES "UE_LOG\\(LogTemp")
+        message(FATAL_ERROR "Use LogAstralRT instead of LogTemp in Unreal docs: ${unreal_doc}:${unreal_doc_line_no}")
+      endif()
+    endforeach()
+  endif()
+endforeach()
+
 message(STATUS "gate_source_scans: OK (${FILES_LEN} files)")

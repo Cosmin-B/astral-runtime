@@ -39,6 +39,7 @@ This uses the mock backend (no GGUF needed) and streams UTF-8 bytes via `UAstral
 
 ```cpp
 // AMyAIActor.h
+#include "AstralLog.h"
 #include "AstralModel.h"
 #include "AstralSession.h"
 
@@ -63,7 +64,7 @@ public:
         ModelDesc.BackendName = TEXT("mock");
         if (!Model->Load(ModelDesc))
         {
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: Model load failed"));
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: Model load failed"));
             return;
         }
 
@@ -75,7 +76,7 @@ public:
 
         if (!Session->Create(Model, SessionDesc))
         {
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: Session create failed"));
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: Session create failed"));
             return;
         }
 
@@ -89,7 +90,7 @@ public:
         // Low-overhead path: keep bytes as UTF-8.
         // This sample just logs the bytes as text.
         FUTF8ToTCHAR Text(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), Bytes.Num());
-        UE_LOG(LogTemp, Log, TEXT("%.*s"), Text.Length(), Text.Get());
+        UE_LOG(LogAstralRT, Log, TEXT("%.*s"), Text.Length(), Text.Get());
     }
 };
 ```

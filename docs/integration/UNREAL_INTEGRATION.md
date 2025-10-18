@@ -449,6 +449,7 @@ private:
 
 ```cpp
 #include "AstralSession.h"
+#include "AstralLog.h"
 #include "Containers/UnrealString.h"
 #include "HAL/PlatformFileManager.h"
 
@@ -462,7 +463,7 @@ bool UAstralSession::Create(AstralHandle ModelHandle, const FAstralSessionDesc& 
 {
     if (SessionHandle != 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Session already created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("Session already created"));
         return false;
     }
 
@@ -478,7 +479,7 @@ bool UAstralSession::Create(AstralHandle ModelHandle, const FAstralSessionDesc& 
     AstralErr Err = astral_session_create(&NativeDesc, &SessionHandle);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("astral_session_create failed: %d"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("astral_session_create failed: %d"), static_cast<int32>(Err));
         return false;
     }
 
@@ -505,7 +506,7 @@ bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinali
 {
     if (SessionHandle == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("Session not created"));
         return false;
     }
 
@@ -516,7 +517,7 @@ bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinali
     AstralErr Err = astral_session_feed(SessionHandle, Span, bFinalize ? 1 : 0);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("astral_session_feed failed: %d"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("astral_session_feed failed: %d"), static_cast<int32>(Err));
         return false;
     }
 
@@ -527,14 +528,14 @@ bool UAstralSession::Decode()
 {
     if (SessionHandle == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("Session not created"));
         return false;
     }
 
     AstralErr Err = astral_session_decode(SessionHandle);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("astral_session_decode failed: %d"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("astral_session_decode failed: %d"), static_cast<int32>(Err));
         return false;
     }
 
@@ -560,7 +561,7 @@ int32 UAstralSession::StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs)
         {
             return 0; // No data yet
         }
-        UE_LOG(LogTemp, Error, TEXT("astral_stream_read failed: %d"), BytesRead);
+        UE_LOG(LogAstralRT, Error, TEXT("astral_stream_read failed: %d"), BytesRead);
         return 0;
     }
 
@@ -592,7 +593,7 @@ FAstralStats UAstralSession::GetStats() const
     AstralErr Err = astral_session_stats(SessionHandle, &NativeStats);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("astral_session_stats failed: %d"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("astral_session_stats failed: %d"), static_cast<int32>(Err));
         return Result;
     }
 
@@ -650,6 +651,7 @@ void UAstralSession::BeginDestroy()
 
 ```cpp
 #include "IAstralRT.h"
+#include "AstralLog.h"
 #include "Modules/ModuleManager.h"
 #include "HAL/PlatformProcess.h"
 #include "astral_rt.h"
@@ -659,7 +661,7 @@ class FAstralRuntimeModule : public IAstralRT
 public:
     virtual void StartupModule() override
     {
-        UE_LOG(LogTemp, Log, TEXT("AstralRT: Module startup"));
+        UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Module startup"));
 
         // Create FMemory-backed allocator
         AstralAllocator Allocator = {};
@@ -680,13 +682,13 @@ public:
         AstralErr Err = astral_init(&InitCfg);
         if (Err != ASTRAL_OK)
         {
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: Init failed: %d"), static_cast<int32>(Err));
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: Init failed: %d"), static_cast<int32>(Err));
             bInitialized = false;
             return;
         }
 
         bInitialized = true;
-        UE_LOG(LogTemp, Log, TEXT("AstralRT: Initialized"));
+        UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Initialized"));
     }
 
     virtual void ShutdownModule() override
@@ -695,7 +697,7 @@ public:
         {
             astral_shutdown();
             bInitialized = false;
-            UE_LOG(LogTemp, Log, TEXT("AstralRT: Shutdown"));
+            UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Shutdown"));
         }
     }
 
@@ -726,6 +728,7 @@ IMPLEMENT_MODULE(FAstralRuntimeModule, AstralRT)
 
 ```cpp
 // In a Blueprint or C++ Actor:
+#include "AstralLog.h"
 
 UCLASS()
 class AMyAIActor : public AActor
@@ -749,7 +752,7 @@ public:
         ModelDesc.BackendName = TEXT("mock");
         if (!Model->Load(ModelDesc))
         {
-            UE_LOG(LogTemp, Error, TEXT("Failed to load model"));
+            UE_LOG(LogAstralRT, Error, TEXT("Failed to load model"));
             return;
         }
 
@@ -760,7 +763,7 @@ public:
         Desc.Temperature = 0.7f;
         if (!Session->Create(Model, Desc))
         {
-            UE_LOG(LogTemp, Error, TEXT("Failed to create session"));
+            UE_LOG(LogAstralRT, Error, TEXT("Failed to create session"));
             return;
         }
 
@@ -778,7 +781,7 @@ public:
     {
         // Consume bytes directly (UTF-8). This sample just logs decoded text.
         FUTF8ToTCHAR Text(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), Bytes.Num());
-        UE_LOG(LogTemp, Log, TEXT("Chunk: %.*s"), Text.Length(), Text.Get());
+        UE_LOG(LogAstralRT, Log, TEXT("Chunk: %.*s"), Text.Length(), Text.Get());
     }
 };
 ```
