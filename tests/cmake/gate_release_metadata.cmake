@@ -19,6 +19,36 @@ file(REMOVE_RECURSE "${out_dir}")
 file(MAKE_DIRECTORY "${out_dir}")
 file(MAKE_DIRECTORY "${out_dir}/logs")
 file(WRITE "${out_dir}/astral-0.1.0-linux-x86_64.zip" "smoke\n")
+set(zip_root "${out_dir}/zip-root")
+file(REMOVE_RECURSE "${zip_root}")
+file(MAKE_DIRECTORY "${zip_root}/plugins/unity")
+file(MAKE_DIRECTORY "${zip_root}/plugins/unreal/AstralRT")
+file(MAKE_DIRECTORY "${zip_root}/docs/release")
+file(WRITE "${zip_root}/plugins/unity/package.json" "{\"name\":\"com.astral.runtime\"}\n")
+file(WRITE "${zip_root}/plugins/unreal/AstralRT/AstralRT.uplugin" "{\"FileVersion\":3}\n")
+file(WRITE "${zip_root}/LICENSE" "license\n")
+file(WRITE "${zip_root}/NOTICE" "notice\n")
+file(WRITE "${zip_root}/docs/release/THIRD_PARTY_NOTICES.md" "third-party notices\n")
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E tar cf "${out_dir}/astral-0.1.0-unity-plugin-linux-x86_64.zip" --format=zip --
+    "plugins/unity" "LICENSE" "NOTICE" "docs/release"
+  WORKING_DIRECTORY "${zip_root}"
+  RESULT_VARIABLE unity_zip_result
+  ERROR_VARIABLE unity_zip_error
+)
+if(NOT unity_zip_result EQUAL 0)
+  message(FATAL_ERROR "Unity zip smoke failed: ${unity_zip_error}")
+endif()
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E tar cf "${out_dir}/astral-0.1.0-unreal-plugin-linux-x86_64.zip" --format=zip --
+    "plugins/unreal/AstralRT" "LICENSE" "NOTICE" "docs/release"
+  WORKING_DIRECTORY "${zip_root}"
+  RESULT_VARIABLE unreal_zip_result
+  ERROR_VARIABLE unreal_zip_error
+)
+if(NOT unreal_zip_result EQUAL 0)
+  message(FATAL_ERROR "Unreal zip smoke failed: ${unreal_zip_error}")
+endif()
 set(required_lanes
   native_dev_ctest
   native_release_ctest
@@ -185,6 +215,12 @@ endif()
 if(NOT checksums MATCHES "[ \t]astral-0\\.1\\.0-linux-x86_64\\.zip")
   message(FATAL_ERROR "checksums.sha256 does not cover packaged artifacts")
 endif()
+if(NOT checksums MATCHES "[ \t]astral-0\\.1\\.0-unity-plugin-linux-x86_64\\.zip")
+  message(FATAL_ERROR "checksums.sha256 does not cover Unity plugin artifact")
+endif()
+if(NOT checksums MATCHES "[ \t]astral-0\\.1\\.0-unreal-plugin-linux-x86_64\\.zip")
+  message(FATAL_ERROR "checksums.sha256 does not cover Unreal plugin artifact")
+endif()
 if(NOT checksums MATCHES "[ \t]release-evidence\\.json")
   message(FATAL_ERROR "checksums.sha256 does not cover release-evidence.json")
 endif()
@@ -201,13 +237,66 @@ if(NOT sbom MATCHES "\"name\"[ \t\r\n]*:[ \t\r\n]*\"llama\\.cpp\"")
 endif()
 
 execute_process(
-  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_artifacts.sh" --dist "${out_dir}"
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_artifacts.sh" --dist "${out_dir}" --expect-unity --expect-unreal
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE validate_result
   ERROR_VARIABLE validate_error
 )
 if(NOT validate_result EQUAL 0)
   message(FATAL_ERROR "validate_release_artifacts.sh failed: ${validate_error}")
+endif()
+
+set(bad_out_dir "${ASTRAL_BUILD_DIR}/release-metadata-bad-engine-zip-gate")
+set(bad_zip_root "${bad_out_dir}/zip-root")
+file(REMOVE_RECURSE "${bad_out_dir}")
+file(MAKE_DIRECTORY "${bad_out_dir}")
+file(MAKE_DIRECTORY "${bad_zip_root}/plugins/unity")
+file(MAKE_DIRECTORY "${bad_zip_root}/plugins/unreal/AstralRT")
+file(WRITE "${bad_out_dir}/astral-0.1.0-linux-x86_64.zip" "smoke\n")
+file(COPY "${out_dir}/abi-layout.json" DESTINATION "${bad_out_dir}")
+file(WRITE "${bad_zip_root}/plugins/unity/package.json" "{\"name\":\"com.astral.runtime\"}\n")
+file(WRITE "${bad_zip_root}/plugins/unreal/AstralRT/AstralRT.uplugin" "{\"FileVersion\":3}\n")
+file(WRITE "${bad_zip_root}/LICENSE" "license\n")
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E tar cf "${bad_out_dir}/astral-0.1.0-unity-plugin-linux-x86_64.zip" --format=zip --
+    "plugins/unity" "LICENSE"
+  WORKING_DIRECTORY "${bad_zip_root}"
+  RESULT_VARIABLE bad_unity_zip_result
+  ERROR_VARIABLE bad_unity_zip_error
+)
+if(NOT bad_unity_zip_result EQUAL 0)
+  message(FATAL_ERROR "Bad Unity zip smoke failed: ${bad_unity_zip_error}")
+endif()
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E tar cf "${bad_out_dir}/astral-0.1.0-unreal-plugin-linux-x86_64.zip" --format=zip --
+    "plugins/unreal/AstralRT" "LICENSE"
+  WORKING_DIRECTORY "${bad_zip_root}"
+  RESULT_VARIABLE bad_unreal_zip_result
+  ERROR_VARIABLE bad_unreal_zip_error
+)
+if(NOT bad_unreal_zip_result EQUAL 0)
+  message(FATAL_ERROR "Bad Unreal zip smoke failed: ${bad_unreal_zip_error}")
+endif()
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/generate_release_metadata.sh" "${bad_out_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_metadata_result
+  ERROR_VARIABLE bad_metadata_error
+)
+if(NOT bad_metadata_result EQUAL 0)
+  message(FATAL_ERROR "Bad zip metadata generation failed: ${bad_metadata_error}")
+endif()
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_artifacts.sh" --dist "${bad_out_dir}" --expect-unity --expect-unreal
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_validate_result
+  ERROR_VARIABLE bad_validate_error
+)
+if(bad_validate_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_artifacts.sh accepted engine plugin zips missing license/notice payloads")
+endif()
+if(NOT bad_validate_error MATCHES "missing required payload")
+  message(FATAL_ERROR "validate_release_artifacts.sh failed for the wrong engine-zip reason: ${bad_validate_error}")
 endif()
 
 execute_process(

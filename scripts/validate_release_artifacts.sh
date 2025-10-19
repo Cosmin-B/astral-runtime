@@ -55,6 +55,32 @@ require_checksum_entry() {
   fi
 }
 
+require_zip_entries() {
+  local zip_name="$1"
+  shift
+
+  "${PYTHON:-python3}" - "$dist_dir/$zip_name" "$@" <<'PY'
+import sys
+import zipfile
+
+zip_path = sys.argv[1]
+required = sys.argv[2:]
+
+try:
+    with zipfile.ZipFile(zip_path) as archive:
+        names = {info.filename.rstrip("/") for info in archive.infolist()}
+except Exception as exc:
+    print(f"[release-artifacts] invalid zip {zip_path}: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+missing = [name for name in required if name not in names]
+if missing:
+    joined = ", ".join(missing)
+    print(f"[release-artifacts] {zip_path} is missing required payload: {joined}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 first_match() {
   local pattern="$1"
   find "${dist_dir}" -maxdepth 1 -type f -name "${pattern}" -printf '%f\n' | sort | head -n 1
@@ -93,6 +119,11 @@ if [[ "${expect_unity}" -eq 1 ]]; then
     exit 1
   fi
   require_checksum_entry "${unity_zip}"
+  require_zip_entries "${unity_zip}" \
+    "plugins/unity/package.json" \
+    "LICENSE" \
+    "NOTICE" \
+    "docs/release/THIRD_PARTY_NOTICES.md"
 fi
 
 if [[ "${expect_unreal}" -eq 1 ]]; then
@@ -102,6 +133,11 @@ if [[ "${expect_unreal}" -eq 1 ]]; then
     exit 1
   fi
   require_checksum_entry "${unreal_zip}"
+  require_zip_entries "${unreal_zip}" \
+    "plugins/unreal/AstralRT/AstralRT.uplugin" \
+    "LICENSE" \
+    "NOTICE" \
+    "docs/release/THIRD_PARTY_NOTICES.md"
 fi
 
 if [[ "${require_signature}" -eq 1 ]]; then
