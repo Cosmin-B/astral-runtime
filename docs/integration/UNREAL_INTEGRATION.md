@@ -117,6 +117,9 @@ the built native target.
 
 `AstralRT.Build.cs` adds `Core`, `CoreUObject`, and `Engine`, then links the
 static Astral runtime from `Source/ThirdParty/AstralCore/lib/<Platform>`.
+It fails during UnrealBuildTool module evaluation if the staged C ABI header or
+selected static library is missing, and prints the `unreal-plugin` rebuild
+command in the error.
 
 The current platform library names are:
 

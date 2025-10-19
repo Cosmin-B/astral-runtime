@@ -415,6 +415,20 @@ if(EXISTS "${unreal_embedder_file}")
   endforeach()
 endif()
 
+set(unreal_build_rules_file "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/AstralRT.Build.cs")
+if(EXISTS "${unreal_build_rules_file}")
+  file(READ "${unreal_build_rules_file}" unreal_build_rules_content)
+  foreach(required_build_rule_text
+      "RequireThirdPartyFile"
+      "BuildException"
+      "cmake --preset unreal-plugin && cmake --build --preset unreal-plugin -j"
+      "AstralRT does not ship a native library")
+    if(NOT unreal_build_rules_content MATCHES "${required_build_rule_text}")
+      message(FATAL_ERROR "Unreal build rules must fail clearly on missing ThirdParty artifacts: missing '${required_build_rule_text}'")
+    endif()
+  endforeach()
+endif()
+
 file(GLOB_RECURSE unreal_plugin_source_files
   "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/*.h"
   "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/*.h"
