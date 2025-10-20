@@ -151,6 +151,20 @@ Build a profiling preset and run a small workload so you can attach the Tracy UI
 
 ---
 
+## Comment Inventory
+
+Generate a review inventory for maintained comments and documentation prose:
+
+```bash
+python3 ./scripts/inventory_comments.py --format tsv > build/comment-inventory.tsv
+python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers
+```
+
+The inventory output is a local review artifact. Keep it out of git unless a
+specific excerpt is promoted into maintained documentation.
+
+---
+
 ## Release Packaging (Desktop)
 
 Build + test and emit zip artifacts under `dist/`:

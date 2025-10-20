@@ -361,6 +361,21 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
         endif()
 
         find_program(ASTRAL_PYTHON_EXECUTABLE python3)
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_comment_inventory.cmake)
+            add_test(
+                NAME gate_comment_inventory
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_comment_inventory.cmake
+            )
+            set_tests_properties(gate_comment_inventory PROPERTIES
+                TIMEOUT 30
+                LABELS "gate"
+            )
+            message(STATUS "Configured test: gate_comment_inventory")
+        endif()
+
         if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_evidence.cmake)
             add_test(
                 NAME gate_release_evidence
