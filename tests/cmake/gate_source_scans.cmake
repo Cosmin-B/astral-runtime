@@ -271,6 +271,16 @@ set(root_contributions_welcome_phrase "Contributions")
 string(APPEND root_contributions_welcome_phrase " welcome!")
 set(root_more_workstreams_phrase "More workstreams")
 string(APPEND root_more_workstreams_phrase " coming")
+set(feature_parity_all_features_phrase "All")
+string(APPEND feature_parity_all_features_phrase " Features")
+set(feature_parity_better_performance_phrase "Better")
+string(APPEND feature_parity_better_performance_phrase " Performance")
+set(feature_parity_zero_allocations_phrase "Zero")
+string(APPEND feature_parity_zero_allocations_phrase " Allocations.*Proven zero GC")
+set(feature_parity_zero_allocation_hot_paths_phrase "Zero-Allocation")
+string(APPEND feature_parity_zero_allocation_hot_paths_phrase " Hot Paths")
+set(feature_parity_best_in_class_phrase "Best-in")
+string(APPEND feature_parity_best_in_class_phrase "-class")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -367,6 +377,11 @@ set(UNREVIEWED_PROSE_STRINGS
   "${root_full_test_coverage_phrase}"
   "${root_contributions_welcome_phrase}"
   "${root_more_workstreams_phrase}"
+  "${feature_parity_all_features_phrase}"
+  "${feature_parity_better_performance_phrase}"
+  "${feature_parity_zero_allocations_phrase}"
+  "${feature_parity_zero_allocation_hot_paths_phrase}"
+  "${feature_parity_best_in_class_phrase}"
 )
 
 foreach(path IN LISTS FILES)
