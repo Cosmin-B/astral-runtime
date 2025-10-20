@@ -6,7 +6,7 @@
  * All strings are UTF-8 spans (pointer + length).
  *
  * Version: 0.1.0
- * License: [TBD]
+ * License: See LICENSE and NOTICE at the repository root.
  */
 
 #pragma once

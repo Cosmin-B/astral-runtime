@@ -253,6 +253,24 @@ set(best_effort_newline_phrase "Best")
 string(APPEND best_effort_newline_phrase "-effort: resolve a single-token")
 set(best_effort_hint_phrase "Best")
 string(APPEND best_effort_hint_phrase "-effort hint")
+set(root_placeholder_repo_phrase "github.com/your")
+string(APPEND root_placeholder_repo_phrase "-org/astral")
+set(root_license_tbd_phrase "[[]License")
+string(APPEND root_license_tbd_phrase " TBD")
+set(public_header_license_tbd_phrase "License: [[]T")
+string(APPEND public_header_license_tbd_phrase "BD[]]")
+set(root_link_tbd_phrase "Link")
+string(APPEND root_link_tbd_phrase " TBD")
+set(root_email_tbd_phrase "Email")
+string(APPEND root_email_tbd_phrase " TBD")
+set(root_zero_leaks_phrase "Production-ready [(]1M[+] tokens, zero")
+string(APPEND root_zero_leaks_phrase " leaks[)]")
+set(root_full_test_coverage_phrase "Full test")
+string(APPEND root_full_test_coverage_phrase " coverage [(]unit, integration, stress[)]")
+set(root_contributions_welcome_phrase "Contributions")
+string(APPEND root_contributions_welcome_phrase " welcome!")
+set(root_more_workstreams_phrase "More workstreams")
+string(APPEND root_more_workstreams_phrase " coming")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -340,6 +358,15 @@ set(UNREVIEWED_PROSE_STRINGS
   "${best_effort_global_new_phrase}"
   "${best_effort_newline_phrase}"
   "${best_effort_hint_phrase}"
+  "${root_placeholder_repo_phrase}"
+  "${root_license_tbd_phrase}"
+  "${public_header_license_tbd_phrase}"
+  "${root_link_tbd_phrase}"
+  "${root_email_tbd_phrase}"
+  "${root_zero_leaks_phrase}"
+  "${root_full_test_coverage_phrase}"
+  "${root_contributions_welcome_phrase}"
+  "${root_more_workstreams_phrase}"
 )
 
 foreach(path IN LISTS FILES)

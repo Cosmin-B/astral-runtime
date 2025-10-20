@@ -7,7 +7,7 @@ Astral is a C++20 native inference layer on top of LLaMA-class backends, designe
 - **Allocation-Gated Hot Paths**: Release gates track steady-state heap behavior for token streaming, decoding, and sampling
 - **CAS-Free Concurrency Primitives**: Bounded MPMC queue (ticket + per-slot sequence) and SPSC token rings; ARM-friendly WFE/SEV waiting
 - **C ABI Surface**: Clean separation between C ABI and C++ implementation; v0.1 (ABI may still evolve until v1.0)
-- **Engine-Native Integration**: Direct use of Unity `NativeArray` and Unreal `FMemory` allocators
+- **Engine Integration**: Unity `NativeArray` adapters and Unreal wrapper code for native runtime ownership
 - **Cross-Platform**: Core supports Linux/Windows/macOS (x86_64/arm64) today; Android/iOS packaging is planned for v0.1.1
 - **Embeddings**: End-to-end embeddings API (`astral_embed_*`) for embeddings-only models
 
@@ -30,7 +30,7 @@ astral/
 │       ├── MEMORY_SPECIALIST_AGENT.md
 │       └── CONCURRENCY_SPECIALIST_AGENT.md
 ├── include/                    # Public headers
-│   ├── astral_rt.h             # C ABI (stable)
+│   ├── astral_rt.h             # Public C ABI
 ├── src/                        # Core implementation
 │   ├── core/                   # Runtime init, shutdown, handles
 │   ├── memory/                 # Allocators, arenas, pools
@@ -52,13 +52,13 @@ astral/
 
 - C++20 compiler (GCC 11+, Clang 13+, MSVC 2022+)
 - CMake 3.20+
-- (Optional) Unity 2021.3+ or Unreal Engine 5.1+
+- (Optional) Unity 2021.3+ or Unreal Engine 5.4+; UE 5.7 is the primary validation target
 
 ### Building
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/astral.git
+git clone https://github.com/Cosmin-B/astral.git
 cd astral
 
 # Required submodules (llama.cpp; Tracy is optional unless you use *-prof presets)
@@ -85,7 +85,7 @@ ctest --preset dev -j8
 - `release-prof-cuda`: Release build with Tracy + CUDA backend enabled
 - `unity-plugin`: Build Unity plugin (outputs to `plugins/unity/Runtime/Plugins/`)
 - `unity-plugin-prof`: Unity plugin build with Tracy enabled (requires `external/tracy` submodule)
-- `unreal-plugin`: Build Unreal plugin (outputs to `plugins/unreal/Binaries/`)
+- `unreal-plugin`: Stage the native C ABI header and static library into the Unreal plugin `ThirdParty` layout
 - `unreal-plugin-prof`: Unreal plugin build with Tracy enabled (requires `external/tracy` submodule)
 - `embedded-*`: Embedded/robotics profiles and cross-compilation presets (see `docs/EMBEDDED_PROFILE.md`)
 
@@ -337,6 +337,7 @@ See [Unreal Integration Guide](docs/integration/UNREAL_INTEGRATION.md) for detai
 
 ```cpp
 #include "AstralSession.h"
+#include "AstralLog.h"
 
 // Create session
 UAstralSession* Session = NewObject<UAstralSession>(this);
@@ -352,7 +353,7 @@ Session->Decode();
 Session->OnTokenReceived.AddDynamic(this, &AMyActor::OnToken);
 
 void AMyActor::OnToken(const FString& Token) {
-    UE_LOG(LogTemp, Log, TEXT("%s"), *Token);
+    UE_LOG(LogAstralRT, Log, TEXT("%s"), *Token);
 }
 ```
 
@@ -378,7 +379,7 @@ See [Concurrency Model](docs/architecture/CONCURRENCY_MODEL.md) for details.
 
 ### C ABI Design
 
-- **Stable Interface**: No breaking changes within major version
+- **Versioned Surface**: v0.1 ABI changes require release notes and migration guidance
 - **POD Structs**: All config/output via plain-old-data structs
 - **UTF-8 Spans**: Strings as `{const uint8_t* data, uint32_t len}`
 - **Error Codes**: All functions return `AstralErr`; out params for results
@@ -388,6 +389,9 @@ See [Master Specification](docs/MASTER_SPEC.md) for details.
 
 ## Performance Targets
 
+These are engineering targets, not release guarantees. The current release
+evidence and blockers are tracked in `docs/PRODUCTION_READINESS_AUDIT.md`.
+
 | Metric | Target | Notes |
 |--------|--------|-------|
 | Init Latency | <100ms | Reserve 2GB, spawn 8 threads |
@@ -396,15 +400,6 @@ See [Master Specification](docs/MASTER_SPEC.md) for details.
 | MPMC Enqueue | <100ns | Per operation, x86-64, low contention |
 | SPSC Push | <50ns | Per token, single producer/consumer |
 | Memory Overhead | <530MB | Per session (8K ctx, 32 layers) |
-
-## Developer Workstreams
-
-Specialized sub-agent prompts for focused development:
-
-- [Core Runtime Agent](docs/workstreams/CORE_RUNTIME_AGENT.md): Init, shutdown, handle management, C ABI
-- [Memory Specialist Agent](docs/workstreams/MEMORY_SPECIALIST_AGENT.md): Allocators, arenas, pools, VM
-- [Concurrency Specialist Agent](docs/workstreams/CONCURRENCY_SPECIALIST_AGENT.md): MPMC, SPSC, epoch reclaim
-- More workstreams coming: Inference, Platform, Unity, Unreal specialists
 
 ## Coding Standards
 
@@ -420,48 +415,45 @@ See [Coding Standards](docs/rules/CODING_STANDARDS.md) for full details.
 
 ```bash
 # Debug tests
+cmake --preset dev
+cmake --build --preset dev -j
 ctest --preset dev -j8
 
-# Release validation (tests + benchmarks)
+# Release validation
+cmake --preset release-with-tests
+cmake --build --preset release-with-tests -j
 ctest --preset release-with-tests -j8
+
+# Benchmark smoke
 ./build/release-test/benchmarks/astral_benchmarks
 
-# Memory validation
-valgrind --leak-check=full ./tests/test_core
-clang++ -fsanitize=address ./tests/test_memory.cpp
+# Memory and sanitizer helpers
+./scripts/run_asan.sh
+./scripts/run_tsan.sh
+./scripts/run_valgrind.sh
 
-# Thread safety
-clang++ -fsanitize=thread ./tests/test_concurrency.cpp
+# Comment and documentation inventory
+python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers
 ```
 
 ## Roadmap
 
-### v0.1 (Current)
+### Current Local Gates
 
-- [x] Core C ABI design
-- [x] Memory subsystem (virtual reserve, frame allocators, pools)
-- [x] Concurrency primitives (MPMC, SPSC, epoch reclaim)
-- [x] CPU backend integration (llama.cpp)
-- [x] Unity plugin (C# P/Invoke)
-- [x] Unreal plugin (UE5 module)
+- Core C ABI, mock provider, CPU provider, memory, concurrency, embeddings, and media mock tests pass in `release-with-tests`.
+- Release metadata, SBOM, dependency pins, release notes, source scans, ABI layout, shared exports, Unreal header mirror, and package artifact checks are gated locally.
+- Unreal and Unity runner scripts fail hard on missing native/runtime evidence instead of silently skipping release lanes.
 
-### v0.2
+### Required Before Production Release
 
-- [ ] Embeddings fast path (SIMD, batching)
-- [ ] Streaming backpressure tuning
-- [ ] NUMA-aware allocation
-- [ ] Mobile optimizations (ARM big.LITTLE)
-
-### v1.0
-
-- [ ] Production-ready (1M+ tokens, zero leaks)
-- [ ] Full test coverage (unit, integration, stress)
-- [ ] Benchmark suite (vs. llama.cpp, LLMUnity)
-- [ ] Documentation (API reference, examples, tutorials)
+- Run UE 5.7 container Automation and the UE 5.4/5.5/5.6/5.7 compatibility matrix with real Epic editor access.
+- Run real Unity EditMode tests with the packaged native runtime.
+- Promote CUDA, multimodal, HF GGUF matrix, Windows large-page, mobile, and protected signing lanes from local tooling to release-candidate evidence.
+- Publish release notes with checksums, signatures, SBOM, dependency manifest, ABI layout, and rollback instructions.
 
 ## Contributing
 
-Contributions welcome! Please read [CODING_STANDARDS.md](docs/rules/CODING_STANDARDS.md) before submitting PRs.
+Read [CODING_STANDARDS.md](docs/rules/CODING_STANDARDS.md) and keep changes tied to a issue tracker issue before submitting PRs.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
@@ -472,7 +464,9 @@ Contributions welcome! Please read [CODING_STANDARDS.md](docs/rules/CODING_STAND
 
 ## License
 
-[License TBD - to be determined by project lead]
+This source tree is not licensed for redistribution except under a separate
+written agreement with the copyright holders. See [LICENSE](LICENSE), [NOTICE](NOTICE),
+and [third-party notices](docs/release/THIRD_PARTY_NOTICES.md).
 
 ## References
 
@@ -484,10 +478,7 @@ Contributions welcome! Please read [CODING_STANDARDS.md](docs/rules/CODING_STAND
 
 ## Support
 
-- GitHub Issues: https://github.com/your-org/astral/issues
-- Discord: [Link TBD]
-- Email: [Email TBD]
+- GitHub Issues: https://github.com/Cosmin-B/astral/issues
 
 ---
-
-Built with performance in mind. Every cycle counts.
+Keep support claims tied to the validation gates above and the production readiness audit.
