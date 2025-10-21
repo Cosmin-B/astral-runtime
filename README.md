@@ -208,99 +208,14 @@ Notes:
 
 ## Usage Example (C API)
 
-```c
-#include "astral_rt.h"
+The maintained native quickstart is [examples/astral_c_quickstart.c](examples/astral_c_quickstart.c).
+It initializes the runtime, sets required ABI struct fields, loads a model,
+streams output, reports errors, resets the session, and releases native handles.
 
-int main() {
-  // Initialize runtime
-  AstralInit cfg = {
-    .sys_alloc = {NULL, NULL, NULL}, // Use default allocator
-    .log_cb = NULL,
-    .log_user = NULL,
-    .reserve_bytes = 2ULL << 30, // 2 GB
-    .thread_count = 0, // Auto-detect
-    .numa_node = 0xFFFFFFFF,
-    .enable_hugepages = 0
-  };
-  astral_init(&cfg);
-
-  // Optional: load a backend provider plugin at startup.
-  // (The plugin registers a provider name used by AstralModelDesc.backend_name.)
-  //
-  // const char* plugin_path = "/abs/path/to/libastral_backend_provider.so";
-  // AstralSpanU8 plugin_span = {(const uint8_t*)plugin_path, (uint32_t)strlen(plugin_path)};
-  // astral_backend_load_plugin(plugin_span);
-
-  // Load model
-  const char* model_path = "models/llama-7b-q4.gguf";
-  AstralModelDesc model_desc = {
-    .model_path = {(const uint8_t*)model_path, strlen(model_path)},
-    .backend_name = {NULL, 0}, // Optional override (e.g., "cpu", "mock")
-    .gpu_layers = 0,
-    .n_ctx = 2048,
-    .n_batch = 512,
-    .n_threads = 0,
-    .embeddings_only = 0
-  };
-  AstralHandle model;
-  AstralErr err = astral_model_load(&model_desc, &model);
-  if (err != ASTRAL_OK) {
-    fprintf(stderr, "model_load failed: %s (%s)\n", astral_error_string(err), astral_last_error());
-    return 1;
-  }
-
-  // Create session
-  AstralSessionDesc sess_desc = {
-    .model = model,
-    .max_tokens = 512,
-    .temperature = 0.7f,
-    .top_k = 40,
-    .top_p = 0.95f,
-    .stream_enabled = 1,
-    .seed = 0 // 0 = auto
-  };
-  AstralHandle session;
-  err = astral_session_create(&sess_desc, &session);
-  if (err != ASTRAL_OK) {
-    fprintf(stderr, "session_create failed: %s (%s)\n", astral_error_string(err), astral_last_error());
-    astral_model_release(model);
-    return 1;
-  }
-
-  // Feed prompt
-  const char* prompt = "Once upon a time";
-  AstralSpanU8 prompt_span = {(const uint8_t*)prompt, strlen(prompt)};
-  astral_session_feed(session, prompt_span, 1);
-
-  // Start decode
-  astral_session_decode(session);
-
-  // Read tokens
-  uint8_t buffer[4096];
-  AstralMutSpanU8 out_buf = {buffer, sizeof(buffer)};
-  for (;;) {
-    int bytes_read = astral_stream_read(session, out_buf, 100 /*ms*/);
-    if (bytes_read == ASTRAL_E_TIMEOUT) continue;
-    if (bytes_read < 0) break;
-    if (bytes_read == 0) break; // end-of-stream
-    fwrite(buffer, 1, bytes_read, stdout);
-  }
-
-  // Wait + stats
-  astral_session_wait(session, 60000);
-  AstralStats stats = {0};
-  astral_session_stats(session, &stats);
-
-  // Optional: reuse the same session with a new seed / sampling params.
-  // (Only valid when the session is idle.)
-  sess_desc.seed = 1234;
-  astral_session_reset(session, &sess_desc);
-
-  // Cleanup
-  astral_session_destroy(session);
-  astral_model_release(model);
-  astral_shutdown();
-}
+```bash
+cmake -S . -B build/examples -DASTRAL_BUILD_EXAMPLES=ON -DASTRAL_BUILD_TESTS=OFF -DASTRAL_BUILD_BENCHMARKS=OFF
+cmake --build build/examples --target astral_c_quickstart -j
+./build/examples/examples/astral_c_quickstart --backend mock --prompt "Once upon a time"
 ```
 
 ## Unity Integration
