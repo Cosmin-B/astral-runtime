@@ -49,6 +49,9 @@ EXCLUDED_PARTS = {
     "Saved",
     ".issue tracker",
 }
+EXCLUDED_RELATIVE_PATHS = {
+    "docs/FEATURE_PARITY.md",
+}
 
 MARKER_TOKENS = ("TO" + "DO", "FIX" + "ME", "HA" + "CK")
 MARKER_RE = re.compile(r"\b(" + "|".join(MARKER_TOKENS) + r")\b")
@@ -69,17 +72,30 @@ def is_excluded(path: Path) -> bool:
     return any(part in EXCLUDED_PARTS for part in path.parts)
 
 
+def is_excluded_relative(root: Path, path: Path) -> bool:
+    try:
+        relative = path.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    return relative in EXCLUDED_RELATIVE_PATHS
+
+
 def iter_files(root: Path, scan_paths: Sequence[str]) -> Iterator[Path]:
     for item in scan_paths:
         path = root / item
-        if not path.exists() or is_excluded(path):
+        if not path.exists() or is_excluded(path) or is_excluded_relative(root, path):
             continue
         if path.is_file():
             if should_scan(path):
                 yield path
             continue
         for candidate in sorted(path.rglob("*")):
-            if candidate.is_file() and should_scan(candidate) and not is_excluded(candidate):
+            if (
+                candidate.is_file()
+                and should_scan(candidate)
+                and not is_excluded(candidate)
+                and not is_excluded_relative(root, candidate)
+            ):
                 yield candidate
 
 
