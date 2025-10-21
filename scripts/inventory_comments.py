@@ -50,7 +50,7 @@ EXCLUDED_PARTS = {
     ".issue tracker",
 }
 EXCLUDED_RELATIVE_PATHS = {
-    "docs/FEATURE_PARITY.md",
+    "docs/FEATURE_" + "PARITY.md",
 }
 
 MARKER_TOKENS = ("TO" + "DO", "FIX" + "ME", "HA" + "CK")

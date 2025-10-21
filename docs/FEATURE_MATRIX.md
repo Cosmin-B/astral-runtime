@@ -1,14 +1,15 @@
 # Feature Matrix (v0.1)
 
-This document is the “what actually works where” map for Astral v0.1: CPU-only builds, CUDA builds, and embedded/minimal presets.
-
-If you are comparing to external frameworks, see `docs/FEATURE_PARITY.md`. This file is strictly about **Astral’s shipped surfaces** and **their build/preset requirements**.
+This document is the maintained "what actually works where" map for Astral v0.1:
+CPU-only builds, CUDA builds, and embedded/minimal presets. It intentionally
+does not track competitor parity notes or roadmap promises; support claims here
+must map to local tests, release evidence, or an explicit caveat.
 
 ## Legend
 
-- ✅ available (implemented + validated via tests)
-- ⚠️ available but with caveats (documented below)
-- 🧪 available but not yet validated on that platform/config
+- ✅ locally exercised by the named tests or build presets
+- ⚠️ implemented with caveats or external release evidence still required
+- 🧪 build surface exists, but platform/config validation is still pending
 - ❌ not available in that configuration
 
 ## Core runtime / build knobs

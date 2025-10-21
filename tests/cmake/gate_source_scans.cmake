@@ -48,7 +48,9 @@ foreach(glob IN LISTS SCAN_GLOBS)
 endforeach()
 
 list(REMOVE_DUPLICATES FILES)
-list(REMOVE_ITEM FILES "${ROOT}/docs/FEATURE_PARITY.md")
+set(ignored_feature_parity_doc_path "${ROOT}/docs/FEATURE_")
+string(APPEND ignored_feature_parity_doc_path "PARITY.md")
+list(REMOVE_ITEM FILES "${ignored_feature_parity_doc_path}")
 
 list(LENGTH FILES FILES_LEN)
 if(FILES_LEN EQUAL 0)
@@ -282,6 +284,8 @@ set(feature_parity_zero_allocation_hot_paths_phrase "Zero-Allocation")
 string(APPEND feature_parity_zero_allocation_hot_paths_phrase " Hot Paths")
 set(feature_parity_best_in_class_phrase "Best-in")
 string(APPEND feature_parity_best_in_class_phrase "-class")
+set(ignored_feature_parity_doc_phrase "docs/FEATURE_")
+string(APPEND ignored_feature_parity_doc_phrase "PARITY.md")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -383,6 +387,7 @@ set(UNREVIEWED_PROSE_STRINGS
   "${feature_parity_zero_allocations_phrase}"
   "${feature_parity_zero_allocation_hot_paths_phrase}"
   "${feature_parity_best_in_class_phrase}"
+  "${ignored_feature_parity_doc_phrase}"
 )
 
 foreach(path IN LISTS FILES)
