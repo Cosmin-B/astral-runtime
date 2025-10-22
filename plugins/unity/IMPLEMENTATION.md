@@ -444,7 +444,8 @@ Expected: no per-token managed string allocation during ReadStream()
 ## References
 
 - **C ABI Specification**: `/home/user/workspace/astral/include/astral_rt.h`
-- **Master Spec**: `/home/user/workspace/astral/docs/MASTER_SPEC.md`
+- **Memory Architecture**: `/home/user/workspace/astral/docs/architecture/MEMORY_ARCHITECTURE.md`
+- **Engine Integration Patterns**: `/home/user/workspace/astral/docs/architecture/ENGINE_INTEGRATION_PATTERNS.md`
 - **Coding Standards**: `/home/user/workspace/astral/docs/rules/CODING_STANDARDS.md`
 - **Unity Documentation**: https://docs.unity3d.com/Manual/NativePlugins.html
 - **Unity IL2CPP**: https://docs.unity3d.com/Manual/IL2CPP.html

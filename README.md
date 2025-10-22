@@ -16,21 +16,24 @@ Astral is a C++20 native inference layer on top of LLaMA-class backends, designe
 ```
 astral/
 ├── docs/                       # Documentation
-│   ├── MASTER_SPEC.md          # Overall architecture and specifications
 │   ├── architecture/           # Detailed architecture documents
+│   │   ├── BACKEND_ARCHITECTURE.md
+│   │   ├── CONCURRENCY_MODEL.md
 │   │   ├── MEMORY_ARCHITECTURE.md
-│   │   └── CONCURRENCY_MODEL.md
+│   │   └── WORK_STEALING_SCHEDULER.md
+│   ├── api/                    # Public API behavior notes
 │   ├── integration/            # Engine integration guides
 │   │   ├── UNITY_INTEGRATION.md
+│   │   ├── UNREAL_57_QUICKSTART.md
 │   │   └── UNREAL_INTEGRATION.md
+│   ├── release/                # Release evidence, ABI, and dependency manifests
 │   ├── rules/                  # Coding standards and rules
-│   │   └── CODING_STANDARDS.md
-│   └── workstreams/            # Developer sub-agent prompts
-│       ├── CORE_RUNTIME_AGENT.md
-│       ├── MEMORY_SPECIALIST_AGENT.md
-│       └── CONCURRENCY_SPECIALIST_AGENT.md
+│   ├── embedded/               # Embedded profile notes
+│   └── PRODUCTION_READINESS_AUDIT.md
+├── backend_plugins/            # Dynamic backend provider examples
 ├── include/                    # Public headers
 │   ├── astral_rt.h             # Public C ABI
+│   └── astral_backend.h        # Backend provider ABI
 ├── src/                        # Core implementation
 │   ├── core/                   # Runtime init, shutdown, handles
 │   ├── memory/                 # Allocators, arenas, pools
@@ -43,6 +46,7 @@ astral/
 │   └── unreal/                 # Unreal UE5 module + FMemory bridge
 ├── tests/                      # Unit + integration tests
 ├── benchmarks/                 # Performance benchmarks
+├── scripts/                    # Release, validation, and engine-runner tooling
 └── cmake/                      # CMake modules and presets
 ```
 
@@ -300,7 +304,8 @@ See [Concurrency Model](docs/architecture/CONCURRENCY_MODEL.md) for details.
 - **Error Codes**: All functions return `AstralErr`; out params for results
 - **No Exceptions Across ABI**: C ABI functions return error codes; `ASTRAL_NO_THROW_ABI=ON` catches/translates unexpected C++ exceptions at the ABI boundary
 
-See [Master Specification](docs/MASTER_SPEC.md) for details.
+See [ABI Versioning](docs/ABI_VERSIONING.md) and the public header in
+[include/astral_rt.h](include/astral_rt.h) for the current contract.
 
 ## Performance Targets
 

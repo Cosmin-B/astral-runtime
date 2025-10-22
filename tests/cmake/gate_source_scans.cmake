@@ -286,6 +286,18 @@ set(feature_parity_best_in_class_phrase "Best-in")
 string(APPEND feature_parity_best_in_class_phrase "-class")
 set(ignored_feature_parity_doc_phrase "docs/FEATURE_")
 string(APPEND ignored_feature_parity_doc_phrase "PARITY.md")
+set(stale_master_spec_phrase "MASTER")
+string(APPEND stale_master_spec_phrase "_SPEC")
+set(stale_master_spec_doc_phrase "docs/MASTER")
+string(APPEND stale_master_spec_doc_phrase "_SPEC.md")
+set(stale_workstreams_phrase "docs/work")
+string(APPEND stale_workstreams_phrase "streams")
+set(stale_core_agent_phrase "CORE_RUNTIME")
+string(APPEND stale_core_agent_phrase "_AGENT.md")
+set(stale_memory_agent_phrase "MEMORY_SPECIALIST")
+string(APPEND stale_memory_agent_phrase "_AGENT.md")
+set(stale_concurrency_agent_phrase "CONCURRENCY_SPECIALIST")
+string(APPEND stale_concurrency_agent_phrase "_AGENT.md")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -388,6 +400,12 @@ set(UNREVIEWED_PROSE_STRINGS
   "${feature_parity_zero_allocation_hot_paths_phrase}"
   "${feature_parity_best_in_class_phrase}"
   "${ignored_feature_parity_doc_phrase}"
+  "${stale_master_spec_phrase}"
+  "${stale_master_spec_doc_phrase}"
+  "${stale_workstreams_phrase}"
+  "${stale_core_agent_phrase}"
+  "${stale_memory_agent_phrase}"
+  "${stale_concurrency_agent_phrase}"
 )
 
 foreach(path IN LISTS FILES)

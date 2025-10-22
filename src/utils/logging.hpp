@@ -8,7 +8,7 @@
  * - Thread-local buffer per thread (4KB)
  * - Format message into TLS buffer
  * - Dispatch to callback (if set)
- * - Drop logs if callback is slow (>10ms per MASTER_SPEC)
+ * - Drop logs if the callback exceeds the 10ms logging budget
  * - Never block on logging
  *
  * Thread Safety: Safe to call from multiple threads.

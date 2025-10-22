@@ -30,7 +30,7 @@ std::atomic<Level> g_min_level{Level::Info};
 constexpr size_t kBufferSize = 4096;
 thread_local char g_buffer[kBufferSize];
 
-// Maximum callback execution time (10ms per MASTER_SPEC)
+// Maximum callback execution time for the non-blocking logging path.
 constexpr uint64_t kMaxCallbackNanos = 10'000'000; // 10ms
 
 /**

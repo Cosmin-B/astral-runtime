@@ -180,8 +180,7 @@ private:
     static constexpr size_t kCacheLineSize = astral::platform::kCacheLineAlign;
     static constexpr size_t kIndexMask = Capacity - 1;
 
-    // Cache-line aligned atomics to prevent false sharing
-    //  64-byte alignment per MASTER_SPEC § Concurrency Primitives
+    // Cache-line aligned atomics keep the producer and consumer cursors apart.
     // Producer writes head, consumer writes tail - keep them on separate cache lines
     alignas(kCacheLineSize) std::atomic<uint64_t> head_; // Producer writes
     alignas(kCacheLineSize) std::atomic<uint64_t> tail_; // Consumer writes

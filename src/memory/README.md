@@ -174,8 +174,8 @@ See `src/platform/vm.h` for full VM API documentation.
 ## References
 
 - Unity allocator: `/home/user/docs/unity-runtime/src/memory/`
-- MASTER_SPEC.md § Memory Allocators
-- CODING_STANDARDS.md § Memory Management Rules
+- `docs/architecture/MEMORY_ARCHITECTURE.md` - allocator model and VM-backed arenas
+- `docs/rules/CODING_STANDARDS.md` - memory management rules
 
 ## Design Rationale
 
@@ -185,7 +185,7 @@ Page faults in hot paths cause microsecond stalls (unacceptable for real-time in
 - Linux `mmap`: First access triggers page fault (~1-3μs)
 - Windows `VirtualAlloc(MEM_COMMIT)`: Pre-commits pages (~10-50ns)
 
-Pre-commit strategy (MASTER_SPEC § Task 2):
+Pre-commit strategy:
 - Initial commit: 2MB
 - Growth: Double on capacity exhaustion (amortize syscall overhead)
 - Hot path: Zero syscalls

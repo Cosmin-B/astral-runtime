@@ -231,6 +231,7 @@ This produces:
 
 ## References
 
-- **Architecture**: [docs/MASTER_SPEC.md](docs/MASTER_SPEC.md)
+- **Backend Architecture**: [docs/architecture/BACKEND_ARCHITECTURE.md](docs/architecture/BACKEND_ARCHITECTURE.md)
+- **Concurrency Model**: [docs/architecture/CONCURRENCY_MODEL.md](docs/architecture/CONCURRENCY_MODEL.md)
 - **Coding Standards**: [docs/rules/CODING_STANDARDS.md](docs/rules/CODING_STANDARDS.md)
 - **Memory Architecture**: [docs/architecture/MEMORY_ARCHITECTURE.md](docs/architecture/MEMORY_ARCHITECTURE.md)

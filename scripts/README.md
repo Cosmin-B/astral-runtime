@@ -368,7 +368,7 @@ test case.
 
 ## Interpreting Results
 
-### PASS Criteria (per MASTER_SPEC § Performance Targets)
+### PASS Criteria
 
 1. **No Memory Leaks**
    - Valgrind: "definitely lost: 0 bytes"
@@ -392,7 +392,7 @@ test case.
 - Valgrind reports "definitely lost" bytes
 - Test reports non-zero allocations in hot path
 
-**Performance Failures** (violate MASTER_SPEC):
+**Performance Failures**:
 - Massif shows heap growth during decode loop
 - More than 10 syscalls in hot path (`strace` check)
 - Allocations detected in decode/stream/sample loops
@@ -529,7 +529,8 @@ Note: This is an illustrative snippet. The repo’s actual CI is in `.github/wor
 
 **Astral Documentation**:
 - `tests/MEMORY_VALIDATION.md` - Current memory validation gates
-- `/home/user/workspace/astral/docs/MASTER_SPEC.md` - Performance targets
+- `/home/user/workspace/astral/docs/PRODUCTION_READINESS_AUDIT.md` - Current readiness blockers and release gate evidence
+- `/home/user/workspace/astral/docs/FEATURE_MATRIX.md` - Supported feature surface and required evidence
 - `/home/user/workspace/astral/docs/rules/CODING_STANDARDS.md` - Memory rules
 
 **Valgrind Documentation**:
