@@ -298,6 +298,14 @@ set(stale_memory_agent_phrase "MEMORY_SPECIALIST")
 string(APPEND stale_memory_agent_phrase "_AGENT.md")
 set(stale_concurrency_agent_phrase "CONCURRENCY_SPECIALIST")
 string(APPEND stale_concurrency_agent_phrase "_AGENT.md")
+set(stale_roadmap_product_ready_phrase "world")
+string(APPEND stale_roadmap_product_ready_phrase "-class, product-ready framework")
+set(stale_roadmap_cuda_scaffold_phrase "runtime optional scaffold in v0.1")
+string(APPEND stale_roadmap_cuda_scaffold_phrase " [(]best-effort[)]")
+set(stale_roadmap_memory_estimates_phrase "best")
+string(APPEND stale_roadmap_memory_estimates_phrase "-effort memory estimates")
+set(stale_roadmap_ue51_phrase "UE 5.1")
+string(APPEND stale_roadmap_ue51_phrase ".5.7")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -406,6 +414,10 @@ set(UNREVIEWED_PROSE_STRINGS
   "${stale_core_agent_phrase}"
   "${stale_memory_agent_phrase}"
   "${stale_concurrency_agent_phrase}"
+  "${stale_roadmap_product_ready_phrase}"
+  "${stale_roadmap_cuda_scaffold_phrase}"
+  "${stale_roadmap_memory_estimates_phrase}"
+  "${stale_roadmap_ue51_phrase}"
 )
 
 foreach(path IN LISTS FILES)
