@@ -40,6 +40,43 @@ struct PluginLibrarySlot {
 static PluginLibrarySlot g_plugin_libs[kMaxPluginLibraries]{};
 static size_t g_plugin_lib_count = 0;
 
+static bool path_has_nul(AstralSpanU8 path) {
+    const uint8_t* p = path.data;
+    const uint32_t n = path.len;
+    for (uint32_t i = 0; i < n; ++i) {
+        if (p[i] == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+#if defined(_WIN32) || defined(_WIN64)
+static bool is_ascii_alpha(uint8_t c) {
+    return (c >= static_cast<uint8_t>('A') && c <= static_cast<uint8_t>('Z')) ||
+           (c >= static_cast<uint8_t>('a') && c <= static_cast<uint8_t>('z'));
+}
+#endif
+
+static bool path_is_absolute(AstralSpanU8 path) {
+    const uint8_t* p = path.data;
+    const uint32_t n = path.len;
+
+#if defined(_WIN32) || defined(_WIN64)
+    if (n >= 3 &&
+        is_ascii_alpha(p[0]) &&
+        p[1] == static_cast<uint8_t>(':') &&
+        (p[2] == static_cast<uint8_t>('\\') || p[2] == static_cast<uint8_t>('/'))) {
+        return true;
+    }
+    return n >= 2 &&
+           (p[0] == static_cast<uint8_t>('\\') || p[0] == static_cast<uint8_t>('/')) &&
+           (p[1] == static_cast<uint8_t>('\\') || p[1] == static_cast<uint8_t>('/'));
+#else
+    return n >= 1 && p[0] == static_cast<uint8_t>('/');
+#endif
+}
+
 static AstralErr load_plugin_library(const char* path,
                                      void** out_handle,
                                      AstralBackendPluginGetProviderV0Fn* out_fn) {
@@ -172,6 +209,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_backend_load_plugin(AstralSpanU8 path) {
     ASTRAL_ABI_TRY_BEGIN
     if (path.data == nullptr || path.len == 0) {
         astral::backend::set_err_invalid("path");
+        return ASTRAL_E_INVALID;
+    }
+
+    if (astral::backend::path_has_nul(path) || !astral::backend::path_is_absolute(path)) {
+        astral::backend::set_err_invalid("path must be absolute and contain no NUL bytes");
         return ASTRAL_E_INVALID;
     }
 

@@ -444,7 +444,7 @@ ASTRAL_API void ASTRAL_CALL astral_clear_last_error(void);
  *
  * Thread-safety: Not thread-safe; call during startup (before concurrent model loads).
  *
- * @param path Path to a shared library (UTF-8; not NUL-terminated)
+ * @param path Absolute path to a shared library (UTF-8; no NUL bytes)
  * @return ASTRAL_OK on success; error code on failure
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_backend_load_plugin(AstralSpanU8 path);

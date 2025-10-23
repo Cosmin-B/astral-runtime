@@ -263,6 +263,26 @@ TEST(provider_plugin_sample_load_and_run) {
 #endif
 }
 
+TEST(provider_plugin_loader_rejects_relative_path) {
+    const char* plugin_path = "astral_backend_sample_plugin.so";
+    AstralSpanU8 path{};
+    path.data = reinterpret_cast<const uint8_t*>(plugin_path);
+    path.len = static_cast<uint32_t>(std::strlen(plugin_path));
+
+    AstralErr err = astral_backend_load_plugin(path);
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+}
+
+TEST(provider_plugin_loader_rejects_embedded_nul_path) {
+    const uint8_t plugin_path[] = {'/', 't', 'm', 'p', '/', 'a', 0, 'b'};
+    AstralSpanU8 path{};
+    path.data = plugin_path;
+    path.len = static_cast<uint32_t>(sizeof(plugin_path));
+
+    AstralErr err = astral_backend_load_plugin(path);
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+}
+
 TEST(provider_plugin_cpu_llama_load_and_run) {
 #if defined(ASTRAL_CPU_LLAMA_BACKEND_PLUGIN_PATH)
     const char* plugin_path = ASTRAL_CPU_LLAMA_BACKEND_PLUGIN_PATH;
