@@ -290,6 +290,8 @@ endif()
 if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout_report.sh)
     find_program(ASTRAL_BASH_EXECUTABLE bash)
     if(ASTRAL_BASH_EXECUTABLE)
+        find_program(ASTRAL_PYTHON_EXECUTABLE python3)
+
         add_test(
             NAME gate_abi_layout_report
             COMMAND ${CMAKE_COMMAND} -E env
@@ -302,7 +304,7 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
         )
         message(STATUS "Configured test: gate_abi_layout_report")
 
-        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_metadata.cmake)
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_metadata.cmake)
             add_test(
                 NAME gate_release_metadata
                 COMMAND ${CMAKE_COMMAND}
@@ -360,7 +362,6 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_dependency_pins")
         endif()
 
-        find_program(ASTRAL_PYTHON_EXECUTABLE python3)
         if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_comment_inventory.cmake)
             add_test(
                 NAME gate_comment_inventory
