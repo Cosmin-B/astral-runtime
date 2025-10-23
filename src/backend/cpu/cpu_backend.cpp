@@ -630,6 +630,7 @@ struct MemReader {
     uint64_t size = 0;
 };
 
+#if ASTRAL_CPU_MEMORY_SOURCE_MMAP
 static uint32_t ASTRAL_CALL astral_io_read_at_noexcept(const AstralModelIO* io, uint64_t offset, void* dst, uint32_t dst_len) {
     if (io == nullptr || io->read_at == nullptr) {
         return 0;
@@ -742,7 +743,6 @@ static bool write_all_fd(int fd, const uint8_t* data, uint64_t size) {
 }
 #endif
 
-#if ASTRAL_CPU_MEMORY_SOURCE_MMAP
 static llama_model* try_load_memory_source_with_mmap(const uint8_t* data, uint64_t size, llama_model_params model_params) {
     if (data == nullptr || size == 0) {
         return nullptr;

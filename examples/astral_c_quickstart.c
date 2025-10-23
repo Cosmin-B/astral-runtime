@@ -32,6 +32,27 @@ static void print_err(const char* label, AstralErr err) {
     fprintf(stderr, "%s failed: %s (%s)\n", label, astral_error_string(err), astral_last_error());
 }
 
+static AstralErr init_runtime(uint64_t reserve_bytes) {
+    AstralInit init = {0};
+    AstralErr err = ASTRAL_OK;
+    init.reserve_bytes = reserve_bytes;
+    init.thread_count = 0;
+    init.numa_node = 0xFFFFFFFFu;
+    init.enable_hugepages = 0;
+
+    err = astral_init(&init);
+    if (err == ASTRAL_E_UNSUPPORTED) {
+        AstralInit2 init2 = {0};
+        init2.base = init;
+        init2.memory_mode = ASTRAL_MEMMODE_ARENA_OWNED;
+        init2.arena.size = reserve_bytes;
+        init2.arena.session_block_size = 2u * 1024u * 1024u;
+        init2.arena.session_block_count = 0;
+        err = astral_init2(&init2);
+    }
+    return err;
+}
+
 static void usage(const char* argv0) {
     fprintf(stderr,
             "Usage: %s [--backend mock|cpu|cuda] [--model path.gguf] [--prompt text] [--max-tokens n]\n",
@@ -46,7 +67,6 @@ int main(int argc, char** argv) {
     AstralHandle model = 0;
     AstralHandle session = 0;
     int rc = 1;
-    AstralInit init = {0};
     AstralModelDesc model_desc = {0};
     AstralSessionDesc session_desc = {0};
     AstralStats stats = {0};
@@ -71,12 +91,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    init.reserve_bytes = 512ULL * 1024ULL * 1024ULL;
-    init.thread_count = 0;
-    init.numa_node = 0xFFFFFFFFu;
-    init.enable_hugepages = 0;
-
-    err = astral_init(&init);
+    err = init_runtime(512ULL * 1024ULL * 1024ULL);
     if (err != ASTRAL_OK) {
         print_err("astral_init", err);
         goto out;
