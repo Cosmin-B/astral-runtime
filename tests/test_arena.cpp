@@ -48,7 +48,49 @@ static AstralSessionDesc make_session_desc(AstralHandle model) {
     return s;
 }
 
+static AstralInit2 make_borrowed_arena_init(void* base, uint64_t size) {
+    AstralInit2 cfg{};
+    cfg.base.thread_count = 0;
+    cfg.base.numa_node = 0xFFFFFFFFu;
+    cfg.base.enable_hugepages = 0;
+    cfg.memory_mode = ASTRAL_MEMMODE_ARENA_BORROWED;
+    cfg.arena.base = base;
+    cfg.arena.size = size;
+    cfg.arena.session_block_size = 2u * 1024u * 1024u;
+    cfg.arena.session_block_count = 1;
+    return cfg;
+}
+
 } // namespace
+
+TEST(arena_init2_invalid_config_cleanup_allows_retry) {
+    alignas(64) static uint8_t arena[8u * 1024u * 1024u];
+
+    AstralInit2 invalid_mode = make_borrowed_arena_init(arena, sizeof(arena));
+    invalid_mode.memory_mode = static_cast<AstralMemoryMode>(0xFFu);
+    ASSERT_EQ(astral_init2(&invalid_mode), ASTRAL_E_INVALID);
+
+    AstralInit2 missing_base = make_borrowed_arena_init(nullptr, sizeof(arena));
+    ASSERT_EQ(astral_init2(&missing_base), ASTRAL_E_INVALID);
+
+    AstralInit2 cfg = make_borrowed_arena_init(arena, sizeof(arena));
+    AstralErr err = astral_init2(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralHandle model = 0;
+    const AstralModelDesc model_desc = make_mock_model_desc();
+    err = astral_model_load(&model_desc, &model);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralHandle session = 0;
+    const AstralSessionDesc session_desc = make_session_desc(model);
+    err = astral_session_create(&session_desc, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
 
 TEST(arena_init2_borrowed_and_reuse_blocks) {
     // 8MB arena: enough for freelist metadata + (at least) one 2MB session block.
