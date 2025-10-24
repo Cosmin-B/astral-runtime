@@ -5,6 +5,8 @@
 #include "test_framework.hpp"
 #include "../include/astral_rt.h"
 
+#include <cstring>
+
 namespace {
 
 AstralSpanU8 null_span() {
@@ -23,6 +25,32 @@ AstralInit small_init() {
     cfg.thread_count = 1;
     cfg.numa_node = 0xFFFFFFFFu;
     return cfg;
+}
+
+AstralModelDesc mock_model_desc() {
+    AstralModelDesc desc{};
+    desc.size = sizeof(AstralModelDesc);
+    desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+
+    const char* backend = "mock";
+    desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+    desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend));
+    desc.n_ctx = 128;
+    desc.n_batch = 64;
+    desc.gpu_layers = 0;
+    return desc;
+}
+
+AstralSessionDesc mock_session_desc(AstralHandle model) {
+    AstralSessionDesc desc{};
+    desc.model = model;
+    desc.max_tokens = 8;
+    desc.temperature = 0.0f;
+    desc.top_k = 0;
+    desc.top_p = 1.0f;
+    desc.stream_enabled = 1;
+    desc.seed = 1;
+    return desc;
 }
 
 } // namespace
@@ -151,6 +179,48 @@ TEST(abi_invalid_args_session_surface) {
     ASSERT_EQ(astral_session_stats(0, &stats), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_stats(0, nullptr), ASTRAL_E_INVALID);
 
+    astral_shutdown();
+}
+
+TEST(abi_invalid_args_valid_handle_buffer_surface) {
+    AstralInit cfg = small_init();
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralHandle model = 0;
+    AstralModelDesc model_desc = mock_model_desc();
+    ASSERT_EQ(astral_model_load(&model_desc, &model), ASTRAL_OK);
+
+    AstralHandle session = 0;
+    AstralSessionDesc session_desc = mock_session_desc(model);
+    ASSERT_EQ(astral_session_create(&session_desc, &session), ASTRAL_OK);
+
+    int32_t tokens[2] = {1, 2};
+    uint64_t written = 0;
+    AstralTokenMeta meta{};
+    uint8_t bytes[16] = {};
+    AstralSpanU8 text{};
+    text.data = reinterpret_cast<const uint8_t*>("stop");
+    text.len = 4;
+    AstralSpanU8 seqs[1] = {text};
+    AstralMutSpanU8 out{};
+    out.data = bytes;
+    out.len = static_cast<uint32_t>(sizeof(bytes));
+
+    ASSERT_EQ(astral_tokenize(model, null_span(), nullptr, 2, 0, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_detokenize(model, nullptr, 1, out, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_penalty_prompt_set_tokens(session, nullptr, 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_stop_add_utf8(session, null_span()), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_stop_set_utf8(session, nullptr, 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_state_save(session, null_mut_span(), &written), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_state_load(session, null_span()), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_stream_read(session, null_mut_span(), 0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_stream_read_meta(session, nullptr, 1, 0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_stream_read_meta(session, &meta, 0, 0), ASTRAL_E_INVALID);
+
+    ASSERT_EQ(astral_session_stop_set_utf8(session, seqs, 1), ASTRAL_OK);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
     astral_shutdown();
 }
 
