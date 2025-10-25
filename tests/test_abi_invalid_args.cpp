@@ -53,6 +53,19 @@ AstralSessionDesc mock_session_desc(AstralHandle model) {
     return desc;
 }
 
+AstralConvDesc mock_conv_desc(AstralHandle model) {
+    AstralConvDesc desc{};
+    desc.size = sizeof(AstralConvDesc);
+    desc.model = model;
+    desc.max_tokens = 8;
+    desc.temperature = 0.0f;
+    desc.top_k = 0;
+    desc.top_p = 1.0f;
+    desc.stream_enabled = 1;
+    desc.seed = 1;
+    return desc;
+}
+
 } // namespace
 
 TEST(abi_invalid_args_core_and_backend) {
@@ -262,6 +275,35 @@ TEST(abi_invalid_args_conversation_surface) {
     ASSERT_EQ(astral_conv_stats(0, &stats), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_stats(0, nullptr), ASTRAL_E_INVALID);
 
+    astral_shutdown();
+}
+
+TEST(abi_invalid_args_valid_conversation_buffer_surface) {
+    AstralInit cfg = small_init();
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralHandle model = 0;
+    AstralModelDesc model_desc = mock_model_desc();
+    ASSERT_EQ(astral_model_load(&model_desc, &model), ASTRAL_OK);
+
+    AstralExecutorDesc executor{};
+    executor.size = sizeof(AstralExecutorDesc);
+    executor.max_slots = 1;
+    executor.max_batch_tokens = 8;
+    executor.worker_hint = 0;
+    ASSERT_EQ(astral_model_executor_configure(model, &executor), ASTRAL_OK);
+
+    AstralHandle conv = 0;
+    AstralConvDesc conv_desc = mock_conv_desc(model);
+    ASSERT_EQ(astral_conv_create(&conv_desc, &conv), ASTRAL_OK);
+
+    AstralTokenMeta meta{};
+    ASSERT_EQ(astral_conv_stream_read(conv, null_mut_span(), 0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_stream_read_meta(conv, nullptr, 1, 0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_stream_read_meta(conv, &meta, 0, 0), ASTRAL_E_INVALID);
+
+    astral_conv_destroy(conv);
+    astral_model_release(model);
     astral_shutdown();
 }
 
