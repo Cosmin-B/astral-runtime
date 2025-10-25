@@ -304,7 +304,8 @@ See [Concurrency Model](docs/architecture/CONCURRENCY_MODEL.md) for details.
 - **Error Codes**: All functions return `AstralErr`; out params for results
 - **No Exceptions Across ABI**: C ABI functions return error codes; `ASTRAL_NO_THROW_ABI=ON` catches/translates unexpected C++ exceptions at the ABI boundary
 
-See [ABI Versioning](docs/ABI_VERSIONING.md) and the public header in
+See [ABI Versioning](docs/ABI_VERSIONING.md),
+[Error Handling](docs/api/ERROR_HANDLING.md), and the public header in
 [include/astral_rt.h](include/astral_rt.h) for the current contract.
 
 ## Performance Targets

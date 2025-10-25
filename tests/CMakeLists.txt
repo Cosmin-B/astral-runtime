@@ -392,6 +392,21 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_doc_links")
         endif()
 
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_error_taxonomy.cmake)
+            add_test(
+                NAME gate_error_taxonomy
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_error_taxonomy.cmake
+            )
+            set_tests_properties(gate_error_taxonomy PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;abi"
+            )
+            message(STATUS "Configured test: gate_error_taxonomy")
+        endif()
+
         if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_evidence.cmake)
             add_test(
                 NAME gate_release_evidence
