@@ -13,7 +13,10 @@ endif()
 set(header "${ASTRAL_SOURCE_DIR}/include/astral_rt.h")
 set(doc "${ASTRAL_SOURCE_DIR}/docs/api/ERROR_HANDLING.md")
 execute_process(
-  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${script}" --header "${header}" --doc "${doc}"
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${script}"
+    --header "${header}"
+    --doc "${doc}"
+    --scan-root "${ASTRAL_SOURCE_DIR}"
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE taxonomy_result
   OUTPUT_VARIABLE taxonomy_output
@@ -42,6 +45,27 @@ if(bad_result EQUAL 0)
 endif()
 if(NOT bad_error MATCHES "missing documented codes")
   message(FATAL_ERROR "Error taxonomy validator failed for the wrong fixture reason: ${bad_output}${bad_error}")
+endif()
+
+set(stale_scan_dir "${fixture_dir}/stale_scan")
+file(MAKE_DIRECTORY "${stale_scan_dir}")
+string(CONCAT stale_error_code "ASTRAL_E_" "NOT_REAL")
+file(WRITE "${stale_scan_dir}/stale.md" "`${stale_error_code}` is not a public AstralErr code.\n")
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${script}"
+    --header "${header}"
+    --doc "${doc}"
+    --scan-root "${stale_scan_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE stale_result
+  OUTPUT_VARIABLE stale_output
+  ERROR_VARIABLE stale_error
+)
+if(stale_result EQUAL 0)
+  message(FATAL_ERROR "Error taxonomy validator accepted stale repo reference: ${stale_output}${stale_error}")
+endif()
+if(NOT stale_error MATCHES "stale public error reference")
+  message(FATAL_ERROR "Error taxonomy validator failed stale-reference fixture for the wrong reason: ${stale_output}${stale_error}")
 endif()
 
 message(STATUS "gate_error_taxonomy: OK")

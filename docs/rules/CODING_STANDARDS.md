@@ -534,24 +534,24 @@ clang-format -i include/*.h src/**/*.cpp
 
 **Evidence**: From less_slow.cpp benchmarks on Intel Sapphire Rapids.
 
-#### Error Paths (Most Common Use Case)
+#### Error Paths (Boundary Code Only)
 
 ```cpp
-// GOOD: Mark all error paths as [[unlikely]]
-AstralErr decode_token(const uint8_t* input, uint32_t len, Token* out) {
+// GOOD: Mark rare boundary failures as [[unlikely]] before entering the hot loop.
+AstralErr decode_token_boundary(const uint8_t* input, uint32_t len, Token* out) {
     if (input == nullptr) [[unlikely]] {
-        return ASTRAL_E_NULL_PTR;
+        return ASTRAL_E_INVALID;
     }
 
     if (len == 0) [[unlikely]] {
-        return ASTRAL_E_INVALID_LEN;
+        return ASTRAL_E_INVALID;
     }
 
     if (len > MAX_TOKEN_LEN) [[unlikely]] {
-        return ASTRAL_E_TOO_LONG;
+        return ASTRAL_E_INVALID;
     }
 
-    // Hot path: no hint needed here (it's the default)
+    // The parser receives validated input; do not repeat these guards inside it.
     *out = parse_token(input, len);
     return ASTRAL_OK;
 }

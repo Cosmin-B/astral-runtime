@@ -28,7 +28,7 @@
   #define ASTRAL_ABI_CATCH_END_CSTR()                                          \
     } catch (...) {                                                           \
       astral::core::set_last_errorf("Unhandled C++ exception crossed ABI");   \
-      return "ASTRAL_E_EXCEPTION";                                             \
+      return "Unknown error";                                                 \
     }
 #else
   #define ASTRAL_ABI_TRY_BEGIN { ::astral::core::ErrorScope _astral_err_scope;
