@@ -145,10 +145,22 @@ TEST(core_error_string_backend) {
     ASSERT_TRUE(strlen(str) > 0);
 }
 
+TEST(core_error_string_canceled) {
+    const char* str = astral_error_string(ASTRAL_E_CANCELED);
+    ASSERT_NOT_NULL(str);
+    ASSERT_TRUE(strlen(str) > 0);
+}
+
+TEST(core_error_string_unsupported) {
+    const char* str = astral_error_string(ASTRAL_E_UNSUPPORTED);
+    ASSERT_NOT_NULL(str);
+    ASSERT_TRUE(strlen(str) > 0);
+}
+
 TEST(core_error_string_unknown) {
-    // Unknown error code should return something (not crash)
     const char* str = astral_error_string(-9999);
     ASSERT_NOT_NULL(str);
+    ASSERT_TRUE(strlen(str) > 0);
 }
 
 //
