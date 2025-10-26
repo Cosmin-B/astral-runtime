@@ -54,6 +54,7 @@ set(required_lanes
   native_release_ctest
   release_required_gates
   sanitizer_validation
+  comment_review
   unreal_57_full_container
   unreal_57_slim_container
   unreal_compatibility_matrix
@@ -72,6 +73,8 @@ foreach(lane IN LISTS required_lanes)
 endforeach()
 file(WRITE "${out_dir}/logs/asan.log" "asan passed\n")
 file(WRITE "${out_dir}/logs/tsan.log" "tsan passed\n")
+file(WRITE "${out_dir}/logs/comment-review.tsv" "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext\n")
+file(WRITE "${out_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
 file(WRITE "${out_dir}/checksums.sha256.asc" "signature\n")
 file(WRITE "${out_dir}/release-notes.md" "release notes\n")
 
@@ -115,6 +118,11 @@ file(WRITE "${out_dir}/release-evidence.json"
       \"status\": \"pass\",
       \"command\": \"./scripts/run_asan.sh && ./scripts/run_tsan.sh\",
       \"artifacts\": [\"logs/asan.log\", \"logs/tsan.log\"]
+    },
+    \"comment_review\": {
+      \"status\": \"pass\",
+      \"command\": \"python3 ./scripts/inventory_comments.py --format review-tsv > logs/comment-review.tsv && python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers > logs/comment-inventory-summary.log\",
+      \"artifacts\": [\"logs/comment-review.tsv\", \"logs/comment-inventory-summary.log\"]
     },
     \"unreal_57_full_container\": {
       \"status\": \"pass\",

@@ -20,6 +20,7 @@ set(required_lanes
   native_release_ctest
   release_required_gates
   sanitizer_validation
+  comment_review
   unreal_57_full_container
   unreal_57_slim_container
   unreal_compatibility_matrix
@@ -39,6 +40,8 @@ foreach(lane IN LISTS required_lanes)
 endforeach()
 file(WRITE "${evidence_dir}/logs/asan.log" "asan passed\n")
 file(WRITE "${evidence_dir}/logs/tsan.log" "tsan passed\n")
+file(WRITE "${evidence_dir}/logs/comment-review.tsv" "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext\n")
+file(WRITE "${evidence_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
 file(WRITE "${evidence_dir}/dist/checksums.sha256" "checksums\n")
 file(WRITE "${evidence_dir}/dist/abi-layout.json" "{}\n")
 file(WRITE "${evidence_dir}/dist/dependency-manifest.json" "{}\n")
@@ -71,6 +74,9 @@ foreach(lane IN LISTS required_lanes)
   elseif(lane STREQUAL "sanitizer_validation")
     set(artifacts "[\"logs/asan.log\", \"logs/tsan.log\"]")
     set(command "./scripts/run_asan.sh && ./scripts/run_tsan.sh")
+  elseif(lane STREQUAL "comment_review")
+    set(artifacts "[\"logs/comment-review.tsv\", \"logs/comment-inventory-summary.log\"]")
+    set(command "python3 ./scripts/inventory_comments.py --format review-tsv > logs/comment-review.tsv && python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers > logs/comment-inventory-summary.log")
   elseif(lane STREQUAL "unreal_57_full_container")
     set(command "docker run ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce")
   elseif(lane STREQUAL "unreal_57_slim_container")
@@ -214,6 +220,29 @@ if(NOT bad_sanitizer_error MATCHES "sanitizer_validation.command")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong sanitizer-command reason: ${bad_sanitizer_error}")
 endif()
 
+set(bad_comment_manifest "${out_dir}/bad-comment-review-evidence.json")
+file(READ "${good_manifest}" bad_comment_text)
+string(REPLACE
+  "--format review-tsv"
+  "--format tsv"
+  bad_comment_text
+  "${bad_comment_text}"
+)
+file(WRITE "${bad_comment_manifest}" "${bad_comment_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_comment_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_comment_result
+  ERROR_VARIABLE bad_comment_error
+)
+if(bad_comment_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak comment-review evidence command")
+endif()
+if(NOT bad_comment_error MATCHES "comment_review.command")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong comment-review command reason: ${bad_comment_error}")
+endif()
+
 set(pre_sign_manifest "${out_dir}/pre-sign-evidence.json")
 file(WRITE "${pre_sign_manifest}" "${bad_command_text}")
 file(READ "${good_manifest}" pre_sign_text)
@@ -253,13 +282,17 @@ foreach(required
   "sanitizer_validation"
   "run_asan.sh"
   "run_tsan.sh"
+  "comment_review"
+  "inventory_comments.py"
+  "--format review-tsv"
+  "--fail-orphan-markers"
   "cuda_parity_matrix"
   "ASTRAL_TEST_CUDA_PARITY_INFER=1"
   "ASTRAL_TEST_CUDA_E2E=1"
   "run_cuda_parity_matrix.sh --preset-set release --strict"
 )
   if(NOT template_text MATCHES "${required}")
-    message(FATAL_ERROR "RELEASE_EVIDENCE_TEMPLATE.json is missing CUDA evidence requirement: ${required}")
+    message(FATAL_ERROR "RELEASE_EVIDENCE_TEMPLATE.json is missing release evidence requirement: ${required}")
   endif()
 endforeach()
 
@@ -271,9 +304,13 @@ foreach(required
   "run_tsan.sh"
   "ASAN/UBSAN"
   "TSan"
+  "Comment review"
+  "comment_review"
+  "inventory_comments.py"
+  "review-tsv"
 )
   if(NOT acceptance_text MATCHES "${required}")
-    message(FATAL_ERROR "RELEASE_ACCEPTANCE_MATRIX.md is missing sanitizer release evidence requirement: ${required}")
+    message(FATAL_ERROR "RELEASE_ACCEPTANCE_MATRIX.md is missing release evidence requirement: ${required}")
   endif()
 endforeach()
 
