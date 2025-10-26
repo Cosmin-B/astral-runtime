@@ -44,4 +44,21 @@ if(NOT tsv_output MATCHES "^path\tline\tkind\tmarker\tbead\ttext")
   message(FATAL_ERROR "Comment inventory TSV header changed: ${tsv_output}")
 endif()
 
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${inventory_script}"
+    --root "${ASTRAL_SOURCE_DIR}"
+    --format review-tsv
+    --limit 1
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE review_tsv_result
+  OUTPUT_VARIABLE review_tsv_output
+  ERROR_VARIABLE review_tsv_error
+)
+if(NOT review_tsv_result EQUAL 0)
+  message(FATAL_ERROR "Comment inventory review TSV smoke failed: ${review_tsv_error}")
+endif()
+if(NOT review_tsv_output MATCHES "^decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext")
+  message(FATAL_ERROR "Comment inventory review TSV header changed: ${review_tsv_output}")
+endif()
+
 message(STATUS "gate_comment_inventory: OK")

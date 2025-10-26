@@ -157,9 +157,13 @@ Generate a review inventory for maintained comments and documentation prose:
 
 ```bash
 python3 ./scripts/inventory_comments.py --format tsv > build/comment-inventory.tsv
+python3 ./scripts/inventory_comments.py --format review-tsv > build/comment-review.tsv
 python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers
 ```
 
+Use `review-tsv` for the human pass from the moonshot plan. Fill `decision`
+with `keep`, `rewrite`, `delete`, or `issue`; use `issue` for comments that
+identify real follow-up work and record the issue tracker ID in the `issue` column.
 The inventory output is a local review artifact. Keep it out of git unless a
 specific excerpt is promoted into maintained documentation.
 

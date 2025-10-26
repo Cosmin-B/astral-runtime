@@ -279,6 +279,17 @@ def print_tsv(entries: Iterable[Entry], limit: int) -> None:
         count += 1
 
 
+def print_review_tsv(entries: Iterable[Entry], limit: int) -> None:
+    print("decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext")
+    count = 0
+    for entry in entries:
+        if limit and count >= limit:
+            break
+        text = entry.text.replace("\t", " ").replace("\n", " ")
+        print(f"\t\t\t{entry.path}\t{entry.line}\t{entry.kind}\t{entry.marker}\t{entry.bead}\t{text}")
+        count += 1
+
+
 def limited(entries: Sequence[Entry], limit: int) -> Sequence[Entry]:
     if limit <= 0:
         return entries
@@ -309,7 +320,7 @@ def main() -> int:
         dest="scan_paths",
         help="Relative path to scan; repeat to override the default maintained paths",
     )
-    parser.add_argument("--format", choices=("tsv", "json", "summary"), default="tsv")
+    parser.add_argument("--format", choices=("tsv", "review-tsv", "json", "summary"), default="tsv")
     parser.add_argument("--limit", type=int, default=0, help="Maximum TSV rows to print; 0 prints all rows")
     parser.add_argument(
         "--fail-orphan-markers",
@@ -327,6 +338,8 @@ def main() -> int:
         print_summary(entries)
     elif args.format == "json":
         print(json.dumps([asdict(entry) for entry in limited(entries, args.limit)], indent=2))
+    elif args.format == "review-tsv":
+        print_review_tsv(entries, args.limit)
     else:
         print_tsv(entries, args.limit)
 
