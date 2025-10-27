@@ -14,7 +14,7 @@ Committed pins live in `docs/release/dependency-pins.tsv` and are checked by:
 |---|---|---|
 | Astral runtime | `CMakeLists.txt`, `include/astral_rt.h` | `0.1.0` |
 | llama.cpp | Git submodule `external/llama.cpp` | `b9025`, `eff06702b2a52e1020ea009ebd86cb9f5acabab5` |
-| Tracy | Git submodule `external/tracy` | `a602127eddb60825ac91e726986c12955e9a0082` |
+| Tracy | Git submodule `external/tracy` | `v0.13.1`, `05cceee0df3b8d7c6fa87e9638af311dbabc63cb` |
 | Unity package | `plugins/unity/package.json` | `com.astral.runtime` `0.1.0`, Unity `2021.3` |
 | Unreal package | `plugins/unreal/AstralRT/AstralRT.uplugin` | UE 5.4+ compatibility floor; UE 5.7 is the production target |
 
@@ -43,6 +43,12 @@ small SPDX 2.3 JSON SBOM generated from that manifest. `abi-layout.json` records
 public C ABI struct sizes and alignments for the release host. `checksums.sha256`
 covers files already present in the output directory, including generated
 metadata.
+
+Dependency policy:
+
+- Prefer released dependency tags for release candidates.
+- A post-release submodule commit needs a short release-doc rationale naming the
+  Astral requirement it satisfies and the validation command that covered it.
 
 ## Signing
 
