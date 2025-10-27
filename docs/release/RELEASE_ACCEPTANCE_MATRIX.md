@@ -62,6 +62,8 @@ SHA-256 is supplied, the validator checks it against the referenced file. The
 the TSan log from `run_tsan.sh`. The `comment_review` lane records the local
 `review-tsv` artifact used for human comment classification and the zero orphan
 marker summary; the validator checks both artifact contents.
+The `release_artifacts`, `release_signing`, and `sanitizer_validation` lanes
+must list the named artifacts in the matrix above, not only a generic log.
 
 Validate with `--phase pre-sign` before the protected signing workflow has
 produced `checksums.sha256.asc`; validate with the default complete phase after

@@ -247,6 +247,29 @@ if(NOT bad_sanitizer_error MATCHES "sanitizer_validation.command")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong sanitizer-command reason: ${bad_sanitizer_error}")
 endif()
 
+set(bad_sanitizer_artifacts_manifest "${out_dir}/bad-sanitizer-artifacts-evidence.json")
+file(READ "${good_manifest}" bad_sanitizer_artifacts_text)
+string(REPLACE
+  "[\"logs/asan.log\", \"logs/tsan.log\"]"
+  "[\"logs/asan.log\"]"
+  bad_sanitizer_artifacts_text
+  "${bad_sanitizer_artifacts_text}"
+)
+file(WRITE "${bad_sanitizer_artifacts_manifest}" "${bad_sanitizer_artifacts_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_sanitizer_artifacts_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_sanitizer_artifacts_result
+  ERROR_VARIABLE bad_sanitizer_artifacts_error
+)
+if(bad_sanitizer_artifacts_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted sanitizer evidence without TSan artifact")
+endif()
+if(NOT bad_sanitizer_artifacts_error MATCHES "sanitizer_validation.artifacts")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong sanitizer-artifacts reason: ${bad_sanitizer_artifacts_error}")
+endif()
+
 set(bad_comment_manifest "${out_dir}/bad-comment-review-evidence.json")
 file(READ "${good_manifest}" bad_comment_text)
 string(REPLACE
@@ -299,6 +322,52 @@ if(NOT bad_comment_summary_error MATCHES "orphan_markers=0")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong comment-review summary reason: ${bad_comment_summary_error}")
 endif()
 file(WRITE "${evidence_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
+
+set(bad_release_artifacts_manifest "${out_dir}/bad-release-artifacts-evidence.json")
+file(READ "${good_manifest}" bad_release_artifacts_text)
+string(REPLACE
+  "[\"dist/checksums.sha256\", \"dist/abi-layout.json\", \"dist/dependency-manifest.json\", \"dist/release-sbom.spdx.json\"]"
+  "[\"dist/checksums.sha256\", \"dist/abi-layout.json\", \"dist/dependency-manifest.json\"]"
+  bad_release_artifacts_text
+  "${bad_release_artifacts_text}"
+)
+file(WRITE "${bad_release_artifacts_manifest}" "${bad_release_artifacts_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_release_artifacts_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_release_artifacts_result
+  ERROR_VARIABLE bad_release_artifacts_error
+)
+if(bad_release_artifacts_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted release evidence without SBOM artifact")
+endif()
+if(NOT bad_release_artifacts_error MATCHES "release_artifacts.artifacts")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong release-artifacts reason: ${bad_release_artifacts_error}")
+endif()
+
+set(bad_signing_artifacts_manifest "${out_dir}/bad-signing-artifacts-evidence.json")
+file(READ "${good_manifest}" bad_signing_artifacts_text)
+string(REPLACE
+  "[\"dist/checksums.sha256.asc\"]"
+  "[\"logs/release_signing.log\"]"
+  bad_signing_artifacts_text
+  "${bad_signing_artifacts_text}"
+)
+file(WRITE "${bad_signing_artifacts_manifest}" "${bad_signing_artifacts_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_signing_artifacts_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_signing_artifacts_result
+  ERROR_VARIABLE bad_signing_artifacts_error
+)
+if(bad_signing_artifacts_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted signing evidence without checksum signature")
+endif()
+if(NOT bad_signing_artifacts_error MATCHES "release_signing.artifacts")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong signing-artifacts reason: ${bad_signing_artifacts_error}")
+endif()
 
 set(pre_sign_manifest "${out_dir}/pre-sign-evidence.json")
 file(WRITE "${pre_sign_manifest}" "${bad_command_text}")

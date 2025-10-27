@@ -87,6 +87,17 @@ REQUIRED_COMMAND_TOKENS = {
 
 COMMENT_REVIEW_HEADER = "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext"
 
+REQUIRED_ARTIFACT_NAMES = {
+    "sanitizer_validation": ("asan.log", "tsan.log"),
+    "release_artifacts": (
+        "checksums.sha256",
+        "abi-layout.json",
+        "dependency-manifest.json",
+        "release-sbom.spdx.json",
+    ),
+    "release_signing": ("checksums.sha256.asc",),
+}
+
 
 def fail(message):
     print(f"[release-evidence] {message}", file=sys.stderr)
@@ -156,8 +167,19 @@ def validate_comment_review_artifacts(paths):
         raise ValueError("comment_review summary must report orphan_markers=0")
 
 
+def require_artifact_names(lane_name, paths):
+    required = REQUIRED_ARTIFACT_NAMES.get(lane_name, ())
+    if not required:
+        return
+    available = {path.name for path in paths}
+    missing = [name for name in required if name not in available]
+    if missing:
+        raise ValueError(f"{lane_name}.artifacts must include {', '.join(missing)}")
+
+
 def validate_lane_artifacts(lane_name, lane, base_dir):
     paths = resolve_artifacts(lane_name, lane, base_dir)
+    require_artifact_names(lane_name, paths)
     if lane_name == "comment_review":
         validate_comment_review_artifacts(paths)
 
