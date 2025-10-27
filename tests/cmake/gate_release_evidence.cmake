@@ -243,6 +243,36 @@ if(NOT bad_comment_error MATCHES "comment_review.command")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong comment-review command reason: ${bad_comment_error}")
 endif()
 
+file(WRITE "${evidence_dir}/logs/comment-review.tsv" "path\tline\tkind\tmarker\tbead\ttext\n")
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${good_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_comment_header_result
+  ERROR_VARIABLE bad_comment_header_error
+)
+if(bad_comment_header_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted bad comment-review TSV header")
+endif()
+if(NOT bad_comment_header_error MATCHES "comment-review.tsv header")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong comment-review header reason: ${bad_comment_header_error}")
+endif()
+file(WRITE "${evidence_dir}/logs/comment-review.tsv" "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext\n")
+
+file(WRITE "${evidence_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=1 orphan_markers=1\n")
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${good_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_comment_summary_result
+  ERROR_VARIABLE bad_comment_summary_error
+)
+if(bad_comment_summary_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted comment-review summary with orphan markers")
+endif()
+if(NOT bad_comment_summary_error MATCHES "orphan_markers=0")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong comment-review summary reason: ${bad_comment_summary_error}")
+endif()
+file(WRITE "${evidence_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
+
 set(pre_sign_manifest "${out_dir}/pre-sign-evidence.json")
 file(WRITE "${pre_sign_manifest}" "${bad_command_text}")
 file(READ "${good_manifest}" pre_sign_text)

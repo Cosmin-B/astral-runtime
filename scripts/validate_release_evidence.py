@@ -75,6 +75,8 @@ REQUIRED_COMMAND_TOKENS = {
     "release_notes": ("validate_release_notes.sh",),
 }
 
+COMMENT_REVIEW_HEADER = "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext"
+
 
 def fail(message):
     print(f"[release-evidence] {message}", file=sys.stderr)
@@ -96,11 +98,12 @@ def require_text(value, field):
         raise ValueError(f"{field} must be a non-empty string")
 
 
-def validate_artifacts(lane_name, lane, base_dir):
+def resolve_artifacts(lane_name, lane, base_dir):
     artifacts = lane.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         raise ValueError(f"{lane_name}.artifacts must list at least one artifact")
 
+    resolved = []
     for index, artifact in enumerate(artifacts):
         field = f"{lane_name}.artifacts[{index}]"
         if isinstance(artifact, str):
@@ -122,6 +125,31 @@ def validate_artifacts(lane_name, lane, base_dir):
             require_text(expected_sha, f"{field}.sha256")
             if sha256_file(path) != expected_sha.lower():
                 raise ValueError(f"{field}.sha256 does not match: {path}")
+        resolved.append(path)
+    return resolved
+
+
+def validate_comment_review_artifacts(paths):
+    review_tsv = next((path for path in paths if path.name == "comment-review.tsv"), None)
+    summary_log = next((path for path in paths if path.name == "comment-inventory-summary.log"), None)
+    if review_tsv is None:
+        raise ValueError("comment_review.artifacts must include comment-review.tsv")
+    if summary_log is None:
+        raise ValueError("comment_review.artifacts must include comment-inventory-summary.log")
+
+    first_line = review_tsv.read_text(encoding="utf-8", errors="replace").splitlines()[0]
+    if first_line != COMMENT_REVIEW_HEADER:
+        raise ValueError("comment_review comment-review.tsv header is invalid")
+
+    summary = summary_log.read_text(encoding="utf-8", errors="replace")
+    if "orphan_markers=0" not in summary:
+        raise ValueError("comment_review summary must report orphan_markers=0")
+
+
+def validate_lane_artifacts(lane_name, lane, base_dir):
+    paths = resolve_artifacts(lane_name, lane, base_dir)
+    if lane_name == "comment_review":
+        validate_comment_review_artifacts(paths)
 
 
 def validate_manifest(data, base_dir, phase):
@@ -158,7 +186,7 @@ def validate_manifest(data, base_dir, phase):
         for token in REQUIRED_COMMAND_TOKENS.get(lane_name, ()):
             if token not in lane["command"]:
                 raise ValueError(f"{lane_name}.command must include {token}")
-        validate_artifacts(lane_name, lane, base_dir)
+        validate_lane_artifacts(lane_name, lane, base_dir)
 
 
 def main():

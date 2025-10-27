@@ -61,7 +61,7 @@ SHA-256 is supplied, the validator checks it against the referenced file. The
 `sanitizer_validation` lane records the ASAN/UBSAN log from `run_asan.sh` and
 the TSan log from `run_tsan.sh`. The `comment_review` lane records the local
 `review-tsv` artifact used for human comment classification and the zero orphan
-marker summary.
+marker summary; the validator checks both artifact contents.
 
 Validate with `--phase pre-sign` before the protected signing workflow has
 produced `checksums.sha256.asc`; validate with the default complete phase after
