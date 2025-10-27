@@ -69,6 +69,10 @@ foreach(lane IN LISTS required_lanes)
     set(path "docs/release/RELEASE_NOTES_TEMPLATE.md")
     set(artifacts "[\"${path}\"]")
     set(command "./scripts/validate_release_notes.sh release-notes.md")
+  elseif(lane STREQUAL "native_dev_ctest")
+    set(command "cmake --preset dev && cmake --build --preset dev -j && ctest --preset dev -j --output-on-failure")
+  elseif(lane STREQUAL "native_release_ctest")
+    set(command "cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure")
   elseif(lane STREQUAL "release_required_gates")
     set(command "./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench")
   elseif(lane STREQUAL "sanitizer_validation")
@@ -161,6 +165,29 @@ if(bad_result EQUAL 0)
 endif()
 if(NOT bad_error MATCHES "missing required lane")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong reason: ${bad_error}")
+endif()
+
+set(bad_native_manifest "${out_dir}/bad-native-evidence.json")
+file(READ "${good_manifest}" bad_native_text)
+string(REPLACE
+  "cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure"
+  "smoke native_release_ctest"
+  bad_native_text
+  "${bad_native_text}"
+)
+file(WRITE "${bad_native_manifest}" "${bad_native_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_native_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_native_result
+  ERROR_VARIABLE bad_native_error
+)
+if(bad_native_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak native release evidence command")
+endif()
+if(NOT bad_native_error MATCHES "native_release_ctest.command")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong native-command reason: ${bad_native_error}")
 endif()
 
 set(bad_command_manifest "${out_dir}/bad-command-evidence.json")
@@ -309,6 +336,12 @@ endif()
 
 file(READ "${ASTRAL_SOURCE_DIR}/docs/release/RELEASE_EVIDENCE_TEMPLATE.json" template_text)
 foreach(required
+  "native_dev_ctest"
+  "cmake --preset dev"
+  "ctest --preset dev"
+  "native_release_ctest"
+  "cmake --preset release-with-tests"
+  "ctest --preset release-with-tests"
   "sanitizer_validation"
   "run_asan.sh"
   "run_tsan.sh"

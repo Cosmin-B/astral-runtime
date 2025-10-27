@@ -29,6 +29,16 @@ REQUIRED_LANES = (
 PRE_SIGN_EXCLUDED_LANES = ("release_signing",)
 
 REQUIRED_COMMAND_TOKENS = {
+    "native_dev_ctest": (
+        "cmake --preset dev",
+        "cmake --build --preset dev",
+        "ctest --preset dev",
+    ),
+    "native_release_ctest": (
+        "cmake --preset release-with-tests",
+        "cmake --build --preset release-with-tests",
+        "ctest --preset release-with-tests",
+    ),
     "release_required_gates": (
         "run_release_required_gates.sh",
         "--cuda-strict",
