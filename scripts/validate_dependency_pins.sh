@@ -80,6 +80,14 @@ actual_value() {
         *) return 2 ;;
       esac
       ;;
+    github_workflow)
+      case "${key}" in
+        android_ndk_version)
+          sed -n 's/^[[:space:]]*ndk-version:[[:space:]]*//p' "${root_dir}/${path}" | sort -u | paste -sd, -
+          ;;
+        *) return 2 ;;
+      esac
+      ;;
     *)
       return 2
       ;;

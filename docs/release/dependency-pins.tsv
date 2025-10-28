@@ -15,3 +15,4 @@ unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	DocsURL	https://github.co
 unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	SupportURL	https://github.com/Cosmin-B/astral/issues
 unreal_support	plugins/unreal/AstralRT/AstralRT.uplugin	compatibility_floor	5.4
 unreal_support	plugins/unreal/AstralRT/AstralRT.uplugin	production_target	5.7
+github_workflow	.github/workflows/ci.yml	android_ndk_version	27.2.12479018

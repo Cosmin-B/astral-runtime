@@ -17,6 +17,7 @@ Committed pins live in `docs/release/dependency-pins.tsv` and are checked by:
 | Tracy | Git submodule `external/tracy` | `v0.13.1`, `05cceee0df3b8d7c6fa87e9638af311dbabc63cb` |
 | Unity package | `plugins/unity/package.json` | `com.astral.runtime` `0.1.0`, Unity `2021.3`, Collections `1.4.0` |
 | Unreal package | `plugins/unreal/AstralRT/AstralRT.uplugin` | UE 5.4+ compatibility floor; UE 5.7 is the production target |
+| Android NDK | `.github/workflows/ci.yml` | `27.2.12479018` (`r27c`) for Unity and Unreal Android artifacts |
 
 ## Generated Manifest
 

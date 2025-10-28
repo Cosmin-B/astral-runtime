@@ -395,8 +395,8 @@ jobs:
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
-          # r26d = 26.1.10909125
-          ndk-version: 26.1.10909125
+          # r27c = 27.2.12479018; matches UE 5.7 Android requirements.
+          ndk-version: 27.2.12479018
 
       - name: Export ANDROID_NDK_HOME
         run: |
@@ -503,8 +503,8 @@ jobs:
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
-          # r26d = 26.1.10909125
-          ndk-version: 26.1.10909125
+          # r27c = 27.2.12479018; matches UE 5.7 Android requirements.
+          ndk-version: 27.2.12479018
 
       - name: Export ANDROID_NDK_HOME
         run: |
