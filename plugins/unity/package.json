@@ -23,7 +23,7 @@
     "name": "Astral Runtime Contributors"
   },
   "dependencies": {
-    "com.unity.collections": "1.2.4"
+    "com.unity.collections": "1.4.0"
   },
   "samples": [
     {

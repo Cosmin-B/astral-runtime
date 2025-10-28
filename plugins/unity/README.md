@@ -17,7 +17,7 @@ mock media tests through the public C ABI.
 ## Requirements
 
 - Unity 2021.3 or later
-- Unity Collections package (1.2.4+)
+- Unity Collections package 1.4.0
 - Native plugin for target platform (see Runtime/Plugins/)
 
 ## Installation

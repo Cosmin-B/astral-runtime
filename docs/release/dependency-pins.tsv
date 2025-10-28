@@ -8,7 +8,7 @@ unity_package	plugins/unity/package.json	name	com.astral.runtime
 unity_package	plugins/unity/package.json	version	0.1.0
 unity_package	plugins/unity/package.json	unity	2021.3
 unity_package	plugins/unity/package.json	unityRelease	0f1
-unity_dependency	plugins/unity/package.json	com.unity.collections	1.2.4
+unity_dependency	plugins/unity/package.json	com.unity.collections	1.4.0
 unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	VersionName	0.1.0
 unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	CreatedByURL	https://github.com/Cosmin-B/astral
 unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	DocsURL	https://github.com/Cosmin-B/astral/tree/main/docs/integration
