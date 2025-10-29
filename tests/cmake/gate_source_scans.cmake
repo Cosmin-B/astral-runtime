@@ -462,6 +462,66 @@ foreach(path IN LISTS FILES)
   endforeach()
 endforeach()
 
+set(concurrency_model_doc "${ROOT}/docs/architecture/CONCURRENCY_MODEL.md")
+if(NOT EXISTS "${concurrency_model_doc}")
+  message(FATAL_ERROR "Concurrency memory-order contract doc missing: ${concurrency_model_doc}")
+endif()
+file(READ "${concurrency_model_doc}" concurrency_model_content)
+foreach(required_concurrency_doc_text
+    "MPMC queue (work dispatch)"
+    "SPSC ring (token streaming)"
+    "Memory-order contract"
+    "slot.seq.load(acquire)"
+    "slot.seq.store(release"
+    "head.store(release)"
+    "head` with acquire"
+    "reset()` is a lifecycle operation"
+    "ARM hardware runs for the weak-memory contract")
+  string(FIND "${concurrency_model_content}" "${required_concurrency_doc_text}" concurrency_doc_contract_pos)
+  if(concurrency_doc_contract_pos EQUAL -1)
+    message(FATAL_ERROR "Concurrency model doc must keep reviewed memory-order contract text: missing '${required_concurrency_doc_text}'")
+  endif()
+endforeach()
+
+set(spsc_ring_file "${ROOT}/src/concurrency/spsc_ring.hpp")
+if(NOT EXISTS "${spsc_ring_file}")
+  message(FATAL_ERROR "SPSC ring header missing: ${spsc_ring_file}")
+endif()
+file(READ "${spsc_ring_file}" spsc_ring_content)
+foreach(required_spsc_text
+    "memory_order_release on head write"
+    "memory_order_acquire on head read"
+    "tail_.load(std::memory_order_acquire)"
+    "head_.load(std::memory_order_acquire)"
+    "head_.store(next_head, std::memory_order_release)"
+    "tail_.store(tail + 1, std::memory_order_release)"
+    "Must not be called concurrently with push/pop"
+    "Thread-safety: Single producer, single consumer only")
+  string(FIND "${spsc_ring_content}" "${required_spsc_text}" spsc_contract_pos)
+  if(spsc_contract_pos EQUAL -1)
+    message(FATAL_ERROR "SPSC ring must keep reviewed memory-order contract evidence: missing '${required_spsc_text}'")
+  endif()
+endforeach()
+
+set(mpmc_queue_file "${ROOT}/src/concurrency/mpmc_queue.hpp")
+if(NOT EXISTS "${mpmc_queue_file}")
+  message(FATAL_ERROR "MPMC queue header missing: ${mpmc_queue_file}")
+endif()
+file(READ "${mpmc_queue_file}" mpmc_queue_content)
+foreach(required_mpmc_text
+    "per-slot sequence"
+    "fetch_add + per-slot sequence + WFE/SEV"
+    "slot.seq.load(std::memory_order_acquire) == pos"
+    "slot.seq.load(std::memory_order_acquire) == pos + 1"
+    "slot.seq.store(pos + 1, std::memory_order_release)"
+    "slot.seq.store(pos + Capacity, std::memory_order_release)"
+    "Correct on weak memory models")
+  string(FIND "${mpmc_queue_content}" "${required_mpmc_text}" mpmc_contract_pos)
+  if(mpmc_contract_pos EQUAL -1)
+    message(FATAL_ERROR "MPMC queue must keep reviewed memory-order contract evidence: missing '${required_mpmc_text}'")
+  endif()
+endforeach()
+
 set(unreal_stream_pump_file "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralSessionStreamPump.cpp")
 if(EXISTS "${unreal_stream_pump_file}")
   file(READ "${unreal_stream_pump_file}" unreal_stream_pump_content)

@@ -22,7 +22,7 @@ namespace astral::concurrency {
 ///
 /// Memory Ordering:
 /// - Producer (push): memory_order_release on head write (publishes data)
-/// - Consumer (pop): memory_order_acquire on tail read (synchronizes-with producer)
+/// - Consumer (pop): memory_order_acquire on head read (synchronizes-with producer)
 /// - No CAS needed (single producer + single consumer = zero contention)
 ///
 /// Performance:

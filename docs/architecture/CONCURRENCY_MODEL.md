@@ -47,12 +47,14 @@ File: `astral/src/concurrency/mpmc_queue.hpp`
 - Each slot contains a `seq` number that indicates whether the slot is ready for enqueue/dequeue.
 - Waiting uses short spinning followed by `cpu_wait_for_event()`; successful operations call `cpu_signal_event()`.
 
-### Memory ordering
+### Memory-order contract
 
-- Producer waits on `slot.seq.load(relaxed) == pos`, then writes `slot.data`, then `slot.seq.store(release, pos + 1)`.
-- Consumer waits on `slot.seq.load(relaxed) == pos + 1`, then performs `slot.seq.load(acquire)` before reading `slot.data`, then `slot.seq.store(release, pos + Capacity)`.
+- Reservation tickets use `fetch_add(relaxed)`. Tickets only choose a slot; they do not publish data.
+- Producers wait for `slot.seq.load(acquire) == pos`, write `slot.data`, then publish with `slot.seq.store(release, pos + 1)`.
+- Consumers wait for `slot.seq.load(acquire) == pos + 1`, read `slot.data`, then release the slot with `slot.seq.store(release, pos + Capacity)`.
+- `slot.seq` is the synchronization object. Data becomes visible only through the per-slot acquire/release pair.
 
-This is correct on weak memory models (ARM) without relying on atomic compare-and-swap.
+This is the reviewed weak-memory contract for ARM and x86. Future edits that move data reads or writes across the acquire/release pair need a new review, a matching test change, and a benchmark note.
 
 ### API
 
@@ -73,13 +75,24 @@ File: `astral/src/concurrency/spsc_ring.hpp`
 - Producer signals on **empty → non-empty** to wake a waiting consumer.
 - Consumer signals on **full → not-full** to wake a waiting producer.
 
-### Memory ordering
+### Memory-order contract
 
-- Producer publishes the element, then `head.store(release)`.
-- Consumer reads `head.load(acquire)`, then consumes the element, then `tail.store(release)`.
+- The producer is the only writer of `head`; the consumer is the only writer of `tail`.
+- Producer `push`: load `tail` with acquire to observe consumer progress, load `head` relaxed, write the element, then publish `head.store(release)`.
+- Consumer `pop`: load `head` with acquire to observe producer data, load `tail` relaxed, read the element, then publish `tail.store(release)`.
+- `size()` and `empty()` are approximate statistics and use relaxed loads only.
+- `reset()` is a lifecycle operation. It must not run concurrently with `push()` or `pop()`.
+
+This ring intentionally does not add ownership checks to the hot path. Callers enforce the single-producer/single-consumer rule before using the primitive.
 
 ## Validation
 
 - Unit tests: `ctest --preset dev` and `ctest --preset release-with-tests`
 - Sanitizers: TSAN tests are configured; on Linux x86_64 they run with ASLR disabled to avoid known TSAN mapping issues.
 - Microbenchmarks: `./build/release-test/benchmarks/astral_benchmarks`
+- Source contract gate: `gate_source_scans` checks the maintained MPMC/SPSC acquire/release prose against the source headers and this document.
+
+Remaining release evidence:
+- Multi-hour queue and streaming stress runs on release hardware.
+- ARM hardware runs for the weak-memory contract.
+- Cancellation and backpressure stress in the engine integration path.
