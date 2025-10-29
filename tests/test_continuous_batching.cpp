@@ -58,7 +58,173 @@ static AstralSpanU8 span_from_cstr(const char* s) {
     return out;
 }
 
+static AstralHandle load_mock_model() {
+    AstralModelDesc md{};
+    md.size = sizeof(AstralModelDesc);
+    md.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    md.backend_name = span_from_cstr("mock");
+    md.n_ctx = 128;
+
+    AstralHandle model = 0;
+    const AstralErr err = astral_model_load(&md, &model);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(model));
+    return model;
+}
+
 } // namespace
+
+TEST(continuous_batching_mock_slot_fairness) {
+    constexpr uint32_t kSlots = 4;
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = 64 * 1024 * 1024;
+    cfg.thread_count = 2;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const AstralHandle model = load_mock_model();
+
+    AstralExecutorDesc exd{};
+    exd.size = sizeof(AstralExecutorDesc);
+    exd.max_slots = kSlots;
+    exd.max_batch_tokens = 16;
+    exd.worker_hint = 0;
+    err = astral_model_executor_configure(model, &exd);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralHandle convs[kSlots] = {0, 0, 0, 0};
+    const char* prompts[kSlots] = {"slot zero", "slot one", "slot two", "slot three"};
+
+    for (uint32_t i = 0; i < kSlots; ++i) {
+        AstralConvDesc cd{};
+        cd.size = sizeof(AstralConvDesc);
+        cd.model = model;
+        cd.max_tokens = 12;
+        cd.temperature = 0.0f;
+        cd.top_k = 0;
+        cd.top_p = 1.0f;
+        cd.stream_enabled = 1;
+        cd.seed = 1u + i;
+
+        err = astral_conv_create(&cd, &convs[i]);
+        ASSERT_EQ(err, ASTRAL_OK);
+        ASSERT_TRUE(astral_handle_valid(convs[i]));
+
+        err = astral_conv_feed(convs[i], span_from_cstr(prompts[i]), 1);
+        ASSERT_EQ(err, ASTRAL_OK);
+    }
+
+    AstralConvDesc overflow_desc{};
+    overflow_desc.size = sizeof(AstralConvDesc);
+    overflow_desc.model = model;
+    overflow_desc.max_tokens = 4;
+    overflow_desc.stream_enabled = 1;
+    AstralHandle overflow = 0;
+    err = astral_conv_create(&overflow_desc, &overflow);
+    ASSERT_EQ(err, ASTRAL_E_NOMEM);
+    ASSERT_EQ(overflow, 0u);
+
+    for (uint32_t i = 0; i < kSlots; ++i) {
+        err = astral_conv_decode(convs[i]);
+        ASSERT_EQ(err, ASTRAL_OK);
+    }
+
+    bool got_any[kSlots] = {false, false, false, false};
+    uint32_t done = 0;
+    uint32_t spins = 0;
+    while (done < kSlots && spins < 400) {
+        done = 0;
+        for (uint32_t i = 0; i < kSlots; ++i) {
+            uint8_t buf[64];
+            AstralMutSpanU8 out{};
+            out.data = buf;
+            out.len = sizeof(buf);
+            const int32_t n = astral_conv_stream_read(convs[i], out, 0);
+            if (n > 0) {
+                got_any[i] = true;
+            } else if (n != 0 && n != ASTRAL_E_TIMEOUT) {
+                ASSERT_TRUE(false);
+            }
+
+            AstralConvStats stats{};
+            err = astral_conv_stats(convs[i], &stats);
+            ASSERT_EQ(err, ASTRAL_OK);
+            ASSERT_LT(stats.slot_id, kSlots);
+            ASSERT_GT(stats.prompt_tokens, 0u);
+
+            AstralSessionState state = ASTRAL_SESSION_FAILED;
+            err = astral_conv_state(convs[i], &state);
+            ASSERT_EQ(err, ASTRAL_OK);
+            if (state == ASTRAL_SESSION_COMPLETED) {
+                ++done;
+            }
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        ++spins;
+    }
+
+    ASSERT_EQ(done, kSlots);
+    for (uint32_t i = 0; i < kSlots; ++i) {
+        ASSERT_TRUE(got_any[i]);
+        err = astral_conv_wait(convs[i], 1000);
+        ASSERT_EQ(err, ASTRAL_OK);
+    }
+
+    astral_conv_destroy(convs[1]);
+    convs[1] = 0;
+
+    AstralConvDesc reuse_desc{};
+    reuse_desc.size = sizeof(AstralConvDesc);
+    reuse_desc.model = model;
+    reuse_desc.max_tokens = 8;
+    reuse_desc.temperature = 0.0f;
+    reuse_desc.top_k = 0;
+    reuse_desc.top_p = 1.0f;
+    reuse_desc.stream_enabled = 1;
+    reuse_desc.seed = 99;
+
+    err = astral_conv_create(&reuse_desc, &convs[1]);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_conv_feed(convs[1], span_from_cstr("reused slot"), 1);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_conv_decode(convs[1]);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    bool reuse_output = false;
+    for (uint32_t i = 0; i < 128; ++i) {
+        uint8_t buf[64];
+        AstralMutSpanU8 out{};
+        out.data = buf;
+        out.len = sizeof(buf);
+        const int32_t n = astral_conv_stream_read(convs[1], out, 0);
+        if (n > 0) {
+            reuse_output = true;
+        } else if (n != 0 && n != ASTRAL_E_TIMEOUT) {
+            ASSERT_TRUE(false);
+        }
+
+        AstralSessionState state = ASTRAL_SESSION_FAILED;
+        err = astral_conv_state(convs[1], &state);
+        ASSERT_EQ(err, ASTRAL_OK);
+        if (state == ASTRAL_SESSION_COMPLETED) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(reuse_output);
+    err = astral_conv_wait(convs[1], 1000);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    for (uint32_t i = 0; i < kSlots; ++i) {
+        if (convs[i] != 0) {
+            astral_conv_destroy(convs[i]);
+        }
+    }
+    astral_model_release(model);
+    astral_shutdown();
+}
 
 TEST(continuous_batching_multi_conv_cpu) {
     const char* model_path = find_test_model_path();
