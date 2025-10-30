@@ -31,8 +31,19 @@ jobs:
           cmake --build --preset dev -j
 
       - name: Test
+        shell: bash
         run: |
-          ctest --preset dev -j
+          mkdir -p build/test-logs
+          ctest --preset dev -j --output-on-failure 2>&1 | tee "build/test-logs/ctest-${RUNNER_OS}-dev.log"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Upload CTest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-dev-${{ runner.os }}
+          path: build/test-logs/ctest-${{ runner.os }}-dev.log
+          if-no-files-found: ignore
 
   bench-features-linux:
     runs-on: ubuntu-latest
@@ -159,8 +170,19 @@ jobs:
           cmake --build --preset dev -j
 
       - name: Test
+        shell: bash
         run: |
-          ctest --preset dev -j
+          mkdir -p build/test-logs
+          ctest --preset dev -j --output-on-failure 2>&1 | tee "build/test-logs/ctest-${RUNNER_OS}-dev.log"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Upload CTest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-dev-${{ runner.os }}
+          path: build/test-logs/ctest-${{ runner.os }}-dev.log
+          if-no-files-found: ignore
 
   windows-tests:
     runs-on: windows-latest
@@ -190,8 +212,19 @@ jobs:
           cmake --build --preset dev -j
 
       - name: Test
+        shell: bash
         run: |
-          ctest --preset dev -j
+          mkdir -p build/test-logs
+          ctest --preset dev -j --output-on-failure 2>&1 | tee "build/test-logs/ctest-${RUNNER_OS}-dev.log"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Upload CTest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-dev-${{ runner.os }}
+          path: build/test-logs/ctest-${{ runner.os }}-dev.log
+          if-no-files-found: ignore
 
   linux-prof-tracy:
     runs-on: ubuntu-latest
@@ -227,8 +260,19 @@ jobs:
 
       - name: Test (dev-prof)
         if: steps.tracy.outputs.enabled == 'true'
+        shell: bash
         run: |
-          ctest --preset dev-prof -j
+          mkdir -p build/test-logs
+          ctest --preset dev-prof -j --output-on-failure 2>&1 | tee "build/test-logs/ctest-dev-prof-${RUNNER_OS}.log"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Upload dev-prof CTest log
+        if: always() && steps.tracy.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-dev-prof-${{ runner.os }}
+          path: build/test-logs/ctest-dev-prof-${{ runner.os }}.log
+          if-no-files-found: ignore
 
   cross-compile:
     runs-on: ubuntu-latest

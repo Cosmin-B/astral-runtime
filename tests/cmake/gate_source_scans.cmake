@@ -522,6 +522,28 @@ foreach(required_mpmc_text
   endif()
 endforeach()
 
+set(ci_workflow_file "${ROOT}/.github/workflows/ci.yml")
+if(NOT EXISTS "${ci_workflow_file}")
+  message(FATAL_ERROR "CI workflow missing: ${ci_workflow_file}")
+endif()
+file(READ "${ci_workflow_file}" ci_workflow_content)
+set(github_runner_os_expr "$")
+string(APPEND github_runner_os_expr "{{ runner.os }}")
+set(shell_runner_os_expr "$")
+string(APPEND shell_runner_os_expr "{RUNNER_OS}")
+foreach(required_ci_ctest_text
+    "ctest --preset dev -j --output-on-failure"
+    "ctest --preset dev-prof -j --output-on-failure"
+    "ctest-dev-${github_runner_os_expr}"
+    "ctest-dev-prof-${github_runner_os_expr}"
+    "build/test-logs/ctest-${shell_runner_os_expr}-dev.log"
+    "build/test-logs/ctest-dev-prof-${shell_runner_os_expr}.log")
+  string(FIND "${ci_workflow_content}" "${required_ci_ctest_text}" ci_ctest_pos)
+  if(ci_ctest_pos EQUAL -1)
+    message(FATAL_ERROR "CI native CTest log workflow must keep '${required_ci_ctest_text}'")
+  endif()
+endforeach()
+
 set(unreal_stream_pump_file "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralSessionStreamPump.cpp")
 if(EXISTS "${unreal_stream_pump_file}")
   file(READ "${unreal_stream_pump_file}" unreal_stream_pump_content)
