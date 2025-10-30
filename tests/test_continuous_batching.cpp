@@ -226,10 +226,10 @@ TEST(continuous_batching_mock_slot_fairness) {
     astral_shutdown();
 }
 
-TEST(continuous_batching_multi_conv_cpu) {
+TEST(continuous_batching_multi_conv_cpu_fixture_probe) {
     const char* model_path = find_test_model_path();
     if (model_path == nullptr) {
-        return;
+        SKIP_TEST("ASTRAL_TEST_MODEL or tests/models/gpt2.Q2_K.gguf is required for CPU continuous-batching coverage");
     }
 
     AstralInit cfg{};

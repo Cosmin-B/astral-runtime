@@ -48,6 +48,11 @@ Astral uses a single model for decode/stream gates and (optionally) a different 
 - `ASTRAL_TEST_EMBED_MODEL`: embeddings tests (can be an encoder-only GGUF like MiniLM/BGE)
 - `ASTRAL_TEST_MODEL`: legacy fallback used when the specific variable is not set
 
+Fixture-dependent tests use explicit `SKIP_TEST(...)` reporting when the needed
+model or projector is absent. A skipped fixture probe is acceptable in the fast
+mock/default lane; release lanes set the required environment variables and fail
+before CTest when required fixtures are missing.
+
 Multimodal (optional):
 - `ASTRAL_TEST_VISION_MODEL` + `ASTRAL_TEST_VISION_MEDIA` (mmproj/projector GGUF)
 - `ASTRAL_TEST_AUDIO_MODEL` + `ASTRAL_TEST_AUDIO_MEDIA` (mmproj/projector GGUF)

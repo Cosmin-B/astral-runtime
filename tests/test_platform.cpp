@@ -146,8 +146,6 @@ TEST(cpu_pause_no_crash) {
     for (int i = 0; i < 1000; ++i) {
         cpu_pause();
     }
-    // If we get here, no crash occurred
-    ASSERT_TRUE(true);
 }
 
 // Test compiler fence (no crashes, ordering preserved)

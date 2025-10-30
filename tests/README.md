@@ -28,7 +28,7 @@ Model selection order:
 3. `astral/tests/models/tinyllama-1.1b-chat-v1.0.Q2_K.gguf` (legacy filename, if present)
 4. `astral/tests/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf` (legacy filename, if present)
 
-If no model is found, the test prints a `[SKIP]` message and continues. If a model path is found but the load fails, the test fails.
+Fixture-dependent cases call `SKIP_TEST(...)` when no model is found, so CTest logs show which real-model coverage did not run. If a model path is found but the load fails, the test fails.
 
 ### Downloading a small model
 

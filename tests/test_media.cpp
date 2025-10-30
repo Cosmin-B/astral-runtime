@@ -109,7 +109,11 @@ static void run_cpu_media_init_smoke(const char* label,
     const char* model_path = std::getenv(model_env);
     const char* media_path = std::getenv(media_env);
     if (!media_fixture_ready(label, model_path, media_path)) {
-        return;
+        char msg[256];
+        std::snprintf(msg, sizeof(msg),
+                      "%s media fixture coverage needs %s and %s",
+                      label, model_env, media_env);
+        SKIP_TEST(msg);
     }
 
     AstralInit cfg{};
@@ -269,7 +273,7 @@ TEST(media_mock_embeddings) {
     astral_shutdown();
 }
 
-TEST(media_cpu_vision_init_smoke) {
+TEST(media_cpu_vision_init_fixture_probe) {
 #if ASTRAL_ENABLE_MTMD
     run_cpu_media_init_smoke("vision", "ASTRAL_TEST_VISION_MODEL", "ASTRAL_TEST_VISION_MEDIA",
                              /*expect_image=*/true, /*expect_audio=*/false);
@@ -277,10 +281,11 @@ TEST(media_cpu_vision_init_smoke) {
     if (env_enabled("ASTRAL_TEST_REQUIRE_MEDIA")) {
         astral::testing::test_fail_msg(__FILE__, __LINE__, "ASTRAL_TEST_REQUIRE_MEDIA needs ASTRAL_ENABLE_MTMD=ON");
     }
+    SKIP_TEST("ASTRAL_ENABLE_MTMD=ON is required for CPU vision media fixture coverage");
 #endif
 }
 
-TEST(media_cpu_audio_init_smoke) {
+TEST(media_cpu_audio_init_fixture_probe) {
 #if ASTRAL_ENABLE_MTMD
     run_cpu_media_init_smoke("audio", "ASTRAL_TEST_AUDIO_MODEL", "ASTRAL_TEST_AUDIO_MEDIA",
                              /*expect_image=*/false, /*expect_audio=*/true);
@@ -288,5 +293,6 @@ TEST(media_cpu_audio_init_smoke) {
     if (env_enabled("ASTRAL_TEST_REQUIRE_MEDIA")) {
         astral::testing::test_fail_msg(__FILE__, __LINE__, "ASTRAL_TEST_REQUIRE_MEDIA needs ASTRAL_ENABLE_MTMD=ON");
     }
+    SKIP_TEST("ASTRAL_ENABLE_MTMD=ON is required for CPU audio media fixture coverage");
 #endif
 }

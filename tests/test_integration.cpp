@@ -55,7 +55,7 @@ static const char* get_test_model_path() {
             fprintf(stdout, "[INFO] Using model from ASTRAL_TEST_MODEL: %s\n", env_path);
             return env_path;
         }
-        fprintf(stderr, "[SKIP] ASTRAL_TEST_MODEL set but file missing/too small: %s\n", env_path);
+        fprintf(stderr, "[INFO] ASTRAL_TEST_MODEL set but file missing/too small: %s\n", env_path);
         return nullptr;
     }
 
@@ -90,7 +90,7 @@ static const char* get_test_model_path() {
         }
     }
 
-    fprintf(stderr, "[SKIP] Model not found (tried %zu paths, run model_downloader.sh first)\n",
+    fprintf(stderr, "[INFO] Model not found (tried %zu paths, run model_downloader.sh first)\n",
             sizeof(paths) / sizeof(paths[0]));
     return nullptr;
 }
@@ -258,12 +258,11 @@ TEST(error_strings) {
  * 7. Check statistics (tokens/sec, time to first token)
  * 8. Clean up all resources
  */
-TEST(e2e_inference) {
+TEST(e2e_inference_fixture_probe) {
     // Get model path
     const char* model_path = get_test_model_path();
     if (!model_path) {
-        fprintf(stderr, "[SKIP] test_e2e_inference: Model not found\n");
-        return; // Skip test if model not available
+        SKIP_TEST("ASTRAL_TEST_MODEL or tests/models/gpt2.Q2_K.gguf is required for CPU inference fixture coverage");
     }
 
     // Initialize Astral
@@ -451,11 +450,10 @@ TEST(e2e_inference) {
  * Runs the same prompt twice with the same seed and asserts identical output.
  * Uses a single backend thread to reduce nondeterminism.
  */
-TEST(cpu_seed_reset_deterministic) {
+TEST(cpu_seed_reset_deterministic_fixture_probe) {
     const char* model_path = get_test_model_path();
     if (!model_path) {
-        fprintf(stderr, "[SKIP] test_cpu_seed_reset_deterministic: Model not found\n");
-        return;
+        SKIP_TEST("ASTRAL_TEST_MODEL or tests/models/gpt2.Q2_K.gguf is required for CPU seed/reset coverage");
     }
 
     AstralInit cfg = {0};
@@ -554,11 +552,10 @@ TEST(cpu_seed_reset_deterministic) {
     astral_shutdown();
 }
 
-TEST(cpu_json_schema_grammar_capability_and_set) {
+TEST(cpu_json_schema_grammar_capability_probe) {
     const char* model_path = get_test_model_path();
     if (!model_path) {
-        fprintf(stderr, "[SKIP] test_cpu_json_schema_grammar_capability_and_set: Model not found\n");
-        return;
+        SKIP_TEST("ASTRAL_TEST_MODEL or tests/models/gpt2.Q2_K.gguf is required for CPU JSON-schema grammar coverage");
     }
 
     AstralInit cfg = {0};
@@ -617,11 +614,10 @@ TEST(cpu_json_schema_grammar_capability_and_set) {
     astral_shutdown();
 }
 
-TEST(cpu_slots_smoke) {
+TEST(cpu_slots_fixture_probe) {
     const char* model_path = get_test_model_path();
     if (!model_path) {
-        fprintf(stderr, "[SKIP] test_cpu_slots_smoke: Model not found\n");
-        return;
+        SKIP_TEST("ASTRAL_TEST_MODEL or tests/models/gpt2.Q2_K.gguf is required for CPU slot coverage");
     }
 
     // Ensure llama context is created with multiple sequences enabled.

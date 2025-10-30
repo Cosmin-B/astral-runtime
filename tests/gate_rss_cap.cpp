@@ -111,18 +111,14 @@ static const char* find_test_model_path() {
 
 TEST(gate_rss_cap) {
 #if !defined(__linux__)
-    // Not enforced on this platform in v0.1.
-    ASSERT_TRUE(true);
-    return;
+    SKIP_TEST("RSS cap gate is enforced on Linux only");
 #else
     const uint64_t max_mb = parse_u64_env("ASTRAL_RSS_MAX_MB", 8192ULL);
     const uint64_t max_kb = max_mb * 1024ULL;
 
     const char* gguf = find_test_model_path();
     if (gguf == nullptr) {
-        // Model RSS sampling only runs when a GGUF fixture is configured; mock-default lanes have no model load.
-        ASSERT_TRUE(true);
-        return;
+        SKIP_TEST("ASTRAL_TEST_DECODE_MODEL or ASTRAL_TEST_MODEL is required for model RSS sampling");
     }
 
     AstralInit cfg{};

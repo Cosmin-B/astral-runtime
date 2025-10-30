@@ -237,10 +237,10 @@ TEST(embeddings_mock_queue_pressure) {
     astral_shutdown();
 }
 
-TEST(embeddings_cpu_e2e) {
+TEST(embeddings_cpu_e2e_fixture_probe) {
     const char* model_path = find_test_model_path();
     if (model_path == nullptr) {
-        return;
+        SKIP_TEST("ASTRAL_TEST_EMBED_MODEL or ASTRAL_TEST_MODEL is required for CPU embedding fixture coverage");
     }
 
     AstralInit cfg{};

@@ -459,7 +459,32 @@ foreach(path IN LISTS FILES)
     if(is_lambda_gated_source AND ext MATCHES "^\\.(h|hpp|c|cc|cpp)$" AND line MATCHES "\\[[^]]*\\][ \t]*\\(" AND NOT line MATCHES "operator[^[]*\\[[ \t]*\\]")
       message(FATAL_ERROR "Lambda expression found in ${path}:${line_no}; use a named helper so ownership, profiling, and control flow stay reviewable")
     endif()
+    if(path MATCHES "/tests/.*\\.(cpp|hpp)$")
+      if(line MATCHES "ASSERT_TRUE\\(true\\)")
+        message(FATAL_ERROR "No-op ASSERT_TRUE(true) found in ${path}:${line_no}; use a real assertion or SKIP_TEST with an explicit fixture/probe reason")
+      endif()
+      if(line MATCHES "\\[SKIP\\]")
+        message(FATAL_ERROR "Ad hoc [SKIP] output found in ${path}:${line_no}; use SKIP_TEST so skipped fixture/probe coverage is counted")
+      endif()
+    endif()
   endforeach()
+endforeach()
+
+set(test_framework_file "${ROOT}/tests/test_framework.hpp")
+if(NOT EXISTS "${test_framework_file}")
+  message(FATAL_ERROR "Test framework header missing: ${test_framework_file}")
+endif()
+file(READ "${test_framework_file}" test_framework_content)
+foreach(required_test_skip_text
+    "struct TestSkipped"
+    "[  SKIPPED ]"
+    "[ SKIPPED  ]"
+    "test_skip_msg"
+    "#define SKIP_TEST")
+  string(FIND "${test_framework_content}" "${required_test_skip_text}" test_skip_pos)
+  if(test_skip_pos EQUAL -1)
+    message(FATAL_ERROR "Test framework must keep explicit skip reporting: missing '${required_test_skip_text}'")
+  endif()
 endforeach()
 
 set(concurrency_model_doc "${ROOT}/docs/architecture/CONCURRENCY_MODEL.md")
