@@ -7,8 +7,8 @@ Astral is a C++20 native inference layer on top of LLaMA-class backends, designe
 - **Allocation-Gated Hot Paths**: Release gates track steady-state heap behavior for token streaming, decoding, and sampling
 - **CAS-Free Concurrency Primitives**: Bounded MPMC queue (ticket + per-slot sequence) and SPSC token rings; ARM-friendly WFE/SEV waiting
 - **C ABI Surface**: Clean separation between C ABI and C++ implementation; v0.1 (ABI may still evolve until v1.0)
-- **Engine Integration**: Unity `NativeArray` adapters and Unreal wrapper code for native runtime ownership
-- **Cross-Platform**: Core supports Linux/Windows/macOS (x86_64/arm64) today; Android/iOS packaging is planned for v0.1.1
+- **Engine Integration**: Unity `NativeArray` adapters and Unreal wrapper code; real editor evidence remains a release blocker
+- **Cross-Platform**: Desktop native gates cover the core runtime; mobile artifacts still need device/runtime validation
 - **Embeddings**: End-to-end embeddings API (`astral_embed_*`) for embeddings-only models
 
 ## Project Structure

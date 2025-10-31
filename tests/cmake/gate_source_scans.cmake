@@ -48,9 +48,6 @@ foreach(glob IN LISTS SCAN_GLOBS)
 endforeach()
 
 list(REMOVE_DUPLICATES FILES)
-set(ignored_feature_parity_doc_path "${ROOT}/docs/FEATURE_")
-string(APPEND ignored_feature_parity_doc_path "PARITY.md")
-list(REMOVE_ITEM FILES "${ignored_feature_parity_doc_path}")
 
 list(LENGTH FILES FILES_LEN)
 if(FILES_LEN EQUAL 0)
@@ -312,6 +309,14 @@ set(stale_roadmap_memory_estimates_phrase "best")
 string(APPEND stale_roadmap_memory_estimates_phrase "-effort memory estimates")
 set(stale_roadmap_ue51_phrase "UE 5.1")
 string(APPEND stale_roadmap_ue51_phrase ".5.7")
+set(stale_unity_shippable_phrase "current,")
+string(APPEND stale_unity_shippable_phrase " shippable Unity API")
+set(stale_unity_platform_coverage_phrase "Platform")
+string(APPEND stale_unity_platform_coverage_phrase " Coverage")
+set(stale_unity_portable_phrase "Portable")
+string(APPEND stale_unity_portable_phrase ".*armv7")
+set(stale_unity_realtime_streaming_phrase "Streaming Support")
+string(APPEND stale_unity_realtime_streaming_phrase ".*Real-time token streaming")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -427,6 +432,10 @@ set(UNREVIEWED_PROSE_STRINGS
   "${stale_roadmap_cuda_scaffold_phrase}"
   "${stale_roadmap_memory_estimates_phrase}"
   "${stale_roadmap_ue51_phrase}"
+  "${stale_unity_shippable_phrase}"
+  "${stale_unity_platform_coverage_phrase}"
+  "${stale_unity_portable_phrase}"
+  "${stale_unity_realtime_streaming_phrase}"
 )
 
 foreach(path IN LISTS FILES)

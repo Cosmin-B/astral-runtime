@@ -2,6 +2,10 @@
 
 This is a UE5 plugin scaffold that wraps Astral's C ABI (`astral_rt.h`) with engine-friendly types and a bytes-first streaming path (UTF-8 chunks via `TConstArrayView<uint8>` / `TArray<uint8>`).
 
+Current status: the native ThirdParty package can be staged and checked locally,
+but real UE 5.7 container runs and UE 5.4+ editor compatibility runs remain
+required before release sign-off.
+
 ## Build and package (native)
 
 This repo includes a CMake preset that packages the native static library + headers into the plugin's `ThirdParty/` layout:
@@ -31,7 +35,8 @@ Copy `astral/plugins/unreal/AstralRT/` into your Unreal project:
 <YourProject>/Plugins/AstralRT/
 ```
 
-Enable the plugin and build the project.
+Enable the plugin and build the project. Treat a local native package build as
+staging evidence only; release evidence still needs UnrealEditor Automation.
 
 ## Minimal example (mock backend)
 

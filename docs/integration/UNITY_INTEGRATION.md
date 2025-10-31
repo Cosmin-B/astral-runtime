@@ -1,14 +1,18 @@
 # Unity Integration Specification
 
-Implementation note: this document is a design/spec. For the current, shippable Unity API and up-to-date examples, prefer `plugins/unity/README.md` and `plugins/unity/Runtime/*`.
+Implementation note: this document is a design/spec. For maintained Unity API
+usage, prefer `plugins/unity/README.md` and `plugins/unity/Runtime/*`. Release
+sign-off still requires a real Unity Editor runner with native binaries present.
 
 ## Goals
 
 1. **Caller-owned stream buffers**: Read token bytes into `NativeArray<byte>` buffers without converting every token to a managed string.
 2. **Burst-friendly job wrappers**: Keep job data blittable and pass native handles explicitly.
 3. **IL2CPP constraints**: Avoid reflection and dynamic code generation in native-handle wrappers.
-4. **Platform Coverage**: Windows, macOS, Linux, Android (armv7/arm64), iOS (arm64)
-5. **Native Allocator Passthrough**: Use Unity's `Allocator.Persistent` for session-local allocations
+4. **Platform Evidence**: Windows, macOS, Linux, Android, and iOS need import
+   and player evidence before support claims.
+5. **Native Allocator Passthrough**: Use Unity-owned allocation paths for
+   session-local buffers where the C ABI exposes that ownership.
 
 ## Architecture
 

@@ -4,15 +4,19 @@ Unity bindings and package layout for Astral Runtime. The package exposes native
 runtime initialization, model/session handles, streaming reads, embeddings, and
 mock media tests through the public C ABI.
 
+Current status: the package has native packaging and EditMode test tooling, but
+real Unity Editor runs with platform binaries are still required before release
+sign-off.
+
 ## Features
 
 - **NativeArray streaming path**: `ReadStream(NativeArray<byte>)` reads UTF-8 bytes into caller-owned buffers.
 - **Burst-friendly job wrappers**: Job structs use blittable fields and `NativeArray` buffers.
 - **Explicit P/Invoke ABI**: Declarations use the public C ABI and EditMode tests check key struct layouts.
-- **Streaming Support**: Real-time token streaming with backpressure control
+- **Streaming support**: Frame-polled token reads with native backpressure control
 - **Deterministic ownership**: Native handles are released through `IDisposable`.
 - **Thread ownership**: Native buffers are owned by `NativeArray`; session concurrency still needs real Unity runner evidence.
-- **Portable**: armv7, armv8, arm64, x86-64 support
+- **Platform package surface**: desktop and mobile plugin layouts exist; each target still needs real Unity import/player evidence.
 
 ## Requirements
 
@@ -22,7 +26,7 @@ mock media tests through the public C ABI.
 
 ## Installation
 
-### Unity Package Manager (Recommended)
+### Unity Package Manager
 
 1. Open Unity Package Manager (Window > Package Manager)
 2. Click '+' > Add package from git URL
@@ -147,7 +151,7 @@ Global runtime initialization and shutdown.
 // Initialize runtime
 AstralRuntime.Initialize(AstralConfig.Default);
 
-// Or: no-throw init (recommended for embedded-style, exception-free gameplay loops)
+// Or: no-throw init for embedded-style, exception-free gameplay loops
 if (!AstralRuntime.TryInitialize(AstralConfig.Default, out int err))
 {
     Debug.LogError($"Astral init failed: {AstralRuntime.GetErrorString(err)}");
