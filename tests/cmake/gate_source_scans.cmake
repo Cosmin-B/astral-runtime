@@ -569,6 +569,39 @@ foreach(required_ci_ctest_text
   endif()
 endforeach()
 
+set(fast_presubmit_file "${ROOT}/scripts/run_fast_presubmit.sh")
+if(NOT EXISTS "${fast_presubmit_file}")
+  message(FATAL_ERROR "Fast presubmit runner missing: ${fast_presubmit_file}")
+endif()
+file(READ "${fast_presubmit_file}" fast_presubmit_content)
+foreach(required_fast_presubmit_text
+    "cmake --preset"
+    "cmake --build --preset"
+    "ctest --preset"
+    "--output-on-failure"
+    "dev|dev-prof|dev-prof-micro"
+    "fast-presubmit")
+  string(FIND "${fast_presubmit_content}" "${required_fast_presubmit_text}" fast_presubmit_pos)
+  if(fast_presubmit_pos EQUAL -1)
+    message(FATAL_ERROR "Fast presubmit runner must keep '${required_fast_presubmit_text}'")
+  endif()
+endforeach()
+foreach(forbidden_fast_presubmit_text
+    "model_downloader"
+    "run_release_required_gates"
+    "run_unreal"
+    "run_unity"
+    "run_cuda"
+    "run_multimodal"
+    "package_release"
+    "run_hf"
+    "run_windows")
+  string(FIND "${fast_presubmit_content}" "${forbidden_fast_presubmit_text}" fast_presubmit_forbidden_pos)
+  if(NOT fast_presubmit_forbidden_pos EQUAL -1)
+    message(FATAL_ERROR "Fast presubmit runner must not invoke slow or external lane '${forbidden_fast_presubmit_text}'")
+  endif()
+endforeach()
+
 set(unreal_stream_pump_file "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralSessionStreamPump.cpp")
 if(EXISTS "${unreal_stream_pump_file}")
   file(READ "${unreal_stream_pump_file}" unreal_stream_pump_content)

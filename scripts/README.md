@@ -120,6 +120,7 @@ review before a release candidate.
 
 ```bash
 # Run in order (fastest to slowest):
+./scripts/run_fast_presubmit.sh  # native configure/build/CTest presubmit
 ./scripts/run_asan.sh          # ~2x slowdown, 1 minute
 ./scripts/run_tsan.sh          # race checks for concurrency/memory tests
 ./scripts/run_valgrind.sh      # ~15x slowdown, 5-10 minutes

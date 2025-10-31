@@ -335,6 +335,9 @@ See [Coding Standards](docs/rules/CODING_STANDARDS.md) for full details.
 ## Testing
 
 ```bash
+# Fast native presubmit
+./scripts/run_fast_presubmit.sh
+
 # Debug tests
 cmake --preset dev
 cmake --build --preset dev -j
