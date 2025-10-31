@@ -1,5 +1,4 @@
-// Simple validation test for platform abstraction layer
-// NOT a unit test framework - just basic smoke tests
+// Standalone smoke for the platform abstraction layer.
 
 #include "vm.h"
 #include "atomics.h"
@@ -10,18 +9,15 @@
 
 using namespace astral::platform;
 
-// Test vm_reserve/commit/decommit/release cycle
 void test_vm_basic() {
   printf("Testing vm_reserve/commit/decommit/release...\n");
 
   constexpr size_t kSize = 4 * 1024 * 1024; // 4MB
 
-  // Reserve address space
   void* addr = vm_reserve(kSize);
   assert(addr != nullptr);
   printf("  Reserved %zu bytes at %p\n", kSize, addr);
 
-  // Commit first 1MB
   constexpr size_t kCommitSize = 1 * 1024 * 1024;
   vm_commit(addr, kCommitSize);
   printf("  Committed %zu bytes\n", kCommitSize);

@@ -847,7 +847,7 @@ namespace Astral.Runtime
         {
             if (!m_disposed)
             {
-                Debug.LogWarning("[Astral] Session was not disposed properly. Always use 'using' statement or call Dispose().");
+                Debug.LogWarning("[Astral] Session leaked; use a using block or call Dispose().");
                 Dispose();
             }
         }

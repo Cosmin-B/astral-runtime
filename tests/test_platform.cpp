@@ -17,27 +17,23 @@
 using namespace astral::platform;
 
 #if ASTRAL_ENABLE_VIRTUAL_MEMORY
-// Test basic VM reserve/commit/decommit/release cycle
+// VM reserve/commit/decommit/release contract.
 TEST(vm_reserve_commit_release) {
     constexpr size_t kSize = 4 * 1024 * 1024; // 4MB
 
-    // Reserve address space
     void* addr = vm_reserve(kSize);
     ASSERT_NOT_NULL(addr);
 
-    // Commit first 1MB
     constexpr size_t kCommitSize = 1 * 1024 * 1024;
     vm_commit(addr, kCommitSize);
 
     // Touch committed pages.
     memset(addr, 0xAB, kCommitSize);
 
-    // Verify write
     auto* bytes = static_cast<unsigned char*>(addr);
     ASSERT_EQ(bytes[0], 0xAB);
     ASSERT_EQ(bytes[kCommitSize - 1], 0xAB);
 
-    // Decommit
     vm_decommit(addr, kCommitSize);
 
     // Release entire region

@@ -98,6 +98,12 @@ set(raii_pattern_phrase "RAII")
 string(APPEND raii_pattern_phrase " pattern")
 set(always_dispose_phrase "Always call Dispose")
 string(APPEND always_dispose_phrase "() when done")
+set(disposed_properly_phrase "disposed")
+string(APPEND disposed_properly_phrase " properly")
+set(create_temporary_arrays_phrase "Create")
+string(APPEND create_temporary_arrays_phrase " temporary arrays for intermediate results")
+set(dispose_temporary_arrays_phrase "Dispose")
+string(APPEND dispose_temporary_arrays_phrase " temporary arrays when jobs complete")
 set(unreviewed_name_phrase "review")
 string(APPEND unreviewed_name_phrase " tooling")
 set(handle_error_phrase "handle")
@@ -314,6 +320,9 @@ set(UNREVIEWED_PROSE_STRINGS
   "${proper_lifetime_phrase}"
   "${raii_pattern_phrase}"
   "${always_dispose_phrase}"
+  "${disposed_properly_phrase}"
+  "${create_temporary_arrays_phrase}"
+  "${dispose_temporary_arrays_phrase}"
   "${unreviewed_name_phrase}"
   "${handle_error_phrase}"
   "${process_data_phrase}"

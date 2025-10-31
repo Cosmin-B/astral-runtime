@@ -1,4 +1,4 @@
-/// Test file to verify concurrency primitives compile and basic functionality.
+/// Standalone compile smoke for concurrency primitives.
 ///
 /// This is not a comprehensive test suite; it verifies that:
 /// 1. All headers compile without errors

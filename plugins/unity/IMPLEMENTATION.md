@@ -152,7 +152,7 @@ session.ReadStream(buffer);
 ### Memory Management
 
 - [x] Deterministic native handle release through `IDisposable`
-- [x] Finalizers warn if not disposed properly
+- [x] Finalizers warn on leaked native handles.
 - [x] `ReadStream(NativeArray<byte>)` reads into caller-owned buffers without converting tokens to managed strings.
 
 ### Platform Support

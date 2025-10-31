@@ -332,18 +332,17 @@ namespace Astral.Runtime
             NativeArray<int> bytesRead,
             uint timeout_ms = 5000)
         {
-            // Create temporary arrays for intermediate results
+            // Job-owned scratch slots carry native error codes across the chain.
             var feedErrorCode = new NativeArray<int>(1, Allocator.TempJob);
             var decodeErrorCode = new NativeArray<int>(1, Allocator.TempJob);
 
-            // Chain jobs: Feed -> Decode -> StreamRead
+            // Feed, decode, and stream read share one dependency chain.
             var feedHandle = ScheduleFeed(session, prompt, finalize: 1, feedErrorCode);
             var decodeHandle = ScheduleDecode(session, decodeErrorCode, feedHandle);
             var readHandle = ScheduleStreamRead(session, outputBuffer, bytesRead, timeout_ms, decodeHandle);
 
-            // Dispose temporary arrays when jobs complete
-            // NOTE: This is safe because Unity Jobs System guarantees completion before disposal
-            readHandle.Complete(); // Wait for all jobs
+            // This synchronous helper owns the TempJob scratch lifetime.
+            readHandle.Complete();
             feedErrorCode.Dispose();
             decodeErrorCode.Dispose();
 

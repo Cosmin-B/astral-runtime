@@ -284,7 +284,7 @@ namespace Astral.Runtime
         {
             if (!m_disposed)
             {
-                Debug.LogWarning("[Astral] Model was not disposed properly. Always use 'using' statement or call Dispose().");
+                Debug.LogWarning("[Astral] Model leaked; use a using block or call Dispose().");
                 Dispose();
             }
         }
