@@ -317,6 +317,12 @@ set(stale_unity_portable_phrase "Portable")
 string(APPEND stale_unity_portable_phrase ".*armv7")
 set(stale_unity_realtime_streaming_phrase "Streaming Support")
 string(APPEND stale_unity_realtime_streaming_phrase ".*Real-time token streaming")
+set(stale_sample_zero_copy_phrase "Zero")
+string(APPEND stale_sample_zero_copy_phrase "-copy NativeArray conversions")
+set(stale_sample_proper_cleanup_phrase "Proper")
+string(APPEND stale_sample_proper_cleanup_phrase " resource cleanup")
+set(stale_sample_ai_response_phrase "AI")
+string(APPEND stale_sample_ai_response_phrase " response")
 
 set(UNREVIEWED_PROSE_STRINGS
   "${ai_generation_phrase}"
@@ -436,6 +442,9 @@ set(UNREVIEWED_PROSE_STRINGS
   "${stale_unity_platform_coverage_phrase}"
   "${stale_unity_portable_phrase}"
   "${stale_unity_realtime_streaming_phrase}"
+  "${stale_sample_zero_copy_phrase}"
+  "${stale_sample_proper_cleanup_phrase}"
+  "${stale_sample_ai_response_phrase}"
 )
 
 foreach(path IN LISTS FILES)
