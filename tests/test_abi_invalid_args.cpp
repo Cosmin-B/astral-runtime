@@ -66,6 +66,31 @@ AstralConvDesc mock_conv_desc(AstralHandle model) {
     return desc;
 }
 
+AstralImageDesc invalid_image_desc() {
+    static const uint8_t pixel[3] = {0, 0, 0};
+    AstralImageDesc image{};
+    image.size = 0;
+    image.format = ASTRAL_IMAGE_FORMAT_RGB8;
+    image.width = 1;
+    image.height = 1;
+    image.pixels.data = pixel;
+    image.pixels.len = static_cast<uint32_t>(sizeof(pixel));
+    return image;
+}
+
+AstralAudioDesc invalid_audio_desc() {
+    static const int16_t sample[1] = {0};
+    AstralAudioDesc audio{};
+    audio.size = 0;
+    audio.format = ASTRAL_AUDIO_FORMAT_I16;
+    audio.channels = 1;
+    audio.sample_rate = 16000;
+    audio.frame_count = 1;
+    audio.samples.data = reinterpret_cast<const uint8_t*>(sample);
+    audio.samples.len = static_cast<uint32_t>(sizeof(sample));
+    return audio;
+}
+
 } // namespace
 
 TEST(abi_invalid_args_core_and_backend) {
@@ -237,6 +262,35 @@ TEST(abi_invalid_args_valid_handle_buffer_surface) {
     astral_shutdown();
 }
 
+TEST(abi_invalid_args_session_media_rejects_before_state_change) {
+    AstralInit cfg = small_init();
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralHandle model = 0;
+    AstralModelDesc model_desc = mock_model_desc();
+    ASSERT_EQ(astral_model_load(&model_desc, &model), ASTRAL_OK);
+
+    AstralHandle session = 0;
+    AstralSessionDesc session_desc = mock_session_desc(model);
+    ASSERT_EQ(astral_session_create(&session_desc, &session), ASTRAL_OK);
+
+    AstralImageDesc image = invalid_image_desc();
+    AstralAudioDesc audio = invalid_audio_desc();
+    AstralSessionState state = ASTRAL_SESSION_FAILED;
+
+    ASSERT_EQ(astral_session_feed_image(session, &image, 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_state(session, &state), ASTRAL_OK);
+    ASSERT_EQ(state, ASTRAL_SESSION_IDLE);
+
+    ASSERT_EQ(astral_session_feed_audio(session, &audio, 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_state(session, &state), ASTRAL_OK);
+    ASSERT_EQ(state, ASTRAL_SESSION_IDLE);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
 TEST(abi_invalid_args_conversation_surface) {
     AstralInit cfg = small_init();
     ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -301,6 +355,42 @@ TEST(abi_invalid_args_valid_conversation_buffer_surface) {
     ASSERT_EQ(astral_conv_stream_read(conv, null_mut_span(), 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_stream_read_meta(conv, nullptr, 1, 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_stream_read_meta(conv, &meta, 0, 0), ASTRAL_E_INVALID);
+
+    astral_conv_destroy(conv);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(abi_invalid_args_conversation_media_rejects_before_state_change) {
+    AstralInit cfg = small_init();
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralHandle model = 0;
+    AstralModelDesc model_desc = mock_model_desc();
+    ASSERT_EQ(astral_model_load(&model_desc, &model), ASTRAL_OK);
+
+    AstralExecutorDesc executor{};
+    executor.size = sizeof(AstralExecutorDesc);
+    executor.max_slots = 1;
+    executor.max_batch_tokens = 8;
+    executor.worker_hint = 0;
+    ASSERT_EQ(astral_model_executor_configure(model, &executor), ASTRAL_OK);
+
+    AstralHandle conv = 0;
+    AstralConvDesc conv_desc = mock_conv_desc(model);
+    ASSERT_EQ(astral_conv_create(&conv_desc, &conv), ASTRAL_OK);
+
+    AstralImageDesc image = invalid_image_desc();
+    AstralAudioDesc audio = invalid_audio_desc();
+    AstralSessionState state = ASTRAL_SESSION_FAILED;
+
+    ASSERT_EQ(astral_conv_feed_image(conv, &image, 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_state(conv, &state), ASTRAL_OK);
+    ASSERT_EQ(state, ASTRAL_SESSION_IDLE);
+
+    ASSERT_EQ(astral_conv_feed_audio(conv, &audio, 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_state(conv, &state), ASTRAL_OK);
+    ASSERT_EQ(state, ASTRAL_SESSION_IDLE);
 
     astral_conv_destroy(conv);
     astral_model_release(model);

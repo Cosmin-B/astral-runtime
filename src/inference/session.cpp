@@ -408,6 +408,16 @@ inline void session_prompt_chunks_clear(Session* session) {
     session->prompt_chunk_token_off = 0;
 }
 
+inline bool image_desc_valid(const AstralImageDesc* image) {
+    return image != nullptr && image->size == sizeof(AstralImageDesc) && image->pixels.data != nullptr &&
+           image->pixels.len != 0 && image->width != 0 && image->height != 0;
+}
+
+inline bool audio_desc_valid(const AstralAudioDesc* audio) {
+    return audio != nullptr && audio->size == sizeof(AstralAudioDesc) && audio->samples.data != nullptr &&
+           audio->samples.len != 0 && audio->channels != 0 && audio->sample_rate != 0 && audio->frame_count != 0;
+}
+
 inline AstralErr session_push_text_chunk(Session* session, uint32_t token_start, uint32_t token_count, uint8_t finalize) {
     if (session == nullptr) {
         return ASTRAL_E_INVALID;
@@ -448,11 +458,6 @@ inline AstralErr session_push_media_chunk(Session* session,
     chunk.finalize = finalize;
 
     if (image != nullptr) {
-        if (image->size != sizeof(AstralImageDesc) || image->pixels.data == nullptr || image->pixels.len == 0 ||
-            image->width == 0 || image->height == 0) {
-            return ASTRAL_E_INVALID;
-        }
-
         const size_t bytes = static_cast<size_t>(image->pixels.len);
         uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(bytes, 1));
         if (buf == nullptr) {
@@ -467,11 +472,6 @@ inline AstralErr session_push_media_chunk(Session* session,
         chunk.owned_bytes = image->pixels.len;
         chunk.owned_align = 1;
     } else if (audio != nullptr) {
-        if (audio->size != sizeof(AstralAudioDesc) || audio->samples.data == nullptr || audio->samples.len == 0 ||
-            audio->channels == 0 || audio->sample_rate == 0 || audio->frame_count == 0) {
-            return ASTRAL_E_INVALID;
-        }
-
         const size_t bytes = static_cast<size_t>(audio->samples.len);
         uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(bytes, 1));
         if (buf == nullptr) {
@@ -866,17 +866,13 @@ AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t fina
 }
 
 AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uint8_t finalize) {
-    if (session == nullptr || image == nullptr) {
+    if (session == nullptr || !image_desc_valid(image)) {
         return ASTRAL_E_INVALID;
     }
 
     SessionState state = session->state.load(std::memory_order_acquire);
     if (state != SessionState::Idle && state != SessionState::FeedingPrompt) {
         return ASTRAL_E_STATE;
-    }
-
-    if (state == SessionState::Idle) {
-        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
     }
 
     if (session->model == nullptr || session->model->backend == nullptr ||
@@ -884,11 +880,15 @@ AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uin
         return ASTRAL_E_UNSUPPORTED;
     }
 
+    if (state == SessionState::Idle) {
+        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
+    }
+
     return session_push_media_chunk(session, image, nullptr, finalize);
 }
 
 AstralErr session_feed_audio(Session* session, const AstralAudioDesc* audio, uint8_t finalize) {
-    if (session == nullptr || audio == nullptr) {
+    if (session == nullptr || !audio_desc_valid(audio)) {
         return ASTRAL_E_INVALID;
     }
 
@@ -897,13 +897,13 @@ AstralErr session_feed_audio(Session* session, const AstralAudioDesc* audio, uin
         return ASTRAL_E_STATE;
     }
 
-    if (state == SessionState::Idle) {
-        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
-    }
-
     if (session->model == nullptr || session->model->backend == nullptr ||
         session->model->backend->ops == nullptr || session->model->backend->ops->session_feed_audio == nullptr) {
         return ASTRAL_E_UNSUPPORTED;
+    }
+
+    if (state == SessionState::Idle) {
+        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
     }
 
     return session_push_media_chunk(session, nullptr, audio, finalize);
