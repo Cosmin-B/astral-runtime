@@ -42,6 +42,9 @@ For engine binding layout checks:
 
 - `scripts/package_release.sh` must emit `dist/abi-layout.json`, and
   `dist/checksums.sha256` must cover it.
+- `scripts/generate_abi_layout_report.sh --check` must pass. The report covers
+  pointer size, `size_t` size, resolved C calling-convention metadata, public
+  struct sizes/alignments, and public enum/constant numeric values.
 - `ctest --preset release-with-tests -R '^test_abi_invalid_args$' -V`
 - `ctest --preset release-with-tests -R '^gate_unreal_header_mirror$' -V`
 - Unity ABI tests must pass in the Unity package lane.
@@ -50,6 +53,6 @@ For engine binding layout checks:
 ## Current Status
 
 `gate_shared_exports` now enforces the public runtime symbol surface on Linux,
-and `scripts/generate_abi_layout_report.sh` produces the release-candidate
-struct size/alignment report. Unity/Unreal binding layout results from real
-engine runners are still required before release sign-off.
+and `scripts/generate_abi_layout_report.sh` produces release-candidate ABI
+layout and constant-value evidence. Unity/Unreal binding layout results from
+real engine runners are still required before release sign-off.
