@@ -253,10 +253,16 @@ python3 ./scripts/validate_release_evidence.py dist/release-evidence.json --base
 The manifest records evidence. It does not replace the Unreal, Unity, CUDA,
 multimodal, signing, or Windows runner commands.
 
-Validate release notes before publishing a release candidate:
+Validate the template shape during maintenance:
 
 ```bash
-./scripts/validate_release_notes.sh docs/release/RELEASE_NOTES_TEMPLATE.md
+./scripts/validate_release_notes.sh --allow-placeholders docs/release/RELEASE_NOTES_TEMPLATE.md
+```
+
+Validate filled release notes before publishing a release candidate:
+
+```bash
+./scripts/validate_release_notes.sh dist/release-notes.md
 ```
 
 ## Unreal Automation

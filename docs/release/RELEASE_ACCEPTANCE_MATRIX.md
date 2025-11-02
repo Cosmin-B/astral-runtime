@@ -46,7 +46,7 @@ release candidate.
 | Unity package | Native binaries, package metadata, license/notice files, ABI tests |
 | Unreal plugin package | ThirdParty native libraries, license/notice files, UE Automation evidence |
 | Signing | Protected `release-sign` workflow validates `release-evidence.json`, then writes and verifies detached signatures for each `checksums.sha256`; artifact verification must also reject invalid checksum signatures |
-| Rollback | Release notes identify previous known-good artifact and dependency pins |
+| Rollback | Release notes identify previous known-good artifact checksum, dependency pins, and waiver expiration dates |
 
 Release notes must name the checksum signature file, identify the public
 verification key or signer fingerprint, and include the exact checksum signature

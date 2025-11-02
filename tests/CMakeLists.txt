@@ -342,12 +342,29 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             add_test(
                 NAME gate_release_notes
                 COMMAND ${ASTRAL_BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/validate_release_notes.sh
+                    --allow-placeholders
             )
             set_tests_properties(gate_release_notes PROPERTIES
                 TIMEOUT 30
                 LABELS "gate;release"
             )
             message(STATUS "Configured test: gate_release_notes")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_notes_policy.cmake)
+            add_test(
+                NAME gate_release_notes_policy
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_notes_policy.cmake
+            )
+            set_tests_properties(gate_release_notes_policy PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_notes_policy")
         endif()
 
         if(EXISTS ${CMAKE_SOURCE_DIR}/scripts/validate_dependency_pins.sh)
