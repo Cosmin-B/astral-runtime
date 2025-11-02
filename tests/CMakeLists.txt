@@ -379,6 +379,20 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_dependency_pins")
         endif()
 
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/validate_embedded_presets.py)
+            add_test(
+                NAME gate_embedded_presets
+                COMMAND ${ASTRAL_PYTHON_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/scripts/validate_embedded_presets.py
+                    ${CMAKE_SOURCE_DIR}/CMakePresets.json
+            )
+            set_tests_properties(gate_embedded_presets PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;embedded"
+            )
+            message(STATUS "Configured test: gate_embedded_presets")
+        endif()
+
         if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_comment_inventory.cmake)
             add_test(
                 NAME gate_comment_inventory

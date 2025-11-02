@@ -86,15 +86,17 @@ These are used to reserve a small front slice of the arena for:
 - worker-thread-local transient scratch (bump-only)
 - a small size-class heap for deterministic non-hot allocations (model/session objects, plugin strings)
 
-## Model loading without filesystem (WIP)
+## Model loading source contracts
 
 Astral exposes `astral_model_load2()` with `AstralModelDesc` to select a model source (`PATH` / `MEMORY` / custom `IO`) so embedded targets can avoid filesystem paths.
 
 Status:
-- Built-in CPU provider supports `MEMORY` and `IO` sources by routing GGUF parsing + tensor reads through callbacks (no path required).
-- In embedded presets, `MEMORY`/`IO` modes do not rely on mmap. For fastest startup on desktops, prefer `PATH` + mmap; when `ASTRAL_CPU_MEMORY_SOURCE_MMAP=ON` in a desktop build, the CPU backend may materialize `MEMORY`/`IO` input to a temporary file so llama.cpp can use file-backed mmap. Embedded presets keep that switch disabled.
+- The public ABI and mock provider support `MEMORY` and `IO` sources without requiring a filesystem path.
+- The built-in CPU llama backend does not currently provide a true callback-backed no-filesystem real-model path. On desktop builds with `ASTRAL_CPU_MEMORY_SOURCE_MMAP=ON`, it may materialize `MEMORY`/`IO` input to a temporary file so llama.cpp can use file-backed mmap.
+- Embedded presets keep both `ASTRAL_ENABLE_VIRTUAL_MEMORY=OFF` and `ASTRAL_CPU_MEMORY_SOURCE_MMAP=OFF`, so they cannot silently take the desktop temp-file mmap path.
 
 Current limitations:
+- Real CPU GGUF loading from `MEMORY`/`IO` in embedded presets returns unsupported until the backend has a non-file llama.cpp loader path.
 - Split GGUF models are not supported for `IO`/`MEMORY` sources (single-file only).
 
 See `tests/MODEL_SOURCES.md` for test model notes.
@@ -106,6 +108,7 @@ See `tests/MODEL_SOURCES.md` for test model notes.
   - Product-safe: keep exceptions enabled, rely on `ASTRAL_NO_THROW_ABI=ON` (default).
   - Strict/experimental: `ASTRAL_NO_EXCEPTIONS=ON` only if you control/verify the full dependency graph.
 - Run gates that are already designed for embedded profiles:
+  - `gate_embedded_presets`
   - `gate_allocations`
   - `gate_io_syscalls`
   - `gate_rss_cap` (Linux)

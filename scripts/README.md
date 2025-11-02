@@ -425,6 +425,7 @@ Builds the `embedded-x86_64` preset and runs the embedded CLI sample.
 ### run_embedded_validation.sh
 
 Runs release validation gates and then runs the embedded smoke:
+- `gate_embedded_presets`
 - `gate_allocations`
 - `gate_io_syscalls`
 - `gate_rss_cap` (Linux-only; configurable via `ASTRAL_RSS_MAX_MB`)

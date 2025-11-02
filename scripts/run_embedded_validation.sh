@@ -15,6 +15,9 @@ echo "[INFO] Building + running allocation gate (release-with-tests)..."
 cmake --preset release-with-tests
 cmake --build --preset release-with-tests -j
 
+echo "[INFO] Running embedded preset gate (release-with-tests)..."
+ctest --preset release-with-tests -R gate_embedded_presets -V
+
 # Keep the reserve low-ish to mimic edge defaults.
 ASTRAL_GATE_CPU_ALLOC=1 ASTRAL_MODEL_MIN_BYTES=70000000 ctest --preset release-with-tests -R gate_allocations -V
 
