@@ -87,8 +87,7 @@ mkdir -p "${out_dir}"
 
 for f in "${out_dir}"/*cuda-auto.txt "${out_dir}"/*cuda-cublas.txt "${out_dir}"/*cuda-mmq.txt "${out_dir}"/*cpu.txt; do
   [[ -f "${f}" ]] || continue
-  ./scripts/parse_hf_matrix_log.py --in "${f}" --out "${f%.txt}.csv"
+  ./scripts/parse_hf_matrix_log.py --in "${f}" --out "${f%.txt}.csv" --require-pass
 done
 
 echo "[hf-wait] done: ${out_dir}"
-

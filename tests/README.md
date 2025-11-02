@@ -69,7 +69,7 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_unreal_automation_results`: smoke-checks the Unreal Automation result validator for pass, missing-report, and failing-log cases.
 - `gate_unreal_container_runner`: checks that the UE 5.7 container runner rejects missing Epic GHCR auth before invoking the container engine.
 - `gate_unity_editmode_results`: smoke-checks the Unity EditMode XML validator for pass, failed-result, and malformed-result cases.
-- `gate_hf_matrix_log`: checks that HF matrix logs can be parsed and that failed or empty logs are rejected when pass evidence is required.
+- `gate_hf_matrix_log`: checks that HF matrix logs can be parsed and that failed, empty, skipped-only, or incomplete feature logs are rejected when pass evidence is required.
 - `gate_cuda_parity_runner`: checks that CUDA parity runners require real inference/e2e flags unless probe-only mode is explicit.
 - `gate_release_notes`: checks release notes include artifact, validation, engine, rollback, and known-gap evidence.
 - `gate_dependency_pins`: checks the committed release pin manifest against submodule and engine package versions.

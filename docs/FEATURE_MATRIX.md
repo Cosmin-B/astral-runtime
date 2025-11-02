@@ -119,6 +119,6 @@ HF GGUF bench matrix (optional):
 # Run the feature-surface bench across all downloaded GGUFs (CPU + CUDA):
 ./scripts/run_hf_bench_matrix.sh --models-dir tests/models/hf --arch 120a-real
 
-# Parse a consolidated log to CSV (one row per model/preset run):
-./scripts/parse_hf_matrix_log.py --in benchmarks/results/hf-matrix-<...>-cuda-auto.txt --out /tmp/hf-matrix.csv
+# Parse a consolidated log to CSV and reject failed, skipped-only, or incomplete evidence:
+./scripts/parse_hf_matrix_log.py --in benchmarks/results/hf-matrix-<...>-cuda-auto.txt --out /tmp/hf-matrix.csv --require-pass
 ```

@@ -66,6 +66,62 @@ if(NOT failed_error MATCHES "failed HF matrix")
   message(FATAL_ERROR "parse_hf_matrix_log.py failed for the wrong failed-log reason: ${failed_error}")
 endif()
 
+set(missing_feature_log "${out_dir}/hf-missing-feature.txt")
+file(WRITE "${missing_feature_log}"
+"# Astral HF bench matrix
+
+## preset=release-with-tests backend=cpu
+model=tests/models/hf/model.gguf
+embed_model=tests/models/all-MiniLM-L6-v2-Q2_K.gguf
+features.embed enqueue+collect  1.000 Mops/s
+features.kv state_save  2.000 Mops/s
+features.kv state_load  3.000 Mops/s
+features.grammar set_gbnf  4.000 Mops/s
+features.kv bytes  ok  42 bytes
+")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/parse_hf_matrix_log.py"
+    --in "${missing_feature_log}"
+    --out "${out_dir}/missing-feature.csv"
+    --require-pass
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE missing_feature_result
+  ERROR_VARIABLE missing_feature_error
+)
+if(missing_feature_result EQUAL 0)
+  message(FATAL_ERROR "parse_hf_matrix_log.py accepted an HF matrix log missing feature rows")
+endif()
+if(NOT missing_feature_error MATCHES "incomplete HF matrix")
+  message(FATAL_ERROR "parse_hf_matrix_log.py failed for the wrong missing-feature reason: ${missing_feature_error}")
+endif()
+
+set(skip_only_log "${out_dir}/hf-skip-only.txt")
+file(WRITE "${skip_only_log}"
+"# Astral HF bench matrix
+
+## preset=release-with-tests backend=cpu
+model=tests/models/hf/mmproj-model.gguf
+embed_model=(skipped: aux gguf)
+[bench] SKIPPED aux_gguf=1
+")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/parse_hf_matrix_log.py"
+    --in "${skip_only_log}"
+    --out "${out_dir}/skip-only.csv"
+    --require-pass
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE skip_only_result
+  ERROR_VARIABLE skip_only_error
+)
+if(skip_only_result EQUAL 0)
+  message(FATAL_ERROR "parse_hf_matrix_log.py accepted skip-only HF matrix evidence")
+endif()
+if(NOT skip_only_error MATCHES "no non-skipped")
+  message(FATAL_ERROR "parse_hf_matrix_log.py failed for the wrong skip-only reason: ${skip_only_error}")
+endif()
+
 set(empty_log "${out_dir}/hf-empty.txt")
 file(WRITE "${empty_log}" "# empty\n")
 execute_process(
