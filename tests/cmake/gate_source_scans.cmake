@@ -730,6 +730,17 @@ foreach(required_unreal_lifecycle_text
   endif()
 endforeach()
 
+foreach(required_unreal_embedder_text
+    "AstralRT.Mock.EmbedderQueuePressure"
+    "overflow returns busy through wrapper"
+    "collect out of order"
+    "stale ticket rejected"
+    "enqueue after drain")
+  if(NOT unreal_automation_text MATCHES "${required_unreal_embedder_text}")
+    message(FATAL_ERROR "Unreal embedder queue-pressure Automation coverage is missing ${required_unreal_embedder_text}")
+  endif()
+endforeach()
+
 foreach(unreal_doc
     "${ROOT}/docs/integration/UNREAL_INTEGRATION.md"
     "${ROOT}/plugins/unreal/AstralRT/README.md")

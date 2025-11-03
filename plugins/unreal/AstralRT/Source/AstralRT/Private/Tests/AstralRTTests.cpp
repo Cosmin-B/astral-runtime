@@ -32,6 +32,15 @@ static bool bytes_equal_ascii(const TArray<uint8>& bytes, const char* lit) {
     return FMemory::Memcmp(bytes.GetData(), lit, lit_len) == 0;
 }
 
+static void append_ascii(TArray<uint8>& out, const char* lit) {
+    out.Reset();
+    if (lit == nullptr) {
+        return;
+    }
+    const int32 lit_len = FCStringAnsi::Strlen(lit);
+    out.Append(reinterpret_cast<const uint8*>(lit), lit_len);
+}
+
 static bool run_mock_session_once(AstralHandle session, TArray<uint8>& out_bytes) {
     out_bytes.Reset();
     out_bytes.Reserve(32);
@@ -241,6 +250,94 @@ bool FAstralRTMockEmbeddingsTest::RunTest(const FString& Parameters) {
 
     astral_embed_destroy(emb);
     astral_model_release(model);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTMockEmbedderQueuePressureTest,
+    "AstralRT.Mock.EmbedderQueuePressure",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+    ModelDesc.bEmbeddingsOnly = true;
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("model load"), ok);
+    if (!ok) {
+        return false;
+    }
+
+    UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>();
+    TestNotNull(TEXT("embedder allocated"), Embedder);
+
+    ok = Embedder->Create(Model);
+    TestTrue(TEXT("embedder create"), ok);
+    if (!ok) {
+        Model->Release();
+        return false;
+    }
+
+    constexpr int32 Inflight = 8;
+    const char* Texts[Inflight] = {
+        "alpha",
+        "bravo",
+        "charlie",
+        "delta",
+        "echo",
+        "foxtrot",
+        "golf",
+        "hotel",
+    };
+    int64 Tickets[Inflight] = {};
+    TArray<uint8> Bytes;
+
+    for (int32 i = 0; i < Inflight; ++i) {
+        append_ascii(Bytes, Texts[i]);
+        ok = Embedder->EnqueueUtf8Bytes(Bytes, Tickets[i]);
+        TestTrue(TEXT("enqueue inflight ticket"), ok);
+        TestTrue(TEXT("ticket valid"), Tickets[i] > 0);
+    }
+
+    int64 OverflowTicket = 0;
+    append_ascii(Bytes, "overflow");
+    ok = Embedder->EnqueueUtf8Bytes(Bytes, OverflowTicket);
+    TestFalse(TEXT("overflow returns busy through wrapper"), ok);
+    TestEqual(TEXT("overflow ticket remains zero"), OverflowTicket, static_cast<int64>(0));
+
+    TArray<float> Vec;
+    for (int32 Offset = 0; Offset < Inflight; ++Offset) {
+        const int32 Index = Inflight - 1 - Offset;
+        ok = Embedder->Collect(Tickets[Index], Vec);
+        TestTrue(TEXT("collect out of order"), ok);
+        TestEqual(TEXT("vector size"), Vec.Num(), Embedder->GetDim());
+    }
+
+    ok = Embedder->Collect(Tickets[0], Vec);
+    TestFalse(TEXT("stale ticket rejected"), ok);
+
+    int64 ReuseTicket = 0;
+    append_ascii(Bytes, "reuse");
+    ok = Embedder->EnqueueUtf8Bytes(Bytes, ReuseTicket);
+    TestTrue(TEXT("enqueue after drain"), ok);
+    TestTrue(TEXT("reuse ticket valid"), ReuseTicket > 0);
+    ok = Embedder->Collect(ReuseTicket, Vec);
+    TestTrue(TEXT("collect reuse ticket"), ok);
+
+    Embedder->Destroy();
+    Embedder->BeginDestroy();
+    Model->Release();
+    Model->BeginDestroy();
     return true;
 }
 
