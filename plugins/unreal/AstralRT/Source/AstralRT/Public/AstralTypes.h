@@ -63,15 +63,37 @@ enum class EAstralModelSourceKind : uint32
     IO = 2
 };
 
+/** Root used to resolve relative filesystem paths before they cross the C ABI. */
+UENUM(BlueprintType)
+enum class EAstralUnrealPathRoot : uint8
+{
+    Raw = 0,
+    ProjectContent = 1,
+    ProjectSaved = 2,
+    ProjectPersistentDownload = 3
+};
+
 /** Load settings for a native Astral model. */
 USTRUCT(BlueprintType)
 struct ASTRALRT_API FAstralModelDesc
 {
     GENERATED_BODY()
 
-    /** Filesystem path to a GGUF model. Empty is valid only for providers that do not need a file. */
+    /** Backing source used for the model payload. Path and Memory are supported by this wrapper. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    EAstralModelSourceKind SourceKind = EAstralModelSourceKind::Path;
+
+    /** Root for relative ModelPath values. Absolute paths are passed through unchanged. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    EAstralUnrealPathRoot PathRoot = EAstralUnrealPathRoot::Raw;
+
+    /** Filesystem path to a GGUF model when SourceKind is Path. Empty is valid only for providers that do not need a file. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
     FString ModelPath;
+
+    /** Model bytes when SourceKind is Memory, usually from cooked bulk data or a staged cache file. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    TArray<uint8> ModelBytes;
 
     /** Provider name such as "cpu" or "mock". Empty lets the runtime pick. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")

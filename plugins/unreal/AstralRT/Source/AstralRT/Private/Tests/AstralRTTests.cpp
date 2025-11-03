@@ -245,6 +245,40 @@ bool FAstralRTMockEmbeddingsTest::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTMockMemoryModelSourceTest,
+    "AstralRT.Mock.MemoryModelSource",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTMockMemoryModelSourceTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.SourceKind = EAstralModelSourceKind::Memory;
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+    ModelDesc.ModelBytes.SetNumUninitialized(4);
+    ModelDesc.ModelBytes[0] = 'm';
+    ModelDesc.ModelBytes[1] = 'o';
+    ModelDesc.ModelBytes[2] = 'c';
+    ModelDesc.ModelBytes[3] = 'k';
+
+    const bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("memory source model load"), ok);
+    TestTrue(TEXT("model valid after memory load"), Model->IsValid());
+
+    Model->Release();
+    Model->BeginDestroy();
+    return ok;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTMockMediaFeedTest,
     "AstralRT.Mock.MediaFeed",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter

@@ -692,6 +692,32 @@ foreach(unreal_plugin_source IN LISTS unreal_plugin_source_files)
   endif()
 endforeach()
 
+set(unreal_types_header "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/AstralTypes.h")
+set(unreal_model_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralModel.cpp")
+file(READ "${unreal_types_header}" unreal_types_text)
+file(READ "${unreal_model_source}" unreal_model_text)
+
+foreach(required_unreal_type
+    "EAstralUnrealPathRoot"
+    "EAstralModelSourceKind SourceKind"
+    "EAstralUnrealPathRoot PathRoot"
+    "TArray<uint8> ModelBytes")
+  if(NOT unreal_types_text MATCHES "${required_unreal_type}")
+    message(FATAL_ERROR "Unreal model source wrapper is missing ${required_unreal_type}")
+  endif()
+endforeach()
+
+foreach(required_unreal_model_text
+    "FPaths::ProjectContentDir"
+    "FPaths::ProjectSavedDir"
+    "FPaths::ProjectPersistentDownloadDir"
+    "Native.source_kind = static_cast<AstralModelSourceKind>"
+    "Native.model_bytes.data = Desc.ModelBytes.GetData")
+  if(NOT unreal_model_text MATCHES "${required_unreal_model_text}")
+    message(FATAL_ERROR "Unreal model loader no longer preserves packaged-source handling: ${required_unreal_model_text}")
+  endif()
+endforeach()
+
 foreach(unreal_doc
     "${ROOT}/docs/integration/UNREAL_INTEGRATION.md"
     "${ROOT}/plugins/unreal/AstralRT/README.md")

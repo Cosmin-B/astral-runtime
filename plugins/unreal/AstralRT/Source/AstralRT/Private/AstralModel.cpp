@@ -4,8 +4,45 @@
 
 #include "Containers/UnrealString.h"
 #include "HAL/Platform.h"
+#include "Misc/Paths.h"
 
 #include "astral_rt.h"
+
+namespace {
+
+static FString path_root_dir(EAstralUnrealPathRoot Root)
+{
+    switch (Root)
+    {
+    case EAstralUnrealPathRoot::ProjectContent:
+        return FPaths::ProjectContentDir();
+    case EAstralUnrealPathRoot::ProjectSaved:
+        return FPaths::ProjectSavedDir();
+    case EAstralUnrealPathRoot::ProjectPersistentDownload:
+        return FPaths::ProjectPersistentDownloadDir();
+    case EAstralUnrealPathRoot::Raw:
+    default:
+        return FString();
+    }
+}
+
+static FString resolve_model_path(const FAstralModelDesc& Desc)
+{
+    if (Desc.ModelPath.IsEmpty() || FPaths::IsRelative(Desc.ModelPath) == false)
+    {
+        return Desc.ModelPath;
+    }
+
+    const FString Root = path_root_dir(Desc.PathRoot);
+    if (Root.IsEmpty())
+    {
+        return FPaths::ConvertRelativePathToFull(Desc.ModelPath);
+    }
+
+    return FPaths::ConvertRelativePathToFull(FPaths::Combine(Root, Desc.ModelPath));
+}
+
+} // namespace
 
 void UAstralModel::BeginDestroy()
 {
@@ -23,17 +60,36 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
         return false;
     }
 
-    FTCHARToUTF8 PathUtf8(*Desc.ModelPath);
+    const FString ResolvedModelPath = resolve_model_path(Desc);
+    FTCHARToUTF8 PathUtf8(*ResolvedModelPath);
     FTCHARToUTF8 BackendUtf8(*Desc.BackendName);
 
     AstralModelDesc Native{};
     Native.size = sizeof(AstralModelDesc);
-    Native.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    Native.source_kind = static_cast<AstralModelSourceKind>(Desc.SourceKind);
 
-    if (!Desc.ModelPath.IsEmpty())
+    if (Desc.SourceKind == EAstralModelSourceKind::Path)
     {
-        Native.model_path.data = reinterpret_cast<const uint8_t*>(PathUtf8.Get());
-        Native.model_path.len = static_cast<uint32_t>(PathUtf8.Length());
+        if (!ResolvedModelPath.IsEmpty())
+        {
+            Native.model_path.data = reinterpret_cast<const uint8_t*>(PathUtf8.Get());
+            Native.model_path.len = static_cast<uint32_t>(PathUtf8.Length());
+        }
+    }
+    else if (Desc.SourceKind == EAstralModelSourceKind::Memory)
+    {
+        if (Desc.ModelBytes.Num() == 0)
+        {
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: memory model source has no bytes"));
+            return false;
+        }
+        Native.model_bytes.data = Desc.ModelBytes.GetData();
+        Native.model_bytes.len = static_cast<uint32_t>(Desc.ModelBytes.Num());
+    }
+    else
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: model IO source is not exposed by the Unreal wrapper"));
+        return false;
     }
 
     if (!Desc.BackendName.IsEmpty())

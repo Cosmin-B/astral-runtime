@@ -67,6 +67,7 @@ public:
         Model = NewObject<UAstralModel>(this);
         FAstralModelDesc ModelDesc;
         ModelDesc.BackendName = TEXT("mock");
+        ModelDesc.SourceKind = EAstralModelSourceKind::Path;
         if (!Model->Load(ModelDesc))
         {
             UE_LOG(LogAstralRT, Error, TEXT("AstralRT: Model load failed"));
@@ -115,6 +116,11 @@ Model->InitMedia(MediaDesc);
 ```
 
 Feed media into a session prompt. `FAstralImageDesc::Pixels` and `FAstralAudioDesc::Samples` must remain valid until the feed call returns.
+
+For packaged projects, `FAstralModelDesc::PathRoot` resolves relative model
+paths under `ProjectContent`, `ProjectSaved`, or `ProjectPersistentDownload`.
+Pak/IoStore model payloads should use `SourceKind = Memory` and fill
+`ModelBytes`, or copy the model to a managed `Saved` cache and load by path.
 
 ```cpp
 FAstralImageDesc Image;

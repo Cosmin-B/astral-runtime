@@ -170,6 +170,22 @@ if (!Model->Load(ModelDesc))
 `Release` before destroying dependent sessions or embedders when the lifetime is
 managed manually.
 
+Model source behavior:
+
+- `SourceKind = Path` passes a real filesystem path to the native backend.
+- `PathRoot = ProjectContent`, `ProjectSaved`, or `ProjectPersistentDownload`
+  resolves relative paths under Unreal's content, saved, or persistent download
+  directories before the C ABI call. Absolute paths bypass root resolution.
+- `SourceKind = Memory` passes `ModelBytes` directly to native code. Use this
+  for cooked pak/IoStore payloads or any model loaded through Unreal asset/bulk
+  data APIs.
+- The CPU llama backend may materialize `Memory` input to a temporary file in
+  desktop presets so llama.cpp can use its file-backed loader. Use `Saved` or a
+  project-managed cache for production-sized models when startup time and disk
+  lifetime matter.
+- `SourceKind = IO` is a native ABI option, but the Unreal UObject wrapper does
+  not expose callback-backed IO yet.
+
 Useful queries:
 
 - `GetEmbeddingDim`
