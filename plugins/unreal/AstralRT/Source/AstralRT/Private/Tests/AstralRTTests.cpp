@@ -279,6 +279,75 @@ bool FAstralRTMockMemoryModelSourceTest::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTMockSessionCancelResetTest,
+    "AstralRT.Mock.SessionCancelReset",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTMockSessionCancelResetTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ModelPath = TEXT("infinite");
+    ModelDesc.ContextSize = 128;
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("infinite mock model load"), ok);
+    if (!ok) {
+        return false;
+    }
+
+    UAstralSession* Session = NewObject<UAstralSession>();
+    TestNotNull(TEXT("session allocated"), Session);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 256;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 0;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = true;
+    SessionDesc.Seed = 7;
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("session create"), ok);
+    if (!ok) {
+        Model->Release();
+        return false;
+    }
+
+    ok = Session->FeedPrompt(TEXT("hi"), true);
+    TestTrue(TEXT("first feed"), ok);
+    ok = Session->Decode();
+    TestTrue(TEXT("first decode"), ok);
+    ok = Session->Cancel();
+    TestTrue(TEXT("first cancel"), ok);
+    TestEqual(TEXT("first wait canceled"), Session->Wait(5000), static_cast<int32>(ASTRAL_E_CANCELED));
+
+    SessionDesc.bStreamEnabled = false;
+    ok = Session->Reset(SessionDesc);
+    TestTrue(TEXT("reset after cancel"), ok);
+
+    ok = Session->FeedPrompt(TEXT("reuse"), true);
+    TestTrue(TEXT("second feed"), ok);
+    ok = Session->Decode();
+    TestTrue(TEXT("second decode"), ok);
+    ok = Session->Cancel();
+    TestTrue(TEXT("second cancel"), ok);
+    TestEqual(TEXT("second wait canceled"), Session->Wait(5000), static_cast<int32>(ASTRAL_E_CANCELED));
+
+    Session->BeginDestroy();
+    Model->Release();
+    Model->BeginDestroy();
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTMockMediaFeedTest,
     "AstralRT.Mock.MediaFeed",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter

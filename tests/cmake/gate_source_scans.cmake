@@ -718,6 +718,18 @@ foreach(required_unreal_model_text
   endif()
 endforeach()
 
+set(unreal_automation_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/Tests/AstralRTTests.cpp")
+file(READ "${unreal_automation_source}" unreal_automation_text)
+foreach(required_unreal_lifecycle_text
+    "AstralRT.Mock.SessionCancelReset"
+    "Session->Cancel"
+    "Session->Reset"
+    "ASTRAL_E_CANCELED")
+  if(NOT unreal_automation_text MATCHES "${required_unreal_lifecycle_text}")
+    message(FATAL_ERROR "Unreal lifecycle Automation coverage is missing ${required_unreal_lifecycle_text}")
+  endif()
+endforeach()
+
 foreach(unreal_doc
     "${ROOT}/docs/integration/UNREAL_INTEGRATION.md"
     "${ROOT}/plugins/unreal/AstralRT/README.md")
