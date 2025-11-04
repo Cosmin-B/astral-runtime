@@ -103,6 +103,66 @@ bool FAstralRTModuleInitTest::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTFMemoryAllocatorTest,
+    "AstralRT.Memory.FMemoryAllocator",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTFMemoryAllocatorTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    IAstralRT& Runtime = IAstralRT::Get();
+    Runtime.ResetAllocatorStats();
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("model load uses FMemory allocator"), ok);
+    if (!ok) {
+        return false;
+    }
+
+    UAstralSession* Session = NewObject<UAstralSession>();
+    TestNotNull(TEXT("session allocated"), Session);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 16;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 0;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = false;
+    SessionDesc.Seed = 7;
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("session create uses FMemory allocator"), ok);
+    if (!ok) {
+        Model->Release();
+        Model->BeginDestroy();
+        return false;
+    }
+
+    const FAstralRTAllocatorStats LiveStats = Runtime.GetAllocatorStats();
+    TestTrue(TEXT("native alloc callback called"), LiveStats.AllocCalls > 0);
+    TestTrue(TEXT("native alloc callback tracked bytes"), LiveStats.AllocBytes > 0);
+
+    Session->BeginDestroy();
+    Model->Release();
+    Model->BeginDestroy();
+
+    const FAstralRTAllocatorStats ReleasedStats = Runtime.GetAllocatorStats();
+    TestTrue(TEXT("native free callback called"), ReleasedStats.FreeCalls > 0);
+    TestTrue(TEXT("native free callback tracked bytes"), ReleasedStats.FreeBytes > 0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTMockE2ETest,
     "AstralRT.Mock.E2E",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter

@@ -142,11 +142,19 @@ The module builds with `bEnableExceptions = false` and `bUseRTTI = false`.
 - `IAstralRT::Get()`
 - `IAstralRT::IsAvailable()`
 - `IsInitialized()`
+- `ResetAllocatorStats()`
+- `GetAllocatorStats()`
 
 `FAstralRuntimeModule` initializes the native runtime during module startup and
 shuts it down during module unload. It also bridges native logs into
 `LogAstralRT`. The runtime module does not expose direct model/session creation
 methods; use the UObject wrappers below.
+
+Module startup passes Unreal's `FMemory::Malloc` and `FMemory::Free` through the
+native `AstralAllocator` hook before models or sessions are created.
+`ResetAllocatorStats()` and `GetAllocatorStats()` expose test/debug counters so
+Automation can prove model/session work used the engine-owned allocation path.
+They are validation counters, not gameplay telemetry.
 
 ## Public Wrappers
 

@@ -7,20 +7,53 @@
 
 #include "astral_rt.h"
 
+#include <atomic>
+
 DEFINE_LOG_CATEGORY(LogAstralRT);
 
 namespace {
 
+struct FAllocatorCounters
+{
+    std::atomic<uint64> AllocCalls{0};
+    std::atomic<uint64> FreeCalls{0};
+    std::atomic<uint64> AllocBytes{0};
+    std::atomic<uint64> FreeBytes{0};
+
+    void Reset()
+    {
+        AllocCalls.store(0, std::memory_order_relaxed);
+        FreeCalls.store(0, std::memory_order_relaxed);
+        AllocBytes.store(0, std::memory_order_relaxed);
+        FreeBytes.store(0, std::memory_order_relaxed);
+    }
+
+    FAstralRTAllocatorStats Snapshot() const
+    {
+        FAstralRTAllocatorStats Stats{};
+        Stats.AllocCalls = AllocCalls.load(std::memory_order_relaxed);
+        Stats.FreeCalls = FreeCalls.load(std::memory_order_relaxed);
+        Stats.AllocBytes = AllocBytes.load(std::memory_order_relaxed);
+        Stats.FreeBytes = FreeBytes.load(std::memory_order_relaxed);
+        return Stats;
+    }
+};
+
+static FAllocatorCounters GAllocatorCounters;
+
 static void* UEAlloc(void* user, size_t size, size_t align) {
     (void)user;
     const uint32 alignment = align > 0 ? static_cast<uint32>(align) : 0u;
+    GAllocatorCounters.AllocCalls.fetch_add(1, std::memory_order_relaxed);
+    GAllocatorCounters.AllocBytes.fetch_add(static_cast<uint64>(size), std::memory_order_relaxed);
     return FMemory::Malloc(size, alignment);
 }
 
 static void UEFree(void* user, void* ptr, size_t size, size_t align) {
     (void)user;
-    (void)size;
     (void)align;
+    GAllocatorCounters.FreeCalls.fetch_add(1, std::memory_order_relaxed);
+    GAllocatorCounters.FreeBytes.fetch_add(static_cast<uint64>(size), std::memory_order_relaxed);
     FMemory::Free(ptr);
 }
 
@@ -82,6 +115,7 @@ public:
         if (Err != ASTRAL_OK)
         {
             bInitialized = false;
+            GAllocatorCounters.Reset();
             UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_init failed (%d)"), static_cast<int32>(Err));
             return;
         }
@@ -96,6 +130,7 @@ public:
         {
             astral_shutdown();
             bInitialized = false;
+            GAllocatorCounters.Reset();
             UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Shutdown"));
         }
     }
@@ -103,6 +138,16 @@ public:
     virtual bool IsInitialized() const override
     {
         return bInitialized;
+    }
+
+    virtual void ResetAllocatorStats() override
+    {
+        GAllocatorCounters.Reset();
+    }
+
+    virtual FAstralRTAllocatorStats GetAllocatorStats() const override
+    {
+        return GAllocatorCounters.Snapshot();
     }
 
 private:

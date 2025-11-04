@@ -158,12 +158,14 @@ Embedder->Collect(Ticket, Vec);
 ## Notes
 
 - The module initializes Astral at startup and shuts it down on module unload.
+- Runtime allocations cross the native ABI through Unreal's `FMemory` callbacks; `IAstralRT::GetAllocatorStats()` exposes debug counters for Automation.
 - Streaming is pull-based via `astral_stream_read()` into a pre-sized `TArray<uint8>`.
 
 ## Automation tests
 
 Editor-only Automation tests live under `Source/AstralRT/Private/Tests/`:
 - `AstralRT.Module.Init`
+- `AstralRT.Memory.FMemoryAllocator`
 - `AstralRT.Mock.E2E`
 - `AstralRT.Mock.MediaFeed`
 - `AstralRT.Mock.MultimodalEmbed`

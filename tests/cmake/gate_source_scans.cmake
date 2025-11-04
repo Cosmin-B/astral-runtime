@@ -674,6 +674,29 @@ if(EXISTS "${unreal_build_rules_file}")
   endforeach()
 endif()
 
+set(unreal_module_header "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/IAstralRT.h")
+set(unreal_module_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralRuntimeModule.cpp")
+file(READ "${unreal_module_header}" unreal_module_header_text)
+file(READ "${unreal_module_source}" unreal_module_source_text)
+foreach(required_unreal_allocator_header
+    "FAstralRTAllocatorStats"
+    "ResetAllocatorStats"
+    "GetAllocatorStats")
+  if(NOT unreal_module_header_text MATCHES "${required_unreal_allocator_header}")
+    message(FATAL_ERROR "Unreal runtime interface is missing allocator stats surface: ${required_unreal_allocator_header}")
+  endif()
+endforeach()
+foreach(required_unreal_allocator_impl
+    "FMemory::Malloc"
+    "FMemory::Free"
+    "GAllocatorCounters"
+    "AllocCalls.fetch_add"
+    "FreeCalls.fetch_add")
+  if(NOT unreal_module_source_text MATCHES "${required_unreal_allocator_impl}")
+    message(FATAL_ERROR "Unreal runtime module no longer pins FMemory allocator accounting: ${required_unreal_allocator_impl}")
+  endif()
+endforeach()
+
 file(GLOB_RECURSE unreal_plugin_source_files
   "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/*.h"
   "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/*.h"
@@ -727,6 +750,17 @@ foreach(required_unreal_lifecycle_text
     "ASTRAL_E_CANCELED")
   if(NOT unreal_automation_text MATCHES "${required_unreal_lifecycle_text}")
     message(FATAL_ERROR "Unreal lifecycle Automation coverage is missing ${required_unreal_lifecycle_text}")
+  endif()
+endforeach()
+
+foreach(required_unreal_allocator_test
+    "AstralRT.Memory.FMemoryAllocator"
+    "model load uses FMemory allocator"
+    "session create uses FMemory allocator"
+    "native alloc callback called"
+    "native free callback called")
+  if(NOT unreal_automation_text MATCHES "${required_unreal_allocator_test}")
+    message(FATAL_ERROR "Unreal FMemory allocator Automation coverage is missing ${required_unreal_allocator_test}")
   endif()
 endforeach()
 
