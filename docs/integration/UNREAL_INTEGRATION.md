@@ -32,12 +32,14 @@ plugins/unreal/AstralRT/
       Public/
         AstralEmbedder.h
         AstralLog.h
+        AstralMediaLibrary.h
         AstralModel.h
         AstralSession.h
         AstralTypes.h
         IAstralRT.h
       Private/
         AstralEmbedder.cpp
+        AstralMediaLibrary.cpp
         AstralModel.cpp
         AstralRuntimeModule.cpp
         AstralSession.cpp
@@ -326,19 +328,27 @@ code for the duration of the call. `FAstralAudioDesc::FrameCount` may be set to
 0 so the wrapper infers frame count from format, channel count, and sample
 bytes.
 
+`UAstralMediaLibrary` provides boundary helpers for common engine payloads:
+
+- `MakeRGBA8ImageFromBytes` copies tightly packed RGBA8 bytes into an image
+  descriptor.
+- `MakeRGBA8ImageFromTexture` copies the first mip of a CPU-readable
+  `PF_B8G8R8A8` `UTexture2D` into an RGBA8 descriptor. It returns `false` for
+  compressed, GPU-only, stripped, or non-readable texture data.
+- `MakePCM16AudioFromBytes` copies interleaved signed 16-bit PCM into an audio
+  descriptor and computes frame count.
+
 ```cpp
 FAstralImageDesc Image;
-Image.Format = EAstralImageFormat::RGB8;
-Image.Width = 224;
-Image.Height = 224;
-Image.Pixels.SetNumZeroed(224 * 224 * 3);
+TArray<uint8> RgbaBytes;
+RgbaBytes.SetNumZeroed(224 * 224 * 4);
+UAstralMediaLibrary::MakeRGBA8ImageFromBytes(RgbaBytes, 224, 224, Image);
 Session->FeedImage(Image, true);
 
 FAstralAudioDesc Audio;
-Audio.Format = EAstralAudioFormat::I16;
-Audio.Channels = 1;
-Audio.SampleRate = 16000;
-Audio.Samples.SetNumZeroed(16000 * sizeof(int16));
+TArray<uint8> Pcm16Bytes;
+Pcm16Bytes.SetNumZeroed(16000 * sizeof(int16));
+UAstralMediaLibrary::MakePCM16AudioFromBytes(Pcm16Bytes, 1, 16000, Audio);
 Session->FeedAudio(Audio, true);
 ```
 

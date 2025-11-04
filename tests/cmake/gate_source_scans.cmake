@@ -741,6 +741,39 @@ foreach(required_unreal_embedder_text
   endif()
 endforeach()
 
+set(unreal_media_header "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/AstralMediaLibrary.h")
+set(unreal_media_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralMediaLibrary.cpp")
+file(READ "${unreal_media_header}" unreal_media_header_text)
+file(READ "${unreal_media_source}" unreal_media_source_text)
+foreach(required_unreal_media_text
+    "UAstralMediaLibrary"
+    "MakeRGBA8ImageFromBytes"
+    "MakeRGBA8ImageFromTexture"
+    "MakePCM16AudioFromBytes")
+  if(NOT unreal_media_header_text MATCHES "${required_unreal_media_text}")
+    message(FATAL_ERROR "Unreal media bridge header is missing ${required_unreal_media_text}")
+  endif()
+endforeach()
+foreach(required_unreal_media_impl
+    "PF_B8G8R8A8"
+    "Mip.BulkData.LockReadOnly"
+    "EAstralImageFormat::RGBA8"
+    "EAstralAudioFormat::I16")
+  if(NOT unreal_media_source_text MATCHES "${required_unreal_media_impl}")
+    message(FATAL_ERROR "Unreal media bridge implementation is missing ${required_unreal_media_impl}")
+  endif()
+endforeach()
+foreach(required_unreal_media_test
+    "AstralRT.Media.DescriptorHelpers"
+    "MakeRGBA8ImageFromBytes"
+    "MakePCM16AudioFromBytes"
+    "feed helper image"
+    "feed helper audio")
+  if(NOT unreal_automation_text MATCHES "${required_unreal_media_test}")
+    message(FATAL_ERROR "Unreal media bridge Automation coverage is missing ${required_unreal_media_test}")
+  endif()
+endforeach()
+
 foreach(unreal_doc
     "${ROOT}/docs/integration/UNREAL_INTEGRATION.md"
     "${ROOT}/plugins/unreal/AstralRT/README.md")

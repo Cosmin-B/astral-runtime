@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "AstralEmbedder.h"
+#include "AstralMediaLibrary.h"
 #include "AstralModel.h"
 #include "AstralSession.h"
 #include "IAstralRT.h"
@@ -502,6 +503,91 @@ bool FAstralRTMockMediaFeedTest::RunTest(const FString& Parameters) {
     Audio.Samples.SetNumZeroed(8);
     ok = Session->FeedAudio(Audio, true);
     TestTrue(TEXT("feed audio"), ok);
+
+    Session->BeginDestroy();
+    Model->Release();
+    Model->BeginDestroy();
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTMediaDescriptorHelpersTest,
+    "AstralRT.Media.DescriptorHelpers",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTMediaDescriptorHelpersTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    TArray<uint8> Rgba;
+    Rgba.SetNumZeroed(2 * 2 * 4);
+
+    FAstralImageDesc Image{};
+    bool ok = UAstralMediaLibrary::MakeRGBA8ImageFromBytes(Rgba, 2, 2, Image);
+    TestTrue(TEXT("RGBA bytes descriptor"), ok);
+    TestEqual(TEXT("image width"), static_cast<int32>(Image.Width), 2);
+    TestEqual(TEXT("image height"), static_cast<int32>(Image.Height), 2);
+    TestEqual(TEXT("image stride"), static_cast<int32>(Image.RowStride), 8);
+    TestEqual(TEXT("image byte count"), Image.Pixels.Num(), Rgba.Num());
+
+    TArray<uint8> BadRgba;
+    BadRgba.SetNumZeroed(3);
+    ok = UAstralMediaLibrary::MakeRGBA8ImageFromBytes(BadRgba, 2, 2, Image);
+    TestFalse(TEXT("reject undersized RGBA bytes"), ok);
+
+    TArray<uint8> Pcm;
+    Pcm.SetNumZeroed(4 * static_cast<int32>(sizeof(int16)));
+
+    FAstralAudioDesc Audio{};
+    ok = UAstralMediaLibrary::MakePCM16AudioFromBytes(Pcm, 1, 16000, Audio);
+    TestTrue(TEXT("PCM16 descriptor"), ok);
+    TestEqual(TEXT("audio format"), static_cast<uint32>(Audio.Format), static_cast<uint32>(EAstralAudioFormat::I16));
+    TestEqual(TEXT("audio channels"), static_cast<int32>(Audio.Channels), 1);
+    TestEqual(TEXT("audio sample rate"), static_cast<int32>(Audio.SampleRate), 16000);
+    TestEqual(TEXT("audio frame count"), static_cast<int32>(Audio.FrameCount), 4);
+
+    TArray<uint8> BadPcm;
+    BadPcm.SetNumZeroed(3);
+    ok = UAstralMediaLibrary::MakePCM16AudioFromBytes(BadPcm, 2, 16000, Audio);
+    TestFalse(TEXT("reject unaligned PCM16 bytes"), ok);
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+    ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("model load"), ok);
+    if (!ok) {
+        return false;
+    }
+
+    UAstralSession* Session = NewObject<UAstralSession>();
+    TestNotNull(TEXT("session allocated"), Session);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 16;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 0;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = false;
+    SessionDesc.Seed = 13;
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("session create"), ok);
+    if (!ok) {
+        Model->Release();
+        return false;
+    }
+
+    ok = Session->FeedImage(Image, false);
+    TestTrue(TEXT("feed helper image"), ok);
+    ok = Session->FeedAudio(Audio, true);
+    TestTrue(TEXT("feed helper audio"), ok);
 
     Session->BeginDestroy();
     Model->Release();
