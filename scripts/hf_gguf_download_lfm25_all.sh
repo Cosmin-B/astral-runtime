@@ -8,7 +8,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/hf_gguf_download_lfm25_all.sh [options]
 
-Downloads the full LFM2.5 GGUF set (text + VL + Audio) into a directory.
+Downloads the pinned LFM2.5 multimodal GGUF fixture set into a directory.
 
 Options:
   --out <dir>     Output directory root (default: tests/models/hf-lfm25)
@@ -29,10 +29,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-args=(--manifest scripts/hf_gguf_manifest_lfm25_all.json --out "${out_dir}")
+args=(--manifest scripts/mtmd_fixture_manifest_lfm25.json --out "${out_dir}")
 if [[ -n "${token}" ]]; then
   args+=(--token "${token}")
 fi
 
 ./scripts/hf_gguf_download_manifest.sh "${args[@]}"
-

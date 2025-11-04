@@ -518,6 +518,22 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_hf_matrix_log")
         endif()
 
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_mtmd_fixture_manifest.cmake)
+            add_test(
+                NAME gate_mtmd_fixture_manifest
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_mtmd_fixture_manifest.cmake
+            )
+            set_tests_properties(gate_mtmd_fixture_manifest PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release;mtmd"
+            )
+            message(STATUS "Configured test: gate_mtmd_fixture_manifest")
+        endif()
+
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_cuda_parity_runner.cmake)
             add_test(
                 NAME gate_cuda_parity_runner

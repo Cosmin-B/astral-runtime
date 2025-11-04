@@ -345,8 +345,14 @@ discovery where the real inference/e2e sections are intentionally disabled.
 The MTMD part fails before CTest if any required model/projector fixture is missing:
 
 ```bash
+./scripts/validate_mtmd_fixture_manifest.py scripts/mtmd_fixture_manifest_lfm25.json
+./scripts/hf_gguf_download_lfm25_all.sh --out tests/models/hf-lfm25
 ./scripts/run_multimodal_validation.sh --bench
 ```
+
+The fixture manifest pins the Hugging Face repo revisions, license metadata, and
+required GGUF model/projector filenames. Do not replace it with a floating
+`main` download for release evidence.
 
 The HF GGUF matrix is fail-hard by default: any `[bench] FAILED` row makes
 `run_hf_bench_matrix.sh` exit non-zero. Use `--allow-failures` only for local
