@@ -70,6 +70,7 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_windows_large_page_runner`: checks that the Windows large-page validation runner and opt-in test expectations stay wired.
 - `gate_unreal_automation_results`: smoke-checks the Unreal Automation result validator for pass, missing-report, and failing-log cases.
 - `gate_unreal_container_runner`: checks that the UE 5.7 container runner rejects missing Epic GHCR auth before invoking the container engine.
+- `gate_unreal_sample_scaffold`: generates a temporary UE sample project and checks that it includes model load, streaming, cancellation, embeddings, and error-reporting sample code.
 - `gate_unity_editmode_results`: smoke-checks the Unity EditMode XML validator for pass, failed-result, and malformed-result cases.
 - `gate_hf_matrix_log`: checks that HF matrix logs can be parsed and that failed, empty, skipped-only, or incomplete feature logs are rejected when pass evidence is required.
 - `gate_mtmd_fixture_manifest`: checks that the MTMD fixture manifest uses pinned revisions, license metadata, and required vision/audio model/projector files.

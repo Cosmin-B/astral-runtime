@@ -630,6 +630,46 @@ foreach(forbidden_fast_presubmit_text
   endif()
 endforeach()
 
+set(unreal_sample_script "${ROOT}/scripts/create_unreal_sample_project.sh")
+set(unreal_sample_gate "${ROOT}/tests/cmake/gate_unreal_sample_scaffold.cmake")
+if(NOT EXISTS "${unreal_sample_script}")
+  message(FATAL_ERROR "Unreal sample project scaffold script is missing")
+endif()
+if(NOT EXISTS "${unreal_sample_gate}")
+  message(FATAL_ERROR "Unreal sample project scaffold gate is missing")
+endif()
+file(READ "${unreal_sample_script}" unreal_sample_script_text)
+file(READ "${unreal_sample_gate}" unreal_sample_gate_text)
+foreach(required_unreal_sample_script_text
+    "AstralSample.uproject"
+    "EngineAssociation"
+    "5.7"
+    "RunGenerationDemo"
+    "CancelStreamingDemo"
+    "RunEmbeddingDemo"
+    "RunErrorDemo"
+    "OnStreamBytesNative"
+    "EmbedUtf8Bytes"
+    "astral_last_error"
+    "plugin-mode")
+  string(FIND "${unreal_sample_script_text}" "${required_unreal_sample_script_text}" unreal_sample_script_pos)
+  if(unreal_sample_script_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal sample scaffold script is missing '${required_unreal_sample_script_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_sample_gate_text
+    "gate_unreal_sample_scaffold"
+    "create_unreal_sample_project.sh"
+    "RunGenerationDemo"
+    "CancelStreamingDemo"
+    "RunEmbeddingDemo"
+    "RunErrorDemo")
+  string(FIND "${unreal_sample_gate_text}" "${required_unreal_sample_gate_text}" unreal_sample_gate_pos)
+  if(unreal_sample_gate_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal sample scaffold gate is missing '${required_unreal_sample_gate_text}'")
+  endif()
+endforeach()
+
 set(test_cmake_file "${ROOT}/tests/CMakeLists.txt")
 set(model_churn_soak_file "${ROOT}/tests/gate_model_churn_soak.cpp")
 file(READ "${test_cmake_file}" test_cmake_content)

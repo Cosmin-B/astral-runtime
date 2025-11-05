@@ -52,6 +52,21 @@ The repo CI path can stage a sidecar project for you. Leave
 `ASTRAL_UNREAL_PROJECT` unset to use `build/unreal-ci-project`, or point it at
 an existing project that already has `Plugins/AstralRT`.
 
+## Generate The Sample Project
+
+To create a sidecar UE 5.7 sample project without committing generated files:
+
+```bash
+./scripts/create_unreal_sample_project.sh --out /tmp/AstralSample
+```
+
+The script creates `AstralSample.uproject`, links the local `AstralRT` plugin,
+and writes a small C++ actor that demonstrates model load, streaming,
+cancellation, embeddings, and expected failure logging through `LogAstralRT`.
+Use `--plugin-mode copy` when the project must be packaged on a machine without
+access to the Astral checkout. Real sign-off still requires packaging that
+generated project in UE 5.7 and keeping the logs as release evidence.
+
 ## Run Local Automation
 
 Use an installed UnrealEditor or UnrealEditor-Cmd:

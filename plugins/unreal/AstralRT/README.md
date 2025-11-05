@@ -27,6 +27,12 @@ target.
 For the full UE 5.7 path, including container commands and release evidence,
 see [UNREAL_57_QUICKSTART.md](../../../docs/integration/UNREAL_57_QUICKSTART.md).
 
+To generate a sidecar sample project outside the repo:
+
+```bash
+./scripts/create_unreal_sample_project.sh --out /tmp/AstralSample
+```
+
 ## Use in a UE project
 
 Copy `astral/plugins/unreal/AstralRT/` into your Unreal project:
