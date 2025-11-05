@@ -740,3 +740,35 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_rss_
     )
     message(STATUS "Configured test: gate_rss_cap")
 endif()
+
+# Gate: repeated model/session churn with RSS drift sampling.
+if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_model_churn_soak.cpp)
+    add_executable(gate_model_churn_soak
+        gate_model_churn_soak.cpp
+        main.cpp
+    )
+
+    target_link_libraries(gate_model_churn_soak PRIVATE
+        astral_rt
+        astral_test_framework
+    )
+    target_include_directories(gate_model_churn_soak PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    set_target_properties(gate_model_churn_soak PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(gate_model_churn_soak PRIVATE pthread dl)
+    endif()
+
+    add_test(NAME gate_model_churn_soak COMMAND gate_model_churn_soak)
+    set_tests_properties(gate_model_churn_soak PROPERTIES
+        TIMEOUT 60
+        RUN_SERIAL TRUE
+        LABELS "gate;memory;soak"
+    )
+    message(STATUS "Configured test: gate_model_churn_soak")
+endif()

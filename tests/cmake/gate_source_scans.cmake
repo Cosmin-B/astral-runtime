@@ -622,10 +622,37 @@ foreach(forbidden_fast_presubmit_text
     "run_multimodal"
     "package_release"
     "run_hf"
-    "run_windows")
+    "run_windows"
+    "soak")
   string(FIND "${fast_presubmit_content}" "${forbidden_fast_presubmit_text}" fast_presubmit_forbidden_pos)
   if(NOT fast_presubmit_forbidden_pos EQUAL -1)
     message(FATAL_ERROR "Fast presubmit runner must not invoke slow or external lane '${forbidden_fast_presubmit_text}'")
+  endif()
+endforeach()
+
+set(test_cmake_file "${ROOT}/tests/CMakeLists.txt")
+set(model_churn_soak_file "${ROOT}/tests/gate_model_churn_soak.cpp")
+file(READ "${test_cmake_file}" test_cmake_content)
+file(READ "${model_churn_soak_file}" model_churn_soak_content)
+foreach(required_model_churn_cmake
+    "gate_model_churn_soak"
+    "RUN_SERIAL TRUE"
+    "LABELS \"gate;memory;soak\"")
+  string(FIND "${test_cmake_content}" "${required_model_churn_cmake}" model_churn_cmake_pos)
+  if(model_churn_cmake_pos EQUAL -1)
+    message(FATAL_ERROR "Model churn soak gate is not wired in CTest: missing '${required_model_churn_cmake}'")
+  endif()
+endforeach()
+foreach(required_model_churn_text
+    "ASTRAL_SOAK_MODEL"
+    "ASTRAL_SOAK_MOCK_CYCLES"
+    "ASTRAL_SOAK_REAL_CYCLES"
+    "ASTRAL_SOAK_RSS_DRIFT_MB"
+    "gate_model_churn_soak_real_model_probe"
+    "model churn RSS drift exceeded")
+  string(FIND "${model_churn_soak_content}" "${required_model_churn_text}" model_churn_text_pos)
+  if(model_churn_text_pos EQUAL -1)
+    message(FATAL_ERROR "Model churn soak gate is missing '${required_model_churn_text}'")
   endif()
 endforeach()
 
