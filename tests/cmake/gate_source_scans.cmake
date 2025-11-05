@@ -670,6 +670,37 @@ foreach(required_unreal_sample_gate_text
   endif()
 endforeach()
 
+set(unreal_compat_matrix_script "${ROOT}/scripts/run_unreal_compatibility_matrix.sh")
+set(unreal_compat_matrix_gate "${ROOT}/tests/cmake/gate_unreal_compatibility_matrix.cmake")
+if(NOT EXISTS "${unreal_compat_matrix_gate}")
+  message(FATAL_ERROR "Unreal compatibility matrix gate is missing")
+endif()
+file(READ "${unreal_compat_matrix_script}" unreal_compat_matrix_script_text)
+file(READ "${unreal_compat_matrix_gate}" unreal_compat_matrix_gate_text)
+foreach(required_unreal_matrix_script_text
+    "UNREAL_54_EDITOR"
+    "UNREAL_55_EDITOR"
+    "UNREAL_56_EDITOR"
+    "UNREAL_57_EDITOR"
+    "No Unreal versions ran"
+    "Unsupported Unreal version")
+  string(FIND "${unreal_compat_matrix_script_text}" "${required_unreal_matrix_script_text}" unreal_matrix_script_pos)
+  if(unreal_matrix_script_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal compatibility matrix script is missing '${required_unreal_matrix_script_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_matrix_gate_text
+    "gate_unreal_compatibility_matrix"
+    "Missing UNREAL_54_EDITOR"
+    "Unsupported Unreal version '5[.]8'"
+    "No Unreal versions ran"
+    "Skipping UE 5.7")
+  string(FIND "${unreal_compat_matrix_gate_text}" "${required_unreal_matrix_gate_text}" unreal_matrix_gate_pos)
+  if(unreal_matrix_gate_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal compatibility matrix gate is missing '${required_unreal_matrix_gate_text}'")
+  endif()
+endforeach()
+
 set(test_cmake_file "${ROOT}/tests/CMakeLists.txt")
 set(model_churn_soak_file "${ROOT}/tests/gate_model_churn_soak.cpp")
 file(READ "${test_cmake_file}" test_cmake_content)

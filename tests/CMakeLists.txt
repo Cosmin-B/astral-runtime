@@ -486,6 +486,21 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_unreal_container_runner")
         endif()
 
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_compatibility_matrix.cmake)
+            add_test(
+                NAME gate_unreal_compatibility_matrix
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_compatibility_matrix.cmake
+            )
+            set_tests_properties(gate_unreal_compatibility_matrix PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_compatibility_matrix")
+        endif()
+
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_sample_scaffold.cmake)
             add_test(
                 NAME gate_unreal_sample_scaffold
