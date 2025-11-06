@@ -19,6 +19,7 @@ Options:
   --strict          Enable strict token-id parity assertions
   --allow-probes    Allow build/probe-only runs when real CUDA env flags are unset
   --check-env       Check required env policy, then exit
+  --check-runner    Check GPU/toolkit runner policy, then exit
   --help            Show help
 
 Environment:
@@ -40,6 +41,7 @@ preset_set="dev"
 strict=0
 allow_probes=0
 check_env=0
+check_runner=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --strict) strict=1; shift ;;
     --allow-probes) allow_probes=1; shift ;;
     --check-env) check_env=1; shift ;;
+    --check-runner) check_runner=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -65,6 +68,10 @@ if [[ "${allow_probes}" -eq 1 ]]; then
 fi
 if [[ "${check_env}" -eq 1 ]]; then
   scripts/run_cuda_parity.sh --preset dev-cuda --check-env "${common_args[@]}"
+  exit $?
+fi
+if [[ "${check_runner}" -eq 1 ]]; then
+  scripts/run_cuda_parity.sh --preset dev-cuda --check-runner "${common_args[@]}"
   exit $?
 fi
 
