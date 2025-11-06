@@ -670,6 +670,40 @@ foreach(required_unreal_sample_gate_text
   endif()
 endforeach()
 
+set(unreal_container_script "${ROOT}/scripts/run_unreal_container_ci.sh")
+set(unreal_container_gate "${ROOT}/tests/cmake/gate_unreal_container_runner.cmake")
+if(NOT EXISTS "${unreal_container_script}")
+  message(FATAL_ERROR "Unreal container runner script is missing")
+endif()
+if(NOT EXISTS "${unreal_container_gate}")
+  message(FATAL_ERROR "Unreal container runner gate is missing")
+endif()
+file(READ "${unreal_container_script}" unreal_container_script_text)
+file(READ "${unreal_container_gate}" unreal_container_gate_text)
+foreach(required_unreal_container_script_text
+    "dev-5.7.4"
+    "sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
+    "dev-slim-5.7.4"
+    "sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
+    "Epic Unreal container access is not configured"
+    "ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS")
+  string(FIND "${unreal_container_script_text}" "${required_unreal_container_script_text}" unreal_container_script_pos)
+  if(unreal_container_script_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal container runner script is missing '${required_unreal_container_script_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_container_gate_text
+    "gate_unreal_container_runner"
+    "check_missing_auth(\"full\""
+    "check_missing_auth(\"slim\""
+    "dev-5[.]7[.]4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
+    "dev-slim-5[.]7[.]4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6")
+  string(FIND "${unreal_container_gate_text}" "${required_unreal_container_gate_text}" unreal_container_gate_pos)
+  if(unreal_container_gate_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal container runner gate is missing '${required_unreal_container_gate_text}'")
+  endif()
+endforeach()
+
 set(unreal_compat_matrix_script "${ROOT}/scripts/run_unreal_compatibility_matrix.sh")
 set(unreal_compat_matrix_gate "${ROOT}/tests/cmake/gate_unreal_compatibility_matrix.cmake")
 if(NOT EXISTS "${unreal_compat_matrix_gate}")
