@@ -686,7 +686,14 @@ foreach(required_unreal_container_script_text
     "dev-slim-5.7.4"
     "sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
     "Epic Unreal container access is not configured"
-    "ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS")
+    "ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS"
+    "ASTRAL_UNREAL_REQUIRED_CLANG_VERSION"
+    "ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN"
+    "ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG"
+    "20.1.8"
+    "v26"
+    "clang version mismatch"
+    "Linux SDK metadata mismatch")
   string(FIND "${unreal_container_script_text}" "${required_unreal_container_script_text}" unreal_container_script_pos)
   if(unreal_container_script_pos EQUAL -1)
     message(FATAL_ERROR "Unreal container runner script is missing '${required_unreal_container_script_text}'")

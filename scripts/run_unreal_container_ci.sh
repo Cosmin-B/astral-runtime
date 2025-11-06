@@ -10,6 +10,9 @@ slim_digest="sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c46979
 
 container_engine="${CONTAINER_ENGINE:-docker}"
 pull_timeout_seconds="${ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS:-120}"
+required_clang_version="${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION:-20.1.8}"
+required_linux_sdk_toolchain="${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN:-v26}"
+required_linux_sdk_clang="${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG:-20.1.8}"
 variant="slim"
 image=""
 digest=""
@@ -38,6 +41,12 @@ Environment:
   CONTAINER_ENGINE          Container CLI (default: docker)
   ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS
                             Pull timeout in seconds (default: 120)
+  ASTRAL_UNREAL_REQUIRED_CLANG_VERSION
+                            Required clang version inside UE 5.7 image (default: 20.1.8)
+  ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN
+                            Required Linux SDK toolchain marker (default: v26)
+  ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG
+                            Required Linux SDK clang marker (default: 20.1.8)
   UNREAL_EDITOR             Same as --editor
   UNREAL_TEST_FILTER        Same as --filter
 
@@ -203,17 +212,30 @@ if [[ -n "${engine_root}" ]]; then
   linux_sdk="${engine_root}/Engine/Config/Linux/Linux_SDK.json"
   if [[ -f "${linux_sdk}" ]]; then
     echo "[unreal_container] Linux SDK: ${linux_sdk}"
-    sed -n "1,120p" "${linux_sdk}"
+    linux_sdk_text="$(sed -n "1,120p" "${linux_sdk}")"
+    printf "%s\n" "${linux_sdk_text}"
+    if [[ "${linux_sdk_text}" != *"${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN}"* ||
+          "${linux_sdk_text}" != *"${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG}"* ]]; then
+      echo "Linux SDK metadata mismatch: expected ${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN} with clang ${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG}" >&2
+      exit 2
+    fi
   else
     echo "[unreal_container] Linux SDK metadata not found under ${engine_root}" >&2
+    exit 2
   fi
 fi
 
 if command -v clang >/dev/null 2>&1; then
   echo "[unreal_container] clang:"
-  clang --version | sed -n "1,3p"
+  clang_version_text="$(clang --version | sed -n "1,3p")"
+  printf "%s\n" "${clang_version_text}"
+  if [[ "${clang_version_text}" != *"${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION}"* ]]; then
+    echo "clang version mismatch: expected ${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION}" >&2
+    exit 2
+  fi
 else
   echo "[unreal_container] clang not found in PATH" >&2
+  exit 2
 fi
 
 if [[ "${ASTRAL_UNREAL_BUILD_NATIVE}" == "1" ]]; then
@@ -247,6 +269,9 @@ fi
 "${container_engine}" run --rm --init \
   -e "ASTRAL_UNREAL_BUILD_NATIVE=${build_native}" \
   -e "ASTRAL_UNREAL_IMAGE_REF=${image_ref}" \
+  -e "ASTRAL_UNREAL_REQUIRED_CLANG_VERSION=${required_clang_version}" \
+  -e "ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN=${required_linux_sdk_toolchain}" \
+  -e "ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG=${required_linux_sdk_clang}" \
   -e "UNREAL_EDITOR=${unreal_editor}" \
   -e "UNREAL_TEST_FILTER=${test_filter}" \
   -v "${root_dir}:/workspace/astral" \
