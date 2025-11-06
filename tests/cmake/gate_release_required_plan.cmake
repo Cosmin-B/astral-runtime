@@ -33,7 +33,7 @@ set(plan_env
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E env
     ${plan_env}
-    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --cuda-strict --mtmd-bench
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --cuda-arch native --cuda-strict --mtmd-bench
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE good_result
   OUTPUT_VARIABLE good_output
@@ -48,6 +48,24 @@ endif()
 if(NOT good_output MATCHES "sanitizers: scripts/run_asan\\.sh && scripts/run_tsan\\.sh")
   message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not require sanitizer lanes: ${good_output}")
 endif()
+if(NOT good_output MATCHES "--arch native")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not include explicit CUDA architecture: ${good_output}")
+endif()
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    ${plan_env}
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --cuda-strict --mtmd-bench
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE missing_arch_result
+  ERROR_VARIABLE missing_arch_error
+)
+if(missing_arch_result EQUAL 0)
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan accepted a release CUDA plan without --cuda-arch")
+endif()
+if(NOT missing_arch_error MATCHES "--cuda-arch")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan failed for the wrong missing CUDA arch reason: ${missing_arch_error}")
+endif()
 
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E env
@@ -55,7 +73,7 @@ execute_process(
     "ASTRAL_TEST_VISION_MEDIA=/models/mmproj-vision.gguf"
     "ASTRAL_TEST_AUDIO_MODEL=/models/audio.gguf"
     "ASTRAL_TEST_AUDIO_MEDIA=/models/mmproj-audio.gguf"
-    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --skip-engine
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --cuda-arch native --skip-engine
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE skip_result
   OUTPUT_VARIABLE skip_output
@@ -71,7 +89,7 @@ endif()
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E env
     ${plan_env}
-    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --skip-sanitizers
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --cuda-arch native --skip-sanitizers
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE skip_sanitizers_result
   OUTPUT_VARIABLE skip_sanitizers_output

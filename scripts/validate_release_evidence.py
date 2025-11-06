@@ -41,6 +41,7 @@ REQUIRED_COMMAND_TOKENS = {
     ),
     "release_required_gates": (
         "run_release_required_gates.sh",
+        "--cuda-arch",
         "--cuda-strict",
         "--mtmd-bench",
     ),

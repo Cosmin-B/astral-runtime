@@ -307,7 +307,7 @@ UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNITY_EDITOR=/opt/Unity/Editor/Unity \
-  ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench
+  ./scripts/run_release_required_gates.sh --cuda-arch native --cuda-strict --mtmd-bench
 ```
 
 The `--skip-sanitizers`, `--skip-engine`, `--skip-unreal`, and `--skip-unity`
@@ -328,7 +328,7 @@ UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNITY_EDITOR=/opt/Unity/Editor/Unity \
-  ./scripts/run_release_required_gates.sh --print-plan --cuda-strict --mtmd-bench
+  ./scripts/run_release_required_gates.sh --print-plan --cuda-arch native --cuda-strict --mtmd-bench
 ```
 
 The CUDA part uses release-with-tests CUDA presets and requires a real CUDA runner:

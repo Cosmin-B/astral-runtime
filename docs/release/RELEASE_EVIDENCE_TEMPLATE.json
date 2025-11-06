@@ -21,7 +21,7 @@
     },
     "release_required_gates": {
       "status": "pass",
-      "command": "ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench",
+      "command": "ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --cuda-arch <deployed-arch-list> --cuda-strict --mtmd-bench",
       "artifacts": [
         "logs/release-required-gates.log"
       ]

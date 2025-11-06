@@ -111,7 +111,7 @@ file(WRITE "${out_dir}/release-evidence.json"
     },
     \"release_required_gates\": {
       \"status\": \"pass\",
-      \"command\": \"./scripts/run_release_required_gates.sh --cuda-strict --mtmd-bench\",
+      \"command\": \"./scripts/run_release_required_gates.sh --cuda-arch native --cuda-strict --mtmd-bench\",
       \"artifacts\": [\"logs/release_required_gates.log\"]
     },
     \"sanitizer_validation\": {

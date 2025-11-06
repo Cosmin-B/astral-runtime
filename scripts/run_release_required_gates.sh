@@ -14,7 +14,7 @@ real MTMD media validation, Unreal Automation compatibility, and Unity EditMode
 ABI validation.
 
 Options:
-  --cuda-arch <list>    Override ASTRAL_CUDA_ARCHITECTURES for CUDA presets
+  --cuda-arch <list>    Required deployed CUDA architecture list for CUDA presets
   --cuda-strict         Enable strict CUDA token-id parity assertions
   --mtmd-bench         Require MTMD feature bench media feed rows
   --print-plan         Print required lanes and environment checks, then exit
@@ -33,6 +33,8 @@ Engine gates are supplied through:
   UNITY_EDITOR
 
 Release-candidate runs should not use skip flags.
+Release-candidate CUDA runs must name --cuda-arch so the evidence records the
+deployed architecture target instead of inheriting preset defaults.
 EOF
 }
 
@@ -99,6 +101,11 @@ print_release_plan() {
     ASTRAL_TEST_AUDIO_MODEL \
     ASTRAL_TEST_AUDIO_MEDIA || missing=1
 
+  if [[ -z "${cuda_arch}" ]]; then
+    echo "[release-gate] missing required option: --cuda-arch <deployed-arch-list>" >&2
+    missing=1
+  fi
+
   if [[ "${run_unreal}" -eq 1 ]]; then
     require_env_for_plan \
       UNREAL_54_EDITOR \
@@ -134,6 +141,11 @@ fi
 if [[ "${print_plan}" -eq 1 ]]; then
   print_release_plan
   exit $?
+fi
+
+if [[ -z "${cuda_arch}" ]]; then
+  echo "[release-gate] missing required option: --cuda-arch <deployed-arch-list>" >&2
+  exit 2
 fi
 
 echo "[release-gate] Native release tests"
