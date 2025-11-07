@@ -94,6 +94,31 @@ if(NOT probe_runner_output MATCHES "probe-only runner policy OK")
 endif()
 
 execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_CUDA_PARITY_INFER=1"
+    "ASTRAL_TEST_CUDA_E2E=1"
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_cuda_parity_matrix.sh" --preset-set release --arch native --strict --print-plan
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE release_plan_result
+  OUTPUT_VARIABLE release_plan_output
+  ERROR_VARIABLE release_plan_error
+)
+if(NOT release_plan_result EQUAL 0)
+  message(FATAL_ERROR "run_cuda_parity_matrix.sh --print-plan failed: ${release_plan_error}")
+endif()
+foreach(required_release_preset
+    "release-with-tests-cuda"
+    "release-with-tests-cuda-cublas"
+    "release-with-tests-cuda-mmq")
+  if(NOT release_plan_output MATCHES "${required_release_preset}")
+    message(FATAL_ERROR "CUDA release matrix plan is missing ${required_release_preset}: ${release_plan_output}")
+  endif()
+endforeach()
+if(NOT release_plan_output MATCHES "ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1")
+  message(FATAL_ERROR "CUDA release matrix plan no longer prints required real-CUDA env flags: ${release_plan_output}")
+endif()
+
+execute_process(
   COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_cuda_parity.sh" --help
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE help_result
@@ -107,6 +132,19 @@ if(NOT help_output MATCHES "--allow-probes")
 endif()
 if(NOT help_output MATCHES "--check-runner")
   message(FATAL_ERROR "run_cuda_parity.sh --help does not document --check-runner")
+endif()
+
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_cuda_parity_matrix.sh" --help
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE matrix_help_result
+  OUTPUT_VARIABLE matrix_help_output
+)
+if(NOT matrix_help_result EQUAL 0)
+  message(FATAL_ERROR "run_cuda_parity_matrix.sh --help failed")
+endif()
+if(NOT matrix_help_output MATCHES "--print-plan")
+  message(FATAL_ERROR "run_cuda_parity_matrix.sh --help does not document --print-plan")
 endif()
 
 message(STATUS "gate_cuda_parity_runner: OK")

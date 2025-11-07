@@ -96,3 +96,7 @@ ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity_m
 Use `scripts/run_cuda_parity.sh` for one CUDA preset and
 `scripts/run_cuda_parity_matrix.sh` for the release matrix across auto, forced
 cuBLAS, and forced MMQ presets.
+
+Use `scripts/run_cuda_parity_matrix.sh --preset-set release --arch <deployed-arch-list> --print-plan`
+to inspect the release presets and required real-CUDA flags without configuring
+or building.
