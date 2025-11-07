@@ -90,7 +90,7 @@ foreach(lane IN LISTS required_lanes)
   elseif(lane STREQUAL "unity_editmode_abi")
     set(command "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh")
   elseif(lane STREQUAL "cuda_parity_matrix")
-    set(command "ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --strict")
+    set(command "ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --arch native --strict")
   elseif(lane STREQUAL "multimodal_validation")
     set(command "./scripts/run_multimodal_validation.sh --bench")
   elseif(lane STREQUAL "hf_model_matrix")
@@ -204,7 +204,7 @@ ${evidence_entries}  }
 ")
 file(READ "${bad_command_manifest}" bad_command_text)
 string(REPLACE
-  "ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --strict"
+  "ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --arch native --strict"
   "./scripts/run_cuda_parity_matrix.sh --preset-set release --strict"
   bad_command_text
   "${bad_command_text}"
@@ -421,7 +421,9 @@ foreach(required
   "cuda_parity_matrix"
   "ASTRAL_TEST_CUDA_PARITY_INFER=1"
   "ASTRAL_TEST_CUDA_E2E=1"
-  "run_cuda_parity_matrix.sh --preset-set release --strict"
+  "run_cuda_parity_matrix.sh --preset-set release"
+  "--arch"
+  "--strict"
 )
   if(NOT template_text MATCHES "${required}")
     message(FATAL_ERROR "RELEASE_EVIDENCE_TEMPLATE.json is missing release evidence requirement: ${required}")

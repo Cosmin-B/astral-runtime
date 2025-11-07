@@ -32,7 +32,7 @@ Example:
 
 Release-candidate gate:
   ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 \\
-    scripts/run_cuda_parity_matrix.sh --preset-set release --strict
+    scripts/run_cuda_parity_matrix.sh --preset-set release --arch native --strict
 EOF
 }
 
@@ -88,6 +88,11 @@ case "${preset_set}" in
     exit 2
     ;;
 esac
+
+if [[ "${preset_set}" == "release" && "${allow_probes}" -ne 1 && -z "${arch_override}" ]]; then
+  echo "Missing --arch <deployed-arch-list> for release CUDA matrix evidence." >&2
+  exit 2
+fi
 
 for p in "${presets[@]}"; do
   echo

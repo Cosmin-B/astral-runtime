@@ -146,7 +146,7 @@ file(WRITE "${out_dir}/release-evidence.json"
     },
     \"cuda_parity_matrix\": {
       \"status\": \"pass\",
-      \"command\": \"ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --strict\",
+      \"command\": \"ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --arch native --strict\",
       \"artifacts\": [\"logs/cuda_parity_matrix.log\"]
     },
     \"multimodal_validation\": {

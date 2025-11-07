@@ -75,6 +75,7 @@ REQUIRED_COMMAND_TOKENS = {
         "ASTRAL_TEST_CUDA_E2E=1",
         "run_cuda_parity_matrix.sh",
         "--preset-set release",
+        "--arch",
         "--strict",
     ),
     "multimodal_validation": ("run_multimodal_validation.sh", "--bench"),

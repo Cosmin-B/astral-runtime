@@ -32,6 +32,22 @@ if(NOT matrix_missing_error MATCHES "ASTRAL_TEST_CUDA_PARITY_INFER")
 endif()
 
 execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_CUDA_PARITY_INFER=1"
+    "ASTRAL_TEST_CUDA_E2E=1"
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_cuda_parity_matrix.sh" --preset-set release
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE missing_arch_result
+  ERROR_VARIABLE missing_arch_error
+)
+if(missing_arch_result EQUAL 0)
+  message(FATAL_ERROR "run_cuda_parity_matrix.sh accepted release CUDA evidence without --arch")
+endif()
+if(NOT missing_arch_error MATCHES "Missing --arch")
+  message(FATAL_ERROR "run_cuda_parity_matrix.sh failed for the wrong missing-arch reason: ${missing_arch_error}")
+endif()
+
+execute_process(
   COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_cuda_parity_matrix.sh" --preset-set release --check-env --allow-probes
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE probe_result

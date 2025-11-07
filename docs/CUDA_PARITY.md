@@ -81,8 +81,8 @@ ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity_m
 - CUDA backend presence/absence surface behavior.
 
 2) **CUDA machine tests** (release-candidate required):
-- Run `scripts/run_cuda_parity_matrix.sh --preset-set release --strict` with
-  `ASTRAL_TEST_CUDA_PARITY_INFER=1` and `ASTRAL_TEST_CUDA_E2E=1`.
+- Run `scripts/run_cuda_parity_matrix.sh --preset-set release --arch <deployed-arch-list> --strict`
+  with `ASTRAL_TEST_CUDA_PARITY_INFER=1` and `ASTRAL_TEST_CUDA_E2E=1`.
 - This lane is required by `scripts/run_release_required_gates.sh`; the
   CPU-only CI smoke does not replace a real CUDA runner.
 - Strict mode (`ASTRAL_TEST_CUDA_PARITY_STRICT=1`) is opt-in and checks “near parity”:

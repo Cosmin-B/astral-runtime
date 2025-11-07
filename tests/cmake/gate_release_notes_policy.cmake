@@ -38,7 +38,7 @@ set(common_notes [=[
 
 - Native debug gate: `cmake --preset dev && cmake --build --preset dev -j && ctest --preset dev -j --output-on-failure` passed
 - Native release gate: `cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure` passed
-- CUDA gate: self-hosted runner, CUDA 12.8, RTX 4090, `scripts/run_cuda_parity_matrix.sh --preset-set release` passed
+- CUDA gate: self-hosted runner, CUDA 12.8, RTX 4090, `scripts/run_cuda_parity_matrix.sh --preset-set release --arch native --strict` passed
 - MTMD gate: vision/audio fixtures, `scripts/run_multimodal_validation.sh --require-fixtures` passed
 - HF matrix: full manifest, logs, and summary passed
 

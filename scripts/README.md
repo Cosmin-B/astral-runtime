@@ -331,11 +331,14 @@ UNITY_EDITOR=/opt/Unity/Editor/Unity \
   ./scripts/run_release_required_gates.sh --print-plan --cuda-arch native --cuda-strict --mtmd-bench
 ```
 
-The CUDA part uses release-with-tests CUDA presets and requires a real CUDA runner:
+The CUDA part uses release-with-tests CUDA presets and requires a real CUDA runner.
+Pass `--cuda-arch` with the deployed architecture list that the release evidence
+will claim; direct `run_cuda_parity_matrix.sh --preset-set release` runs follow
+the same rule through `--arch`.
 
 ```bash
 ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 \
-  ./scripts/run_cuda_parity_matrix.sh --preset-set release --strict
+  ./scripts/run_cuda_parity_matrix.sh --preset-set release --arch native --strict
 ```
 
 `run_cuda_parity.sh` and `run_cuda_parity_matrix.sh` require those two
