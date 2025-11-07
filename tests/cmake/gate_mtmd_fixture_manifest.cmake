@@ -4,11 +4,15 @@ endif()
 if(NOT DEFINED ASTRAL_BUILD_DIR)
   message(FATAL_ERROR "ASTRAL_BUILD_DIR not set")
 endif()
+if(NOT DEFINED ASTRAL_BASH_EXECUTABLE)
+  message(FATAL_ERROR "ASTRAL_BASH_EXECUTABLE not set")
+endif()
 if(NOT DEFINED ASTRAL_PYTHON_EXECUTABLE)
   message(FATAL_ERROR "ASTRAL_PYTHON_EXECUTABLE not set")
 endif()
 
 set(script "${ASTRAL_SOURCE_DIR}/scripts/validate_mtmd_fixture_manifest.py")
+set(runner "${ASTRAL_SOURCE_DIR}/scripts/run_multimodal_validation.sh")
 set(manifest "${ASTRAL_SOURCE_DIR}/scripts/mtmd_fixture_manifest_lfm25.json")
 set(out_dir "${ASTRAL_BUILD_DIR}/mtmd-fixture-manifest-gate")
 file(REMOVE_RECURSE "${out_dir}")
@@ -111,6 +115,76 @@ if(missing_audio_result EQUAL 0)
 endif()
 if(NOT missing_audio_error MATCHES "missing required MTMD roles")
   message(FATAL_ERROR "MTMD fixture manifest validator failed for the wrong missing-role reason: ${missing_audio_error}")
+endif()
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_VISION_MODEL="
+    "ASTRAL_TEST_VISION_MEDIA="
+    "ASTRAL_TEST_AUDIO_MODEL="
+    "ASTRAL_TEST_AUDIO_MEDIA="
+    "${ASTRAL_BASH_EXECUTABLE}" "${runner}" --check-fixtures
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE missing_fixture_result
+  ERROR_VARIABLE missing_fixture_error
+)
+if(missing_fixture_result EQUAL 0)
+  message(FATAL_ERROR "MTMD fixture preflight accepted missing fixture environment")
+endif()
+if(NOT missing_fixture_error MATCHES "missing vision model")
+  message(FATAL_ERROR "MTMD fixture preflight failed for the wrong missing-fixture reason: ${missing_fixture_error}")
+endif()
+
+set(fixture_dir "${out_dir}/fixtures")
+file(MAKE_DIRECTORY "${fixture_dir}")
+set(vision_model "${fixture_dir}/vision-model.gguf")
+set(vision_media "${fixture_dir}/vision-media.gguf")
+set(audio_model "${fixture_dir}/audio-model.gguf")
+set(audio_media "${fixture_dir}/audio-media.gguf")
+file(WRITE "${vision_model}" "tiny")
+file(WRITE "${vision_media}" "tiny")
+file(WRITE "${audio_model}" "tiny")
+file(WRITE "${audio_media}" "tiny")
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_VISION_MODEL=${vision_model}"
+    "ASTRAL_TEST_VISION_MEDIA=${vision_media}"
+    "ASTRAL_TEST_AUDIO_MODEL=${audio_model}"
+    "ASTRAL_TEST_AUDIO_MEDIA=${audio_media}"
+    "ASTRAL_MTMD_MIN_MODEL_BYTES=16"
+    "ASTRAL_MTMD_MIN_MEDIA_BYTES=16"
+    "${ASTRAL_BASH_EXECUTABLE}" "${runner}" --check-fixtures
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE small_fixture_result
+  ERROR_VARIABLE small_fixture_error
+)
+if(small_fixture_result EQUAL 0)
+  message(FATAL_ERROR "MTMD fixture preflight accepted undersized fixtures")
+endif()
+if(NOT small_fixture_error MATCHES "too small")
+  message(FATAL_ERROR "MTMD fixture preflight failed for the wrong undersized-fixture reason: ${small_fixture_error}")
+endif()
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_VISION_MODEL=${vision_model}"
+    "ASTRAL_TEST_VISION_MEDIA=${vision_media}"
+    "ASTRAL_TEST_AUDIO_MODEL=${audio_model}"
+    "ASTRAL_TEST_AUDIO_MEDIA=${audio_media}"
+    "ASTRAL_MTMD_MIN_MODEL_BYTES=1"
+    "ASTRAL_MTMD_MIN_MEDIA_BYTES=1"
+    "${ASTRAL_BASH_EXECUTABLE}" "${runner}" --check-fixtures
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE good_fixture_result
+  OUTPUT_VARIABLE good_fixture_output
+  ERROR_VARIABLE good_fixture_error
+)
+if(NOT good_fixture_result EQUAL 0)
+  message(FATAL_ERROR "MTMD fixture preflight rejected valid fixtures: ${good_fixture_output}${good_fixture_error}")
+endif()
+if(NOT good_fixture_output MATCHES "fixture preflight OK")
+  message(FATAL_ERROR "MTMD fixture preflight did not print success evidence: ${good_fixture_output}")
 endif()
 
 message(STATUS "gate_mtmd_fixture_manifest: OK")

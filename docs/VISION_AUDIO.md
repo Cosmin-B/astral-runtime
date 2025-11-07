@@ -108,6 +108,7 @@ Real media init smoke tests:
 The default `test_media` run skips real fixtures when they are absent. The release lane makes them required:
 
 ```bash
+./scripts/run_multimodal_validation.sh --check-fixtures
 ./scripts/run_multimodal_validation.sh --bench
 ```
 

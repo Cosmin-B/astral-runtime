@@ -19,6 +19,7 @@ Options:
   --vision-media <path>    Vision projector/media GGUF
   --audio-model <path>     Audio model GGUF
   --audio-media <path>     Audio projector/media GGUF
+  --check-fixtures         Validate fixture paths and sizes, then exit
   --bench                  Also require feature bench media feed rows
   --out <file>             Bench log path (default: benchmarks/results/mtmd-features.txt)
   --gpu-layers <N>         Bench GPU layers when backend=cuda (default: 32)
@@ -27,6 +28,7 @@ Options:
 Environment fallbacks:
   ASTRAL_TEST_VISION_MODEL, ASTRAL_TEST_VISION_MEDIA
   ASTRAL_TEST_AUDIO_MODEL, ASTRAL_TEST_AUDIO_MEDIA
+  ASTRAL_MTMD_MIN_MODEL_BYTES, ASTRAL_MTMD_MIN_MEDIA_BYTES
 EOF
 }
 
@@ -37,6 +39,9 @@ vision_model="${ASTRAL_TEST_VISION_MODEL:-}"
 vision_media="${ASTRAL_TEST_VISION_MEDIA:-}"
 audio_model="${ASTRAL_TEST_AUDIO_MODEL:-}"
 audio_media="${ASTRAL_TEST_AUDIO_MEDIA:-}"
+min_model_bytes="${ASTRAL_MTMD_MIN_MODEL_BYTES:-$((100 * 1024 * 1024))}"
+min_media_bytes="${ASTRAL_MTMD_MIN_MEDIA_BYTES:-$((1 * 1024 * 1024))}"
+check_fixtures=0
 bench=0
 out_file="benchmarks/results/mtmd-features.txt"
 gpu_layers="32"
@@ -50,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --vision-media) vision_media="${2:-}"; shift 2 ;;
     --audio-model) audio_model="${2:-}"; shift 2 ;;
     --audio-media) audio_media="${2:-}"; shift 2 ;;
+    --check-fixtures) check_fixtures=1; shift ;;
     --bench) bench=1; shift ;;
     --out) out_file="${2:-}"; shift 2 ;;
     --gpu-layers) gpu_layers="${2:-}"; shift 2 ;;
@@ -80,10 +86,19 @@ require_file() {
   fi
 }
 
-require_file "vision model" "${vision_model}" $((100 * 1024 * 1024))
-require_file "vision media/projector" "${vision_media}" $((1 * 1024 * 1024))
-require_file "audio model" "${audio_model}" $((100 * 1024 * 1024))
-require_file "audio media/projector" "${audio_media}" $((1 * 1024 * 1024))
+require_file "vision model" "${vision_model}" "${min_model_bytes}"
+require_file "vision media/projector" "${vision_media}" "${min_media_bytes}"
+require_file "audio model" "${audio_model}" "${min_model_bytes}"
+require_file "audio media/projector" "${audio_media}" "${min_media_bytes}"
+
+if [[ "${check_fixtures}" -eq 1 ]]; then
+  echo "[mtmd] fixture preflight OK"
+  echo "[mtmd] vision model: ${vision_model}"
+  echo "[mtmd] vision media/projector: ${vision_media}"
+  echo "[mtmd] audio model: ${audio_model}"
+  echo "[mtmd] audio media/projector: ${audio_media}"
+  exit 0
+fi
 
 echo "[mtmd] Configure: ${preset}"
 cmake --preset "${preset}"

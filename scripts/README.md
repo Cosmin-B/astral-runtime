@@ -345,11 +345,14 @@ ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 \
 environment variables by default. `--allow-probes` is only for local CUDA build
 discovery where the real inference/e2e sections are intentionally disabled.
 
-The MTMD part fails before CTest if any required model/projector fixture is missing:
+The MTMD part fails before CTest if any required model/projector fixture is
+missing. Use `--check-fixtures` to verify paths and minimum sizes without
+starting configure, build, or CTest:
 
 ```bash
 ./scripts/validate_mtmd_fixture_manifest.py scripts/mtmd_fixture_manifest_lfm25.json
 ./scripts/hf_gguf_download_lfm25_all.sh --out tests/models/hf-lfm25
+./scripts/run_multimodal_validation.sh --check-fixtures
 ./scripts/run_multimodal_validation.sh --bench
 ```
 
