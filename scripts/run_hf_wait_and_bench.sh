@@ -49,6 +49,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "${only}" in
+  cpu|cuda|all) ;;
+  *)
+    echo "[hf-wait] unsupported --only mode: ${only} (expected cpu, cuda, or all)" >&2
+    exit 2
+    ;;
+esac
+
 if [[ -z "${out_dir}" ]]; then
   out_dir="benchmarks/results/hf-full-$(date -Iseconds | tr ':' '-')"
 fi

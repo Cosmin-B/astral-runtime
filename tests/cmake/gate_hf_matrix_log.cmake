@@ -177,4 +177,19 @@ foreach(required_text
   endif()
 endforeach()
 
+foreach(script_name run_hf_bench_matrix.sh run_hf_full_suite.sh run_hf_wait_and_bench.sh)
+  execute_process(
+    COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/${script_name}" --only invalid-mode
+    WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+    RESULT_VARIABLE invalid_only_result
+    ERROR_VARIABLE invalid_only_error
+  )
+  if(invalid_only_result EQUAL 0)
+    message(FATAL_ERROR "${script_name} accepted an invalid --only mode")
+  endif()
+  if(NOT invalid_only_error MATCHES "unsupported --only mode")
+    message(FATAL_ERROR "${script_name} failed for the wrong invalid --only reason: ${invalid_only_error}")
+  endif()
+endforeach()
+
 message(STATUS "gate_hf_matrix_log: OK")

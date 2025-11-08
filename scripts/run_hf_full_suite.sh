@@ -44,6 +44,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "${only}" in
+  cpu|cuda|all) ;;
+  *)
+    echo "[hf-full-suite] unsupported --only mode: ${only} (expected cpu, cuda, or all)" >&2
+    exit 2
+    ;;
+esac
+
 ./scripts/hf_gguf_download_manifest.sh --out tests/models/hf
 
 bench_args=(--models-dir tests/models/hf --out-dir benchmarks/results/hf --only "${only}" --iters "${iters}" --tokens "${tokens}" --gpu-layers "${gpu_layers}")
@@ -52,4 +60,3 @@ if [[ -n "${arch}" ]]; then
 fi
 
 ./scripts/run_hf_bench_matrix.sh "${bench_args[@]}"
-

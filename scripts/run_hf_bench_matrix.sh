@@ -78,6 +78,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "${only}" in
+  cpu|cuda|all) ;;
+  *)
+    echo "[hf-matrix] unsupported --only mode: ${only} (expected cpu, cuda, or all)" >&2
+    exit 2
+    ;;
+esac
+
 mkdir -p "${out_dir}"
 
 if [[ ! -d "${models_dir}" ]]; then
