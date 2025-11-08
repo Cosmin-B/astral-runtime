@@ -4,6 +4,9 @@ endif()
 if(NOT DEFINED ASTRAL_BUILD_DIR)
   message(FATAL_ERROR "ASTRAL_BUILD_DIR not set")
 endif()
+if(NOT DEFINED ASTRAL_BASH_EXECUTABLE)
+  message(FATAL_ERROR "ASTRAL_BASH_EXECUTABLE not set")
+endif()
 if(NOT DEFINED ASTRAL_PYTHON_EXECUTABLE)
   message(FATAL_ERROR "ASTRAL_PYTHON_EXECUTABLE not set")
 endif()
@@ -139,5 +142,39 @@ endif()
 if(NOT empty_error MATCHES "no blocks found")
   message(FATAL_ERROR "parse_hf_matrix_log.py failed for the wrong empty-log reason: ${empty_error}")
 endif()
+
+set(watchdog_dir "${out_dir}/watchdog")
+set(watchdog_hf "${watchdog_dir}/hf")
+set(watchdog_lfm25 "${watchdog_dir}/hf-lfm25")
+set(watchdog_logs "${watchdog_dir}/logs")
+file(MAKE_DIRECTORY "${watchdog_hf}" "${watchdog_lfm25}" "${watchdog_logs}")
+file(WRITE "${watchdog_hf}/model.gguf.part" "partial\n")
+file(WRITE "${watchdog_lfm25}/model.gguf.part" "partial\n")
+
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/hetzner_watchdog.sh"
+    --dry-run
+    --log-dir "${watchdog_logs}"
+    --hf-models-dir "${watchdog_hf}"
+    --lfm25-models-dir "${watchdog_lfm25}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE watchdog_result
+  OUTPUT_VARIABLE watchdog_output
+  ERROR_VARIABLE watchdog_error
+)
+if(NOT watchdog_result EQUAL 0)
+  message(FATAL_ERROR "hetzner_watchdog.sh --dry-run failed: ${watchdog_error}")
+endif()
+foreach(required_text
+  "./scripts/hf_gguf_download_manifest.sh --out ${watchdog_hf}"
+  "./scripts/hf_gguf_download_lfm25_all.sh --out ${watchdog_lfm25}"
+  "./scripts/run_hf_wait_and_bench.sh --models-dir ${watchdog_hf}"
+  "./scripts/run_hf_wait_and_bench.sh --models-dir ${watchdog_lfm25}"
+)
+  string(FIND "${watchdog_output}" "${required_text}" required_pos)
+  if(required_pos LESS 0)
+    message(FATAL_ERROR "hetzner_watchdog.sh --dry-run missed command text '${required_text}': ${watchdog_output}")
+  endif()
+endforeach()
 
 message(STATUS "gate_hf_matrix_log: OK")

@@ -365,6 +365,10 @@ The HF GGUF matrix is fail-hard by default: any `[bench] FAILED` row makes
 `run_hf_bench_matrix.sh` exit non-zero. Use `--allow-failures` only for local
 investigation, not for release evidence.
 
+`hetzner_watchdog.sh` can keep long-running HF downloads and wait+bench jobs
+alive on a remote runner. Use `--dry-run` to inspect the exact commands before
+letting it start background jobs.
+
 ## Windows Large Pages
 
 Run the Windows large-page validation script twice on a Windows host:
