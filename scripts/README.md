@@ -226,7 +226,8 @@ workflow. It signs checksum manifests from an existing artifact run in the
 `release` environment after release-note, dependency-pin, and release-evidence
 validation. The downloaded artifact set must contain `release-evidence.json`
 next to `checksums.sha256`; the workflow validates it before importing the
-release signing key.
+release signing key. The workflow also verifies each downloaded checksum
+manifest before importing the signing key.
 
 Verification:
 

@@ -68,6 +68,18 @@ jobs:
               --phase pre-sign
           done
 
+      - name: Validate checksum manifests
+        run: |
+          shopt -s nullglob
+          manifests=(release-artifacts/*/checksums.sha256)
+          if [[ "${#manifests[@]}" -eq 0 ]]; then
+            echo "No checksums.sha256 files found in downloaded artifacts" >&2
+            exit 1
+          fi
+          for manifest in "${manifests[@]}"; do
+            (cd "$(dirname "${manifest}")" && sha256sum -c checksums.sha256)
+          done
+
       - name: Import release signing key
         env:
           ASTRAL_RELEASE_GPG_PRIVATE_KEY: ${{ secrets.ASTRAL_RELEASE_GPG_PRIVATE_KEY }}

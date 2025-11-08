@@ -72,6 +72,30 @@ verify_checksum_entries() {
   done < "${checksums}"
 }
 
+verify_checksum_hashes() {
+  local checksum_dir
+  local checksum_file
+  checksum_dir="$(cd "$(dirname "${checksums}")" && pwd)"
+  checksum_file="$(basename "${checksums}")"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    if ! (cd "${checksum_dir}" && sha256sum -c "${checksum_file}" >/dev/null); then
+      echo "[sign_release] checksum verification failed: ${checksums}" >&2
+      exit 2
+    fi
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    if ! (cd "${checksum_dir}" && shasum -a 256 -c "${checksum_file}" >/dev/null); then
+      echo "[sign_release] checksum verification failed: ${checksums}" >&2
+      exit 2
+    fi
+    return
+  fi
+  echo "[sign_release] sha256sum or shasum is required to verify checksums before signing" >&2
+  exit 2
+}
+
 resolve_tool() {
   if [[ "${tool}" != "auto" ]]; then
     printf '%s\n' "${tool}"
@@ -90,6 +114,7 @@ resolve_tool() {
 }
 
 verify_checksum_entries
+verify_checksum_hashes
 tool="$(resolve_tool)"
 
 case "${tool}" in

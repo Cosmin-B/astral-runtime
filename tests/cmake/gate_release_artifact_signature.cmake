@@ -49,4 +49,18 @@ if(NOT bad_sig_error MATCHES "signature verification failed|gpg is required")
   message(FATAL_ERROR "validate_release_artifacts.sh failed for the wrong signature reason: ${bad_sig_error}")
 endif()
 
+file(WRITE "${out_dir}/astral-0.1.0-linux-x86_64.zip" "tampered\n")
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/sign_release_artifacts.sh" --checksums "${out_dir}/checksums.sha256" --tool gpg --dry-run
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_checksum_result
+  ERROR_VARIABLE bad_checksum_error
+)
+if(bad_checksum_result EQUAL 0)
+  message(FATAL_ERROR "sign_release_artifacts.sh accepted a mismatched checksum manifest before signing")
+endif()
+if(NOT bad_checksum_error MATCHES "checksum verification failed")
+  message(FATAL_ERROR "sign_release_artifacts.sh failed for the wrong checksum-mismatch reason: ${bad_checksum_error}")
+endif()
+
 message(STATUS "gate_release_artifact_signature: OK")

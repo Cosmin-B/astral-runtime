@@ -17,6 +17,7 @@ file(READ "${ci_workflow}" ci_text)
 foreach(required_regex
   "environment:[ \t\n\r]+release"
   "Validate release evidence"
+  "Validate checksum manifests"
   "validate_release_evidence.py"
   "--phase pre-sign"
   "Import release signing key"
@@ -25,6 +26,7 @@ foreach(required_regex
   "secrets[.]ASTRAL_RELEASE_GPG_PASSPHRASE"
   "secrets[.]ASTRAL_RELEASE_GPG_KEY_ID"
   "test -n \\\"[$]\\{ASTRAL_RELEASE_SIGN_KEY\\}\\\""
+  "sha256sum -c checksums[.]sha256"
   "trap 'rm -f \\\"[$]\\{ASTRAL_RELEASE_GPG_PASSPHRASE_FILE\\}\\\"' EXIT"
 )
   if(NOT text MATCHES "${required_regex}")
@@ -43,17 +45,24 @@ foreach(required_text
 endforeach()
 
 string(FIND "${text}" "Validate release evidence" evidence_pos)
+string(FIND "${text}" "Validate checksum manifests" checksum_pos)
 string(FIND "${text}" "Import release signing key" import_pos)
 string(FIND "${text}" "Sign checksum manifests" sign_pos)
 
-if(evidence_pos LESS 0 OR import_pos LESS 0 OR sign_pos LESS 0)
+if(evidence_pos LESS 0 OR checksum_pos LESS 0 OR import_pos LESS 0 OR sign_pos LESS 0)
   message(FATAL_ERROR "release-sign workflow ordering markers are missing")
 endif()
 if(NOT evidence_pos LESS import_pos)
   message(FATAL_ERROR "release evidence must be validated before importing the signing key")
 endif()
+if(NOT checksum_pos LESS import_pos)
+  message(FATAL_ERROR "checksum manifests must be verified before importing the signing key")
+endif()
 if(NOT evidence_pos LESS sign_pos)
   message(FATAL_ERROR "release evidence must be validated before signing checksum manifests")
+endif()
+if(NOT checksum_pos LESS sign_pos)
+  message(FATAL_ERROR "checksum manifests must be verified before signing checksum manifests")
 endif()
 if(NOT ci_text MATCHES "dist/release-evidence\\.json")
   message(FATAL_ERROR "desktop release artifact upload must include dist/release-evidence.json when present")
