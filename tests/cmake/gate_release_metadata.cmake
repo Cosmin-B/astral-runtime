@@ -73,6 +73,8 @@ foreach(lane IN LISTS required_lanes)
 endforeach()
 file(WRITE "${out_dir}/logs/asan.log" "asan passed\n")
 file(WRITE "${out_dir}/logs/tsan.log" "tsan passed\n")
+file(WRITE "${out_dir}/logs/hf-model-matrix.log" "hf matrix passed\n")
+file(WRITE "${out_dir}/logs/hf-model-matrix-summary.csv" "backend,model,status\ncpu,model.gguf,pass\n")
 file(WRITE "${out_dir}/logs/comment-review.tsv" "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext\n")
 file(WRITE "${out_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
 file(WRITE "${out_dir}/checksums.sha256.asc" "signature\n")
@@ -156,8 +158,8 @@ file(WRITE "${out_dir}/release-evidence.json"
     },
     \"hf_model_matrix\": {
       \"status\": \"pass\",
-      \"command\": \"./scripts/run_hf_full_suite.sh\",
-      \"artifacts\": [\"logs/hf_model_matrix.log\"]
+      \"command\": \"./scripts/run_hf_full_suite.sh --arch native --only all\",
+      \"artifacts\": [\"logs/hf-model-matrix.log\", \"logs/hf-model-matrix-summary.csv\"]
     },
     \"windows_large_pages\": {
       \"status\": \"pass\",

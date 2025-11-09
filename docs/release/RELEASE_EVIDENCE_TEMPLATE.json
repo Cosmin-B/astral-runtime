@@ -86,9 +86,10 @@
     },
     "hf_model_matrix": {
       "status": "pass",
-      "command": "./scripts/run_hf_full_suite.sh",
+      "command": "./scripts/run_hf_full_suite.sh --arch <deployed-arch-list> --only all",
       "artifacts": [
-        "logs/hf-model-matrix.log"
+        "logs/hf-model-matrix.log",
+        "logs/hf-model-matrix-summary.csv"
       ]
     },
     "windows_large_pages": {

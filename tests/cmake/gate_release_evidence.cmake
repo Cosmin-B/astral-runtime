@@ -40,6 +40,8 @@ foreach(lane IN LISTS required_lanes)
 endforeach()
 file(WRITE "${evidence_dir}/logs/asan.log" "asan passed\n")
 file(WRITE "${evidence_dir}/logs/tsan.log" "tsan passed\n")
+file(WRITE "${evidence_dir}/logs/hf-model-matrix.log" "hf matrix passed\n")
+file(WRITE "${evidence_dir}/logs/hf-model-matrix-summary.csv" "backend,model,status\ncpu,model.gguf,pass\n")
 file(WRITE "${evidence_dir}/logs/comment-review.tsv" "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext\n")
 file(WRITE "${evidence_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
 file(WRITE "${evidence_dir}/dist/checksums.sha256" "checksums\n")
@@ -94,7 +96,8 @@ foreach(lane IN LISTS required_lanes)
   elseif(lane STREQUAL "multimodal_validation")
     set(command "./scripts/run_multimodal_validation.sh --bench")
   elseif(lane STREQUAL "hf_model_matrix")
-    set(command "./scripts/run_hf_full_suite.sh")
+    set(artifacts "[\"logs/hf-model-matrix.log\", \"logs/hf-model-matrix-summary.csv\"]")
+    set(command "./scripts/run_hf_full_suite.sh --arch native --only all")
   elseif(lane STREQUAL "windows_large_pages")
     set(command "pwsh -File ./scripts/run_windows_large_page_validation.ps1 -ExpectFallback; pwsh -File ./scripts/run_windows_large_page_validation.ps1 -ExpectLargePages")
   elseif(lane STREQUAL "dependency_pins")
@@ -369,6 +372,52 @@ if(NOT bad_signing_artifacts_error MATCHES "release_signing.artifacts")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong signing-artifacts reason: ${bad_signing_artifacts_error}")
 endif()
 
+set(bad_hf_command_manifest "${out_dir}/bad-hf-command-evidence.json")
+file(READ "${good_manifest}" bad_hf_command_text)
+string(REPLACE
+  "./scripts/run_hf_full_suite.sh --arch native --only all"
+  "./scripts/run_hf_full_suite.sh --only cpu"
+  bad_hf_command_text
+  "${bad_hf_command_text}"
+)
+file(WRITE "${bad_hf_command_manifest}" "${bad_hf_command_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_hf_command_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_hf_command_result
+  ERROR_VARIABLE bad_hf_command_error
+)
+if(bad_hf_command_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak HF matrix command evidence")
+endif()
+if(NOT bad_hf_command_error MATCHES "hf_model_matrix.command")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong HF command reason: ${bad_hf_command_error}")
+endif()
+
+set(bad_hf_artifacts_manifest "${out_dir}/bad-hf-artifacts-evidence.json")
+file(READ "${good_manifest}" bad_hf_artifacts_text)
+string(REPLACE
+  "[\"logs/hf-model-matrix.log\", \"logs/hf-model-matrix-summary.csv\"]"
+  "[\"logs/hf-model-matrix.log\"]"
+  bad_hf_artifacts_text
+  "${bad_hf_artifacts_text}"
+)
+file(WRITE "${bad_hf_artifacts_manifest}" "${bad_hf_artifacts_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_hf_artifacts_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_hf_artifacts_result
+  ERROR_VARIABLE bad_hf_artifacts_error
+)
+if(bad_hf_artifacts_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted HF matrix evidence without summary artifact")
+endif()
+if(NOT bad_hf_artifacts_error MATCHES "hf_model_matrix.artifacts")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong HF artifact reason: ${bad_hf_artifacts_error}")
+endif()
+
 set(pre_sign_manifest "${out_dir}/pre-sign-evidence.json")
 file(WRITE "${pre_sign_manifest}" "${bad_command_text}")
 file(READ "${good_manifest}" pre_sign_text)
@@ -424,6 +473,10 @@ foreach(required
   "run_cuda_parity_matrix.sh --preset-set release"
   "--arch"
   "--strict"
+  "hf_model_matrix"
+  "run_hf_full_suite.sh"
+  "--only all"
+  "hf-model-matrix-summary.csv"
 )
   if(NOT template_text MATCHES "${required}")
     message(FATAL_ERROR "RELEASE_EVIDENCE_TEMPLATE.json is missing release evidence requirement: ${required}")

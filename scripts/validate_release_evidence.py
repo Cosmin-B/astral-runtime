@@ -79,7 +79,7 @@ REQUIRED_COMMAND_TOKENS = {
         "--strict",
     ),
     "multimodal_validation": ("run_multimodal_validation.sh", "--bench"),
-    "hf_model_matrix": ("run_hf_full_suite.sh",),
+    "hf_model_matrix": ("run_hf_full_suite.sh", "--arch", "--only all"),
     "windows_large_pages": ("run_windows_large_page_validation.ps1",),
     "release_artifacts": ("validate_release_artifacts.sh", "--require-signature"),
     "release_signing": ("release-sign",),
@@ -98,6 +98,7 @@ REQUIRED_ARTIFACT_NAMES = {
         "release-sbom.spdx.json",
     ),
     "release_signing": ("checksums.sha256.asc",),
+    "hf_model_matrix": ("hf-model-matrix.log", "hf-model-matrix-summary.csv"),
 }
 
 
