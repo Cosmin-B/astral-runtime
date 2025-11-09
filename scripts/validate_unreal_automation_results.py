@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -12,6 +13,11 @@ FAILURE_PATTERNS = (
     "Assertion failed",
     "Ensure condition failed",
 )
+
+PASS_STATES = {"passed", "pass", "success", "succeeded", "ok"}
+FAIL_STATES = {"failed", "fail", "failure", "error", "timedout", "timed out", "notrun", "not run"}
+STATE_KEYS = ("state", "result", "status", "outcome")
+NAME_KEYS = ("name", "fullname", "fullName", "testName", "displayName", "testDisplayName")
 
 
 def fail(message):
@@ -38,6 +44,59 @@ def evidence_token(test_filter):
     return token or "AstralRT"
 
 
+def iter_dicts(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from iter_dicts(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from iter_dicts(child)
+
+
+def field_value(item, keys):
+    lower_map = {str(key).lower(): value for key, value in item.items()}
+    for key in keys:
+        value = item.get(key)
+        if value is None:
+            value = lower_map.get(key.lower())
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def collect_report_tests(report_files, token):
+    tests = []
+    for path in report_files:
+        if path.suffix.lower() != ".json":
+            continue
+        try:
+            data = json.loads(read_text(path))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid Automation JSON report: {path}: {exc}") from exc
+
+        for item in iter_dicts(data):
+            name = field_value(item, NAME_KEYS)
+            state = field_value(item, STATE_KEYS)
+            if not name or not state or token not in name:
+                continue
+            tests.append((path, name, state))
+    return tests
+
+
+def validate_report_tests(report_files, token):
+    tests = collect_report_tests(report_files, token)
+    if not tests:
+        raise ValueError(f"Automation JSON report has no test entries matching {token}")
+
+    for path, name, state in tests:
+        normalized = state.strip().lower()
+        if normalized in FAIL_STATES:
+            raise ValueError(f"Automation JSON report failed test {name}: {state} ({path})")
+        if normalized not in PASS_STATES:
+            raise ValueError(f"Automation JSON report has unknown state for {name}: {state} ({path})")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Validate Unreal Automation logs and report artifacts."
@@ -59,6 +118,11 @@ def main():
     report_files = [path for path in report_dir.rglob("*") if path.is_file() and path.stat().st_size > 0]
     if not report_files:
         return fail(f"Automation report directory has no non-empty files: {report_dir}")
+
+    try:
+        validate_report_tests(report_files, token)
+    except ValueError as exc:
+        return fail(str(exc))
 
     combined = read_text(log_path)
     for path in report_files:

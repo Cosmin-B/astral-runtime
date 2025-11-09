@@ -49,7 +49,7 @@ endif()
 
 file(MAKE_DIRECTORY "${report_dir}")
 file(WRITE "${log_file}" "Automation RunTests AstralRT.*\nLogAutomationController: Error: Automation Test Failed: AstralRT.Mock\n")
-file(WRITE "${report_dir}/index.json" "{\"tests\":[{\"name\":\"AstralRT.Mock\",\"state\":\"Fail\"}]}\n")
+file(WRITE "${report_dir}/index.json" "{\"tests\":[{\"name\":\"AstralRT.Mock\",\"state\":\"Success\"}]}\n")
 
 execute_process(
   COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_unreal_automation_results.py"
@@ -65,6 +65,42 @@ if(failure_result EQUAL 0)
 endif()
 if(NOT failure_error MATCHES "failure marker")
   message(FATAL_ERROR "validate_unreal_automation_results.py failed for the wrong failure-log reason: ${failure_error}")
+endif()
+
+file(WRITE "${log_file}" "Automation RunTests AstralRT.*\nAstralRT.Mock completed\n")
+file(WRITE "${report_dir}/index.json" "{\"tests\":[{\"name\":\"AstralRT.Mock\",\"state\":\"Fail\"}]}\n")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_unreal_automation_results.py"
+    --log "${log_file}"
+    --report-dir "${report_dir}"
+    --filter "AstralRT.*"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE report_failure_result
+  ERROR_VARIABLE report_failure_error
+)
+if(report_failure_result EQUAL 0)
+  message(FATAL_ERROR "validate_unreal_automation_results.py accepted a failing Automation JSON report")
+endif()
+if(NOT report_failure_error MATCHES "failed test")
+  message(FATAL_ERROR "validate_unreal_automation_results.py failed for the wrong report-state reason: ${report_failure_error}")
+endif()
+
+file(WRITE "${report_dir}/index.json" "{\"tests\":[]}\n")
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_unreal_automation_results.py"
+    --log "${log_file}"
+    --report-dir "${report_dir}"
+    --filter "AstralRT.*"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE empty_report_result
+  ERROR_VARIABLE empty_report_error
+)
+if(empty_report_result EQUAL 0)
+  message(FATAL_ERROR "validate_unreal_automation_results.py accepted an Automation JSON report without matching tests")
+endif()
+if(NOT empty_report_error MATCHES "no test entries")
+  message(FATAL_ERROR "validate_unreal_automation_results.py failed for the wrong empty-report reason: ${empty_report_error}")
 endif()
 
 message(STATUS "gate_unreal_automation_results: OK")
