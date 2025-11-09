@@ -55,10 +55,16 @@ REQUIRED_COMMAND_TOKENS = {
         "--fail-orphan-markers",
     ),
     "unreal_57_full_container": (
+        "run_unreal_container_ci.sh",
+        "--variant full",
+        "--filter AstralRT.*",
         "ghcr.io/epicgames/unreal-engine:dev-5.7.4",
         "sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce",
     ),
     "unreal_57_slim_container": (
+        "run_unreal_container_ci.sh",
+        "--variant slim",
+        "--filter AstralRT.*",
         "ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4",
         "sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6",
     ),

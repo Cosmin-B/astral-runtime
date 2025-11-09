@@ -84,9 +84,9 @@ foreach(lane IN LISTS required_lanes)
     set(artifacts "[\"logs/comment-review.tsv\", \"logs/comment-inventory-summary.log\"]")
     set(command "python3 ./scripts/inventory_comments.py --format review-tsv > logs/comment-review.tsv && python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers > logs/comment-inventory-summary.log")
   elseif(lane STREQUAL "unreal_57_full_container")
-    set(command "docker run ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce")
+    set(command "./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT.*")
   elseif(lane STREQUAL "unreal_57_slim_container")
-    set(command "docker run ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6")
+    set(command "./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT.*")
   elseif(lane STREQUAL "unreal_compatibility_matrix")
     set(command "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh")
   elseif(lane STREQUAL "unity_editmode_abi")
@@ -225,6 +225,29 @@ if(bad_command_result EQUAL 0)
 endif()
 if(NOT bad_command_error MATCHES "cuda_parity_matrix.command")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong bad-command reason: ${bad_command_error}")
+endif()
+
+set(bad_unreal_container_manifest "${out_dir}/bad-unreal-container-evidence.json")
+file(READ "${good_manifest}" bad_unreal_container_text)
+string(REPLACE
+  "./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT.*"
+  "docker run ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
+  bad_unreal_container_text
+  "${bad_unreal_container_text}"
+)
+file(WRITE "${bad_unreal_container_manifest}" "${bad_unreal_container_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_unreal_container_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_unreal_container_result
+  ERROR_VARIABLE bad_unreal_container_error
+)
+if(bad_unreal_container_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak Unreal container command evidence")
+endif()
+if(NOT bad_unreal_container_error MATCHES "unreal_57_full_container.command")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal container command reason: ${bad_unreal_container_error}")
 endif()
 
 set(bad_sanitizer_manifest "${out_dir}/bad-sanitizer-evidence.json")
@@ -467,6 +490,11 @@ foreach(required
   "inventory_comments.py"
   "--format review-tsv"
   "--fail-orphan-markers"
+  "unreal_57_full_container"
+  "run_unreal_container_ci.sh --variant full"
+  "unreal_57_slim_container"
+  "run_unreal_container_ci.sh --variant slim"
+  "--filter AstralRT.*"
   "cuda_parity_matrix"
   "ASTRAL_TEST_CUDA_PARITY_INFER=1"
   "ASTRAL_TEST_CUDA_E2E=1"

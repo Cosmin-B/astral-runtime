@@ -128,12 +128,12 @@ file(WRITE "${out_dir}/release-evidence.json"
     },
     \"unreal_57_full_container\": {
       \"status\": \"pass\",
-      \"command\": \"docker run ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\",
+      \"command\": \"./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT.*\",
       \"artifacts\": [\"logs/unreal_57_full_container.log\"]
     },
     \"unreal_57_slim_container\": {
       \"status\": \"pass\",
-      \"command\": \"docker run ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\",
+      \"command\": \"./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT.*\",
       \"artifacts\": [\"logs/unreal_57_slim_container.log\"]
     },
     \"unreal_compatibility_matrix\": {
