@@ -88,7 +88,7 @@ foreach(lane IN LISTS required_lanes)
   elseif(lane STREQUAL "unreal_57_slim_container")
     set(command "./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT.*")
   elseif(lane STREQUAL "unreal_compatibility_matrix")
-    set(command "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh")
+    set(command "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT.*")
   elseif(lane STREQUAL "unity_editmode_abi")
     set(command "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh")
   elseif(lane STREQUAL "cuda_parity_matrix")
@@ -248,6 +248,29 @@ if(bad_unreal_container_result EQUAL 0)
 endif()
 if(NOT bad_unreal_container_error MATCHES "unreal_57_full_container.command")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal container command reason: ${bad_unreal_container_error}")
+endif()
+
+set(bad_unreal_matrix_manifest "${out_dir}/bad-unreal-matrix-evidence.json")
+file(READ "${good_manifest}" bad_unreal_matrix_text)
+string(REPLACE
+  "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT.*"
+  "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.7' --allow-missing"
+  bad_unreal_matrix_text
+  "${bad_unreal_matrix_text}"
+)
+file(WRITE "${bad_unreal_matrix_manifest}" "${bad_unreal_matrix_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_unreal_matrix_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_unreal_matrix_result
+  ERROR_VARIABLE bad_unreal_matrix_error
+)
+if(bad_unreal_matrix_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak Unreal compatibility matrix evidence")
+endif()
+if(NOT bad_unreal_matrix_error MATCHES "unreal_compatibility_matrix.command")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal compatibility command reason: ${bad_unreal_matrix_error}")
 endif()
 
 set(bad_sanitizer_manifest "${out_dir}/bad-sanitizer-evidence.json")
@@ -494,6 +517,9 @@ foreach(required
   "run_unreal_container_ci.sh --variant full"
   "unreal_57_slim_container"
   "run_unreal_container_ci.sh --variant slim"
+  "unreal_compatibility_matrix"
+  "run_unreal_compatibility_matrix.sh"
+  "5.4 5.5 5.6 5.7"
   "--filter AstralRT.*"
   "cuda_parity_matrix"
   "ASTRAL_TEST_CUDA_PARITY_INFER=1"

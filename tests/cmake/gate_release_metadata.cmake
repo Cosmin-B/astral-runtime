@@ -138,7 +138,7 @@ file(WRITE "${out_dir}/release-evidence.json"
     },
     \"unreal_compatibility_matrix\": {
       \"status\": \"pass\",
-      \"command\": \"UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh\",
+      \"command\": \"UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT.*\",
       \"artifacts\": [\"logs/unreal_compatibility_matrix.log\"]
     },
     \"unity_editmode_abi\": {

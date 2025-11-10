@@ -74,6 +74,11 @@ REQUIRED_COMMAND_TOKENS = {
         "UNREAL_56_EDITOR",
         "UNREAL_57_EDITOR",
         "run_unreal_compatibility_matrix.sh",
+        "5.4",
+        "5.5",
+        "5.6",
+        "5.7",
+        "--filter AstralRT.*",
     ),
     "unity_editmode_abi": ("UNITY_EDITOR", "run_unity_ci_tests.sh"),
     "cuda_parity_matrix": (
@@ -91,6 +96,10 @@ REQUIRED_COMMAND_TOKENS = {
     "release_signing": ("release-sign",),
     "dependency_pins": ("validate_dependency_pins.sh",),
     "release_notes": ("validate_release_notes.sh",),
+}
+
+FORBIDDEN_COMMAND_TOKENS = {
+    "unreal_compatibility_matrix": ("--allow-missing",),
 }
 
 COMMENT_REVIEW_HEADER = "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext"
@@ -227,6 +236,9 @@ def validate_manifest(data, base_dir, phase):
         for token in REQUIRED_COMMAND_TOKENS.get(lane_name, ()):
             if token not in lane["command"]:
                 raise ValueError(f"{lane_name}.command must include {token}")
+        for token in FORBIDDEN_COMMAND_TOKENS.get(lane_name, ()):
+            if token in lane["command"]:
+                raise ValueError(f"{lane_name}.command must not include {token}")
         validate_lane_artifacts(lane_name, lane, base_dir)
 
 
