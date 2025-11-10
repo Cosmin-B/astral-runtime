@@ -28,6 +28,10 @@ release candidate.
 | Automation tests | `UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh` | Yes |
 | UE 5.4/5.5/5.6/5.7 compatibility | `UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh` | Yes |
 
+UE 5.7 container logs must show the pinned image/digest, manifest access check,
+local image digest, clang `20.1.8`, Linux SDK `v26`/`20.1.8`, Unreal ThirdParty
+provenance, and `[unreal-results] OK`.
+
 ## Backend And Model Gate
 
 | Area | Required evidence | Required for RC |

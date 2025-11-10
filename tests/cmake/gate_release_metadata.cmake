@@ -79,6 +79,8 @@ file(WRITE "${out_dir}/logs/multimodal-validation.log" "mtmd validation passed\n
 file(WRITE "${out_dir}/logs/mtmd-features.txt" "features.media feed_image  1.000 Mops/s\nfeatures.media feed_audio  2.000 Mops/s\n")
 file(WRITE "${out_dir}/logs/comment-review.tsv" "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext\n")
 file(WRITE "${out_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
+file(WRITE "${out_dir}/logs/unreal-57-full-container.log" "[unreal_container] Check image access: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Pull image: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Local image digests:\nghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Image: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Test filter: AstralRT.*\n[unreal_container] Linux SDK: /UnrealEngine/Engine/Config/Linux/Linux_SDK.json\nv26 clang 20.1.8\n[unreal_container] clang:\nclang version 20.1.8\n-- Unreal ThirdParty provenance OK: libastral_rt.a\n[unreal_ci] Filter: AstralRT.*\n[unreal-results] OK: build/unreal-ci-results/unreal-automation.log\n")
+file(WRITE "${out_dir}/logs/unreal-57-slim-container.log" "[unreal_container] Check image access: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Pull image: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Local image digests:\nghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Image: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Test filter: AstralRT.*\n[unreal_container] Linux SDK: /UnrealEngine/Engine/Config/Linux/Linux_SDK.json\nv26 clang 20.1.8\n[unreal_container] clang:\nclang version 20.1.8\n-- Unreal ThirdParty provenance OK: libastral_rt.a\n[unreal_ci] Filter: AstralRT.*\n[unreal-results] OK: build/unreal-ci-results/unreal-automation.log\n")
 file(WRITE "${out_dir}/checksums.sha256.asc" "signature\n")
 file(WRITE "${out_dir}/release-notes.md" "release notes\n")
 
@@ -131,12 +133,12 @@ file(WRITE "${out_dir}/release-evidence.json"
     \"unreal_57_full_container\": {
       \"status\": \"pass\",
       \"command\": \"./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT.*\",
-      \"artifacts\": [\"logs/unreal_57_full_container.log\"]
+      \"artifacts\": [\"logs/unreal-57-full-container.log\"]
     },
     \"unreal_57_slim_container\": {
       \"status\": \"pass\",
       \"command\": \"./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT.*\",
-      \"artifacts\": [\"logs/unreal_57_slim_container.log\"]
+      \"artifacts\": [\"logs/unreal-57-slim-container.log\"]
     },
     \"unreal_compatibility_matrix\": {
       \"status\": \"pass\",

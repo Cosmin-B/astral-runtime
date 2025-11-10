@@ -106,6 +106,8 @@ COMMENT_REVIEW_HEADER = "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\
 
 REQUIRED_ARTIFACT_NAMES = {
     "sanitizer_validation": ("asan.log", "tsan.log"),
+    "unreal_57_full_container": ("unreal-57-full-container.log",),
+    "unreal_57_slim_container": ("unreal-57-slim-container.log",),
     "release_artifacts": (
         "checksums.sha256",
         "abi-layout.json",
@@ -116,6 +118,44 @@ REQUIRED_ARTIFACT_NAMES = {
     "hf_model_matrix": ("hf-model-matrix.log", "hf-model-matrix-summary.csv"),
     "multimodal_validation": ("multimodal-validation.log", "mtmd-features.txt"),
 }
+
+UNREAL_CONTAINER_EVIDENCE = {
+    "unreal_57_full_container": {
+        "artifact": "unreal-57-full-container.log",
+        "image": "ghcr.io/epicgames/unreal-engine:dev-5.7.4",
+        "digest": "sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce",
+    },
+    "unreal_57_slim_container": {
+        "artifact": "unreal-57-slim-container.log",
+        "image": "ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4",
+        "digest": "sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6",
+    },
+}
+
+UNREAL_CONTAINER_COMMON_TOKENS = (
+    "[unreal_container] Check image access:",
+    "[unreal_container] Pull image:",
+    "[unreal_container] Local image digests:",
+    "[unreal_container] Image:",
+    "[unreal_container] Test filter: AstralRT.*",
+    "[unreal_container] clang:",
+    "[unreal_container] Linux SDK:",
+    "v26",
+    "20.1.8",
+    "Unreal ThirdParty provenance OK",
+    "[unreal_ci] Filter: AstralRT.*",
+    "[unreal-results] OK:",
+)
+
+UNREAL_CONTAINER_FAILURE_TOKENS = (
+    "Epic Unreal container access is not configured",
+    "Unable to inspect Unreal container manifest",
+    "Unable to pull Unreal container image",
+    "Pulled image does not report expected digest",
+    "Linux SDK metadata mismatch",
+    "clang version mismatch",
+    "Could not locate UnrealEditor-Cmd inside the container",
+)
 
 
 def fail(message):
@@ -200,6 +240,21 @@ def validate_multimodal_artifacts(paths):
         raise ValueError("multimodal_validation bench output is missing features.media feed_audio")
 
 
+def validate_unreal_container_artifacts(lane_name, paths):
+    expected = UNREAL_CONTAINER_EVIDENCE[lane_name]
+    log_path = next((path for path in paths if path.name == expected["artifact"]), None)
+    if log_path is None:
+        raise ValueError(f"{lane_name}.artifacts must include {expected['artifact']}")
+
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    for token in (expected["image"], expected["digest"], *UNREAL_CONTAINER_COMMON_TOKENS):
+        if token not in text:
+            raise ValueError(f"{lane_name} log is missing {token}")
+    for token in UNREAL_CONTAINER_FAILURE_TOKENS:
+        if token in text:
+            raise ValueError(f"{lane_name} log contains failure marker {token}")
+
+
 def require_artifact_names(lane_name, paths):
     required = REQUIRED_ARTIFACT_NAMES.get(lane_name, ())
     if not required:
@@ -215,6 +270,8 @@ def validate_lane_artifacts(lane_name, lane, base_dir):
     require_artifact_names(lane_name, paths)
     if lane_name == "comment_review":
         validate_comment_review_artifacts(paths)
+    elif lane_name in UNREAL_CONTAINER_EVIDENCE:
+        validate_unreal_container_artifacts(lane_name, paths)
     elif lane_name == "multimodal_validation":
         validate_multimodal_artifacts(paths)
 

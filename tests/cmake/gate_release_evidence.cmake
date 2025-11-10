@@ -46,6 +46,8 @@ file(WRITE "${evidence_dir}/logs/multimodal-validation.log" "mtmd validation pas
 file(WRITE "${evidence_dir}/logs/mtmd-features.txt" "features.media feed_image  1.000 Mops/s\nfeatures.media feed_audio  2.000 Mops/s\n")
 file(WRITE "${evidence_dir}/logs/comment-review.tsv" "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext\n")
 file(WRITE "${evidence_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
+file(WRITE "${evidence_dir}/logs/unreal-57-full-container.log" "[unreal_container] Check image access: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Pull image: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Local image digests:\nghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Image: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Test filter: AstralRT.*\n[unreal_container] Linux SDK: /UnrealEngine/Engine/Config/Linux/Linux_SDK.json\nv26 clang 20.1.8\n[unreal_container] clang:\nclang version 20.1.8\n-- Unreal ThirdParty provenance OK: libastral_rt.a\n[unreal_ci] Filter: AstralRT.*\n[unreal-results] OK: build/unreal-ci-results/unreal-automation.log\n")
+file(WRITE "${evidence_dir}/logs/unreal-57-slim-container.log" "[unreal_container] Check image access: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Pull image: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Local image digests:\nghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Image: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Test filter: AstralRT.*\n[unreal_container] Linux SDK: /UnrealEngine/Engine/Config/Linux/Linux_SDK.json\nv26 clang 20.1.8\n[unreal_container] clang:\nclang version 20.1.8\n-- Unreal ThirdParty provenance OK: libastral_rt.a\n[unreal_ci] Filter: AstralRT.*\n[unreal-results] OK: build/unreal-ci-results/unreal-automation.log\n")
 file(WRITE "${evidence_dir}/dist/checksums.sha256" "checksums\n")
 file(WRITE "${evidence_dir}/dist/abi-layout.json" "{}\n")
 file(WRITE "${evidence_dir}/dist/dependency-manifest.json" "{}\n")
@@ -86,8 +88,10 @@ foreach(lane IN LISTS required_lanes)
     set(artifacts "[\"logs/comment-review.tsv\", \"logs/comment-inventory-summary.log\"]")
     set(command "python3 ./scripts/inventory_comments.py --format review-tsv > logs/comment-review.tsv && python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers > logs/comment-inventory-summary.log")
   elseif(lane STREQUAL "unreal_57_full_container")
+    set(artifacts "[\"logs/unreal-57-full-container.log\"]")
     set(command "./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT.*")
   elseif(lane STREQUAL "unreal_57_slim_container")
+    set(artifacts "[\"logs/unreal-57-slim-container.log\"]")
     set(command "./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT.*")
   elseif(lane STREQUAL "unreal_compatibility_matrix")
     set(command "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT.*")
@@ -252,6 +256,31 @@ endif()
 if(NOT bad_unreal_container_error MATCHES "unreal_57_full_container.command")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal container command reason: ${bad_unreal_container_error}")
 endif()
+
+set(bad_unreal_container_artifact_manifest "${out_dir}/bad-unreal-container-artifact-evidence.json")
+file(READ "${good_manifest}" bad_unreal_container_artifact_text)
+string(REPLACE
+  "[unreal_container] Local image digests:"
+  "[unreal_container] skipped digest output:"
+  bad_unreal_container_artifact_text
+  "${bad_unreal_container_artifact_text}"
+)
+file(WRITE "${bad_unreal_container_artifact_manifest}" "${bad_unreal_container_artifact_text}")
+file(WRITE "${evidence_dir}/logs/unreal-57-full-container.log" "weak container log without local digest evidence\n")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_unreal_container_artifact_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_unreal_container_artifact_result
+  ERROR_VARIABLE bad_unreal_container_artifact_error
+)
+if(bad_unreal_container_artifact_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak Unreal container log evidence")
+endif()
+if(NOT bad_unreal_container_artifact_error MATCHES "unreal_57_full_container log")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal container artifact reason: ${bad_unreal_container_artifact_error}")
+endif()
+file(WRITE "${evidence_dir}/logs/unreal-57-full-container.log" "[unreal_container] Check image access: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Pull image: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Local image digests:\nghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Image: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Test filter: AstralRT.*\n[unreal_container] Linux SDK: /UnrealEngine/Engine/Config/Linux/Linux_SDK.json\nv26 clang 20.1.8\n[unreal_container] clang:\nclang version 20.1.8\n-- Unreal ThirdParty provenance OK: libastral_rt.a\n[unreal_ci] Filter: AstralRT.*\n[unreal-results] OK: build/unreal-ci-results/unreal-automation.log\n")
 
 set(bad_unreal_matrix_manifest "${out_dir}/bad-unreal-matrix-evidence.json")
 file(READ "${good_manifest}" bad_unreal_matrix_text)
