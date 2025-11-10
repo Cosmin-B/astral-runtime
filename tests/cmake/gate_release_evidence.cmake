@@ -42,6 +42,8 @@ file(WRITE "${evidence_dir}/logs/asan.log" "asan passed\n")
 file(WRITE "${evidence_dir}/logs/tsan.log" "tsan passed\n")
 file(WRITE "${evidence_dir}/logs/hf-model-matrix.log" "hf matrix passed\n")
 file(WRITE "${evidence_dir}/logs/hf-model-matrix-summary.csv" "backend,model,status\ncpu,model.gguf,pass\n")
+file(WRITE "${evidence_dir}/logs/multimodal-validation.log" "mtmd validation passed\n")
+file(WRITE "${evidence_dir}/logs/mtmd-features.txt" "features.media feed_image  1.000 Mops/s\nfeatures.media feed_audio  2.000 Mops/s\n")
 file(WRITE "${evidence_dir}/logs/comment-review.tsv" "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext\n")
 file(WRITE "${evidence_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
 file(WRITE "${evidence_dir}/dist/checksums.sha256" "checksums\n")
@@ -94,6 +96,7 @@ foreach(lane IN LISTS required_lanes)
   elseif(lane STREQUAL "cuda_parity_matrix")
     set(command "ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --arch native --strict")
   elseif(lane STREQUAL "multimodal_validation")
+    set(artifacts "[\"logs/multimodal-validation.log\", \"logs/mtmd-features.txt\"]")
     set(command "./scripts/run_multimodal_validation.sh --bench")
   elseif(lane STREQUAL "hf_model_matrix")
     set(artifacts "[\"logs/hf-model-matrix.log\", \"logs/hf-model-matrix-summary.csv\"]")
@@ -464,6 +467,44 @@ if(NOT bad_hf_artifacts_error MATCHES "hf_model_matrix.artifacts")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong HF artifact reason: ${bad_hf_artifacts_error}")
 endif()
 
+set(bad_mtmd_artifacts_manifest "${out_dir}/bad-mtmd-artifacts-evidence.json")
+file(READ "${good_manifest}" bad_mtmd_artifacts_text)
+string(REPLACE
+  "[\"logs/multimodal-validation.log\", \"logs/mtmd-features.txt\"]"
+  "[\"logs/multimodal-validation.log\"]"
+  bad_mtmd_artifacts_text
+  "${bad_mtmd_artifacts_text}"
+)
+file(WRITE "${bad_mtmd_artifacts_manifest}" "${bad_mtmd_artifacts_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_mtmd_artifacts_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_mtmd_artifacts_result
+  ERROR_VARIABLE bad_mtmd_artifacts_error
+)
+if(bad_mtmd_artifacts_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted MTMD evidence without feature bench artifact")
+endif()
+if(NOT bad_mtmd_artifacts_error MATCHES "multimodal_validation.artifacts")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong MTMD artifact reason: ${bad_mtmd_artifacts_error}")
+endif()
+
+file(WRITE "${evidence_dir}/logs/mtmd-features.txt" "features.media feed_image  1.000 Mops/s\n")
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${good_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_mtmd_rows_result
+  ERROR_VARIABLE bad_mtmd_rows_error
+)
+if(bad_mtmd_rows_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted MTMD bench output missing audio feed row")
+endif()
+if(NOT bad_mtmd_rows_error MATCHES "features.media feed_audio")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong MTMD row reason: ${bad_mtmd_rows_error}")
+endif()
+file(WRITE "${evidence_dir}/logs/mtmd-features.txt" "features.media feed_image  1.000 Mops/s\nfeatures.media feed_audio  2.000 Mops/s\n")
+
 set(pre_sign_manifest "${out_dir}/pre-sign-evidence.json")
 file(WRITE "${pre_sign_manifest}" "${bad_command_text}")
 file(READ "${good_manifest}" pre_sign_text)
@@ -527,6 +568,8 @@ foreach(required
   "run_cuda_parity_matrix.sh --preset-set release"
   "--arch"
   "--strict"
+  "multimodal_validation"
+  "mtmd-features.txt"
   "hf_model_matrix"
   "run_hf_full_suite.sh"
   "--only all"

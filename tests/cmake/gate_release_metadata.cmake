@@ -75,6 +75,8 @@ file(WRITE "${out_dir}/logs/asan.log" "asan passed\n")
 file(WRITE "${out_dir}/logs/tsan.log" "tsan passed\n")
 file(WRITE "${out_dir}/logs/hf-model-matrix.log" "hf matrix passed\n")
 file(WRITE "${out_dir}/logs/hf-model-matrix-summary.csv" "backend,model,status\ncpu,model.gguf,pass\n")
+file(WRITE "${out_dir}/logs/multimodal-validation.log" "mtmd validation passed\n")
+file(WRITE "${out_dir}/logs/mtmd-features.txt" "features.media feed_image  1.000 Mops/s\nfeatures.media feed_audio  2.000 Mops/s\n")
 file(WRITE "${out_dir}/logs/comment-review.tsv" "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext\n")
 file(WRITE "${out_dir}/logs/comment-inventory-summary.log" "comment_inventory files=1 comments=1 doc_lines=0 markers=0 orphan_markers=0\n")
 file(WRITE "${out_dir}/checksums.sha256.asc" "signature\n")
@@ -154,7 +156,7 @@ file(WRITE "${out_dir}/release-evidence.json"
     \"multimodal_validation\": {
       \"status\": \"pass\",
       \"command\": \"./scripts/run_multimodal_validation.sh --bench\",
-      \"artifacts\": [\"logs/multimodal_validation.log\"]
+      \"artifacts\": [\"logs/multimodal-validation.log\", \"logs/mtmd-features.txt\"]
     },
     \"hf_model_matrix\": {
       \"status\": \"pass\",

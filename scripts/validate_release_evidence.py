@@ -114,6 +114,7 @@ REQUIRED_ARTIFACT_NAMES = {
     ),
     "release_signing": ("checksums.sha256.asc",),
     "hf_model_matrix": ("hf-model-matrix.log", "hf-model-matrix-summary.csv"),
+    "multimodal_validation": ("multimodal-validation.log", "mtmd-features.txt"),
 }
 
 
@@ -185,6 +186,20 @@ def validate_comment_review_artifacts(paths):
         raise ValueError("comment_review summary must report orphan_markers=0")
 
 
+def validate_multimodal_artifacts(paths):
+    features = next((path for path in paths if path.name == "mtmd-features.txt"), None)
+    if features is None:
+        raise ValueError("multimodal_validation.artifacts must include mtmd-features.txt")
+
+    text = features.read_text(encoding="utf-8", errors="replace")
+    if "[bench] media init failed" in text:
+        raise ValueError("multimodal_validation bench output reports media init failure")
+    if "features.media feed_image" not in text:
+        raise ValueError("multimodal_validation bench output is missing features.media feed_image")
+    if "features.media feed_audio" not in text:
+        raise ValueError("multimodal_validation bench output is missing features.media feed_audio")
+
+
 def require_artifact_names(lane_name, paths):
     required = REQUIRED_ARTIFACT_NAMES.get(lane_name, ())
     if not required:
@@ -200,6 +215,8 @@ def validate_lane_artifacts(lane_name, lane, base_dir):
     require_artifact_names(lane_name, paths)
     if lane_name == "comment_review":
         validate_comment_review_artifacts(paths)
+    elif lane_name == "multimodal_validation":
+        validate_multimodal_artifacts(paths)
 
 
 def validate_manifest(data, base_dir, phase):

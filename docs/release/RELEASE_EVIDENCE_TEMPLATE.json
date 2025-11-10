@@ -81,7 +81,8 @@
       "status": "pass",
       "command": "./scripts/run_multimodal_validation.sh --bench",
       "artifacts": [
-        "logs/multimodal-validation.log"
+        "logs/multimodal-validation.log",
+        "logs/mtmd-features.txt"
       ]
     },
     "hf_model_matrix": {
