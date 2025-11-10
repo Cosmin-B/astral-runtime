@@ -89,6 +89,14 @@ pull_container_image() {
   fi
 }
 
+inspect_container_manifest() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${pull_timeout_seconds}" "${container_engine}" manifest inspect "${image_ref}" </dev/null
+  else
+    "${container_engine}" manifest inspect "${image_ref}" </dev/null
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --variant)
@@ -162,6 +170,17 @@ if [[ "${pull_image}" -eq 1 ]]; then
   if is_epic_ghcr_image "${image_ref}" && ! has_ghcr_auth_config; then
     fail_epic_ghcr_auth
     exit 2
+  fi
+  if is_epic_ghcr_image "${image_ref}"; then
+    echo "[unreal_container] Check image access: ${image_ref}"
+    if ! inspect_container_manifest >/dev/null; then
+      cat >&2 <<EOF
+Unable to inspect Unreal container manifest: ${image_ref}
+The configured ${container_engine} credentials cannot read ghcr.io/epicgames/unreal-engine, or the pinned image is unavailable.
+Authenticate with an Epic-linked GitHub account that has Epic Unreal Engine package access, then rerun this command.
+EOF
+      exit 2
+    fi
   fi
   echo "[unreal_container] Pull image: ${image_ref}"
   if ! pull_container_image; then
