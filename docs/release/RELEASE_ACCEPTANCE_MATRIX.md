@@ -32,6 +32,10 @@ UE 5.7 container logs must show the pinned image/digest, manifest access check,
 local image digest, clang `20.1.8`, Linux SDK `v26`/`20.1.8`, Unreal ThirdParty
 provenance, and `[unreal-results] OK`.
 
+UE compatibility matrix logs must include a non-skipped `[unreal_matrix] UE ...`
+section for every supported editor version from 5.4 through 5.7, with
+`AstralRT.*` Automation output and `[unreal-results] OK` for each version.
+
 ## Backend And Model Gate
 
 | Area | Required evidence | Required for RC |

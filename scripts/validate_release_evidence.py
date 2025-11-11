@@ -108,6 +108,7 @@ REQUIRED_ARTIFACT_NAMES = {
     "sanitizer_validation": ("asan.log", "tsan.log"),
     "unreal_57_full_container": ("unreal-57-full-container.log",),
     "unreal_57_slim_container": ("unreal-57-slim-container.log",),
+    "unreal_compatibility_matrix": ("unreal-compatibility-matrix.log",),
     "release_artifacts": (
         "checksums.sha256",
         "abi-layout.json",
@@ -155,6 +156,18 @@ UNREAL_CONTAINER_FAILURE_TOKENS = (
     "Linux SDK metadata mismatch",
     "clang version mismatch",
     "Could not locate UnrealEditor-Cmd inside the container",
+)
+
+UNREAL_COMPATIBILITY_VERSIONS = ("5.4", "5.5", "5.6", "5.7")
+
+UNREAL_COMPATIBILITY_FAILURE_TOKENS = (
+    "[unreal_matrix] Skipping UE",
+    "Missing UNREAL_",
+    "No Unreal versions ran",
+    "Unsupported Unreal version",
+    "Automation output contains failure marker",
+    "missing or empty Unreal log",
+    "Automation report directory has no non-empty files",
 )
 
 
@@ -255,6 +268,26 @@ def validate_unreal_container_artifacts(lane_name, paths):
             raise ValueError(f"{lane_name} log contains failure marker {token}")
 
 
+def validate_unreal_compatibility_artifacts(paths):
+    log_path = next((path for path in paths if path.name == "unreal-compatibility-matrix.log"), None)
+    if log_path is None:
+        raise ValueError("unreal_compatibility_matrix.artifacts must include unreal-compatibility-matrix.log")
+
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    for version in UNREAL_COMPATIBILITY_VERSIONS:
+        for token in (
+            f"[unreal_matrix] UE {version}:",
+            f"build/unreal-ci-results/ue-{version}",
+            "[unreal_ci] Filter: AstralRT.*",
+            "[unreal-results] OK:",
+        ):
+            if token not in text:
+                raise ValueError(f"unreal_compatibility_matrix log is missing {token}")
+    for token in UNREAL_COMPATIBILITY_FAILURE_TOKENS:
+        if token in text:
+            raise ValueError(f"unreal_compatibility_matrix log contains failure marker {token}")
+
+
 def require_artifact_names(lane_name, paths):
     required = REQUIRED_ARTIFACT_NAMES.get(lane_name, ())
     if not required:
@@ -272,6 +305,8 @@ def validate_lane_artifacts(lane_name, lane, base_dir):
         validate_comment_review_artifacts(paths)
     elif lane_name in UNREAL_CONTAINER_EVIDENCE:
         validate_unreal_container_artifacts(lane_name, paths)
+    elif lane_name == "unreal_compatibility_matrix":
+        validate_unreal_compatibility_artifacts(paths)
     elif lane_name == "multimodal_validation":
         validate_multimodal_artifacts(paths)
 

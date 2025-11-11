@@ -77,6 +77,14 @@
       "command": "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT.*",
       "artifacts": [
         "logs/unreal-compatibility-matrix.log"
+      ],
+      "required_log_tokens": [
+        "[unreal_matrix] UE 5.4:",
+        "[unreal_matrix] UE 5.5:",
+        "[unreal_matrix] UE 5.6:",
+        "[unreal_matrix] UE 5.7:",
+        "[unreal_ci] Filter: AstralRT.*",
+        "[unreal-results] OK"
       ]
     },
     "unity_editmode_abi": {
