@@ -294,6 +294,14 @@ Each version writes separate reports under `build/unreal-ci-results/ue-<version>
 the editor exits. A release-candidate run must leave a non-empty report and no
 AstralRT Automation failure markers.
 
+For the UE 5.7 sample package lane, generate and package the sidecar sample
+with a copied plugin:
+
+```bash
+UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
+  ./scripts/run_unreal_sample_package.sh --platform Linux
+```
+
 ## Required Release Gates
 
 `run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, ASAN/UBSAN, TSan, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, the real MTMD media gate, Unreal 5.4+ Automation compatibility, and Unity EditMode ABI tests.

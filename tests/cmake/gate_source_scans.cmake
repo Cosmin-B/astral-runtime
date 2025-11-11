@@ -632,14 +632,24 @@ endforeach()
 
 set(unreal_sample_script "${ROOT}/scripts/create_unreal_sample_project.sh")
 set(unreal_sample_gate "${ROOT}/tests/cmake/gate_unreal_sample_scaffold.cmake")
+set(unreal_sample_package_script "${ROOT}/scripts/run_unreal_sample_package.sh")
+set(unreal_sample_package_gate "${ROOT}/tests/cmake/gate_unreal_sample_package_runner.cmake")
 if(NOT EXISTS "${unreal_sample_script}")
   message(FATAL_ERROR "Unreal sample project scaffold script is missing")
 endif()
 if(NOT EXISTS "${unreal_sample_gate}")
   message(FATAL_ERROR "Unreal sample project scaffold gate is missing")
 endif()
+if(NOT EXISTS "${unreal_sample_package_script}")
+  message(FATAL_ERROR "Unreal sample package runner is missing")
+endif()
+if(NOT EXISTS "${unreal_sample_package_gate}")
+  message(FATAL_ERROR "Unreal sample package runner gate is missing")
+endif()
 file(READ "${unreal_sample_script}" unreal_sample_script_text)
 file(READ "${unreal_sample_gate}" unreal_sample_gate_text)
+file(READ "${unreal_sample_package_script}" unreal_sample_package_script_text)
+file(READ "${unreal_sample_package_gate}" unreal_sample_package_gate_text)
 foreach(required_unreal_sample_script_text
     "AstralSample.uproject"
     "EngineAssociation"
@@ -667,6 +677,30 @@ foreach(required_unreal_sample_gate_text
   string(FIND "${unreal_sample_gate_text}" "${required_unreal_sample_gate_text}" unreal_sample_gate_pos)
   if(unreal_sample_gate_pos EQUAL -1)
     message(FATAL_ERROR "Unreal sample scaffold gate is missing '${required_unreal_sample_gate_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_sample_package_script_text
+    "create_unreal_sample_project.sh"
+    "plugin-mode copy"
+    "RunUAT"
+    "BuildCookRun"
+    "-platform="
+    "-archive"
+    "[unreal_sample] OK:")
+  string(FIND "${unreal_sample_package_script_text}" "${required_unreal_sample_package_script_text}" unreal_sample_package_script_pos)
+  if(unreal_sample_package_script_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal sample package runner is missing '${required_unreal_sample_package_script_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_sample_package_gate_text
+    "gate_unreal_sample_package_runner"
+    "run_unreal_sample_package.sh"
+    "Missing Unreal RunUAT path"
+    "fake RunUAT: BuildCookRun"
+    "AstralSample.uproject")
+  string(FIND "${unreal_sample_package_gate_text}" "${required_unreal_sample_package_gate_text}" unreal_sample_package_gate_pos)
+  if(unreal_sample_package_gate_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal sample package gate is missing '${required_unreal_sample_package_gate_text}'")
   endif()
 endforeach()
 

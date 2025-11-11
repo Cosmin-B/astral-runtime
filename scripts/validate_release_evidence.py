@@ -15,6 +15,7 @@ REQUIRED_LANES = (
     "unreal_57_full_container",
     "unreal_57_slim_container",
     "unreal_compatibility_matrix",
+    "unreal_sample_package",
     "unity_editmode_abi",
     "cuda_parity_matrix",
     "multimodal_validation",
@@ -80,6 +81,11 @@ REQUIRED_COMMAND_TOKENS = {
         "5.7",
         "--filter AstralRT.*",
     ),
+    "unreal_sample_package": (
+        "UNREAL_RUNUAT",
+        "run_unreal_sample_package.sh",
+        "--platform Linux",
+    ),
     "unity_editmode_abi": ("UNITY_EDITOR", "run_unity_ci_tests.sh"),
     "cuda_parity_matrix": (
         "ASTRAL_TEST_CUDA_PARITY_INFER=1",
@@ -109,6 +115,7 @@ REQUIRED_ARTIFACT_NAMES = {
     "unreal_57_full_container": ("unreal-57-full-container.log",),
     "unreal_57_slim_container": ("unreal-57-slim-container.log",),
     "unreal_compatibility_matrix": ("unreal-compatibility-matrix.log",),
+    "unreal_sample_package": ("unreal-sample-package.log",),
     "release_artifacts": (
         "checksums.sha256",
         "abi-layout.json",
@@ -168,6 +175,28 @@ UNREAL_COMPATIBILITY_FAILURE_TOKENS = (
     "Automation output contains failure marker",
     "missing or empty Unreal log",
     "Automation report directory has no non-empty files",
+)
+
+UNREAL_SAMPLE_PACKAGE_TOKENS = (
+    "[unreal_sample] Project:",
+    "AstralSample.uproject",
+    "[unreal_sample] Archive:",
+    "[unreal_sample] RunUAT:",
+    "[unreal_sample] Platform: Linux",
+    "[unreal_sample] Plugin mode: copy",
+    "[unreal_sample] BuildCookRun",
+    "BuildCookRun",
+    "-platform=Linux",
+    "-archive",
+    "[unreal_sample] OK:",
+)
+
+UNREAL_SAMPLE_PACKAGE_FAILURE_TOKENS = (
+    "Missing Unreal RunUAT path",
+    "RunUAT path does not exist",
+    "RunUAT is not executable",
+    "Generated sample project is missing",
+    "Automation output contains failure marker",
 )
 
 
@@ -288,6 +317,20 @@ def validate_unreal_compatibility_artifacts(paths):
             raise ValueError(f"unreal_compatibility_matrix log contains failure marker {token}")
 
 
+def validate_unreal_sample_package_artifacts(paths):
+    log_path = next((path for path in paths if path.name == "unreal-sample-package.log"), None)
+    if log_path is None:
+        raise ValueError("unreal_sample_package.artifacts must include unreal-sample-package.log")
+
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    for token in UNREAL_SAMPLE_PACKAGE_TOKENS:
+        if token not in text:
+            raise ValueError(f"unreal_sample_package log is missing {token}")
+    for token in UNREAL_SAMPLE_PACKAGE_FAILURE_TOKENS:
+        if token in text:
+            raise ValueError(f"unreal_sample_package log contains failure marker {token}")
+
+
 def require_artifact_names(lane_name, paths):
     required = REQUIRED_ARTIFACT_NAMES.get(lane_name, ())
     if not required:
@@ -307,6 +350,8 @@ def validate_lane_artifacts(lane_name, lane, base_dir):
         validate_unreal_container_artifacts(lane_name, paths)
     elif lane_name == "unreal_compatibility_matrix":
         validate_unreal_compatibility_artifacts(paths)
+    elif lane_name == "unreal_sample_package":
+        validate_unreal_sample_package_artifacts(paths)
     elif lane_name == "multimodal_validation":
         validate_multimodal_artifacts(paths)
 

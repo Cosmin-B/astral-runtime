@@ -87,6 +87,21 @@
         "[unreal-results] OK"
       ]
     },
+    "unreal_sample_package": {
+      "status": "pass",
+      "command": "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux",
+      "artifacts": [
+        "logs/unreal-sample-package.log"
+      ],
+      "required_log_tokens": [
+        "[unreal_sample] Project:",
+        "AstralSample.uproject",
+        "[unreal_sample] Platform: Linux",
+        "[unreal_sample] Plugin mode: copy",
+        "BuildCookRun",
+        "[unreal_sample] OK"
+      ]
+    },
     "unity_editmode_abi": {
       "status": "pass",
       "command": "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh",

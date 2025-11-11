@@ -24,6 +24,7 @@ set(required_lanes
   unreal_57_full_container
   unreal_57_slim_container
   unreal_compatibility_matrix
+  unreal_sample_package
   unity_editmode_abi
   cuda_parity_matrix
   multimodal_validation
@@ -49,6 +50,7 @@ file(WRITE "${evidence_dir}/logs/comment-inventory-summary.log" "comment_invento
 file(WRITE "${evidence_dir}/logs/unreal-57-full-container.log" "[unreal_container] Check image access: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Pull image: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Local image digests:\nghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Image: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n[unreal_container] Test filter: AstralRT.*\n[unreal_container] Linux SDK: /UnrealEngine/Engine/Config/Linux/Linux_SDK.json\nv26 clang 20.1.8\n[unreal_container] clang:\nclang version 20.1.8\n-- Unreal ThirdParty provenance OK: libastral_rt.a\n[unreal_ci] Filter: AstralRT.*\n[unreal-results] OK: build/unreal-ci-results/unreal-automation.log\n")
 file(WRITE "${evidence_dir}/logs/unreal-57-slim-container.log" "[unreal_container] Check image access: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Pull image: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Local image digests:\nghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Image: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Test filter: AstralRT.*\n[unreal_container] Linux SDK: /UnrealEngine/Engine/Config/Linux/Linux_SDK.json\nv26 clang 20.1.8\n[unreal_container] clang:\nclang version 20.1.8\n-- Unreal ThirdParty provenance OK: libastral_rt.a\n[unreal_ci] Filter: AstralRT.*\n[unreal-results] OK: build/unreal-ci-results/unreal-automation.log\n")
 file(WRITE "${evidence_dir}/logs/unreal-compatibility-matrix.log" "[unreal_matrix] UE 5.4: /opt/UE_5.4/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT.*\n[unreal_ci] Report: build/unreal-ci-results/ue-5.4/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.4/unreal-automation.log\n[unreal_matrix] UE 5.5: /opt/UE_5.5/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT.*\n[unreal_ci] Report: build/unreal-ci-results/ue-5.5/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.5/unreal-automation.log\n[unreal_matrix] UE 5.6: /opt/UE_5.6/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT.*\n[unreal_ci] Report: build/unreal-ci-results/ue-5.6/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.6/unreal-automation.log\n[unreal_matrix] UE 5.7: /opt/UE_5.7/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT.*\n[unreal_ci] Report: build/unreal-ci-results/ue-5.7/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.7/unreal-automation.log\n")
+file(WRITE "${evidence_dir}/logs/unreal-sample-package.log" "[unreal_sample] Project: build/unreal-sample-package/AstralSample/AstralSample.uproject\n[unreal_sample] Archive: build/unreal-sample-package/archive\n[unreal_sample] RunUAT: /opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh\n[unreal_sample] Platform: Linux\n[unreal_sample] Plugin mode: copy\n[unreal_sample] BuildCookRun\nRunUAT BuildCookRun -project=build/unreal-sample-package/AstralSample/AstralSample.uproject -platform=Linux -archive\n[unreal_sample] OK: build/unreal-sample-package/archive\n")
 file(WRITE "${evidence_dir}/dist/checksums.sha256" "checksums\n")
 file(WRITE "${evidence_dir}/dist/abi-layout.json" "{}\n")
 file(WRITE "${evidence_dir}/dist/dependency-manifest.json" "{}\n")
@@ -97,6 +99,9 @@ foreach(lane IN LISTS required_lanes)
   elseif(lane STREQUAL "unreal_compatibility_matrix")
     set(artifacts "[\"logs/unreal-compatibility-matrix.log\"]")
     set(command "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT.*")
+  elseif(lane STREQUAL "unreal_sample_package")
+    set(artifacts "[\"logs/unreal-sample-package.log\"]")
+    set(command "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux")
   elseif(lane STREQUAL "unity_editmode_abi")
     set(command "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh")
   elseif(lane STREQUAL "cuda_parity_matrix")
@@ -325,6 +330,48 @@ if(NOT bad_unreal_matrix_artifact_error MATCHES "unreal_compatibility_matrix log
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal compatibility artifact reason: ${bad_unreal_matrix_artifact_error}")
 endif()
 file(WRITE "${evidence_dir}/logs/unreal-compatibility-matrix.log" "[unreal_matrix] UE 5.4: /opt/UE_5.4/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT.*\n[unreal_ci] Report: build/unreal-ci-results/ue-5.4/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.4/unreal-automation.log\n[unreal_matrix] UE 5.5: /opt/UE_5.5/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT.*\n[unreal_ci] Report: build/unreal-ci-results/ue-5.5/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.5/unreal-automation.log\n[unreal_matrix] UE 5.6: /opt/UE_5.6/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT.*\n[unreal_ci] Report: build/unreal-ci-results/ue-5.6/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.6/unreal-automation.log\n[unreal_matrix] UE 5.7: /opt/UE_5.7/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT.*\n[unreal_ci] Report: build/unreal-ci-results/ue-5.7/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.7/unreal-automation.log\n")
+
+set(bad_unreal_sample_manifest "${out_dir}/bad-unreal-sample-evidence.json")
+file(READ "${good_manifest}" bad_unreal_sample_text)
+string(REPLACE
+  "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux"
+  "./scripts/create_unreal_sample_project.sh --out /tmp/AstralSample"
+  bad_unreal_sample_text
+  "${bad_unreal_sample_text}"
+)
+file(WRITE "${bad_unreal_sample_manifest}" "${bad_unreal_sample_text}")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_unreal_sample_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_unreal_sample_result
+  ERROR_VARIABLE bad_unreal_sample_error
+)
+if(bad_unreal_sample_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak Unreal sample package command evidence")
+endif()
+if(NOT bad_unreal_sample_error MATCHES "unreal_sample_package.command")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal sample command reason: ${bad_unreal_sample_error}")
+endif()
+
+set(bad_unreal_sample_artifact_manifest "${out_dir}/bad-unreal-sample-artifact-evidence.json")
+file(READ "${good_manifest}" bad_unreal_sample_artifact_text)
+file(WRITE "${bad_unreal_sample_artifact_manifest}" "${bad_unreal_sample_artifact_text}")
+file(WRITE "${evidence_dir}/logs/unreal-sample-package.log" "[unreal_sample] Project: build/unreal-sample-package/AstralSample/AstralSample.uproject\nMissing Unreal RunUAT path\n")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_unreal_sample_artifact_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_unreal_sample_artifact_result
+  ERROR_VARIABLE bad_unreal_sample_artifact_error
+)
+if(bad_unreal_sample_artifact_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak Unreal sample package log evidence")
+endif()
+if(NOT bad_unreal_sample_artifact_error MATCHES "unreal_sample_package log")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal sample artifact reason: ${bad_unreal_sample_artifact_error}")
+endif()
+file(WRITE "${evidence_dir}/logs/unreal-sample-package.log" "[unreal_sample] Project: build/unreal-sample-package/AstralSample/AstralSample.uproject\n[unreal_sample] Archive: build/unreal-sample-package/archive\n[unreal_sample] RunUAT: /opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh\n[unreal_sample] Platform: Linux\n[unreal_sample] Plugin mode: copy\n[unreal_sample] BuildCookRun\nRunUAT BuildCookRun -project=build/unreal-sample-package/AstralSample/AstralSample.uproject -platform=Linux -archive\n[unreal_sample] OK: build/unreal-sample-package/archive\n")
 
 set(bad_sanitizer_manifest "${out_dir}/bad-sanitizer-evidence.json")
 file(READ "${good_manifest}" bad_sanitizer_text)
@@ -612,6 +659,8 @@ foreach(required
   "run_unreal_compatibility_matrix.sh"
   "5.4 5.5 5.6 5.7"
   "--filter AstralRT.*"
+  "unreal_sample_package"
+  "run_unreal_sample_package.sh"
   "cuda_parity_matrix"
   "ASTRAL_TEST_CUDA_PARITY_INFER=1"
   "ASTRAL_TEST_CUDA_E2E=1"

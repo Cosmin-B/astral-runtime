@@ -67,6 +67,18 @@ Use `--plugin-mode copy` when the project must be packaged on a machine without
 access to the Astral checkout. Real sign-off still requires packaging that
 generated project in UE 5.7 and keeping the logs as release evidence.
 
+For release-candidate sample packaging, use the maintained runner:
+
+```bash
+UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
+  ./scripts/run_unreal_sample_package.sh --platform Linux
+```
+
+The runner rebuilds the native ThirdParty package, creates the sidecar sample
+with a copied `AstralRT` plugin, runs `RunUAT BuildCookRun`, and prints
+`[unreal_sample]` evidence lines for the project, archive, platform, package
+mode, and result.
+
 ## Run Local Automation
 
 Use an installed UnrealEditor or UnrealEditor-Cmd:

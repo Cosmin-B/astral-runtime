@@ -10,8 +10,8 @@ Usage: scripts/run_release_required_gates.sh [options]
 
 Runs the hard release-candidate gates that must not be treated as optional:
 native release tests, ASAN/UBSAN and TSan validation, CUDA parity/e2e matrix,
-real MTMD media validation, Unreal Automation compatibility, and Unity EditMode
-ABI validation.
+real MTMD media validation, Unreal Automation compatibility, UE 5.7 sample
+packaging, and Unity EditMode ABI validation.
 
 Options:
   --cuda-arch <list>    Required deployed CUDA architecture list for CUDA presets
@@ -30,6 +30,7 @@ MTMD fixtures are supplied through:
 
 Engine gates are supplied through:
   UNREAL_54_EDITOR, UNREAL_55_EDITOR, UNREAL_56_EDITOR, UNREAL_57_EDITOR
+  UNREAL_RUNUAT
   UNITY_EDITOR
 
 Release-candidate runs should not use skip flags.
@@ -86,8 +87,9 @@ print_release_plan() {
   echo "  MTMD validation: scripts/run_multimodal_validation.sh ${mtmd_args[*]}"
   if [[ "${run_unreal}" -eq 1 ]]; then
     echo "  Unreal matrix: scripts/run_unreal_compatibility_matrix.sh"
+    echo "  Unreal sample package: scripts/run_unreal_sample_package.sh --platform Linux"
   else
-    echo "  Unreal matrix: skipped for local diagnosis"
+    echo "  Unreal matrix and sample package: skipped for local diagnosis"
   fi
   if [[ "${run_unity}" -eq 1 ]]; then
     echo "  Unity EditMode ABI: scripts/run_unity_ci_tests.sh"
@@ -111,7 +113,8 @@ print_release_plan() {
       UNREAL_54_EDITOR \
       UNREAL_55_EDITOR \
       UNREAL_56_EDITOR \
-      UNREAL_57_EDITOR || missing=1
+      UNREAL_57_EDITOR \
+      UNREAL_RUNUAT || missing=1
   fi
 
   if [[ "${run_unity}" -eq 1 ]]; then
@@ -173,8 +176,11 @@ scripts/run_multimodal_validation.sh "${mtmd_args[@]}"
 if [[ "${run_unreal}" -eq 1 ]]; then
   echo "[release-gate] Unreal 5.4+ compatibility matrix"
   scripts/run_unreal_compatibility_matrix.sh
+
+  echo "[release-gate] Unreal 5.7 sample package"
+  scripts/run_unreal_sample_package.sh --platform Linux
 else
-  echo "[release-gate] Unreal compatibility matrix skipped"
+  echo "[release-gate] Unreal compatibility matrix and sample package skipped"
 fi
 
 if [[ "${run_unity}" -eq 1 ]]; then

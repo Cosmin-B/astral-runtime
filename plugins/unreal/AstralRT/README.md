@@ -33,6 +33,14 @@ To generate a sidecar sample project outside the repo:
 ./scripts/create_unreal_sample_project.sh --out /tmp/AstralSample
 ```
 
+For release-candidate package evidence, run the package wrapper on a machine
+with UE 5.7:
+
+```bash
+UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
+  ./scripts/run_unreal_sample_package.sh --platform Linux
+```
+
 ## Use in a UE project
 
 Copy `astral/plugins/unreal/AstralRT/` into your Unreal project:

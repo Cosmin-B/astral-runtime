@@ -27,6 +27,7 @@ set(plan_env
   "UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd"
   "UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd"
   "UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd"
+  "UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh"
   "UNITY_EDITOR=/opt/Unity/Editor/Unity"
 )
 
@@ -50,6 +51,9 @@ if(NOT good_output MATCHES "sanitizers: scripts/run_asan\\.sh && scripts/run_tsa
 endif()
 if(NOT good_output MATCHES "--arch native")
   message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not include explicit CUDA architecture: ${good_output}")
+endif()
+if(NOT good_output MATCHES "Unreal sample package: scripts/run_unreal_sample_package\\.sh --platform Linux")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not require the Unreal sample package lane: ${good_output}")
 endif()
 
 execute_process(
