@@ -437,6 +437,73 @@ bool FAstralRTMockMemoryModelSourceTest::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTMockFailedLoadRecoveryTest,
+    "AstralRT.Mock.FailedLoadRecovery",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTMockFailedLoadRecoveryTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.SourceKind = EAstralModelSourceKind::Memory;
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+
+    bool ok = Model->Load(ModelDesc);
+    TestFalse(TEXT("empty memory model load fails"), ok);
+    TestFalse(TEXT("failed load leaves model invalid"), Model->IsValid());
+    TestEqual(TEXT("failed load leaves handle zero"), Model->GetHandle(), static_cast<uint64>(0));
+
+    int32 Dim = 7;
+    ok = Model->GetEmbeddingDim(Dim);
+    TestFalse(TEXT("failed load has no embedding dim"), ok);
+    TestEqual(TEXT("failed dim query zeroes output"), Dim, 0);
+
+    UAstralSession* Session = NewObject<UAstralSession>();
+    TestNotNull(TEXT("session allocated"), Session);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 16;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 0;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = false;
+    SessionDesc.Seed = 11;
+
+    ok = Session->Create(Model, SessionDesc);
+    TestFalse(TEXT("invalid model create rejected"), ok);
+    TestFalse(TEXT("failed create leaves session invalid"), Session->IsValid());
+
+    ModelDesc.ModelBytes.SetNumUninitialized(4);
+    ModelDesc.ModelBytes[0] = 'm';
+    ModelDesc.ModelBytes[1] = 'o';
+    ModelDesc.ModelBytes[2] = 'c';
+    ModelDesc.ModelBytes[3] = 'k';
+
+    ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("model recovers after failed load"), ok);
+    TestTrue(TEXT("recovered model valid"), Model->IsValid());
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("session create after model recovery"), ok);
+    TestTrue(TEXT("recovered session valid"), Session->IsValid());
+
+    Session->BeginDestroy();
+    Model->Release();
+    Model->Release();
+    TestFalse(TEXT("double release leaves model invalid"), Model->IsValid());
+    Model->BeginDestroy();
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTMockSessionCancelResetTest,
     "AstralRT.Mock.SessionCancelReset",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
@@ -501,6 +568,75 @@ bool FAstralRTMockSessionCancelResetTest::RunTest(const FString& Parameters) {
 
     Session->BeginDestroy();
     Model->Release();
+    Model->BeginDestroy();
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTMockDestroyInvalidationTest,
+    "AstralRT.Mock.DestroyInvalidation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTMockDestroyInvalidationTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ModelPath = TEXT("infinite");
+    ModelDesc.ContextSize = 128;
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("infinite mock model load"), ok);
+    if (!ok) {
+        return false;
+    }
+
+    UAstralSession* Session = NewObject<UAstralSession>();
+    TestNotNull(TEXT("session allocated"), Session);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 256;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 0;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = true;
+    SessionDesc.Seed = 17;
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("streaming session create"), ok);
+    if (!ok) {
+        Model->Release();
+        return false;
+    }
+
+    ok = Session->FeedPrompt(TEXT("hi"), true);
+    TestTrue(TEXT("feed before destroy"), ok);
+    ok = Session->Decode();
+    TestTrue(TEXT("decode before destroy"), ok);
+    ok = Session->Cancel();
+    TestTrue(TEXT("cancel before destroy"), ok);
+    TestEqual(TEXT("wait canceled before destroy"), Session->Wait(5000), static_cast<int32>(ASTRAL_E_CANCELED));
+
+    Session->BeginDestroy();
+    TestFalse(TEXT("destroy clears session valid state"), Session->IsValid());
+    TestEqual(TEXT("wait after destroy is invalid"), Session->Wait(0), static_cast<int32>(ASTRAL_E_INVALID));
+    TestFalse(TEXT("cancel after destroy fails"), Session->Cancel());
+    TestFalse(TEXT("reset after destroy fails"), Session->Reset(SessionDesc));
+
+    TArray<uint8> Out;
+    Out.SetNumUninitialized(16);
+    TestEqual(TEXT("stream read after destroy is invalid"), Session->StreamRead(Out, 0), static_cast<int32>(ASTRAL_E_INVALID));
+
+    Model->Release();
+    TestFalse(TEXT("model release clears valid state"), Model->IsValid());
+    Model->Release();
+    TestFalse(TEXT("second model release stays invalid"), Model->IsValid());
     Model->BeginDestroy();
     return true;
 }

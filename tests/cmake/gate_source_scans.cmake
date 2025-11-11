@@ -917,10 +917,15 @@ endforeach()
 set(unreal_automation_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/Tests/AstralRTTests.cpp")
 file(READ "${unreal_automation_source}" unreal_automation_text)
 foreach(required_unreal_lifecycle_text
+    "AstralRT.Mock.FailedLoadRecovery"
     "AstralRT.Mock.SessionCancelReset"
+    "AstralRT.Mock.DestroyInvalidation"
+    "empty memory model load fails"
+    "invalid model create rejected"
     "Session->Cancel"
     "Session->Reset"
-    "ASTRAL_E_CANCELED")
+    "ASTRAL_E_CANCELED"
+    "ASTRAL_E_INVALID")
   if(NOT unreal_automation_text MATCHES "${required_unreal_lifecycle_text}")
     message(FATAL_ERROR "Unreal lifecycle Automation coverage is missing ${required_unreal_lifecycle_text}")
   endif()
