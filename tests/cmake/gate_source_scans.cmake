@@ -706,14 +706,24 @@ endforeach()
 
 set(unreal_container_script "${ROOT}/scripts/run_unreal_container_ci.sh")
 set(unreal_container_gate "${ROOT}/tests/cmake/gate_unreal_container_runner.cmake")
+set(unreal_access_script "${ROOT}/scripts/check_unreal_validation_access.sh")
+set(unreal_access_gate "${ROOT}/tests/cmake/gate_unreal_validation_access.cmake")
 if(NOT EXISTS "${unreal_container_script}")
   message(FATAL_ERROR "Unreal container runner script is missing")
 endif()
 if(NOT EXISTS "${unreal_container_gate}")
   message(FATAL_ERROR "Unreal container runner gate is missing")
 endif()
+if(NOT EXISTS "${unreal_access_script}")
+  message(FATAL_ERROR "Unreal validation access checker is missing")
+endif()
+if(NOT EXISTS "${unreal_access_gate}")
+  message(FATAL_ERROR "Unreal validation access checker gate is missing")
+endif()
 file(READ "${unreal_container_script}" unreal_container_script_text)
 file(READ "${unreal_container_gate}" unreal_container_gate_text)
+file(READ "${unreal_access_script}" unreal_access_script_text)
+file(READ "${unreal_access_gate}" unreal_access_gate_text)
 foreach(required_unreal_container_script_text
     "dev-5.7.4"
     "sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
@@ -742,6 +752,33 @@ foreach(required_unreal_container_gate_text
   string(FIND "${unreal_container_gate_text}" "${required_unreal_container_gate_text}" unreal_container_gate_pos)
   if(unreal_container_gate_pos EQUAL -1)
     message(FATAL_ERROR "Unreal container runner gate is missing '${required_unreal_container_gate_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_access_script_text
+    "check_unreal_validation_access.sh"
+    "dev-5.7.4"
+    "dev-slim-5.7.4"
+    "UNREAL_54_EDITOR"
+    "UNREAL_57_EDITOR"
+    "RunUAT"
+    "READY: UE 5.7 full/slim container access is available"
+    "READY: UE 5.4-5.7 editor matrix is configured"
+    "BLOCKED: real Unreal validation needs Epic GHCR access")
+  string(FIND "${unreal_access_script_text}" "${required_unreal_access_script_text}" unreal_access_script_pos)
+  if(unreal_access_script_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal validation access checker is missing '${required_unreal_access_script_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_access_gate_text
+    "gate_unreal_validation_access"
+    "fake-cached-engine"
+    "fake-manifest-engine"
+    "UNREAL_54_EDITOR"
+    "READY: UE 5[.]4-5[.]7 editor matrix is configured"
+    "OK: RunUAT available")
+  string(FIND "${unreal_access_gate_text}" "${required_unreal_access_gate_text}" unreal_access_gate_pos)
+  if(unreal_access_gate_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal validation access checker gate is missing '${required_unreal_access_gate_text}'")
   endif()
 endforeach()
 

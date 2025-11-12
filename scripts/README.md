@@ -270,6 +270,17 @@ Validate filled release notes before publishing a release candidate:
 
 Build the Unreal ThirdParty package, then run the plugin Automation tests through Unreal. This is a local developer check when one editor is configured, and release-candidate evidence when the UE 5.4+ matrix is run with every supported editor.
 
+Check whether the current machine has enough access for real Unreal validation before starting a long run:
+
+```bash
+./scripts/check_unreal_validation_access.sh --check-registry
+```
+
+The access check does not pull images or launch Unreal. It reports whether the
+pinned UE 5.7 full/slim containers are cached or readable from Epic GHCR, and
+whether `UNREAL_54_EDITOR`, `UNREAL_55_EDITOR`, `UNREAL_56_EDITOR`, and
+`UNREAL_57_EDITOR` point to executable editors.
+
 ```bash
 cmake --preset unreal-plugin
 cmake --build --preset unreal-plugin -j
