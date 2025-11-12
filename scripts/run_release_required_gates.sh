@@ -10,8 +10,9 @@ Usage: scripts/run_release_required_gates.sh [options]
 
 Runs the hard release-candidate gates that must not be treated as optional:
 native release tests, ASAN/UBSAN and TSan validation, CUDA parity/e2e matrix,
-real MTMD media validation, Unreal Automation compatibility, UE 5.7 sample
-packaging, and Unity EditMode ABI validation.
+real MTMD media validation, UE 5.7 full/slim container Automation, Unreal
+Automation compatibility, UE 5.7 sample packaging, and Unity EditMode ABI
+validation.
 
 Options:
   --cuda-arch <list>    Required deployed CUDA architecture list for CUDA presets
@@ -20,7 +21,7 @@ Options:
   --print-plan         Print required lanes and environment checks, then exit
   --skip-sanitizers    Skip ASAN/UBSAN and TSan lanes
   --skip-engine         Skip both Unreal and Unity engine gates
-  --skip-unreal         Skip the Unreal 5.4+ compatibility matrix
+  --skip-unreal         Skip the Unreal container, compatibility, and sample gates
   --skip-unity          Skip the Unity EditMode ABI lane
   --help               Show help
 
@@ -29,6 +30,7 @@ MTMD fixtures are supplied through:
   ASTRAL_TEST_AUDIO_MODEL, ASTRAL_TEST_AUDIO_MEDIA
 
 Engine gates are supplied through:
+  Epic GHCR access or cached UE 5.7 full/slim container images
   UNREAL_54_EDITOR, UNREAL_55_EDITOR, UNREAL_56_EDITOR, UNREAL_57_EDITOR
   UNREAL_RUNUAT
   UNITY_EDITOR
@@ -86,10 +88,13 @@ print_release_plan() {
   echo "  CUDA matrix: ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 scripts/run_cuda_parity_matrix.sh ${cuda_args[*]}"
   echo "  MTMD validation: scripts/run_multimodal_validation.sh ${mtmd_args[*]}"
   if [[ "${run_unreal}" -eq 1 ]]; then
+    echo "  Unreal access: scripts/check_unreal_validation_access.sh --check-registry"
+    echo "  Unreal UE 5.7 full container: scripts/run_unreal_container_ci.sh --variant full --filter AstralRT.*"
+    echo "  Unreal UE 5.7 slim container: scripts/run_unreal_container_ci.sh --variant slim --filter AstralRT.*"
     echo "  Unreal matrix: scripts/run_unreal_compatibility_matrix.sh"
     echo "  Unreal sample package: scripts/run_unreal_sample_package.sh --platform Linux"
   else
-    echo "  Unreal matrix and sample package: skipped for local diagnosis"
+    echo "  Unreal container, matrix, and sample package: skipped for local diagnosis"
   fi
   if [[ "${run_unity}" -eq 1 ]]; then
     echo "  Unity EditMode ABI: scripts/run_unity_ci_tests.sh"
@@ -174,13 +179,22 @@ echo "[release-gate] MTMD real media validation"
 scripts/run_multimodal_validation.sh "${mtmd_args[@]}"
 
 if [[ "${run_unreal}" -eq 1 ]]; then
+  echo "[release-gate] Unreal validation access"
+  scripts/check_unreal_validation_access.sh --check-registry
+
+  echo "[release-gate] Unreal UE 5.7 full container"
+  scripts/run_unreal_container_ci.sh --variant full --filter 'AstralRT.*'
+
+  echo "[release-gate] Unreal UE 5.7 slim container"
+  scripts/run_unreal_container_ci.sh --variant slim --filter 'AstralRT.*'
+
   echo "[release-gate] Unreal 5.4+ compatibility matrix"
   scripts/run_unreal_compatibility_matrix.sh
 
   echo "[release-gate] Unreal 5.7 sample package"
   scripts/run_unreal_sample_package.sh --platform Linux
 else
-  echo "[release-gate] Unreal compatibility matrix and sample package skipped"
+  echo "[release-gate] Unreal container, compatibility matrix, and sample package skipped"
 fi
 
 if [[ "${run_unity}" -eq 1 ]]; then

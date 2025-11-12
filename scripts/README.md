@@ -315,7 +315,7 @@ UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
 
 ## Required Release Gates
 
-`run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, ASAN/UBSAN, TSan, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, the real MTMD media gate, Unreal 5.4+ Automation compatibility, and Unity EditMode ABI tests.
+`run_release_required_gates.sh` is the hard release-candidate lane. It runs native release tests, ASAN/UBSAN, TSan, CUDA release parity/e2e in auto/cuBLAS/MMQ modes, the real MTMD media gate, UE 5.7 full/slim container Automation, Unreal 5.4+ Automation compatibility, UE 5.7 sample packaging, and Unity EditMode ABI tests.
 
 ```bash
 ASTRAL_TEST_VISION_MODEL=/models/vision.gguf \
@@ -326,13 +326,16 @@ UNREAL_54_EDITOR=/opt/Unreal-5.4/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
 UNITY_EDITOR=/opt/Unity/Editor/Unity \
   ./scripts/run_release_required_gates.sh --cuda-arch native --cuda-strict --mtmd-bench
 ```
 
 The `--skip-sanitizers`, `--skip-engine`, `--skip-unreal`, and `--skip-unity`
 flags are for partial local diagnosis only. A release candidate should not use
-them.
+them. The Unreal lane starts with `check_unreal_validation_access.sh --check-registry`,
+then runs both pinned UE 5.7 container variants before the editor matrix and
+sample package.
 
 For a fast release-candidate preflight that prints the required lanes and checks
 that the release environment variables are present without starting builds or
@@ -347,6 +350,7 @@ UNREAL_54_EDITOR=/opt/Unreal-5.4/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
+UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
 UNITY_EDITOR=/opt/Unity/Editor/Unity \
   ./scripts/run_release_required_gates.sh --print-plan --cuda-arch native --cuda-strict --mtmd-bench
 ```
