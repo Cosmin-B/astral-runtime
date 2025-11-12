@@ -86,6 +86,29 @@ std::string read_stream_all(AstralHandle session) {
     return out;
 }
 
+std::string run_mock_decode_once(AstralHandle session, const char* prompt) {
+    AstralSpanU8 prompt_span{};
+    prompt_span.data = reinterpret_cast<const uint8_t*>(prompt);
+    prompt_span.len = static_cast<uint32_t>(std::strlen(prompt));
+
+    AstralErr err = astral_session_feed(session, prompt_span, 1);
+    if (err != ASTRAL_OK) {
+        return {};
+    }
+
+    err = astral_session_decode(session);
+    if (err != ASTRAL_OK) {
+        return {};
+    }
+
+    const std::string text = read_stream_all(session);
+    err = astral_session_wait(session, 1000);
+    if (err != ASTRAL_OK) {
+        return {};
+    }
+    return text;
+}
+
 std::string read_conv_stream_all(AstralHandle conv) {
     std::string out;
     out.reserve(256);
@@ -657,6 +680,50 @@ TEST(inference_stop_sequences_suppress_output) {
 
     const std::string text = read_stream_all(session);
     ASSERT_EQ(text, std::string("mock-"));
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(inference_stop_sequences_suppress_output_after_reset) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 64 * 1024 * 1024;
+    cfg.thread_count = 2;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const AstralHandle model = load_mock_model(nullptr);
+
+    AstralSessionDesc sd{};
+    sd.model = model;
+    sd.max_tokens = 128;
+    sd.temperature = 0.0f;
+    sd.top_k = 0;
+    sd.top_p = 1.0f;
+    sd.stream_enabled = 1;
+    sd.seed = 1;
+
+    AstralHandle session = 0;
+    err = astral_session_create(&sd, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    ASSERT_EQ(run_mock_decode_once(session, "hi"), std::string("mock-backend"));
+
+    err = astral_session_reset(session, &sd);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_stop_clear(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const char* stop = "backend";
+    AstralSpanU8 stop_span{};
+    stop_span.data = reinterpret_cast<const uint8_t*>(stop);
+    stop_span.len = static_cast<uint32_t>(std::strlen(stop));
+    err = astral_session_stop_add_utf8(session, stop_span);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    ASSERT_EQ(run_mock_decode_once(session, "hi"), std::string("mock-"));
 
     astral_session_destroy(session);
     astral_model_release(model);

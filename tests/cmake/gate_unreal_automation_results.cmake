@@ -14,14 +14,14 @@ file(REMOVE_RECURSE "${out_dir}")
 file(MAKE_DIRECTORY "${report_dir}")
 
 set(log_file "${out_dir}/unreal-automation.log")
-file(WRITE "${log_file}" "Automation RunTests AstralRT.*\nAstralRT.Mock passed\n")
+file(WRITE "${log_file}" "Automation RunTests AstralRT\nAstralRT.Mock passed\n")
 file(WRITE "${report_dir}/index.json" "{\"tests\":[{\"name\":\"AstralRT.Mock\",\"state\":\"Success\"}]}\n")
 
 execute_process(
   COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_unreal_automation_results.py"
     --log "${log_file}"
     --report-dir "${report_dir}"
-    --filter "AstralRT.*"
+    --filter "AstralRT"
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE good_result
   ERROR_VARIABLE good_error
@@ -35,7 +35,7 @@ execute_process(
   COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_unreal_automation_results.py"
     --log "${log_file}"
     --report-dir "${report_dir}"
-    --filter "AstralRT.*"
+    --filter "AstralRT"
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE missing_result
   ERROR_VARIABLE missing_error
@@ -48,14 +48,14 @@ if(NOT missing_error MATCHES "missing Automation report directory")
 endif()
 
 file(MAKE_DIRECTORY "${report_dir}")
-file(WRITE "${log_file}" "Automation RunTests AstralRT.*\nLogAutomationController: Error: Automation Test Failed: AstralRT.Mock\n")
+file(WRITE "${log_file}" "Automation RunTests AstralRT\nLogAutomationController: Error: Automation Test Failed: AstralRT.Mock\n")
 file(WRITE "${report_dir}/index.json" "{\"tests\":[{\"name\":\"AstralRT.Mock\",\"state\":\"Success\"}]}\n")
 
 execute_process(
   COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_unreal_automation_results.py"
     --log "${log_file}"
     --report-dir "${report_dir}"
-    --filter "AstralRT.*"
+    --filter "AstralRT"
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE failure_result
   ERROR_VARIABLE failure_error
@@ -67,14 +67,14 @@ if(NOT failure_error MATCHES "failure marker")
   message(FATAL_ERROR "validate_unreal_automation_results.py failed for the wrong failure-log reason: ${failure_error}")
 endif()
 
-file(WRITE "${log_file}" "Automation RunTests AstralRT.*\nAstralRT.Mock completed\n")
+file(WRITE "${log_file}" "Automation RunTests AstralRT\nAstralRT.Mock completed\n")
 file(WRITE "${report_dir}/index.json" "{\"tests\":[{\"name\":\"AstralRT.Mock\",\"state\":\"Fail\"}]}\n")
 
 execute_process(
   COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_unreal_automation_results.py"
     --log "${log_file}"
     --report-dir "${report_dir}"
-    --filter "AstralRT.*"
+    --filter "AstralRT"
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE report_failure_result
   ERROR_VARIABLE report_failure_error
@@ -91,7 +91,7 @@ execute_process(
   COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_unreal_automation_results.py"
     --log "${log_file}"
     --report-dir "${report_dir}"
-    --filter "AstralRT.*"
+    --filter "AstralRT"
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE empty_report_result
   ERROR_VARIABLE empty_report_error

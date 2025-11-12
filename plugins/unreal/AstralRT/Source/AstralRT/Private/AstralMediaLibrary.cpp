@@ -22,9 +22,9 @@ bool UAstralMediaLibrary::MakeRGBA8ImageFromBytes(const TArray<uint8>& RgbaBytes
     }
 
     OutImage.Format = EAstralImageFormat::RGBA8;
-    OutImage.Width = static_cast<uint32>(Width);
-    OutImage.Height = static_cast<uint32>(Height);
-    OutImage.RowStride = static_cast<uint32>(Width * 4);
+    OutImage.Width = Width;
+    OutImage.Height = Height;
+    OutImage.RowStride = Width * 4;
     OutImage.Pixels = RgbaBytes;
     return true;
 }
@@ -67,9 +67,9 @@ bool UAstralMediaLibrary::MakeRGBA8ImageFromTexture(UTexture2D* Texture, FAstral
     }
 
     OutImage.Format = EAstralImageFormat::RGBA8;
-    OutImage.Width = static_cast<uint32>(Width);
-    OutImage.Height = static_cast<uint32>(Height);
-    OutImage.RowStride = static_cast<uint32>(Width * 4);
+    OutImage.Width = Width;
+    OutImage.Height = Height;
+    OutImage.RowStride = Width * 4;
     OutImage.Pixels.SetNumUninitialized(static_cast<int32>(ByteCount));
 
     const uint8* Src = static_cast<const uint8*>(Locked);
@@ -106,9 +106,9 @@ bool UAstralMediaLibrary::MakePCM16AudioFromBytes(const TArray<uint8>& PcmBytes,
     }
 
     OutAudio.Format = EAstralAudioFormat::I16;
-    OutAudio.Channels = static_cast<uint32>(Channels);
-    OutAudio.SampleRate = static_cast<uint32>(SampleRate);
-    OutAudio.FrameCount = static_cast<uint64>(static_cast<int64>(PcmBytes.Num()) / BytesPerFrame);
+    OutAudio.Channels = Channels;
+    OutAudio.SampleRate = SampleRate;
+    OutAudio.FrameCount = static_cast<int64>(PcmBytes.Num()) / BytesPerFrame;
     OutAudio.Samples = PcmBytes;
     return true;
 }

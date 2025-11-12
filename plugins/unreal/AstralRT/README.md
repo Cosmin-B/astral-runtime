@@ -185,4 +185,4 @@ Editor-only Automation tests live under `Source/AstralRT/Private/Tests/`:
 - `AstralRT.Mock.MultimodalEmbed`
 
 Run from Unreal's Automation window or via console:
-`Automation RunTests AstralRT.*`
+`Automation RunTests AstralRT`

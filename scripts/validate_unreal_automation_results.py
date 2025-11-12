@@ -17,7 +17,7 @@ FAILURE_PATTERNS = (
 PASS_STATES = {"passed", "pass", "success", "succeeded", "ok"}
 FAIL_STATES = {"failed", "fail", "failure", "error", "timedout", "timed out", "notrun", "not run"}
 STATE_KEYS = ("state", "result", "status", "outcome")
-NAME_KEYS = ("name", "fullname", "fullName", "testName", "displayName", "testDisplayName")
+NAME_KEYS = ("name", "fullname", "fullName", "fullTestPath", "testName", "displayName", "testDisplayName")
 
 
 def fail(message):
@@ -26,7 +26,7 @@ def fail(message):
 
 
 def read_text(path):
-    return path.read_text(encoding="utf-8", errors="replace")
+    return path.read_text(encoding="utf-8-sig", errors="replace")
 
 
 def contains_failure(text):
@@ -103,7 +103,7 @@ def main():
     )
     parser.add_argument("--log", required=True, help="Unreal Automation log file")
     parser.add_argument("--report-dir", required=True, help="Automation report directory")
-    parser.add_argument("--filter", default="AstralRT.*", help="Automation test filter")
+    parser.add_argument("--filter", default="AstralRT", help="Automation test filter")
     args = parser.parse_args()
 
     log_path = Path(args.log)

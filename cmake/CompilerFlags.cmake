@@ -15,9 +15,11 @@ function(apply_compiler_flags target)
             $<$<CXX_COMPILER_ID:GNU,Clang>:-falign-loops=32>
         )
 
-        # Link-time optimization: Enables cross-translation-unit inlining
-        # Critical for ASTRAL_FORCE_INLINE to work across compilation units
-        set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+        if(NOT ASTRAL_BUILD_UNREAL_PLUGIN)
+            # Link-time optimization: Enables cross-translation-unit inlining
+            # Critical for ASTRAL_FORCE_INLINE to work across compilation units
+            set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+        endif()
     endif()
 
     # Platform-specific SIMD optimizations

@@ -1,7 +1,6 @@
 #include "AstralSessionStreamPump.h"
 #include "AstralLog.h"
 
-#include "Containers/StringBuilder.h"
 #include "Containers/UnrealString.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 
@@ -86,18 +85,17 @@ bool FAstralSessionStreamPump::Tick(
         {
             FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(TickUtf8Buffer.GetData()), TickUtf8Buffer.Num());
 
+            TickTextScratch.Reset();
+            TickTextScratch.Reserve(Converter.Length());
+            TickTextScratch.AppendChars(Converter.Get(), Converter.Length());
+
             if (StreamTextNative.IsBound())
             {
-                TStringBuilder<4096> Text;
-                Text.Append(Converter.Get(), Converter.Length());
-                StreamTextNative.Broadcast(Text.ToView());
+                StreamTextNative.Broadcast(FStringView(*TickTextScratch, TickTextScratch.Len()));
             }
 
             if (OnTokenReceived.IsBound())
             {
-                TickTextScratch.Reset();
-                TickTextScratch.Reserve(Converter.Length());
-                TickTextScratch.AppendChars(Converter.Get(), Converter.Length());
                 OnTokenReceived.Broadcast(TickTextScratch);
             }
         }

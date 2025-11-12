@@ -33,6 +33,25 @@ static bool bytes_equal_ascii(const TArray<uint8>& bytes, const char* lit) {
     return FMemory::Memcmp(bytes.GetData(), lit, lit_len) == 0;
 }
 
+static FString bytes_to_ascii_string(const TArray<uint8>& bytes) {
+    TArray<ANSICHAR> text;
+    text.Reserve(bytes.Num() + 1);
+    for (const uint8 b : bytes) {
+        text.Add(static_cast<ANSICHAR>(b));
+    }
+    text.Add('\0');
+    return FString(ANSI_TO_TCHAR(text.GetData()));
+}
+
+static FString bytes_to_hex_string(const TArray<uint8>& bytes) {
+    FString out;
+    out.Reserve(bytes.Num() * 3);
+    for (const uint8 b : bytes) {
+        out += FString::Printf(TEXT("%02x "), static_cast<uint32>(b));
+    }
+    return out;
+}
+
 static void append_ascii(TArray<uint8>& out, const char* lit) {
     out.Reset();
     if (lit == nullptr) {
@@ -144,7 +163,7 @@ bool FAstralRTFMemoryAllocatorTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("session create uses FMemory allocator"), ok);
     if (!ok) {
         Model->Release();
-        Model->BeginDestroy();
+        Model->ConditionalBeginDestroy();
         return false;
     }
 
@@ -152,9 +171,9 @@ bool FAstralRTFMemoryAllocatorTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("native alloc callback called"), LiveStats.AllocCalls > 0);
     TestTrue(TEXT("native alloc callback tracked bytes"), LiveStats.AllocBytes > 0);
 
-    Session->BeginDestroy();
+    Session->ConditionalBeginDestroy();
     Model->Release();
-    Model->BeginDestroy();
+    Model->ConditionalBeginDestroy();
 
     const FAstralRTAllocatorStats ReleasedStats = Runtime.GetAllocatorStats();
     TestTrue(TEXT("native free callback called"), ReleasedStats.FreeCalls > 0);
@@ -226,13 +245,29 @@ bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
     AstralSpanU8 stop_span{};
     stop_span.data = reinterpret_cast<const uint8_t*>(stop);
     stop_span.len = static_cast<uint32_t>(FCStringAnsi::Strlen(stop));
+    TestEqual(TEXT("stop span len"), static_cast<int32>(stop_span.len), 7);
+
+    int32_t stop_tokens[16];
+    uint32_t stop_token_count = 0;
+    err = astral_tokenize(model, stop_span, stop_tokens, 16, 0, 0, &stop_token_count);
+    TestEqual(TEXT("stop tokenize"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+    TestEqual(TEXT("stop token count"), static_cast<int32>(stop_token_count), 7);
+    if (stop_token_count > 0) {
+        TestEqual(TEXT("stop token first"), stop_tokens[0], static_cast<int32>('b'));
+        TestEqual(TEXT("stop token last"), stop_tokens[stop_token_count - 1], static_cast<int32>('d'));
+    }
+
     err = astral_session_stop_add_utf8(session, stop_span);
     TestEqual(TEXT("astral_session_stop_add_utf8"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
 
     TArray<uint8> out2;
     const bool ok2 = run_mock_session_once(session, out2);
     TestTrue(TEXT("second decode ok"), ok2);
-    TestTrue(TEXT("stop suppresses backend suffix"), bytes_equal_ascii(out2, "mock-"));
+    TestEqual(TEXT("stop output byte count"), out2.Num(), 5);
+    TestEqual(TEXT("stop suppresses backend suffix"), bytes_to_ascii_string(out2), FString(TEXT("mock-")));
+    if (!bytes_equal_ascii(out2, "mock-")) {
+        AddError(FString::Printf(TEXT("stop output hex: %s"), *bytes_to_hex_string(out2)));
+    }
 
     astral_session_destroy(session);
     astral_model_release(model);
@@ -396,9 +431,9 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
     TestTrue(TEXT("collect reuse ticket"), ok);
 
     Embedder->Destroy();
-    Embedder->BeginDestroy();
+    Embedder->ConditionalBeginDestroy();
     Model->Release();
-    Model->BeginDestroy();
+    Model->ConditionalBeginDestroy();
     return true;
 }
 
@@ -432,7 +467,7 @@ bool FAstralRTMockMemoryModelSourceTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("model valid after memory load"), Model->IsValid());
 
     Model->Release();
-    Model->BeginDestroy();
+    Model->ConditionalBeginDestroy();
     return ok;
 }
 
@@ -456,6 +491,7 @@ bool FAstralRTMockFailedLoadRecoveryTest::RunTest(const FString& Parameters) {
     ModelDesc.BackendName = TEXT("mock");
     ModelDesc.ContextSize = 128;
 
+    AddExpectedError(TEXT("AstralRT: memory model source has no bytes"), EAutomationExpectedErrorFlags::Contains, 1);
     bool ok = Model->Load(ModelDesc);
     TestFalse(TEXT("empty memory model load fails"), ok);
     TestFalse(TEXT("failed load leaves model invalid"), Model->IsValid());
@@ -477,6 +513,7 @@ bool FAstralRTMockFailedLoadRecoveryTest::RunTest(const FString& Parameters) {
     SessionDesc.bStreamEnabled = false;
     SessionDesc.Seed = 11;
 
+    AddExpectedError(TEXT("AstralRT: invalid model"), EAutomationExpectedErrorFlags::Contains, 1);
     ok = Session->Create(Model, SessionDesc);
     TestFalse(TEXT("invalid model create rejected"), ok);
     TestFalse(TEXT("failed create leaves session invalid"), Session->IsValid());
@@ -495,11 +532,11 @@ bool FAstralRTMockFailedLoadRecoveryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("session create after model recovery"), ok);
     TestTrue(TEXT("recovered session valid"), Session->IsValid());
 
-    Session->BeginDestroy();
+    Session->ConditionalBeginDestroy();
     Model->Release();
     Model->Release();
     TestFalse(TEXT("double release leaves model invalid"), Model->IsValid());
-    Model->BeginDestroy();
+    Model->ConditionalBeginDestroy();
     return true;
 }
 
@@ -566,9 +603,9 @@ bool FAstralRTMockSessionCancelResetTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("second cancel"), ok);
     TestEqual(TEXT("second wait canceled"), Session->Wait(5000), static_cast<int32>(ASTRAL_E_CANCELED));
 
-    Session->BeginDestroy();
+    Session->ConditionalBeginDestroy();
     Model->Release();
-    Model->BeginDestroy();
+    Model->ConditionalBeginDestroy();
     return true;
 }
 
@@ -623,7 +660,7 @@ bool FAstralRTMockDestroyInvalidationTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("cancel before destroy"), ok);
     TestEqual(TEXT("wait canceled before destroy"), Session->Wait(5000), static_cast<int32>(ASTRAL_E_CANCELED));
 
-    Session->BeginDestroy();
+    Session->ConditionalBeginDestroy();
     TestFalse(TEXT("destroy clears session valid state"), Session->IsValid());
     TestEqual(TEXT("wait after destroy is invalid"), Session->Wait(0), static_cast<int32>(ASTRAL_E_INVALID));
     TestFalse(TEXT("cancel after destroy fails"), Session->Cancel());
@@ -637,7 +674,7 @@ bool FAstralRTMockDestroyInvalidationTest::RunTest(const FString& Parameters) {
     TestFalse(TEXT("model release clears valid state"), Model->IsValid());
     Model->Release();
     TestFalse(TEXT("second model release stays invalid"), Model->IsValid());
-    Model->BeginDestroy();
+    Model->ConditionalBeginDestroy();
     return true;
 }
 
@@ -700,9 +737,9 @@ bool FAstralRTMockMediaFeedTest::RunTest(const FString& Parameters) {
     ok = Session->FeedAudio(Audio, true);
     TestTrue(TEXT("feed audio"), ok);
 
-    Session->BeginDestroy();
+    Session->ConditionalBeginDestroy();
     Model->Release();
-    Model->BeginDestroy();
+    Model->ConditionalBeginDestroy();
     return true;
 }
 
@@ -728,6 +765,7 @@ bool FAstralRTMediaDescriptorHelpersTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("image height"), static_cast<int32>(Image.Height), 2);
     TestEqual(TEXT("image stride"), static_cast<int32>(Image.RowStride), 8);
     TestEqual(TEXT("image byte count"), Image.Pixels.Num(), Rgba.Num());
+    const FAstralImageDesc GoodImage = Image;
 
     TArray<uint8> BadRgba;
     BadRgba.SetNumZeroed(3);
@@ -744,6 +782,7 @@ bool FAstralRTMediaDescriptorHelpersTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("audio channels"), static_cast<int32>(Audio.Channels), 1);
     TestEqual(TEXT("audio sample rate"), static_cast<int32>(Audio.SampleRate), 16000);
     TestEqual(TEXT("audio frame count"), static_cast<int32>(Audio.FrameCount), 4);
+    const FAstralAudioDesc GoodAudio = Audio;
 
     TArray<uint8> BadPcm;
     BadPcm.SetNumZeroed(3);
@@ -780,14 +819,14 @@ bool FAstralRTMediaDescriptorHelpersTest::RunTest(const FString& Parameters) {
         return false;
     }
 
-    ok = Session->FeedImage(Image, false);
+    ok = Session->FeedImage(GoodImage, false);
     TestTrue(TEXT("feed helper image"), ok);
-    ok = Session->FeedAudio(Audio, true);
+    ok = Session->FeedAudio(GoodAudio, true);
     TestTrue(TEXT("feed helper audio"), ok);
 
-    Session->BeginDestroy();
+    Session->ConditionalBeginDestroy();
     Model->Release();
-    Model->BeginDestroy();
+    Model->ConditionalBeginDestroy();
     return true;
 }
 
@@ -830,6 +869,7 @@ bool FAstralRTMockMultimodalEmbedTest::RunTest(const FString& Parameters) {
     Image.Format = EAstralImageFormat::RGB8;
     Image.Width = 1;
     Image.Height = 1;
+    Image.RowStride = 3;
     Image.Pixels.SetNumZeroed(3);
 
     FAstralAudioDesc Audio{};
@@ -840,7 +880,7 @@ bool FAstralRTMockMultimodalEmbedTest::RunTest(const FString& Parameters) {
     Audio.Samples.SetNumZeroed(8);
 
     int64 Ticket = 0;
-    ok = Embedder->EnqueueMultimodal(TEXT("abc"), Image, Audio, true, true, Ticket);
+    ok = Embedder->EnqueueMultimodal(TEXT("abc"), Image, Audio, true, false, Ticket);
     TestTrue(TEXT("enqueue multimodal"), ok);
     TestTrue(TEXT("ticket valid"), Ticket > 0);
 
@@ -850,9 +890,9 @@ bool FAstralRTMockMultimodalEmbedTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("vector size"), Vec.Num() == Embedder->GetDim());
 
     Embedder->Destroy();
-    Embedder->BeginDestroy();
+    Embedder->ConditionalBeginDestroy();
     Model->Release();
-    Model->BeginDestroy();
+    Model->ConditionalBeginDestroy();
     return true;
 }
 

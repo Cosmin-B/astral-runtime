@@ -72,12 +72,12 @@ bool UAstralSession::Create(UAstralModel* Model, const FAstralSessionDesc& Desc)
 
     AstralSessionDesc NativeDesc{};
     NativeDesc.model = static_cast<AstralHandle>(Model->GetHandle());
-    NativeDesc.max_tokens = Desc.MaxTokens;
+    NativeDesc.max_tokens = static_cast<uint32_t>(Desc.MaxTokens);
     NativeDesc.temperature = Desc.Temperature;
-    NativeDesc.top_k = Desc.TopK;
+    NativeDesc.top_k = static_cast<uint32_t>(Desc.TopK);
     NativeDesc.top_p = Desc.TopP;
     NativeDesc.stream_enabled = Desc.bStreamEnabled ? 1 : 0;
-    NativeDesc.seed = Desc.Seed;
+    NativeDesc.seed = static_cast<uint32_t>(Desc.Seed);
 
     AstralHandle Out = 0;
     const AstralErr Err = astral_session_create(&NativeDesc, &Out);
@@ -140,15 +140,15 @@ bool UAstralSession::FeedImage(const FAstralImageDesc& Image, bool bFinalize)
     AstralImageDesc Native{};
     Native.size = sizeof(AstralImageDesc);
     Native.format = static_cast<AstralImageFormat>(Image.Format);
-    Native.width = Image.Width;
-    Native.height = Image.Height;
-    Native.row_stride = Image.RowStride;
-    Native.flags = Image.Flags;
+    Native.width = static_cast<uint32_t>(Image.Width);
+    Native.height = static_cast<uint32_t>(Image.Height);
+    Native.row_stride = static_cast<uint32_t>(Image.RowStride);
+    Native.flags = static_cast<uint32_t>(Image.Flags);
     Native.pixels.data = Image.Pixels.GetData();
     Native.pixels.len = static_cast<uint32_t>(Image.Pixels.Num());
     Native.gpu_device = Image.GpuDevice;
-    Native.gpu_route_flags = Image.GpuRouteFlags;
-    Native.gpu_device_mask = Image.GpuDeviceMask;
+    Native.gpu_route_flags = static_cast<uint32_t>(Image.GpuRouteFlags);
+    Native.gpu_device_mask = static_cast<uint64_t>(Image.GpuDeviceMask);
     Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Image.GpuStream));
 
     const AstralErr Err =
@@ -185,7 +185,7 @@ bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
         return false;
     }
 
-    uint64 FrameCount = Audio.FrameCount;
+    uint64 FrameCount = static_cast<uint64>(Audio.FrameCount);
     if (FrameCount == 0)
     {
         const uint32 BytesPerSample = (Audio.Format == EAstralAudioFormat::F32) ? 4u : 2u;
@@ -198,15 +198,15 @@ bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
         FrameCount = TotalSamples / Audio.Channels;
     }
 
-    Native.channels = Audio.Channels;
-    Native.sample_rate = Audio.SampleRate;
+    Native.channels = static_cast<uint32_t>(Audio.Channels);
+    Native.sample_rate = static_cast<uint32_t>(Audio.SampleRate);
     Native.frame_count = FrameCount;
     Native.samples.data = Audio.Samples.GetData();
     Native.samples.len = static_cast<uint32_t>(Audio.Samples.Num());
-    Native.flags = Audio.Flags;
+    Native.flags = static_cast<uint32_t>(Audio.Flags);
     Native.gpu_device = Audio.GpuDevice;
-    Native.gpu_route_flags = Audio.GpuRouteFlags;
-    Native.gpu_device_mask = Audio.GpuDeviceMask;
+    Native.gpu_route_flags = static_cast<uint32_t>(Audio.GpuRouteFlags);
+    Native.gpu_device_mask = static_cast<uint64_t>(Audio.GpuDeviceMask);
     Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Audio.GpuStream));
 
     const AstralErr Err =
@@ -248,13 +248,14 @@ bool UAstralSession::Cancel()
     return Err == ASTRAL_OK;
 }
 
-int32 UAstralSession::Wait(uint32 TimeoutMs)
+int32 UAstralSession::Wait(int32 TimeoutMs)
 {
     if (SessionHandle == 0)
     {
         return static_cast<int32>(ASTRAL_E_INVALID);
     }
-    return static_cast<int32>(astral_session_wait(static_cast<AstralHandle>(SessionHandle), TimeoutMs));
+    const uint32 NativeTimeoutMs = static_cast<uint32>(FMath::Max(TimeoutMs, 0));
+    return static_cast<int32>(astral_session_wait(static_cast<AstralHandle>(SessionHandle), NativeTimeoutMs));
 }
 
 bool UAstralSession::Reset(const FAstralSessionDesc& Desc)
@@ -266,12 +267,12 @@ bool UAstralSession::Reset(const FAstralSessionDesc& Desc)
 
     AstralSessionDesc NativeDesc{};
     NativeDesc.model = static_cast<AstralHandle>(ModelHandle);
-    NativeDesc.max_tokens = Desc.MaxTokens;
+    NativeDesc.max_tokens = static_cast<uint32_t>(Desc.MaxTokens);
     NativeDesc.temperature = Desc.Temperature;
-    NativeDesc.top_k = Desc.TopK;
+    NativeDesc.top_k = static_cast<uint32_t>(Desc.TopK);
     NativeDesc.top_p = Desc.TopP;
     NativeDesc.stream_enabled = Desc.bStreamEnabled ? 1 : 0;
-    NativeDesc.seed = Desc.Seed;
+    NativeDesc.seed = static_cast<uint32_t>(Desc.Seed);
 
     const AstralErr Err = astral_session_reset(static_cast<AstralHandle>(SessionHandle), &NativeDesc);
     if (Err != ASTRAL_OK)
@@ -294,7 +295,7 @@ bool UAstralSession::SetSampler(const FAstralSamplerDesc& Desc)
     AstralSamplerDesc Native{};
     Native.size = sizeof(AstralSamplerDesc);
     Native.temperature = Desc.Temperature;
-    Native.top_k = Desc.TopK;
+    Native.top_k = static_cast<uint32_t>(Desc.TopK);
     Native.top_p = Desc.TopP;
     Native.min_p = Desc.MinP;
     Native.typical_p = Desc.TypicalP;
@@ -360,9 +361,10 @@ int32 UAstralSession::StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs)
     return astral_stream_read(static_cast<AstralHandle>(SessionHandle), Span, TimeoutMs);
 }
 
-FString UAstralSession::StreamReadString(uint32 TimeoutMs)
+FString UAstralSession::StreamReadString(int32 TimeoutMs)
 {
-    const int32 BytesRead = StreamRead(TokenBuffer, TimeoutMs);
+    const uint32 NativeTimeoutMs = static_cast<uint32>(FMath::Max(TimeoutMs, 0));
+    const int32 BytesRead = StreamRead(TokenBuffer, NativeTimeoutMs);
     if (BytesRead <= 0)
     {
         return FString();
@@ -391,8 +393,8 @@ FAstralStats UAstralSession::GetStats() const
     Result.InitTimeMs = Native.t_init_ms;
     Result.FirstTokenTimeMs = Native.t_first_token_ms;
     Result.TokensPerSecond = Native.tok_per_s;
-    Result.BytesCommitted = Native.bytes_committed;
-    Result.BytesReserved = Native.bytes_reserved;
+    Result.BytesCommitted = static_cast<int64>(Native.bytes_committed);
+    Result.BytesReserved = static_cast<int64>(Native.bytes_reserved);
 
     return Result;
 }

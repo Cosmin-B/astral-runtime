@@ -61,7 +61,7 @@ public:
 
     /** Returns 0 for OK, -7 for canceled, -4 for timeout, or another native error code. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
-    int32 Wait(uint32 TimeoutMs = 0);
+    int32 Wait(int32 TimeoutMs = 0);
 
     /** Reset native session state with new sampling and token limits for the same model. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
@@ -87,7 +87,7 @@ public:
 
     /** Read one streamed chunk as FString. Empty string also represents timeout or no data. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
-    FString StreamReadString(uint32 TimeoutMs = 0);
+    FString StreamReadString(int32 TimeoutMs = 0);
 
     /** Snapshot native timing and memory counters. Zeroed fields mean stats were unavailable. */
     UFUNCTION(BlueprintCallable, Category = "Astral")

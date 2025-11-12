@@ -29,7 +29,7 @@ public class AstralRT : ModuleRules
         });
 
         // ThirdParty: AstralCore
-        string ThirdPartyPath = Path.Combine(ModuleDirectory, "../../ThirdParty/AstralCore");
+        string ThirdPartyPath = Path.Combine(ModuleDirectory, "../ThirdParty/AstralCore");
         string IncludePath = Path.Combine(ThirdPartyPath, "include");
         string LibPath = Path.Combine(ThirdPartyPath, "lib");
 
@@ -47,10 +47,28 @@ public class AstralRT : ModuleRules
         }
         else if (Target.Platform == UnrealTargetPlatform.Linux)
         {
-            PublicAdditionalLibraries.Add(RequireThirdPartyFile(
-                Path.Combine(LibPath, "Linux", "libastral_rt.a"),
-                "Linux static library"
-            ));
+            string LinuxLibPath = Path.Combine(LibPath, "Linux");
+            string LinuxArchive = RequireThirdPartyFile(Path.Combine(LinuxLibPath, "libastral_rt.a"), "Linux static library");
+            RequireThirdPartyFile(Path.Combine(LinuxLibPath, "libllama.a"), "Linux llama static library");
+            RequireThirdPartyFile(Path.Combine(LinuxLibPath, "libllama-common.a"), "Linux llama-common static library");
+            RequireThirdPartyFile(Path.Combine(LinuxLibPath, "libllama-common-base.a"), "Linux llama-common-base static library");
+            RequireThirdPartyFile(Path.Combine(LinuxLibPath, "libggml.a"), "Linux ggml static library");
+            RequireThirdPartyFile(Path.Combine(LinuxLibPath, "libggml-cpu.a"), "Linux ggml-cpu static library");
+            RequireThirdPartyFile(Path.Combine(LinuxLibPath, "libggml-base.a"), "Linux ggml-base static library");
+            RequireThirdPartyFile(Path.Combine(LinuxLibPath, "libcpp-httplib.a"), "Linux cpp-httplib static library");
+            PublicAdditionalLibraries.Add(LinuxArchive);
+            PublicSystemLibraryPaths.Add(LinuxLibPath);
+            PublicSystemLibraries.AddRange(new string[]
+            {
+                "astral_rt",
+                "llama",
+                "llama-common",
+                "llama-common-base",
+                "ggml",
+                "ggml-cpu",
+                "ggml-base",
+                "cpp-httplib"
+            });
         }
         else if (Target.Platform == UnrealTargetPlatform.Mac)
         {

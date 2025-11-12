@@ -18,7 +18,7 @@ image=""
 digest=""
 pull_image=1
 build_native=1
-test_filter="${UNREAL_TEST_FILTER:-AstralRT.*}"
+test_filter="${UNREAL_TEST_FILTER:-AstralRT}"
 unreal_editor="${UNREAL_EDITOR:-}"
 
 usage() {
@@ -34,7 +34,7 @@ Options:
   --skip-pull               Do not pull the image before running
   --skip-native-build       Do not rebuild the AstralRT ThirdParty package
   --editor <path>           UnrealEditor-Cmd path inside the container
-  --filter <pattern>        Automation filter (default: AstralRT.*)
+  --filter <pattern>        Automation filter (default: AstralRT)
   -h, --help                Show this help
 
 Environment:
@@ -244,21 +244,52 @@ if [[ -n "${engine_root}" ]]; then
   fi
 fi
 
+clang_bin=""
 if command -v clang >/dev/null 2>&1; then
-  echo "[unreal_container] clang:"
-  clang_version_text="$(clang --version | sed -n "1,3p")"
-  printf "%s\n" "${clang_version_text}"
-  if [[ "${clang_version_text}" != *"${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION}"* ]]; then
-    echo "clang version mismatch: expected ${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION}" >&2
-    exit 2
-  fi
-else
-  echo "[unreal_container] clang not found in PATH" >&2
+  clang_bin="$(command -v clang)"
+elif [[ -n "${engine_root}" ]]; then
+  for candidate in \
+    "${engine_root}/Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/"*"${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN}"*"${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG}"*/x86_64-unknown-linux-gnu/bin/clang; do
+    if [[ -x "${candidate}" ]]; then
+      clang_bin="${candidate}"
+      break
+    fi
+  done
+fi
+
+if [[ -z "${clang_bin}" ]]; then
+  echo "[unreal_container] clang not found in PATH or UE Linux SDK" >&2
   exit 2
 fi
 
+echo "[unreal_container] clang: ${clang_bin}"
+clang_version_text="$("${clang_bin}" --version | sed -n "1,3p")"
+printf "%s\n" "${clang_version_text}"
+if [[ "${clang_version_text}" != *"${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION}"* ]]; then
+  echo "clang version mismatch: expected ${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION}" >&2
+  exit 2
+fi
+
+unreal_cmake_args=()
+clangxx_bin="${clang_bin%/clang}/clang++"
+ue_sdk_root=""
+if [[ "${clang_bin}" == */x86_64-unknown-linux-gnu/bin/clang ]]; then
+  ue_sdk_root="${clang_bin%/bin/clang}"
+fi
+if [[ -x "${clangxx_bin}" && -d "${ue_sdk_root}/include/c++/v1" ]]; then
+  ue_c_flags="--target=x86_64-unknown-linux-gnu --sysroot=${ue_sdk_root} -fPIC"
+  ue_cxx_flags="--driver-mode=g++ -nostdinc++ -isystem${ue_sdk_root}/include -isystem${ue_sdk_root}/include/c++/v1 ${ue_c_flags} -fexceptions"
+  unreal_cmake_args+=(
+    "-DCMAKE_C_COMPILER=${clang_bin}"
+    "-DCMAKE_CXX_COMPILER=${clangxx_bin}"
+    "-DCMAKE_C_FLAGS=${ue_c_flags}"
+    "-DCMAKE_CXX_FLAGS=${ue_cxx_flags}"
+  )
+  echo "[unreal_container] Native package C++ runtime: UE libc++"
+fi
+
 if [[ "${ASTRAL_UNREAL_BUILD_NATIVE}" == "1" ]]; then
-  cmake --preset unreal-plugin
+  cmake --preset unreal-plugin "${unreal_cmake_args[@]}"
   cmake --build --preset unreal-plugin -j
 fi
 

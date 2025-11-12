@@ -320,6 +320,8 @@
       "binaryDir": "${sourceDir}/build/unreal",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
         "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "OFF",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",

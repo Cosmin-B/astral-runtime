@@ -6,7 +6,7 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 versions="5.4 5.5 5.6 5.7"
 allow_missing=0
 build_native=1
-test_filter="${UNREAL_TEST_FILTER:-AstralRT.*}"
+test_filter="${UNREAL_TEST_FILTER:-AstralRT}"
 
 usage() {
   cat <<'EOF'
@@ -18,7 +18,7 @@ Options:
   --versions "<list>"       Space-separated UE versions (default: "5.4 5.5 5.6 5.7")
   --allow-missing           Skip versions whose editor env var is unset
   --skip-native-build       Do not rebuild the AstralRT ThirdParty package first
-  --filter <pattern>        Automation filter (default: AstralRT.*)
+  --filter <pattern>        Automation filter (default: AstralRT)
   -h, --help                Show this help
 
 Required editor env vars by version:

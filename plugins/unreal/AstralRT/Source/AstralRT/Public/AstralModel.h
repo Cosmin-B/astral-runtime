@@ -36,7 +36,7 @@ public:
 
     /** Query the native capability bitmask for generation, embeddings, and media support. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
-    bool GetCaps(uint64& OutCaps) const;
+    bool GetCaps(int64& OutCaps) const;
 
     /** Query model limits such as context size, vocabulary size, batch size, and slot count. */
     UFUNCTION(BlueprintCallable, Category = "Astral")

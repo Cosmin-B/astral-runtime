@@ -1,5 +1,6 @@
 #include "sampler.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 

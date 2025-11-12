@@ -10,6 +10,7 @@ set(SCAN_DIRS
   tests
   benchmarks
   cmake
+  ci
   docs
   plugins
   scripts
@@ -631,11 +632,19 @@ foreach(forbidden_fast_presubmit_text
 endforeach()
 
 set(unreal_sample_script "${ROOT}/scripts/create_unreal_sample_project.sh")
+set(cmake_presets_file "${ROOT}/CMakePresets.json")
+set(root_cmake_file "${ROOT}/CMakeLists.txt")
 set(unreal_sample_gate "${ROOT}/tests/cmake/gate_unreal_sample_scaffold.cmake")
 set(unreal_sample_package_script "${ROOT}/scripts/run_unreal_sample_package.sh")
 set(unreal_sample_package_gate "${ROOT}/tests/cmake/gate_unreal_sample_package_runner.cmake")
 if(NOT EXISTS "${unreal_sample_script}")
   message(FATAL_ERROR "Unreal sample project scaffold script is missing")
+endif()
+if(NOT EXISTS "${cmake_presets_file}")
+  message(FATAL_ERROR "CMake presets file is missing")
+endif()
+if(NOT EXISTS "${root_cmake_file}")
+  message(FATAL_ERROR "Root CMake file is missing")
 endif()
 if(NOT EXISTS "${unreal_sample_gate}")
   message(FATAL_ERROR "Unreal sample project scaffold gate is missing")
@@ -647,6 +656,8 @@ if(NOT EXISTS "${unreal_sample_package_gate}")
   message(FATAL_ERROR "Unreal sample package runner gate is missing")
 endif()
 file(READ "${unreal_sample_script}" unreal_sample_script_text)
+file(READ "${cmake_presets_file}" cmake_presets_text)
+file(READ "${root_cmake_file}" root_cmake_text)
 file(READ "${unreal_sample_gate}" unreal_sample_gate_text)
 file(READ "${unreal_sample_package_script}" unreal_sample_package_script_text)
 file(READ "${unreal_sample_package_gate}" unreal_sample_package_gate_text)
@@ -665,6 +676,25 @@ foreach(required_unreal_sample_script_text
   string(FIND "${unreal_sample_script_text}" "${required_unreal_sample_script_text}" unreal_sample_script_pos)
   if(unreal_sample_script_pos EQUAL -1)
     message(FATAL_ERROR "Unreal sample scaffold script is missing '${required_unreal_sample_script_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_cmake_preset_text
+    "\"name\": \"unreal-plugin\""
+    "\"CMAKE_CXX_STANDARD\": \"20\""
+    "\"CMAKE_CXX_STANDARD_REQUIRED\": \"ON\"")
+  string(FIND "${cmake_presets_text}" "${required_unreal_cmake_preset_text}" unreal_cmake_preset_pos)
+  if(unreal_cmake_preset_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal CMake preset is missing '${required_unreal_cmake_preset_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_root_cmake_text
+    "if(ASTRAL_BUILD_UNREAL_PLUGIN)"
+    "add_compile_definitions(JSON_HAS_CPP_17)"
+    "ASTRAL_BUILD_UNREAL_PLUGIN OR ASTRAL_BUILD_TESTS"
+    "CMAKE_POSITION_INDEPENDENT_CODE ON")
+  string(FIND "${root_cmake_text}" "${required_unreal_root_cmake_text}" unreal_root_cmake_pos)
+  if(unreal_root_cmake_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal CMake package is missing '${required_unreal_root_cmake_text}'")
   endif()
 endforeach()
 foreach(required_unreal_sample_gate_text
@@ -708,8 +738,12 @@ set(unreal_container_script "${ROOT}/scripts/run_unreal_container_ci.sh")
 set(unreal_container_gate "${ROOT}/tests/cmake/gate_unreal_container_runner.cmake")
 set(unreal_access_script "${ROOT}/scripts/check_unreal_validation_access.sh")
 set(unreal_access_gate "${ROOT}/tests/cmake/gate_unreal_validation_access.cmake")
+set(unreal_ci_script "${ROOT}/scripts/run_unreal_ci_tests.sh")
 if(NOT EXISTS "${unreal_container_script}")
   message(FATAL_ERROR "Unreal container runner script is missing")
+endif()
+if(NOT EXISTS "${unreal_ci_script}")
+  message(FATAL_ERROR "Unreal CI runner script is missing")
 endif()
 if(NOT EXISTS "${unreal_container_gate}")
   message(FATAL_ERROR "Unreal container runner gate is missing")
@@ -724,6 +758,7 @@ file(READ "${unreal_container_script}" unreal_container_script_text)
 file(READ "${unreal_container_gate}" unreal_container_gate_text)
 file(READ "${unreal_access_script}" unreal_access_script_text)
 file(READ "${unreal_access_gate}" unreal_access_gate_text)
+file(READ "${unreal_ci_script}" unreal_ci_script_text)
 foreach(required_unreal_container_script_text
     "dev-5.7.4"
     "sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
@@ -736,7 +771,13 @@ foreach(required_unreal_container_script_text
     "ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG"
     "20.1.8"
     "v26"
+    "x86_64-unknown-linux-gnu/bin/clang"
     "clang version mismatch"
+    "clang not found in PATH or UE Linux SDK"
+    "Native package C++ runtime: UE libc++"
+    "-nostdinc++"
+    "include/c++/v1"
+    "-DCMAKE_CXX_FLAGS"
     "Linux SDK metadata mismatch")
   string(FIND "${unreal_container_script_text}" "${required_unreal_container_script_text}" unreal_container_script_pos)
   if(unreal_container_script_pos EQUAL -1)
@@ -779,6 +820,249 @@ foreach(required_unreal_access_gate_text
   string(FIND "${unreal_access_gate_text}" "${required_unreal_access_gate_text}" unreal_access_gate_pos)
   if(unreal_access_gate_pos EQUAL -1)
     message(FATAL_ERROR "Unreal validation access checker gate is missing '${required_unreal_access_gate_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_ci_script_text
+    "copy_directory()"
+    "cmake -E copy_directory"
+    "cp -a"
+    "engine_root_from_editor()"
+    "RunUBT.sh"
+    "AstralCiUnrealProjectEditor"
+    "-NoHotReload"
+    "UNREAL_TEST_FILTER:-AstralRT"
+    "-ReportExportPath"
+    "validate_unreal_automation_results.py")
+  string(FIND "${unreal_ci_script_text}" "${required_unreal_ci_script_text}" unreal_ci_script_pos)
+  if(unreal_ci_script_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal CI runner script is missing '${required_unreal_ci_script_text}'")
+  endif()
+endforeach()
+
+set(unreal_ci_project_file "${ROOT}/ci/unreal/AstralCiUnrealProject/AstralCiUnrealProject.uproject")
+set(unreal_ci_project_config "${ROOT}/ci/unreal/AstralCiUnrealProject/Config/DefaultEngine.ini")
+set(unreal_ci_project_target "${ROOT}/ci/unreal/AstralCiUnrealProject/Source/AstralCiUnrealProjectEditor.Target.cs")
+set(unreal_ci_project_module "${ROOT}/ci/unreal/AstralCiUnrealProject/Source/AstralCiUnrealProject/AstralCiUnrealProject.Build.cs")
+if(NOT EXISTS "${unreal_ci_project_file}")
+  message(FATAL_ERROR "Unreal CI project file is missing")
+endif()
+if(NOT EXISTS "${unreal_ci_project_config}")
+  message(FATAL_ERROR "Unreal CI project engine config is missing")
+endif()
+if(NOT EXISTS "${unreal_ci_project_target}")
+  message(FATAL_ERROR "Unreal CI editor target is missing")
+endif()
+if(NOT EXISTS "${unreal_ci_project_module}")
+  message(FATAL_ERROR "Unreal CI module rules are missing")
+endif()
+file(READ "${unreal_ci_project_file}" unreal_ci_project_text)
+file(READ "${unreal_ci_project_config}" unreal_ci_project_config_text)
+file(READ "${unreal_ci_project_target}" unreal_ci_project_target_text)
+file(READ "${unreal_ci_project_module}" unreal_ci_project_module_text)
+foreach(required_unreal_ci_project_text
+    "\"Name\": \"AstralCiUnrealProject\""
+    "\"Type\": \"Runtime\""
+    "\"Name\": \"AstralRT\"")
+  string(FIND "${unreal_ci_project_text}" "${required_unreal_ci_project_text}" unreal_ci_project_pos)
+  if(unreal_ci_project_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal CI project is missing '${required_unreal_ci_project_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_ci_project_config_text
+    "EditorStartupMap=/Engine/Maps/Entry"
+    "GameDefaultMap=/Engine/Maps/Entry")
+  string(FIND "${unreal_ci_project_config_text}" "${required_unreal_ci_project_config_text}" unreal_ci_project_config_pos)
+  if(unreal_ci_project_config_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal CI project engine config is missing '${required_unreal_ci_project_config_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_ci_target_text
+    "TargetType.Editor"
+    "BuildSettingsVersion.Latest"
+    "ExtraModuleNames.Add(\"AstralCiUnrealProject\")")
+  string(FIND "${unreal_ci_project_target_text}" "${required_unreal_ci_target_text}" unreal_ci_target_pos)
+  if(unreal_ci_target_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal CI editor target is missing '${required_unreal_ci_target_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_ci_module_text
+    "PCHUsageMode.UseExplicitOrSharedPCHs"
+    "\"AstralRT\"")
+  string(FIND "${unreal_ci_project_module_text}" "${required_unreal_ci_module_text}" unreal_ci_module_pos)
+  if(unreal_ci_module_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal CI module rules are missing '${required_unreal_ci_module_text}'")
+  endif()
+endforeach()
+
+set(unreal_plugin_build_rules "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/AstralRT.Build.cs")
+set(compiler_flags_file "${ROOT}/cmake/CompilerFlags.cmake")
+if(NOT EXISTS "${unreal_plugin_build_rules}")
+  message(FATAL_ERROR "AstralRT Unreal build rules are missing")
+endif()
+if(NOT EXISTS "${compiler_flags_file}")
+  message(FATAL_ERROR "Compiler flags CMake file is missing")
+endif()
+file(READ "${unreal_plugin_build_rules}" unreal_plugin_build_rules_text)
+file(READ "${compiler_flags_file}" compiler_flags_text)
+foreach(required_unreal_plugin_build_rule_text
+    "../ThirdParty/AstralCore"
+    "RequireThirdPartyFile"
+    "libastral_rt.a"
+    "libllama.a"
+    "libllama-common.a"
+    "libllama-common-base.a"
+    "libggml.a"
+    "libggml-cpu.a"
+    "libggml-base.a"
+    "libcpp-httplib.a"
+    "PublicAdditionalLibraries.Add(LinuxArchive)"
+    "PublicSystemLibraryPaths.Add(LinuxLibPath)"
+    "PublicSystemLibraries.AddRange"
+    "\"astral_rt\""
+    "\"llama\""
+    "\"llama-common\""
+    "\"llama-common-base\""
+    "\"ggml\""
+    "\"ggml-cpu\""
+    "\"ggml-base\""
+    "\"cpp-httplib\"")
+  string(FIND "${unreal_plugin_build_rules_text}" "${required_unreal_plugin_build_rule_text}" unreal_build_rule_pos)
+  if(unreal_build_rule_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Unreal build rules are missing '${required_unreal_plugin_build_rule_text}'")
+  endif()
+endforeach()
+
+set(unreal_plugin_cmake "${ROOT}/plugins/unreal/CMakeLists.txt")
+if(NOT EXISTS "${unreal_plugin_cmake}")
+  message(FATAL_ERROR "AstralRT Unreal plugin CMake package file is missing")
+endif()
+file(READ "${unreal_plugin_cmake}" unreal_plugin_cmake_text)
+foreach(required_unreal_plugin_cmake_text
+    "$<TARGET_FILE:astral_rt>"
+    "$<TARGET_FILE:llama>"
+    "$<TARGET_FILE:llama-common>"
+    "$<TARGET_FILE:llama-common-base>"
+    "$<TARGET_FILE:ggml>"
+    "$<TARGET_FILE:ggml-cpu>"
+    "$<TARGET_FILE:ggml-base>"
+    "$<TARGET_FILE:cpp-httplib>"
+    "DEPENDS astral_rt llama llama-common llama-common-base ggml ggml-cpu ggml-base cpp-httplib")
+  string(FIND "${unreal_plugin_cmake_text}" "${required_unreal_plugin_cmake_text}" unreal_plugin_cmake_pos)
+  if(unreal_plugin_cmake_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Unreal CMake package is missing '${required_unreal_plugin_cmake_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_compiler_flag_text
+    "if(NOT ASTRAL_BUILD_UNREAL_PLUGIN)"
+    "INTERPROCEDURAL_OPTIMIZATION TRUE")
+  string(FIND "${compiler_flags_text}" "${required_unreal_compiler_flag_text}" unreal_compiler_flag_pos)
+  if(unreal_compiler_flag_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal plugin package must keep non-LTO static archives: missing '${required_unreal_compiler_flag_text}'")
+  endif()
+endforeach()
+
+set(unreal_plugin_types "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/AstralTypes.h")
+if(NOT EXISTS "${unreal_plugin_types}")
+  message(FATAL_ERROR "AstralRT Unreal public type header is missing")
+endif()
+file(READ "${unreal_plugin_types}" unreal_plugin_types_text)
+foreach(required_unreal_plugin_type_text
+    "enum class EAstralImageFormat : uint8"
+    "enum class EAstralAudioFormat : uint8"
+    "enum class EAstralMediaFlags : uint8"
+    "enum class EAstralGpuRouteFlags : uint8"
+    "enum class EAstralModelSourceKind : uint8"
+    "enum class EAstralError : int32"
+    "int32 GpuLayers = 0"
+    "int64 GpuDeviceMask = 0"
+    "int64 GpuStream = 0"
+    "int64 FrameCount = 0"
+    "int32 MaxTokens = 512"
+    "int64 BytesCommitted = 0")
+  string(FIND "${unreal_plugin_types_text}" "${required_unreal_plugin_type_text}" unreal_plugin_type_pos)
+  if(unreal_plugin_type_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Unreal public types are missing '${required_unreal_plugin_type_text}'")
+  endif()
+endforeach()
+foreach(forbidden_unreal_plugin_type_text
+    "enum class EAstralImageFormat : uint32"
+    "enum class EAstralAudioFormat : uint32"
+    "enum class EAstralMediaFlags : uint32"
+    "enum class EAstralGpuRouteFlags : uint32"
+    "enum class EAstralModelSourceKind : uint32"
+    "uint32 GpuLayers"
+    "uint32 MaxTokens"
+    "uint32 TopK"
+    "uint64 GpuDeviceMask"
+    "uint64 GpuStream"
+    "uint64 FrameCount"
+    "uint64 BytesCommitted")
+  string(FIND "${unreal_plugin_types_text}" "${forbidden_unreal_plugin_type_text}" unreal_plugin_type_forbidden_pos)
+  if(NOT unreal_plugin_type_forbidden_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Blueprint enum '${forbidden_unreal_plugin_type_text}' must use uint8 for UnrealHeaderTool")
+  endif()
+endforeach()
+
+set(unreal_plugin_session_header "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/AstralSession.h")
+set(unreal_plugin_session_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralSession.cpp")
+if(NOT EXISTS "${unreal_plugin_session_header}")
+  message(FATAL_ERROR "AstralRT Unreal session header is missing")
+endif()
+if(NOT EXISTS "${unreal_plugin_session_source}")
+  message(FATAL_ERROR "AstralRT Unreal session source is missing")
+endif()
+file(READ "${unreal_plugin_session_header}" unreal_plugin_session_header_text)
+file(READ "${unreal_plugin_session_source}" unreal_plugin_session_source_text)
+foreach(required_unreal_plugin_session_text
+    "int32 Wait(int32 TimeoutMs = 0)"
+    "FString StreamReadString(int32 TimeoutMs = 0)")
+  string(FIND "${unreal_plugin_session_header_text}" "${required_unreal_plugin_session_text}" unreal_session_header_pos)
+  if(unreal_session_header_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Unreal session header is missing '${required_unreal_plugin_session_text}'")
+  endif()
+endforeach()
+set(unreal_plugin_model_header "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/AstralModel.h")
+if(NOT EXISTS "${unreal_plugin_model_header}")
+  message(FATAL_ERROR "AstralRT Unreal model header is missing")
+endif()
+file(READ "${unreal_plugin_model_header}" unreal_plugin_model_header_text)
+string(FIND "${unreal_plugin_model_header_text}" "bool GetCaps(int64& OutCaps) const" unreal_model_header_caps_pos)
+if(unreal_model_header_caps_pos EQUAL -1)
+  message(FATAL_ERROR "AstralRT Unreal model header must expose GetCaps through Blueprint-compatible int64")
+endif()
+foreach(required_unreal_plugin_session_source_text
+    "FMath::Max(TimeoutMs, 0)"
+    "const uint32 NativeTimeoutMs")
+  string(FIND "${unreal_plugin_session_source_text}" "${required_unreal_plugin_session_source_text}" unreal_session_source_pos)
+  if(unreal_session_source_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Unreal session source is missing '${required_unreal_plugin_session_source_text}'")
+  endif()
+endforeach()
+
+set(unreal_plugin_embedder_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralEmbedder.cpp")
+set(unreal_plugin_stream_pump_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralSessionStreamPump.cpp")
+if(NOT EXISTS "${unreal_plugin_embedder_source}")
+  message(FATAL_ERROR "AstralRT Unreal embedder source is missing")
+endif()
+if(NOT EXISTS "${unreal_plugin_stream_pump_source}")
+  message(FATAL_ERROR "AstralRT Unreal stream pump source is missing")
+endif()
+file(READ "${unreal_plugin_embedder_source}" unreal_plugin_embedder_source_text)
+file(READ "${unreal_plugin_stream_pump_source}" unreal_plugin_stream_pump_source_text)
+foreach(required_unreal_plugin_embedder_text
+    "uint64_t Ticket = 0"
+    "static_cast<uint64_t>(Ticket)")
+  string(FIND "${unreal_plugin_embedder_source_text}" "${required_unreal_plugin_embedder_text}" unreal_embedder_source_pos)
+  if(unreal_embedder_source_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Unreal embedder source is missing '${required_unreal_plugin_embedder_text}'")
+  endif()
+endforeach()
+foreach(forbidden_unreal_plugin_stream_pump_text
+    "Containers/StringBuilder.h"
+    "TStringBuilder")
+  string(FIND "${unreal_plugin_stream_pump_source_text}" "${forbidden_unreal_plugin_stream_pump_text}" unreal_stream_forbidden_pos)
+  if(NOT unreal_stream_forbidden_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Unreal stream pump must avoid unavailable UE 5.7 StringBuilder include/token '${forbidden_unreal_plugin_stream_pump_text}'")
   endif()
 endforeach()
 
@@ -953,6 +1237,14 @@ endforeach()
 
 set(unreal_automation_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/Tests/AstralRTTests.cpp")
 file(READ "${unreal_automation_source}" unreal_automation_text)
+string(FIND "${unreal_automation_text}" "->BeginDestroy()" unreal_automation_begin_destroy_pos)
+if(NOT unreal_automation_begin_destroy_pos EQUAL -1)
+  message(FATAL_ERROR "AstralRT Unreal Automation tests must use ConditionalBeginDestroy, not direct BeginDestroy")
+endif()
+string(FIND "${unreal_automation_text}" "ConditionalBeginDestroy()" unreal_automation_conditional_destroy_pos)
+if(unreal_automation_conditional_destroy_pos EQUAL -1)
+  message(FATAL_ERROR "AstralRT Unreal Automation tests must release UObjects through ConditionalBeginDestroy")
+endif()
 foreach(required_unreal_lifecycle_text
     "AstralRT.Mock.FailedLoadRecovery"
     "AstralRT.Mock.SessionCancelReset"

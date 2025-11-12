@@ -4,7 +4,6 @@
 
 #include "AstralTypes.generated.h"
 
-UENUM(BlueprintType)
 enum class EAstralError : int32
 {
     OK = 0,
@@ -20,7 +19,7 @@ enum class EAstralError : int32
 
 /** Pixel layouts accepted by Astral image media calls. */
 UENUM(BlueprintType)
-enum class EAstralImageFormat : uint32
+enum class EAstralImageFormat : uint8
 {
     RGB8 = 0,
     RGBA8 = 1,
@@ -29,7 +28,7 @@ enum class EAstralImageFormat : uint32
 
 /** Packed sample layouts accepted by Astral audio media calls. */
 UENUM(BlueprintType)
-enum class EAstralAudioFormat : uint32
+enum class EAstralAudioFormat : uint8
 {
     F32 = 0,
     I16 = 1
@@ -37,7 +36,7 @@ enum class EAstralAudioFormat : uint32
 
 /** Media initialization flags mirrored from the native C ABI. */
 UENUM(BlueprintType)
-enum class EAstralMediaFlags : uint32
+enum class EAstralMediaFlags : uint8
 {
     None = 0,
     UseGPU = 1u << 0,
@@ -46,7 +45,7 @@ enum class EAstralMediaFlags : uint32
 
 /** GPU routing fields that should be honored by media-aware backends. */
 UENUM(BlueprintType)
-enum class EAstralGpuRouteFlags : uint32
+enum class EAstralGpuRouteFlags : uint8
 {
     None = 0,
     Device = 1u << 0,
@@ -56,7 +55,7 @@ enum class EAstralGpuRouteFlags : uint32
 
 /** Backing source for a model or media projector. Unreal currently exposes path and bytes. */
 UENUM(BlueprintType)
-enum class EAstralModelSourceKind : uint32
+enum class EAstralModelSourceKind : uint8
 {
     Path = 0,
     Memory = 1,
@@ -101,19 +100,19 @@ struct ASTRALRT_API FAstralModelDesc
 
     /** Number of layers requested on GPU-capable backends; 0 keeps execution on CPU. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 GpuLayers = 0;
+    int32 GpuLayers = 0;
 
     /** Token context window requested for the model. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 ContextSize = 2048;
+    int32 ContextSize = 2048;
 
     /** Native batch size hint for prompt/decode work. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 BatchSize = 512;
+    int32 BatchSize = 512;
 
     /** Worker count requested by the caller; 0 uses the runtime default. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 NumThreads = 0;
+    int32 NumThreads = 0;
 
     /** Load the model for embeddings without preparing generation state where supported. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
@@ -132,19 +131,19 @@ struct ASTRALRT_API FAstralImageDesc
 
     /** Image width in pixels. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 Width = 0;
+    int32 Width = 0;
 
     /** Image height in pixels. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 Height = 0;
+    int32 Height = 0;
 
     /** Bytes per row. Use 0 when rows are tightly packed for the selected format. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 RowStride = 0;
+    int32 RowStride = 0;
 
     /** Native image flags for backend-specific media behavior. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 Flags = 0;
+    int32 Flags = 0;
 
     /** Pixel bytes. The wrapper passes this storage to native code for the call duration. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
@@ -156,15 +155,15 @@ struct ASTRALRT_API FAstralImageDesc
 
     /** Bitmask of EAstralGpuRouteFlags values. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 GpuRouteFlags = 0;
+    int32 GpuRouteFlags = 0;
 
     /** Allowed CUDA device mask requested when DeviceMask routing is enabled. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint64 GpuDeviceMask = 0;
+    int64 GpuDeviceMask = 0;
 
     /** Backend-specific stream pointer encoded as an integer for Blueprint transport. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint64 GpuStream = 0;
+    int64 GpuStream = 0;
 };
 
 /** Audio payload passed to session feed and embedding calls. */
@@ -179,15 +178,15 @@ struct ASTRALRT_API FAstralAudioDesc
 
     /** Number of interleaved channels in Samples. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 Channels = 1;
+    int32 Channels = 1;
 
     /** Sample rate in hertz. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 SampleRate = 16000;
+    int32 SampleRate = 16000;
 
     /** Frame count. Use 0 to infer from Samples, Format, and Channels. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint64 FrameCount = 0;
+    int64 FrameCount = 0;
 
     /** Interleaved sample bytes. The wrapper passes this storage to native code for the call duration. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
@@ -195,7 +194,7 @@ struct ASTRALRT_API FAstralAudioDesc
 
     /** Native audio flags for backend-specific media behavior. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 Flags = 0;
+    int32 Flags = 0;
 
     /** CUDA device index requested when Device routing is enabled. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
@@ -203,15 +202,15 @@ struct ASTRALRT_API FAstralAudioDesc
 
     /** Bitmask of EAstralGpuRouteFlags values. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 GpuRouteFlags = 0;
+    int32 GpuRouteFlags = 0;
 
     /** Allowed CUDA device mask requested when DeviceMask routing is enabled. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint64 GpuDeviceMask = 0;
+    int64 GpuDeviceMask = 0;
 
     /** Backend-specific stream pointer encoded as an integer for Blueprint transport. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint64 GpuStream = 0;
+    int64 GpuStream = 0;
 };
 
 /** Projector or encoder settings for model media initialization. */
@@ -234,15 +233,15 @@ struct ASTRALRT_API FAstralModelMediaDesc
 
     /** Native media init flags such as GPU use and warmup. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 Flags = 0;
+    int32 Flags = 0;
 
     /** Minimum image token budget requested from the media projector. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 ImageMinTokens = 0;
+    int32 ImageMinTokens = 0;
 
     /** Maximum image token budget requested from the media projector. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 ImageMaxTokens = 0;
+    int32 ImageMaxTokens = 0;
 
     /** CUDA device index requested when Device routing is enabled. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
@@ -250,15 +249,15 @@ struct ASTRALRT_API FAstralModelMediaDesc
 
     /** Bitmask of EAstralGpuRouteFlags values. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 GpuRouteFlags = 0;
+    int32 GpuRouteFlags = 0;
 
     /** Allowed CUDA device mask requested when DeviceMask routing is enabled. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint64 GpuDeviceMask = 0;
+    int64 GpuDeviceMask = 0;
 
     /** Backend-specific stream pointer encoded as an integer for Blueprint transport. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint64 GpuStream = 0;
+    int64 GpuStream = 0;
 };
 
 /** Media capabilities reported after InitMedia succeeds. */
@@ -269,23 +268,23 @@ struct ASTRALRT_API FAstralMediaInfo
 
     /** Nonzero when the initialized projector accepts image inputs. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint32 SupportsImage = 0;
+    int32 SupportsImage = 0;
 
     /** Nonzero when the initialized projector accepts audio inputs. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint32 SupportsAudio = 0;
+    int32 SupportsAudio = 0;
 
     /** Preferred audio sample rate reported by the projector. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint32 AudioSampleRate = 0;
+    int32 AudioSampleRate = 0;
 
     /** Minimum image-token budget reported by the projector. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint32 ImageMinTokens = 0;
+    int32 ImageMinTokens = 0;
 
     /** Maximum image-token budget reported by the projector. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint32 ImageMaxTokens = 0;
+    int32 ImageMaxTokens = 0;
 };
 
 /** Session creation and reset settings for generation. */
@@ -296,7 +295,7 @@ struct ASTRALRT_API FAstralSessionDesc
 
     /** Maximum tokens to generate before the session stops. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 MaxTokens = 512;
+    int32 MaxTokens = 512;
 
     /** Sampling temperature. Use 0 for greedy-style deterministic sampling. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
@@ -304,7 +303,7 @@ struct ASTRALRT_API FAstralSessionDesc
 
     /** Top-k candidate limit. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 TopK = 40;
+    int32 TopK = 40;
 
     /** Nucleus sampling probability cutoff. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
@@ -316,7 +315,7 @@ struct ASTRALRT_API FAstralSessionDesc
 
     /** Random seed forwarded to native sampling. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 Seed = 0;
+    int32 Seed = 0;
 };
 
 /** Runtime sampler settings that can be changed after session creation. */
@@ -331,7 +330,7 @@ struct ASTRALRT_API FAstralSamplerDesc
 
     /** Top-k candidate limit. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 TopK = 40;
+    int32 TopK = 40;
 
     /** Nucleus sampling probability cutoff. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
@@ -374,19 +373,19 @@ struct ASTRALRT_API FAstralModelLimits
 
     /** Vocabulary size reported by the backend. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint32 VocabSize = 0;
+    int32 VocabSize = 0;
 
     /** Context size used by the loaded model. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint32 ContextSize = 0;
+    int32 ContextSize = 0;
 
     /** Maximum native batch size reported by the backend. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint32 MaxBatch = 0;
+    int32 MaxBatch = 0;
 
     /** Maximum concurrent slots reported by continuous-batching backends. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint32 MaxSlots = 0;
+    int32 MaxSlots = 0;
 };
 
 /** Runtime counters exposed for profiling and production diagnostics. */
@@ -409,9 +408,9 @@ struct ASTRALRT_API FAstralStats
 
     /** Bytes committed by the runtime arena. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint64 BytesCommitted = 0;
+    int64 BytesCommitted = 0;
 
     /** Bytes reserved by the runtime arena. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint64 BytesReserved = 0;
+    int64 BytesReserved = 0;
 };

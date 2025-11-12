@@ -98,10 +98,10 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
         Native.backend_name.len = static_cast<uint32_t>(BackendUtf8.Length());
     }
 
-    Native.gpu_layers = Desc.GpuLayers;
-    Native.n_ctx = Desc.ContextSize;
-    Native.n_batch = Desc.BatchSize;
-    Native.n_threads = Desc.NumThreads;
+    Native.gpu_layers = static_cast<uint32_t>(Desc.GpuLayers);
+    Native.n_ctx = static_cast<uint32_t>(Desc.ContextSize);
+    Native.n_batch = static_cast<uint32_t>(Desc.BatchSize);
+    Native.n_threads = static_cast<uint32_t>(Desc.NumThreads);
     Native.embeddings_only = Desc.bEmbeddingsOnly ? 1 : 0;
 
     AstralHandle Out = 0;
@@ -138,7 +138,7 @@ bool UAstralModel::GetEmbeddingDim(int32& OutDim) const
     return true;
 }
 
-bool UAstralModel::GetCaps(uint64& OutCaps) const
+bool UAstralModel::GetCaps(int64& OutCaps) const
 {
     OutCaps = 0;
     if (ModelHandle == 0)
@@ -153,7 +153,7 @@ bool UAstralModel::GetCaps(uint64& OutCaps) const
         return false;
     }
 
-    OutCaps = static_cast<uint64>(Caps);
+    OutCaps = static_cast<int64>(Caps);
     return true;
 }
 
@@ -172,10 +172,10 @@ bool UAstralModel::GetLimits(FAstralModelLimits& OutLimits) const
         return false;
     }
 
-    OutLimits.VocabSize = Native.vocab_size;
-    OutLimits.ContextSize = Native.ctx_size;
-    OutLimits.MaxBatch = Native.max_batch;
-    OutLimits.MaxSlots = Native.max_slots;
+    OutLimits.VocabSize = static_cast<int32>(Native.vocab_size);
+    OutLimits.ContextSize = static_cast<int32>(Native.ctx_size);
+    OutLimits.MaxBatch = static_cast<int32>(Native.max_batch);
+    OutLimits.MaxSlots = static_cast<int32>(Native.max_slots);
     return true;
 }
 
@@ -189,12 +189,12 @@ bool UAstralModel::InitMedia(const FAstralModelMediaDesc& Desc)
     AstralModelMediaDesc Native{};
     Native.size = sizeof(AstralModelMediaDesc);
     Native.source_kind = static_cast<AstralModelSourceKind>(Desc.SourceKind);
-    Native.flags = Desc.Flags;
-    Native.image_min_tokens = Desc.ImageMinTokens;
-    Native.image_max_tokens = Desc.ImageMaxTokens;
+    Native.flags = static_cast<uint32_t>(Desc.Flags);
+    Native.image_min_tokens = static_cast<uint32_t>(Desc.ImageMinTokens);
+    Native.image_max_tokens = static_cast<uint32_t>(Desc.ImageMaxTokens);
     Native.gpu_device = Desc.GpuDevice;
-    Native.gpu_route_flags = Desc.GpuRouteFlags;
-    Native.gpu_device_mask = Desc.GpuDeviceMask;
+    Native.gpu_route_flags = static_cast<uint32_t>(Desc.GpuRouteFlags);
+    Native.gpu_device_mask = static_cast<uint64_t>(Desc.GpuDeviceMask);
     Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Desc.GpuStream));
 
     FTCHARToUTF8 MediaPathUtf8(*Desc.MediaPath);
@@ -241,11 +241,11 @@ bool UAstralModel::GetMediaInfo(FAstralMediaInfo& OutInfo) const
         return false;
     }
 
-    OutInfo.SupportsImage = Native.supports_image;
-    OutInfo.SupportsAudio = Native.supports_audio;
-    OutInfo.AudioSampleRate = Native.audio_sample_rate;
-    OutInfo.ImageMinTokens = Native.image_min_tokens;
-    OutInfo.ImageMaxTokens = Native.image_max_tokens;
+    OutInfo.SupportsImage = static_cast<int32>(Native.supports_image);
+    OutInfo.SupportsAudio = static_cast<int32>(Native.supports_audio);
+    OutInfo.AudioSampleRate = static_cast<int32>(Native.audio_sample_rate);
+    OutInfo.ImageMinTokens = static_cast<int32>(Native.image_min_tokens);
+    OutInfo.ImageMaxTokens = static_cast<int32>(Native.image_max_tokens);
     return true;
 }
 

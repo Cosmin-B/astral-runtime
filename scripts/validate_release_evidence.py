@@ -58,14 +58,14 @@ REQUIRED_COMMAND_TOKENS = {
     "unreal_57_full_container": (
         "run_unreal_container_ci.sh",
         "--variant full",
-        "--filter AstralRT.*",
+        "--filter AstralRT",
         "ghcr.io/epicgames/unreal-engine:dev-5.7.4",
         "sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce",
     ),
     "unreal_57_slim_container": (
         "run_unreal_container_ci.sh",
         "--variant slim",
-        "--filter AstralRT.*",
+        "--filter AstralRT",
         "ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4",
         "sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6",
     ),
@@ -79,7 +79,7 @@ REQUIRED_COMMAND_TOKENS = {
         "5.5",
         "5.6",
         "5.7",
-        "--filter AstralRT.*",
+        "--filter AstralRT",
     ),
     "unreal_sample_package": (
         "UNREAL_RUNUAT",
@@ -145,13 +145,13 @@ UNREAL_CONTAINER_COMMON_TOKENS = (
     "[unreal_container] Pull image:",
     "[unreal_container] Local image digests:",
     "[unreal_container] Image:",
-    "[unreal_container] Test filter: AstralRT.*",
+    "[unreal_container] Test filter: AstralRT",
     "[unreal_container] clang:",
     "[unreal_container] Linux SDK:",
     "v26",
     "20.1.8",
     "Unreal ThirdParty provenance OK",
-    "[unreal_ci] Filter: AstralRT.*",
+    "[unreal_ci] Filter: AstralRT",
     "[unreal-results] OK:",
 )
 
@@ -307,7 +307,7 @@ def validate_unreal_compatibility_artifacts(paths):
         for token in (
             f"[unreal_matrix] UE {version}:",
             f"build/unreal-ci-results/ue-{version}",
-            "[unreal_ci] Filter: AstralRT.*",
+            "[unreal_ci] Filter: AstralRT",
             "[unreal-results] OK:",
         ):
             if token not in text:

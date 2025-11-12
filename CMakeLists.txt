@@ -58,12 +58,16 @@ endif()
 
 # Some shared-library consumers (Unity plugin, backend provider plugins) require
 # all static deps to be built as PIC.
-if(ASTRAL_BUILD_SHARED_LIB OR (ASTRAL_BUILD_UNITY_PLUGIN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS") OR ASTRAL_BUILD_TESTS)
+if(ASTRAL_BUILD_SHARED_LIB OR (ASTRAL_BUILD_UNITY_PLUGIN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS") OR ASTRAL_BUILD_UNREAL_PLUGIN OR ASTRAL_BUILD_TESTS)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 if(ASTRAL_BUILD_UNITY_PLUGIN AND ASTRAL_BUILD_UNREAL_PLUGIN)
     message(FATAL_ERROR "ASTRAL_BUILD_UNITY_PLUGIN and ASTRAL_BUILD_UNREAL_PLUGIN cannot both be ON in the same build")
+endif()
+
+if(ASTRAL_BUILD_UNREAL_PLUGIN)
+    add_compile_definitions(JSON_HAS_CPP_17)
 endif()
 
 # Include compiler flags module

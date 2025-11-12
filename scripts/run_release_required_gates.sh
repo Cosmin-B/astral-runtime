@@ -89,8 +89,8 @@ print_release_plan() {
   echo "  MTMD validation: scripts/run_multimodal_validation.sh ${mtmd_args[*]}"
   if [[ "${run_unreal}" -eq 1 ]]; then
     echo "  Unreal access: scripts/check_unreal_validation_access.sh --check-registry"
-    echo "  Unreal UE 5.7 full container: scripts/run_unreal_container_ci.sh --variant full --filter AstralRT.*"
-    echo "  Unreal UE 5.7 slim container: scripts/run_unreal_container_ci.sh --variant slim --filter AstralRT.*"
+    echo "  Unreal UE 5.7 full container: scripts/run_unreal_container_ci.sh --variant full --filter AstralRT"
+    echo "  Unreal UE 5.7 slim container: scripts/run_unreal_container_ci.sh --variant slim --filter AstralRT"
     echo "  Unreal matrix: scripts/run_unreal_compatibility_matrix.sh"
     echo "  Unreal sample package: scripts/run_unreal_sample_package.sh --platform Linux"
   else
@@ -183,10 +183,10 @@ if [[ "${run_unreal}" -eq 1 ]]; then
   scripts/check_unreal_validation_access.sh --check-registry
 
   echo "[release-gate] Unreal UE 5.7 full container"
-  scripts/run_unreal_container_ci.sh --variant full --filter 'AstralRT.*'
+  scripts/run_unreal_container_ci.sh --variant full --filter 'AstralRT'
 
   echo "[release-gate] Unreal UE 5.7 slim container"
-  scripts/run_unreal_container_ci.sh --variant slim --filter 'AstralRT.*'
+  scripts/run_unreal_container_ci.sh --variant slim --filter 'AstralRT'
 
   echo "[release-gate] Unreal 5.4+ compatibility matrix"
   scripts/run_unreal_compatibility_matrix.sh
