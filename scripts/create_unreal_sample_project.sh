@@ -80,6 +80,7 @@ mkdir -p "${out_parent}"
 project_dir="$(cd "${out_parent}" && pwd)/$(basename "${out_dir}")"
 mkdir -p \
   "${project_dir}/Config" \
+  "${project_dir}/Content/AstralSample/Models" \
   "${project_dir}/Plugins" \
   "${project_dir}/Source/AstralSample"
 
@@ -115,10 +116,17 @@ EOF
 
 cat > "${project_dir}/Config/DefaultEngine.ini" <<'EOF'
 [/Script/EngineSettings.GameMapsSettings]
-EditorStartupMap=/Game/AstralSample
-GameDefaultMap=/Game/AstralSample
+EditorStartupMap=/Engine/Maps/Entry
+GameDefaultMap=/Engine/Maps/Entry
 GlobalDefaultGameMode=/Script/AstralSample.AstralSampleGameMode
 EOF
+
+cat > "${project_dir}/Config/DefaultGame.ini" <<'EOF'
+[/Script/UnrealEd.ProjectPackagingSettings]
++DirectoriesToAlwaysStageAsUFS=(Path="AstralSample")
+EOF
+
+printf 'mock' > "${project_dir}/Content/AstralSample/Models/mock-model.bytes"
 
 cat > "${project_dir}/Source/AstralSample.Target.cs" <<'EOF'
 using UnrealBuildTool;
@@ -187,11 +195,28 @@ UCLASS()
 class ASTRALSAMPLE_API AAstralSampleGameMode : public AGameModeBase
 {
     GENERATED_BODY()
+
+protected:
+    virtual void BeginPlay() override;
 };
 EOF
 
 cat > "${project_dir}/Source/AstralSample/AstralSampleGameMode.cpp" <<'EOF'
 #include "AstralSampleGameMode.h"
+
+#include "AstralSampleActor.h"
+#include "Engine/World.h"
+
+void AAstralSampleGameMode::BeginPlay()
+{
+    Super::BeginPlay();
+
+    UWorld* World = GetWorld();
+    if (World != nullptr)
+    {
+        World->SpawnActor<AAstralSampleActor>();
+    }
+}
 EOF
 
 cat > "${project_dir}/Source/AstralSample/AstralSampleActor.h" <<'EOF'
@@ -233,6 +258,12 @@ public:
     void RunEmbeddingDemo();
 
     UFUNCTION(BlueprintCallable, Category = "Astral")
+    void RunPackagedMemorySourceDemo();
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    void RunSavedCacheDemo();
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
     void RunErrorDemo();
 
 protected:
@@ -252,8 +283,15 @@ private:
     UPROPERTY()
     TObjectPtr<UAstralEmbedder> Embedder;
 
+    UPROPERTY()
+    TObjectPtr<UAstralModel> ContentMemoryModel;
+
+    UPROPERTY()
+    TObjectPtr<UAstralModel> SavedCacheModel;
+
     bool LoadGenerationModel();
     bool CreateSession();
+    bool LoadMemoryModel(TObjectPtr<UAstralModel>& Model, const TArray<uint8>& ModelBytes, const TCHAR* Label);
     void OnStreamBytes(TConstArrayView<uint8> Bytes);
 };
 EOF
@@ -269,6 +307,12 @@ cat > "${project_dir}/Source/AstralSample/AstralSampleActor.cpp" <<'EOF'
 
 #include "Containers/ArrayView.h"
 #include "Containers/StringConv.h"
+#include "GenericPlatform/GenericPlatformMisc.h"
+#include "HAL/FileManager.h"
+#include "Misc/CommandLine.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Parse.h"
+#include "Misc/Paths.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAstralSample, Log, All);
 
@@ -282,8 +326,16 @@ void AAstralSampleActor::BeginPlay()
     Super::BeginPlay();
 
     RunGenerationDemo();
+    CancelStreamingDemo();
     RunEmbeddingDemo();
+    RunPackagedMemorySourceDemo();
+    RunSavedCacheDemo();
     RunErrorDemo();
+
+    if (FParse::Param(FCommandLine::Get(), TEXT("AstralSampleAutoQuit")))
+    {
+        FGenericPlatformMisc::RequestExit(false);
+    }
 }
 
 void AAstralSampleActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -308,6 +360,16 @@ void AAstralSampleActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
         EmbeddingModel->Release();
         EmbeddingModel = nullptr;
     }
+    if (ContentMemoryModel != nullptr)
+    {
+        ContentMemoryModel->Release();
+        ContentMemoryModel = nullptr;
+    }
+    if (SavedCacheModel != nullptr)
+    {
+        SavedCacheModel->Release();
+        SavedCacheModel = nullptr;
+    }
 
     Super::EndPlay(EndPlayReason);
 }
@@ -329,6 +391,26 @@ bool AAstralSampleActor::LoadGenerationModel()
         return false;
     }
 
+    return true;
+}
+
+bool AAstralSampleActor::LoadMemoryModel(TObjectPtr<UAstralModel>& Model, const TArray<uint8>& ModelBytes, const TCHAR* Label)
+{
+    Model = NewObject<UAstralModel>(this);
+
+    FAstralModelDesc Desc{};
+    Desc.SourceKind = EAstralModelSourceKind::Memory;
+    Desc.ModelBytes = ModelBytes;
+    Desc.BackendName = BackendName;
+    Desc.ContextSize = 128;
+
+    if (!Model->Load(Desc))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: %s memory model load failed: %s"), Label, UTF8_TO_TCHAR(astral_last_error()));
+        return false;
+    }
+
+    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: %s memory model loaded from %d bytes"), Label, ModelBytes.Num());
     return true;
 }
 
@@ -428,6 +510,52 @@ void AAstralSampleActor::RunEmbeddingDemo()
     UE_LOG(LogAstralSample, Log, TEXT("Astral sample: embedding dimension %d"), Vector.Num());
 }
 
+void AAstralSampleActor::RunPackagedMemorySourceDemo()
+{
+    const FString ContentModelPath = FPaths::Combine(FPaths::ProjectContentDir(), TEXT("AstralSample/Models/mock-model.bytes"));
+
+    TArray<uint8> ModelBytes;
+    if (!FFileHelper::LoadFileToArray(ModelBytes, *ContentModelPath))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: packaged content model read failed: %s"), *ContentModelPath);
+        return;
+    }
+
+    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: packaged content bytes read from %s"), *ContentModelPath);
+    LoadMemoryModel(ContentMemoryModel, ModelBytes, TEXT("packaged content"));
+}
+
+void AAstralSampleActor::RunSavedCacheDemo()
+{
+    const FString ContentModelPath = FPaths::Combine(FPaths::ProjectContentDir(), TEXT("AstralSample/Models/mock-model.bytes"));
+    TArray<uint8> ModelBytes;
+    if (!FFileHelper::LoadFileToArray(ModelBytes, *ContentModelPath))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: cache source read failed: %s"), *ContentModelPath);
+        return;
+    }
+
+    const FString CacheDir = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("AstralSample"));
+    IFileManager::Get().MakeDirectory(*CacheDir, true);
+
+    const FString CachePath = FPaths::Combine(CacheDir, TEXT("mock-model-cache.bytes"));
+    if (!FFileHelper::SaveArrayToFile(ModelBytes, *CachePath))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: saved cache write failed: %s"), *CachePath);
+        return;
+    }
+
+    TArray<uint8> CachedBytes;
+    if (!FFileHelper::LoadFileToArray(CachedBytes, *CachePath))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: saved cache read failed: %s"), *CachePath);
+        return;
+    }
+
+    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: saved cache bytes read from %s"), *CachePath);
+    LoadMemoryModel(SavedCacheModel, CachedBytes, TEXT("saved cache"));
+}
+
 void AAstralSampleActor::RunErrorDemo()
 {
     UAstralModel* BadModel = NewObject<UAstralModel>(this);
@@ -465,9 +593,10 @@ cmake --preset unreal-plugin
 cmake --build --preset unreal-plugin -j
 ```
 
-Open `AstralSample.uproject` in UE 5.7, place `AAstralSampleActor` in a map,
-and run the map. The actor demonstrates model load, streaming generation,
-cancellation, embeddings, and expected error logging through `LogAstralSample`.
+Open `AstralSample.uproject` in UE 5.7 and run the default map. The sample
+GameMode spawns `AAstralSampleActor`, which demonstrates model load, streaming generation,
+cancellation, embeddings, packaged content bytes, Saved cache bytes, and expected error logging
+through `LogAstralSample`.
 
 Real production sign-off still requires packaging this project on the UE 5.7
 release runner and recording the Automation/package logs as release evidence.

@@ -28,9 +28,13 @@ endif()
 set(required_files
   "${out_dir}/AstralSample.uproject"
   "${out_dir}/Config/DefaultEngine.ini"
+  "${out_dir}/Config/DefaultGame.ini"
+  "${out_dir}/Content/AstralSample/Models/mock-model.bytes"
   "${out_dir}/Source/AstralSample.Target.cs"
   "${out_dir}/Source/AstralSampleEditor.Target.cs"
   "${out_dir}/Source/AstralSample/AstralSample.Build.cs"
+  "${out_dir}/Source/AstralSample/AstralSampleGameMode.h"
+  "${out_dir}/Source/AstralSample/AstralSampleGameMode.cpp"
   "${out_dir}/Source/AstralSample/AstralSampleActor.h"
   "${out_dir}/Source/AstralSample/AstralSampleActor.cpp"
   "${out_dir}/README.md")
@@ -41,9 +45,12 @@ foreach(required_file IN LISTS required_files)
 endforeach()
 
 file(READ "${out_dir}/AstralSample.uproject" uproject_text)
+file(READ "${out_dir}/Config/DefaultGame.ini" default_game_text)
 file(READ "${out_dir}/Source/AstralSample/AstralSample.Build.cs" build_text)
+file(READ "${out_dir}/Source/AstralSample/AstralSampleGameMode.cpp" game_mode_text)
 file(READ "${out_dir}/Source/AstralSample/AstralSampleActor.cpp" actor_text)
 file(READ "${out_dir}/README.md" readme_text)
+file(READ "${out_dir}/Content/AstralSample/Models/mock-model.bytes" mock_model_text)
 
 foreach(required_project_text
     "\"EngineAssociation\": \"5.7\""
@@ -58,14 +65,33 @@ if(NOT build_text MATCHES "\"AstralRT\"")
   message(FATAL_ERROR "Unreal sample module must depend on AstralRT")
 endif()
 
+if(NOT default_game_text MATCHES "DirectoriesToAlwaysStageAsUFS")
+  message(FATAL_ERROR "Unreal sample must stage packaged model bytes as UFS content")
+endif()
+if(NOT game_mode_text MATCHES "SpawnActor<AAstralSampleActor>")
+  message(FATAL_ERROR "Unreal sample GameMode must spawn the runtime validation actor")
+endif()
+if(NOT mock_model_text STREQUAL "mock")
+  message(FATAL_ERROR "Unreal sample mock model payload changed unexpectedly")
+endif()
+
 foreach(required_actor_text
     "RunGenerationDemo"
     "CancelStreamingDemo"
     "RunEmbeddingDemo"
+    "RunPackagedMemorySourceDemo"
+    "RunSavedCacheDemo"
     "RunErrorDemo"
     "UAstralModel"
     "UAstralSession"
     "UAstralEmbedder"
+    "ProjectContentDir"
+    "ProjectSavedDir"
+    "LoadFileToArray"
+    "SaveArrayToFile"
+    "EAstralModelSourceKind::Memory"
+    "ModelBytes"
+    "AstralSampleAutoQuit"
     "OnStreamBytesNative"
     "EmbedUtf8Bytes"
     "astral_last_error"
@@ -82,6 +108,8 @@ foreach(required_readme_text
     "streaming generation"
     "cancellation"
     "embeddings"
+    "packaged content bytes"
+    "Saved cache bytes"
     "expected error logging")
   if(NOT readme_text MATCHES "${required_readme_text}")
     message(FATAL_ERROR "Unreal sample README is missing ${required_readme_text}")

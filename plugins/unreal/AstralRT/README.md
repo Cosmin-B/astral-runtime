@@ -135,6 +135,10 @@ For packaged projects, `FAstralModelDesc::PathRoot` resolves relative model
 paths under `ProjectContent`, `ProjectSaved`, or `ProjectPersistentDownload`.
 Pak/IoStore model payloads should use `SourceKind = Memory` and fill
 `ModelBytes`, or copy the model to a managed `Saved` cache and load by path.
+The generated `AstralSample` project stages a small payload under `Content`,
+loads it through `FPaths::ProjectContentDir()`, copies it to
+`FPaths::ProjectSavedDir()`, and loads both byte arrays with
+`SourceKind = Memory` as the maintained packaged-project smoke.
 
 ```cpp
 FAstralImageDesc Image;
