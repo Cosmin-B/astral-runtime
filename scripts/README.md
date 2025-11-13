@@ -281,6 +281,16 @@ pinned UE 5.7 full/slim containers are cached or readable from Epic GHCR, and
 whether `UNREAL_54_EDITOR`, `UNREAL_55_EDITOR`, `UNREAL_56_EDITOR`, and
 `UNREAL_57_EDITOR` point to executable editors.
 
+For Epic container runs, `run_unreal_container_ci.sh` defaults to UE 5.7. Use
+`--ue-version` for compatibility smoke runs so the script selects the matching
+image tag and Linux SDK toolchain preflight:
+
+```bash
+./scripts/run_unreal_container_ci.sh --ue-version 5.4 --variant slim --skip-native-build
+./scripts/run_unreal_container_ci.sh --ue-version 5.5 --variant slim --skip-native-build
+./scripts/run_unreal_container_ci.sh --ue-version 5.6 --variant slim --skip-native-build
+```
+
 ```bash
 cmake --preset unreal-plugin
 cmake --build --preset unreal-plugin -j

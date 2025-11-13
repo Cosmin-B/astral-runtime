@@ -3,16 +3,12 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-full_image="ghcr.io/epicgames/unreal-engine:dev-5.7.4"
-full_digest="sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
-slim_image="ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4"
-slim_digest="sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
-
 container_engine="${CONTAINER_ENGINE:-docker}"
 pull_timeout_seconds="${ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS:-120}"
-required_clang_version="${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION:-20.1.8}"
-required_linux_sdk_toolchain="${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN:-v26}"
-required_linux_sdk_clang="${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG:-20.1.8}"
+required_clang_version="${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION:-}"
+required_linux_sdk_toolchain="${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN:-}"
+required_linux_sdk_clang="${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG:-}"
+ue_version="5.7"
 variant="slim"
 image=""
 digest=""
@@ -28,7 +24,9 @@ Usage: scripts/run_unreal_container_ci.sh [options]
 Run AstralRT Unreal Automation in an Epic UE Linux container.
 
 Options:
-  --variant <slim|full>     UE 5.7 image variant (default: slim)
+  --ue-version <5.4|5.5|5.6|5.7>
+                            Unreal version defaults for image/toolchain (default: 5.7)
+  --variant <slim|full>     UE image variant (default: slim)
   --image <ref>             Override container image reference
   --digest <sha256:...>     Override digest for --image or selected variant
   --skip-pull               Do not pull the image before running
@@ -42,17 +40,61 @@ Environment:
   ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS
                             Pull timeout in seconds (default: 120)
   ASTRAL_UNREAL_REQUIRED_CLANG_VERSION
-                            Required clang version inside UE 5.7 image (default: 20.1.8)
+                            Override required clang version for the selected UE version
   ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN
-                            Required Linux SDK toolchain marker (default: v26)
+                            Override Linux SDK toolchain marker for the selected UE version
   ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG
-                            Required Linux SDK clang marker (default: 20.1.8)
+                            Override Linux SDK clang marker for the selected UE version
   UNREAL_EDITOR             Same as --editor
   UNREAL_TEST_FILTER        Same as --filter
 
 The default images are private Epic GHCR packages. Authenticate Docker with an
 Epic-linked GitHub account before running this script.
 EOF
+}
+
+image_tag_for_version() {
+  local version="$1"
+  local selected_variant="$2"
+
+  case "${version}:${selected_variant}" in
+    5.4:slim) printf 'ghcr.io/epicgames/unreal-engine:dev-slim-5.4.4\n' ;;
+    5.4:full) printf 'ghcr.io/epicgames/unreal-engine:dev-5.4.4\n' ;;
+    5.5:slim) printf 'ghcr.io/epicgames/unreal-engine:dev-slim-5.5.4\n' ;;
+    5.5:full) printf 'ghcr.io/epicgames/unreal-engine:dev-5.5.4\n' ;;
+    5.6:slim) printf 'ghcr.io/epicgames/unreal-engine:dev-slim-5.6.1\n' ;;
+    5.6:full) printf 'ghcr.io/epicgames/unreal-engine:dev-5.6.1\n' ;;
+    5.7:slim) printf 'ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4\n' ;;
+    5.7:full) printf 'ghcr.io/epicgames/unreal-engine:dev-5.7.4\n' ;;
+    *)
+      echo "Unsupported --ue-version/--variant combination: ${version}/${selected_variant}" >&2
+      exit 2
+      ;;
+  esac
+}
+
+digest_for_version() {
+  local version="$1"
+  local selected_variant="$2"
+
+  case "${version}:${selected_variant}" in
+    5.7:slim) printf 'sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n' ;;
+    5.7:full) printf 'sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce\n' ;;
+    *) printf '\n' ;;
+  esac
+}
+
+toolchain_for_version() {
+  case "$1" in
+    5.4) printf '16.0.6 v22 16.0.6\n' ;;
+    5.5) printf '18.1.0 v23 18.1.0\n' ;;
+    5.6) printf '18.1.0 v25 18.1.0\n' ;;
+    5.7) printf '20.1.8 v26 20.1.8\n' ;;
+    *)
+      echo "Unsupported --ue-version '$1' (expected 5.4, 5.5, 5.6, or 5.7)" >&2
+      exit 2
+      ;;
+  esac
 }
 
 is_epic_ghcr_image() {
@@ -99,6 +141,10 @@ inspect_container_manifest() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --ue-version)
+      ue_version="${2:-}"
+      shift 2
+      ;;
     --variant)
       variant="${2:-}"
       shift 2
@@ -144,21 +190,27 @@ if ! command -v "${container_engine}" >/dev/null 2>&1; then
   exit 2
 fi
 
+case "${variant}" in
+  slim|full) ;;
+  *)
+    echo "Unsupported --variant '${variant}' (expected slim or full)" >&2
+    exit 2
+    ;;
+esac
+
 if [[ -z "${image}" ]]; then
-  case "${variant}" in
-    slim)
-      image="${slim_image}"
-      digest="${digest:-${slim_digest}}"
-      ;;
-    full)
-      image="${full_image}"
-      digest="${digest:-${full_digest}}"
-      ;;
-    *)
-      echo "Unsupported --variant '${variant}' (expected slim or full)" >&2
-      exit 2
-      ;;
-  esac
+  image="$(image_tag_for_version "${ue_version}" "${variant}")"
+  digest="${digest:-$(digest_for_version "${ue_version}" "${variant}")}"
+fi
+
+read -r default_clang default_sdk_toolchain default_sdk_clang <<<"$(toolchain_for_version "${ue_version}")"
+required_clang_version="${required_clang_version:-${default_clang}}"
+required_linux_sdk_toolchain="${required_linux_sdk_toolchain:-${default_sdk_toolchain}}"
+required_linux_sdk_clang="${required_linux_sdk_clang:-${default_sdk_clang}}"
+
+if [[ -z "${required_clang_version}" || -z "${required_linux_sdk_toolchain}" || -z "${required_linux_sdk_clang}" ]]; then
+  echo "Missing Unreal toolchain requirements for UE ${ue_version}" >&2
+  exit 2
 fi
 
 image_ref="${image}"
@@ -208,6 +260,7 @@ set -euo pipefail
 cd /workspace/astral
 
 echo "[unreal_container] Image: ${ASTRAL_UNREAL_IMAGE_REF}"
+echo "[unreal_container] UE version: ${ASTRAL_UNREAL_VERSION}"
 echo "[unreal_container] Test filter: ${UNREAL_TEST_FILTER}"
 
 engine_root=""
@@ -319,6 +372,7 @@ fi
 "${container_engine}" run --rm --init \
   -e "ASTRAL_UNREAL_BUILD_NATIVE=${build_native}" \
   -e "ASTRAL_UNREAL_IMAGE_REF=${image_ref}" \
+  -e "ASTRAL_UNREAL_VERSION=${ue_version}" \
   -e "ASTRAL_UNREAL_REQUIRED_CLANG_VERSION=${required_clang_version}" \
   -e "ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN=${required_linux_sdk_toolchain}" \
   -e "ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG=${required_linux_sdk_clang}" \

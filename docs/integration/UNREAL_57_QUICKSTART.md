@@ -89,7 +89,7 @@ UNREAL_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
 ```
 
 The runner rebuilds the native package unless told otherwise, stages the plugin,
-runs `AstralRT.*` Automation, and validates that the log/report are non-empty
+runs `AstralRT` Automation, and validates that the log/report are non-empty
 and free of clear Automation failure markers.
 
 ## Run UE 5.7 Containers
@@ -110,6 +110,18 @@ docker pull ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3
 
 Use `--skip-native-build` only when the ThirdParty package was already rebuilt
 and the provenance check has passed in the same workspace.
+
+For compatibility probes, pass the UE version so the runner selects the matching
+Epic image tag and bundled Linux SDK preflight:
+
+```bash
+./scripts/run_unreal_container_ci.sh --ue-version 5.4 --variant slim --skip-native-build
+./scripts/run_unreal_container_ci.sh --ue-version 5.5 --variant slim --skip-native-build
+./scripts/run_unreal_container_ci.sh --ue-version 5.6 --variant slim --skip-native-build
+```
+
+The compatibility container commands are smoke evidence. Release sign-off still
+requires the editor matrix below with all supported UE versions.
 
 ## Run The Compatibility Matrix
 
