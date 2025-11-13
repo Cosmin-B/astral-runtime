@@ -62,7 +62,7 @@ To create a sidecar UE 5.7 sample project without committing generated files:
 
 The script creates `AstralSample.uproject`, links the local `AstralRT` plugin,
 and writes a small C++ actor that demonstrates model load, streaming,
-cancellation, embeddings, and expected failure logging through `LogAstralRT`.
+cancellation, embeddings, and expected failure logging through `LogAstralSample`.
 Use `--plugin-mode copy` when the project must be packaged on a machine without
 access to the Astral checkout. Real sign-off still requires packaging that
 generated project in UE 5.7 and keeping the logs as release evidence.

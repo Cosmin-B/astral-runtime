@@ -262,7 +262,6 @@ cat > "${project_dir}/Source/AstralSample/AstralSampleActor.cpp" <<'EOF'
 #include "AstralSampleActor.h"
 
 #include "AstralEmbedder.h"
-#include "AstralLog.h"
 #include "AstralModel.h"
 #include "AstralSession.h"
 #include "AstralTypes.h"
@@ -270,6 +269,8 @@ cat > "${project_dir}/Source/AstralSample/AstralSampleActor.cpp" <<'EOF'
 
 #include "Containers/ArrayView.h"
 #include "Containers/StringConv.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogAstralSample, Log, All);
 
 AAstralSampleActor::AAstralSampleActor()
 {
@@ -324,7 +325,7 @@ bool AAstralSampleActor::LoadGenerationModel()
 
     if (!GenerationModel->Load(Desc))
     {
-        UE_LOG(LogAstralRT, Error, TEXT("Astral sample: model load failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: model load failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return false;
     }
 
@@ -345,7 +346,7 @@ bool AAstralSampleActor::CreateSession()
 
     if (!Session->Create(GenerationModel, Desc))
     {
-        UE_LOG(LogAstralRT, Error, TEXT("Astral sample: session create failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: session create failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return false;
     }
 
@@ -362,12 +363,12 @@ void AAstralSampleActor::RunGenerationDemo()
 
     if (!Session->FeedPrompt(Prompt, true))
     {
-        UE_LOG(LogAstralRT, Error, TEXT("Astral sample: prompt feed failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: prompt feed failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return;
     }
     if (!Session->Decode())
     {
-        UE_LOG(LogAstralRT, Error, TEXT("Astral sample: decode failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: decode failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
     }
 }
 
@@ -375,18 +376,18 @@ void AAstralSampleActor::CancelStreamingDemo()
 {
     if (Session == nullptr || !Session->IsValid())
     {
-        UE_LOG(LogAstralRT, Warning, TEXT("Astral sample: no active session to cancel"));
+        UE_LOG(LogAstralSample, Warning, TEXT("Astral sample: no active session to cancel"));
         return;
     }
 
     if (!Session->Cancel())
     {
-        UE_LOG(LogAstralRT, Error, TEXT("Astral sample: cancel failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: cancel failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return;
     }
 
     const int32 WaitResult = Session->Wait(1000);
-    UE_LOG(LogAstralRT, Log, TEXT("Astral sample: canceled stream wait result %d"), WaitResult);
+    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: canceled stream wait result %d"), WaitResult);
 }
 
 void AAstralSampleActor::RunEmbeddingDemo()
@@ -402,14 +403,14 @@ void AAstralSampleActor::RunEmbeddingDemo()
 
     if (!EmbeddingModel->Load(Desc))
     {
-        UE_LOG(LogAstralRT, Error, TEXT("Astral sample: embedding model load failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: embedding model load failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return;
     }
 
     Embedder = NewObject<UAstralEmbedder>(this);
     if (!Embedder->Create(EmbeddingModel))
     {
-        UE_LOG(LogAstralRT, Error, TEXT("Astral sample: embedder create failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: embedder create failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return;
     }
 
@@ -420,11 +421,11 @@ void AAstralSampleActor::RunEmbeddingDemo()
     TArray<float> Vector;
     if (!Embedder->EmbedUtf8Bytes(Bytes, Vector))
     {
-        UE_LOG(LogAstralRT, Error, TEXT("Astral sample: embedding failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: embedding failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return;
     }
 
-    UE_LOG(LogAstralRT, Log, TEXT("Astral sample: embedding dimension %d"), Vector.Num());
+    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: embedding dimension %d"), Vector.Num());
 }
 
 void AAstralSampleActor::RunErrorDemo()
@@ -437,18 +438,18 @@ void AAstralSampleActor::RunErrorDemo()
 
     if (BadModel->Load(BadDesc))
     {
-        UE_LOG(LogAstralRT, Error, TEXT("Astral sample: expected memory-source load to fail"));
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: expected memory-source load to fail"));
         BadModel->Release();
         return;
     }
 
-    UE_LOG(LogAstralRT, Warning, TEXT("Astral sample: expected load failure: %s"), UTF8_TO_TCHAR(astral_last_error()));
+    UE_LOG(LogAstralSample, Warning, TEXT("Astral sample: expected load failure: %s"), UTF8_TO_TCHAR(astral_last_error()));
 }
 
 void AAstralSampleActor::OnStreamBytes(TConstArrayView<uint8> Bytes)
 {
     FUTF8ToTCHAR Text(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), Bytes.Num());
-    UE_LOG(LogAstralRT, Log, TEXT("Astral sample stream: %.*s"), Text.Length(), Text.Get());
+    UE_LOG(LogAstralSample, Log, TEXT("Astral sample stream: %.*s"), Text.Length(), Text.Get());
 }
 EOF
 
@@ -466,7 +467,7 @@ cmake --build --preset unreal-plugin -j
 
 Open `AstralSample.uproject` in UE 5.7, place `AAstralSampleActor` in a map,
 and run the map. The actor demonstrates model load, streaming generation,
-cancellation, embeddings, and expected error logging through `LogAstralRT`.
+cancellation, embeddings, and expected error logging through `LogAstralSample`.
 
 Real production sign-off still requires packaging this project on the UE 5.7
 release runner and recording the Automation/package logs as release evidence.

@@ -69,7 +69,7 @@ foreach(required_actor_text
     "OnStreamBytesNative"
     "EmbedUtf8Bytes"
     "astral_last_error"
-    "LogAstralRT")
+    "LogAstralSample")
   if(NOT actor_text MATCHES "${required_actor_text}")
     message(FATAL_ERROR "Unreal sample actor is missing ${required_actor_text}")
   endif()
