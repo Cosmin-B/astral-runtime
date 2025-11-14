@@ -125,6 +125,49 @@ bool FAstralRTModuleInitTest::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTModuleShutdownRestartTest,
+    "AstralRT.Module.ShutdownRestart",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTModuleShutdownRestartTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    IAstralRT& Runtime = IAstralRT::Get();
+    Runtime.ShutdownModule();
+    TestFalse(TEXT("runtime reports uninitialized after shutdown"), Runtime.IsInitialized());
+
+    Runtime.ShutdownModule();
+    TestFalse(TEXT("second shutdown remains uninitialized"), Runtime.IsInitialized());
+
+    Runtime.StartupModule();
+    TestTrue(TEXT("runtime reinitializes after startup"), Runtime.IsInitialized());
+    if (!Runtime.IsInitialized()) {
+        return false;
+    }
+
+    AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    const char* backend = "mock";
+    model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+    model_desc.backend_name.len = static_cast<uint32_t>(FCStringAnsi::Strlen(backend));
+    model_desc.n_ctx = 128;
+
+    AstralHandle model = 0;
+    const AstralErr err = astral_model_load(&model_desc, &model);
+    TestEqual(TEXT("mock model loads after module restart"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+    TestTrue(TEXT("mock model handle after module restart"), model != 0);
+    if (model != 0) {
+        astral_model_release(model);
+    }
+    return err == ASTRAL_OK && model != 0;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTFMemoryAllocatorTest,
     "AstralRT.Memory.FMemoryAllocator",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
