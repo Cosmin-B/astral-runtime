@@ -80,13 +80,18 @@ static bool run_mock_session_once(AstralHandle session, TArray<uint8>& out_bytes
         return false;
     }
 
+    e = astral_session_wait(session, 5000);
+    if (e != ASTRAL_OK) {
+        return false;
+    }
+
     uint8_t buf[64];
     for (;;) {
         AstralMutSpanU8 out{};
         out.data = buf;
         out.len = sizeof(buf);
 
-        const int32_t n = astral_stream_read(session, out, 1000);
+        const int32_t n = astral_stream_read(session, out, 0);
         if (n == ASTRAL_E_TIMEOUT) {
             continue;
         }
@@ -98,9 +103,7 @@ static bool run_mock_session_once(AstralHandle session, TArray<uint8>& out_bytes
         }
         out_bytes.Append(buf, n);
     }
-
-    e = astral_session_wait(session, 5000);
-    return e == ASTRAL_OK;
+    return true;
 }
 
 } // namespace
