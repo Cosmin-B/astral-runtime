@@ -89,9 +89,10 @@
     },
     "unreal_sample_package": {
       "status": "pass",
-      "command": "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux",
+      "command": "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux && build/unreal-sample-package/archive/Linux/AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout",
       "artifacts": [
-        "logs/unreal-sample-package.log"
+        "logs/unreal-sample-package.log",
+        "logs/unreal-sample-runtime.log"
       ],
       "required_log_tokens": [
         "[unreal_sample] Project:",
@@ -99,7 +100,12 @@
         "[unreal_sample] Platform: Linux",
         "[unreal_sample] Plugin mode: copy",
         "BuildCookRun",
-        "[unreal_sample] OK"
+        "[unreal_sample] OK",
+        "AstralSampleAutoQuit",
+        "Mounted IoStore container",
+        "Mounted Pak file",
+        "Astral sample: packaged content memory model loaded",
+        "Astral sample: saved cache memory model loaded"
       ]
     },
     "unity_editmode_abi": {

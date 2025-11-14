@@ -85,6 +85,7 @@ REQUIRED_COMMAND_TOKENS = {
         "UNREAL_RUNUAT",
         "run_unreal_sample_package.sh",
         "--platform Linux",
+        "AstralSampleAutoQuit",
     ),
     "unity_editmode_abi": ("UNITY_EDITOR", "run_unity_ci_tests.sh"),
     "cuda_parity_matrix": (
@@ -115,7 +116,7 @@ REQUIRED_ARTIFACT_NAMES = {
     "unreal_57_full_container": ("unreal-57-full-container.log",),
     "unreal_57_slim_container": ("unreal-57-slim-container.log",),
     "unreal_compatibility_matrix": ("unreal-compatibility-matrix.log",),
-    "unreal_sample_package": ("unreal-sample-package.log",),
+    "unreal_sample_package": ("unreal-sample-package.log", "unreal-sample-runtime.log"),
     "release_artifacts": (
         "checksums.sha256",
         "abi-layout.json",
@@ -197,6 +198,23 @@ UNREAL_SAMPLE_PACKAGE_FAILURE_TOKENS = (
     "RunUAT is not executable",
     "Generated sample project is missing",
     "Automation output contains failure marker",
+)
+
+UNREAL_SAMPLE_RUNTIME_TOKENS = (
+    "AstralSampleAutoQuit",
+    "Mounted IoStore container",
+    "Mounted Pak file",
+    "Astral sample: packaged content bytes read",
+    "Astral sample: packaged content memory model loaded",
+    "Astral sample: saved cache bytes read",
+    "Astral sample: saved cache memory model loaded",
+)
+
+UNREAL_SAMPLE_RUNTIME_FAILURE_TOKENS = (
+    "packaged content model read failed",
+    "saved cache write failed",
+    "saved cache read failed",
+    "memory model load failed",
 )
 
 
@@ -321,6 +339,9 @@ def validate_unreal_sample_package_artifacts(paths):
     log_path = next((path for path in paths if path.name == "unreal-sample-package.log"), None)
     if log_path is None:
         raise ValueError("unreal_sample_package.artifacts must include unreal-sample-package.log")
+    runtime_log_path = next((path for path in paths if path.name == "unreal-sample-runtime.log"), None)
+    if runtime_log_path is None:
+        raise ValueError("unreal_sample_package.artifacts must include unreal-sample-runtime.log")
 
     text = log_path.read_text(encoding="utf-8", errors="replace")
     for token in UNREAL_SAMPLE_PACKAGE_TOKENS:
@@ -329,6 +350,14 @@ def validate_unreal_sample_package_artifacts(paths):
     for token in UNREAL_SAMPLE_PACKAGE_FAILURE_TOKENS:
         if token in text:
             raise ValueError(f"unreal_sample_package log contains failure marker {token}")
+
+    runtime_text = runtime_log_path.read_text(encoding="utf-8", errors="replace")
+    for token in UNREAL_SAMPLE_RUNTIME_TOKENS:
+        if token not in runtime_text:
+            raise ValueError(f"unreal_sample_package runtime log is missing {token}")
+    for token in UNREAL_SAMPLE_RUNTIME_FAILURE_TOKENS:
+        if token in runtime_text:
+            raise ValueError(f"unreal_sample_package runtime log contains failure marker {token}")
 
 
 def require_artifact_names(lane_name, paths):

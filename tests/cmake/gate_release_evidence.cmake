@@ -51,6 +51,7 @@ file(WRITE "${evidence_dir}/logs/unreal-57-full-container.log" "[unreal_containe
 file(WRITE "${evidence_dir}/logs/unreal-57-slim-container.log" "[unreal_container] Check image access: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Pull image: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Local image digests:\nghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Image: ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6\n[unreal_container] Test filter: AstralRT\n[unreal_container] Linux SDK: /UnrealEngine/Engine/Config/Linux/Linux_SDK.json\nv26 clang 20.1.8\n[unreal_container] clang:\nclang version 20.1.8\n-- Unreal ThirdParty provenance OK: libastral_rt.a\n[unreal_ci] Filter: AstralRT\n[unreal-results] OK: build/unreal-ci-results/unreal-automation.log\n")
 file(WRITE "${evidence_dir}/logs/unreal-compatibility-matrix.log" "[unreal_matrix] UE 5.4: /opt/UE_5.4/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT\n[unreal_ci] Report: build/unreal-ci-results/ue-5.4/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.4/unreal-automation.log\n[unreal_matrix] UE 5.5: /opt/UE_5.5/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT\n[unreal_ci] Report: build/unreal-ci-results/ue-5.5/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.5/unreal-automation.log\n[unreal_matrix] UE 5.6: /opt/UE_5.6/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT\n[unreal_ci] Report: build/unreal-ci-results/ue-5.6/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.6/unreal-automation.log\n[unreal_matrix] UE 5.7: /opt/UE_5.7/Engine/Binaries/Linux/UnrealEditor-Cmd\n[unreal_ci] Filter: AstralRT\n[unreal_ci] Report: build/unreal-ci-results/ue-5.7/automation-report\n[unreal-results] OK: build/unreal-ci-results/ue-5.7/unreal-automation.log\n")
 file(WRITE "${evidence_dir}/logs/unreal-sample-package.log" "[unreal_sample] Project: build/unreal-sample-package/AstralSample/AstralSample.uproject\n[unreal_sample] Archive: build/unreal-sample-package/archive\n[unreal_sample] RunUAT: /opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh\n[unreal_sample] Platform: Linux\n[unreal_sample] Plugin mode: copy\n[unreal_sample] BuildCookRun\nRunUAT BuildCookRun -project=build/unreal-sample-package/AstralSample/AstralSample.uproject -platform=Linux -archive\n[unreal_sample] OK: build/unreal-sample-package/archive\n")
+file(WRITE "${evidence_dir}/logs/unreal-sample-runtime.log" "Command Line: -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout\nLogPakFile: Display: Mounted IoStore container \"../../../AstralSample/Content/Paks/AstralSample-Linux.utoc\"\nLogPakFile: Display: Mounted Pak file '../../../AstralSample/Content/Paks/AstralSample-Linux.pak'\nLogAstralSample: Astral sample: packaged content bytes read from ../../../AstralSample/Content/AstralSample/Models/mock-model.bytes\nLogAstralSample: Astral sample: packaged content memory model loaded from 4 bytes\nLogAstralSample: Astral sample: saved cache bytes read from ../../../AstralSample/Saved/AstralSample/mock-model-cache.bytes\nLogAstralSample: Astral sample: saved cache memory model loaded from 4 bytes\n")
 file(WRITE "${evidence_dir}/dist/checksums.sha256" "checksums\n")
 file(WRITE "${evidence_dir}/dist/abi-layout.json" "{}\n")
 file(WRITE "${evidence_dir}/dist/dependency-manifest.json" "{}\n")
@@ -100,8 +101,8 @@ foreach(lane IN LISTS required_lanes)
     set(artifacts "[\"logs/unreal-compatibility-matrix.log\"]")
     set(command "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT")
   elseif(lane STREQUAL "unreal_sample_package")
-    set(artifacts "[\"logs/unreal-sample-package.log\"]")
-    set(command "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux")
+    set(artifacts "[\"logs/unreal-sample-package.log\", \"logs/unreal-sample-runtime.log\"]")
+    set(command "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux && build/unreal-sample-package/archive/Linux/AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout")
   elseif(lane STREQUAL "unity_editmode_abi")
     set(command "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh")
   elseif(lane STREQUAL "cuda_parity_matrix")
@@ -334,7 +335,7 @@ file(WRITE "${evidence_dir}/logs/unreal-compatibility-matrix.log" "[unreal_matri
 set(bad_unreal_sample_manifest "${out_dir}/bad-unreal-sample-evidence.json")
 file(READ "${good_manifest}" bad_unreal_sample_text)
 string(REPLACE
-  "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux"
+  "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux && build/unreal-sample-package/archive/Linux/AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout"
   "./scripts/create_unreal_sample_project.sh --out /tmp/AstralSample"
   bad_unreal_sample_text
   "${bad_unreal_sample_text}"
@@ -372,6 +373,25 @@ if(NOT bad_unreal_sample_artifact_error MATCHES "unreal_sample_package log")
   message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal sample artifact reason: ${bad_unreal_sample_artifact_error}")
 endif()
 file(WRITE "${evidence_dir}/logs/unreal-sample-package.log" "[unreal_sample] Project: build/unreal-sample-package/AstralSample/AstralSample.uproject\n[unreal_sample] Archive: build/unreal-sample-package/archive\n[unreal_sample] RunUAT: /opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh\n[unreal_sample] Platform: Linux\n[unreal_sample] Plugin mode: copy\n[unreal_sample] BuildCookRun\nRunUAT BuildCookRun -project=build/unreal-sample-package/AstralSample/AstralSample.uproject -platform=Linux -archive\n[unreal_sample] OK: build/unreal-sample-package/archive\n")
+
+set(bad_unreal_sample_runtime_manifest "${out_dir}/bad-unreal-sample-runtime-evidence.json")
+file(READ "${good_manifest}" bad_unreal_sample_runtime_text)
+file(WRITE "${bad_unreal_sample_runtime_manifest}" "${bad_unreal_sample_runtime_text}")
+file(WRITE "${evidence_dir}/logs/unreal-sample-runtime.log" "Command Line: -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout\nLogPakFile: Display: Mounted IoStore container \"../../../AstralSample/Content/Paks/AstralSample-Linux.utoc\"\nLogPakFile: Display: Mounted Pak file '../../../AstralSample/Content/Paks/AstralSample-Linux.pak'\nLogAstralSample: Astral sample: packaged content model read failed: ../../../AstralSample/Content/AstralSample/Models/mock-model.bytes\n")
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_evidence.py" "${bad_unreal_sample_runtime_manifest}" --base-dir "${evidence_dir}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE bad_unreal_sample_runtime_result
+  ERROR_VARIABLE bad_unreal_sample_runtime_error
+)
+if(bad_unreal_sample_runtime_result EQUAL 0)
+  message(FATAL_ERROR "validate_release_evidence.py accepted weak Unreal sample runtime log evidence")
+endif()
+if(NOT bad_unreal_sample_runtime_error MATCHES "unreal_sample_package runtime log")
+  message(FATAL_ERROR "validate_release_evidence.py failed for the wrong Unreal sample runtime reason: ${bad_unreal_sample_runtime_error}")
+endif()
+file(WRITE "${evidence_dir}/logs/unreal-sample-runtime.log" "Command Line: -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout\nLogPakFile: Display: Mounted IoStore container \"../../../AstralSample/Content/Paks/AstralSample-Linux.utoc\"\nLogPakFile: Display: Mounted Pak file '../../../AstralSample/Content/Paks/AstralSample-Linux.pak'\nLogAstralSample: Astral sample: packaged content bytes read from ../../../AstralSample/Content/AstralSample/Models/mock-model.bytes\nLogAstralSample: Astral sample: packaged content memory model loaded from 4 bytes\nLogAstralSample: Astral sample: saved cache bytes read from ../../../AstralSample/Saved/AstralSample/mock-model-cache.bytes\nLogAstralSample: Astral sample: saved cache memory model loaded from 4 bytes\n")
 
 set(bad_sanitizer_manifest "${out_dir}/bad-sanitizer-evidence.json")
 file(READ "${good_manifest}" bad_sanitizer_text)
