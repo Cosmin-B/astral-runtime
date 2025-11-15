@@ -119,6 +119,11 @@ docker pull ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3
 Use `--skip-native-build` only when the ThirdParty package was already rebuilt
 and the provenance check has passed in the same workspace.
 
+Some Epic GHCR editor images do not include `cmake`. In that case, build the
+native package on the host first with `cmake --build --preset unreal-plugin -j`,
+confirm the provenance check passed, and run the container lane with
+`--skip-native-build`.
+
 For compatibility probes, pass the UE version so the runner selects the matching
 Epic image tag and bundled Linux SDK preflight:
 
