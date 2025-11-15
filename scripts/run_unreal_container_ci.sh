@@ -342,6 +342,10 @@ if [[ -x "${clangxx_bin}" && -d "${ue_sdk_root}/include/c++/v1" ]]; then
 fi
 
 if [[ "${ASTRAL_UNREAL_BUILD_NATIVE}" == "1" ]]; then
+  if ! command -v cmake >/dev/null 2>&1; then
+    echo "[unreal_container] cmake not found in container; install cmake or prebuild the AstralRT Unreal ThirdParty package and rerun with --skip-native-build." >&2
+    exit 2
+  fi
   cmake --preset unreal-plugin "${unreal_cmake_args[@]}"
   cmake --build --preset unreal-plugin -j
 fi

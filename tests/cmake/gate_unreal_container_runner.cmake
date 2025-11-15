@@ -171,4 +171,15 @@ if(NOT skip_pull_text MATCHES "fake skip-pull reached container run")
   message(FATAL_ERROR "run_unreal_container_ci.sh --skip-pull did not reach the fake container run: ${skip_pull_text}")
 endif()
 
+file(READ "${ASTRAL_SOURCE_DIR}/scripts/run_unreal_container_ci.sh" runner_script)
+foreach(required_token
+    "command -v cmake"
+    "cmake not found in container"
+    "--skip-native-build"
+)
+  if(NOT runner_script MATCHES "${required_token}")
+    message(FATAL_ERROR "run_unreal_container_ci.sh is missing cmake preflight token: ${required_token}")
+  endif()
+endforeach()
+
 message(STATUS "gate_unreal_container_runner: OK")
