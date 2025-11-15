@@ -160,9 +160,9 @@ static void decode_once(AstralHandle session)
     ASSERT_EQ(err, ASTRAL_OK);
     err = astral_session_decode(session);
     ASSERT_EQ(err, ASTRAL_OK);
-    ASSERT_GT(drain_stream(session), 0u);
     err = astral_session_wait(session, 30000);
     ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_GT(drain_stream(session), 0u);
 }
 
 static void run_session_churn(AstralHandle model, uint32_t seed)
