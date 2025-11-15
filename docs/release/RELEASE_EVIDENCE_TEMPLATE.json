@@ -54,6 +54,8 @@
         "clang version 20.1.8",
         "v26",
         "Unreal ThirdParty provenance OK",
+        "Found 13 automation tests",
+        "AstralRT.Module.ShutdownRestart",
         "[unreal-results] OK"
       ]
     },
@@ -69,6 +71,8 @@
         "clang version 20.1.8",
         "v26",
         "Unreal ThirdParty provenance OK",
+        "Found 13 automation tests",
+        "AstralRT.Module.ShutdownRestart",
         "[unreal-results] OK"
       ]
     },
