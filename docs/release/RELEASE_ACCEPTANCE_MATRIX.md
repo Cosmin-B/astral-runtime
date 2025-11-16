@@ -24,8 +24,8 @@ release candidate.
 | Area | Command or lane | Required for RC |
 |---|---|---|
 | UE 5.7 access preflight | `./scripts/check_unreal_validation_access.sh --check-registry` | Yes |
-| UE 5.7 full container | `./scripts/run_unreal_container_ci.sh --variant full --filter AstralRT` using `ghcr.io/epicgames/unreal-engine:dev-5.7.4` | Yes |
-| UE 5.7 slim container | `./scripts/run_unreal_container_ci.sh --variant slim --filter AstralRT` using `ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4` | Yes |
+| UE 5.7 full container | `cmake --preset unreal-plugin && cmake --build --preset unreal-plugin -j && ./scripts/run_unreal_container_ci.sh --variant full --filter AstralRT --skip-native-build` using `ghcr.io/epicgames/unreal-engine:dev-5.7.4` | Yes |
+| UE 5.7 slim container | `cmake --preset unreal-plugin && cmake --build --preset unreal-plugin -j && ./scripts/run_unreal_container_ci.sh --variant slim --filter AstralRT --skip-native-build` using `ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4` | Yes |
 | Automation tests | `UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh` | Yes |
 | UE 5.4/5.5/5.6/5.7 compatibility | `UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh` | Yes |
 | UE 5.7 sample package and runtime smoke | `UNREAL_RUNUAT=... ./scripts/run_unreal_sample_package.sh --platform Linux`, then launch `build/unreal-sample-package/archive/Linux/AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout` | Yes |
