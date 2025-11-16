@@ -175,7 +175,10 @@ file(READ "${ASTRAL_SOURCE_DIR}/scripts/run_unreal_container_ci.sh" runner_scrip
 foreach(required_token
     "command -v cmake"
     "cmake not found in container"
+    "--install-cmake"
     "--skip-native-build"
+    "ASTRAL_UNREAL_INSTALL_CMAKE"
+    "apt-get install -y --no-install-recommends cmake"
 )
   if(NOT runner_script MATCHES "${required_token}")
     message(FATAL_ERROR "run_unreal_container_ci.sh is missing cmake preflight token: ${required_token}")

@@ -282,10 +282,15 @@ whether `UNREAL_54_EDITOR`, `UNREAL_55_EDITOR`, `UNREAL_56_EDITOR`, and
 `UNREAL_57_EDITOR` point to executable editors.
 
 For Epic container runs, `run_unreal_container_ci.sh` defaults to UE 5.7. Use
-`--ue-version` for compatibility smoke runs so the script selects the matching
-image tag and Linux SDK toolchain preflight:
+the full image with `--install-cmake` when the ThirdParty package must be
+rebuilt inside Epic's clang/libc++ Linux SDK, then use the slim image with
+`--skip-native-build` to reuse that staged package. Use `--ue-version` for
+compatibility smoke runs so the script selects the matching image tag and Linux
+SDK toolchain preflight:
 
 ```bash
+./scripts/run_unreal_container_ci.sh --variant full --install-cmake
+./scripts/run_unreal_container_ci.sh --variant slim --skip-native-build
 ./scripts/run_unreal_container_ci.sh --ue-version 5.4 --variant slim --skip-native-build
 ./scripts/run_unreal_container_ci.sh --ue-version 5.5 --variant slim --skip-native-build
 ./scripts/run_unreal_container_ci.sh --ue-version 5.6 --variant slim --skip-native-build
@@ -344,8 +349,8 @@ UNITY_EDITOR=/opt/Unity/Editor/Unity \
 The `--skip-sanitizers`, `--skip-engine`, `--skip-unreal`, and `--skip-unity`
 flags are for partial local diagnosis only. A release candidate should not use
 them. The Unreal lane starts with `check_unreal_validation_access.sh --check-registry`,
-then runs both pinned UE 5.7 container variants before the editor matrix and
-sample package.
+then runs the full UE 5.7 container with `--install-cmake`, the slim UE 5.7
+container with `--skip-native-build`, then the editor matrix and sample package.
 
 For a fast release-candidate preflight that prints the required lanes and checks
 that the release environment variables are present without starting builds or

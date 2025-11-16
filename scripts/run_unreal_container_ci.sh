@@ -14,6 +14,7 @@ image=""
 digest=""
 pull_image=1
 build_native=1
+install_cmake=0
 test_filter="${UNREAL_TEST_FILTER:-AstralRT}"
 unreal_editor="${UNREAL_EDITOR:-}"
 
@@ -30,6 +31,7 @@ Options:
   --image <ref>             Override container image reference
   --digest <sha256:...>     Override digest for --image or selected variant
   --skip-pull               Do not pull the image before running
+  --install-cmake           Install cmake inside the temporary container if missing
   --skip-native-build       Do not rebuild the AstralRT ThirdParty package
   --editor <path>           UnrealEditor-Cmd path inside the container
   --filter <pattern>        Automation filter (default: AstralRT)
@@ -159,6 +161,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-pull)
       pull_image=0
+      shift
+      ;;
+    --install-cmake)
+      install_cmake=1
       shift
       ;;
     --skip-native-build)
@@ -343,9 +349,20 @@ fi
 
 if [[ "${ASTRAL_UNREAL_BUILD_NATIVE}" == "1" ]]; then
   if ! command -v cmake >/dev/null 2>&1; then
-    echo "[unreal_container] cmake not found in container; install cmake or prebuild the AstralRT Unreal ThirdParty package and rerun with --skip-native-build." >&2
-    exit 2
+    if [[ "${ASTRAL_UNREAL_INSTALL_CMAKE}" == "1" ]]; then
+      echo "[unreal_container] Install cmake in temporary container"
+      apt_prefix=()
+      if [[ "$(id -u)" -ne 0 ]]; then
+        apt_prefix=(sudo -n)
+      fi
+      "${apt_prefix[@]}" apt-get update
+      "${apt_prefix[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake
+    else
+      echo "[unreal_container] cmake not found in container; rerun with --install-cmake, or prebuild the AstralRT Unreal ThirdParty package with the UE Linux SDK and rerun with --skip-native-build." >&2
+      exit 2
+    fi
   fi
+  rm -rf build/unreal
   cmake --preset unreal-plugin "${unreal_cmake_args[@]}"
   cmake --build --preset unreal-plugin -j
 fi
@@ -375,6 +392,7 @@ fi
 
 "${container_engine}" run --rm --init \
   -e "ASTRAL_UNREAL_BUILD_NATIVE=${build_native}" \
+  -e "ASTRAL_UNREAL_INSTALL_CMAKE=${install_cmake}" \
   -e "ASTRAL_UNREAL_IMAGE_REF=${image_ref}" \
   -e "ASTRAL_UNREAL_VERSION=${ue_version}" \
   -e "ASTRAL_UNREAL_REQUIRED_CLANG_VERSION=${required_clang_version}" \

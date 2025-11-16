@@ -106,23 +106,22 @@ Slim image:
 
 ```bash
 docker pull ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6
-./scripts/run_unreal_container_ci.sh --variant slim
+./scripts/run_unreal_container_ci.sh --variant slim --skip-native-build
 ```
 
 Full image:
 
 ```bash
 docker pull ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce
-./scripts/run_unreal_container_ci.sh --variant full
+./scripts/run_unreal_container_ci.sh --variant full --install-cmake
 ```
 
 Use `--skip-native-build` only when the ThirdParty package was already rebuilt
-and the provenance check has passed in the same workspace.
-
-Some Epic GHCR editor images do not include `cmake`. In that case, build the
-native package on the host first with `cmake --build --preset unreal-plugin -j`,
-confirm the provenance check passed, and run the container lane with
-`--skip-native-build`.
+with the UE Linux SDK and the provenance check has passed in the same workspace.
+For release-candidate UE 5.7 evidence, run the full container first with
+`--install-cmake` so the native package is compiled by Epic's clang/libc++
+toolchain, then run the slim container with `--skip-native-build` to reuse the
+staged package.
 
 For compatibility probes, pass the UE version so the runner selects the matching
 Epic image tag and bundled Linux SDK preflight:
@@ -153,9 +152,8 @@ support production-ready from the native package build alone.
 
 For release candidates, keep the logs from:
 
-- `cmake --build --preset unreal-plugin -j`
-- `./scripts/run_unreal_container_ci.sh --variant slim`
-- `./scripts/run_unreal_container_ci.sh --variant full`
+- `./scripts/run_unreal_container_ci.sh --variant full --install-cmake`
+- `./scripts/run_unreal_container_ci.sh --variant slim --skip-native-build`
 - `./scripts/run_unreal_compatibility_matrix.sh`
 
 Record those files in `release-evidence.json` using

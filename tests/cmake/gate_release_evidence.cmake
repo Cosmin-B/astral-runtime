@@ -93,10 +93,10 @@ foreach(lane IN LISTS required_lanes)
     set(command "python3 ./scripts/inventory_comments.py --format review-tsv > logs/comment-review.tsv && python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers > logs/comment-inventory-summary.log")
   elseif(lane STREQUAL "unreal_57_full_container")
     set(artifacts "[\"logs/unreal-57-full-container.log\"]")
-    set(command "cmake --preset unreal-plugin && cmake --build --preset unreal-plugin -j && ./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT --skip-native-build")
+    set(command "./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT --install-cmake")
   elseif(lane STREQUAL "unreal_57_slim_container")
     set(artifacts "[\"logs/unreal-57-slim-container.log\"]")
-    set(command "cmake --preset unreal-plugin && cmake --build --preset unreal-plugin -j && ./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT --skip-native-build")
+    set(command "./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT --skip-native-build")
   elseif(lane STREQUAL "unreal_compatibility_matrix")
     set(artifacts "[\"logs/unreal-compatibility-matrix.log\"]")
     set(command "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT")
@@ -245,7 +245,7 @@ endif()
 set(bad_unreal_container_manifest "${out_dir}/bad-unreal-container-evidence.json")
 file(READ "${good_manifest}" bad_unreal_container_text)
 string(REPLACE
-  "cmake --preset unreal-plugin && cmake --build --preset unreal-plugin -j && ./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT --skip-native-build"
+  "./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT --install-cmake"
   "docker run ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
   bad_unreal_container_text
   "${bad_unreal_container_text}"
@@ -691,11 +691,11 @@ foreach(required
   "--format review-tsv"
   "--fail-orphan-markers"
   "unreal_57_full_container"
-  "cmake --build --preset unreal-plugin"
   "run_unreal_container_ci.sh --variant full"
-  "--skip-native-build"
+  "--install-cmake"
   "unreal_57_slim_container"
   "run_unreal_container_ci.sh --variant slim"
+  "--skip-native-build"
   "unreal_compatibility_matrix"
   "run_unreal_compatibility_matrix.sh"
   "5.4 5.5 5.6 5.7"
