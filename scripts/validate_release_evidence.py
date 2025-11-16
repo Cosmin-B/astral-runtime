@@ -155,8 +155,10 @@ UNREAL_CONTAINER_COMMON_TOKENS = (
     "20.1.8",
     "Unreal ThirdParty provenance OK",
     "[unreal_ci] Filter: AstralRT",
-    "Found 13 automation tests",
+    "Found 14 automation tests",
     "AstralRT.Module.ShutdownRestart",
+    "AstralRT.Module.EnginePreExit",
+    "AstralRT: Shutdown (EnginePreExit)",
     "[unreal-results] OK:",
 )
 

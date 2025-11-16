@@ -1250,15 +1250,31 @@ foreach(required_unreal_lifecycle_text
     "AstralRT.Mock.SessionCancelReset"
     "AstralRT.Mock.DestroyInvalidation"
     "AstralRT.Module.ShutdownRestart"
+    "AstralRT.Module.EnginePreExit"
     "empty memory model load fails"
     "invalid model create rejected"
     "runtime reinitializes after startup"
+    "runtime reinitializes after engine pre-exit"
     "Session->Cancel"
     "Session->Reset"
     "ASTRAL_E_CANCELED"
     "ASTRAL_E_INVALID")
   if(NOT unreal_automation_text MATCHES "${required_unreal_lifecycle_text}")
     message(FATAL_ERROR "Unreal lifecycle Automation coverage is missing ${required_unreal_lifecycle_text}")
+  endif()
+endforeach()
+
+set(unreal_runtime_module_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralRuntimeModule.cpp")
+file(READ "${unreal_runtime_module_source}" unreal_runtime_module_text)
+foreach(required_unreal_preexit_text
+    "FCoreDelegates::OnPreExit"
+    "HandleEnginePreExit"
+    "SimulateEnginePreExitForAutomation"
+    "ShutdownRuntime"
+    "EnginePreExit"
+    "ModuleUnload")
+  if(NOT unreal_runtime_module_text MATCHES "${required_unreal_preexit_text}")
+    message(FATAL_ERROR "Unreal runtime module is missing editor pre-exit lifecycle hook: ${required_unreal_preexit_text}")
   endif()
 endforeach()
 

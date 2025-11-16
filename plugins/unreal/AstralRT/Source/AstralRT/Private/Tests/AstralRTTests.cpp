@@ -168,6 +168,30 @@ bool FAstralRTModuleShutdownRestartTest::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTModuleEnginePreExitTest,
+    "AstralRT.Module.EnginePreExit",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTModuleEnginePreExitTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    IAstralRT& Runtime = IAstralRT::Get();
+    Runtime.SimulateEnginePreExitForAutomation();
+    TestFalse(TEXT("runtime reports uninitialized after engine pre-exit"), Runtime.IsInitialized());
+
+    Runtime.SimulateEnginePreExitForAutomation();
+    TestFalse(TEXT("second engine pre-exit remains uninitialized"), Runtime.IsInitialized());
+
+    Runtime.StartupModule();
+    TestTrue(TEXT("runtime reinitializes after engine pre-exit"), Runtime.IsInitialized());
+    return Runtime.IsInitialized();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTFMemoryAllocatorTest,
     "AstralRT.Memory.FMemoryAllocator",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter

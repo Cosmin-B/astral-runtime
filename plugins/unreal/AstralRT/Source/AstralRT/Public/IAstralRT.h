@@ -32,4 +32,7 @@ public:
     virtual bool IsInitialized() const = 0;
     virtual void ResetAllocatorStats() = 0;
     virtual FAstralRTAllocatorStats GetAllocatorStats() const = 0;
+#if WITH_DEV_AUTOMATION_TESTS
+    virtual void SimulateEnginePreExitForAutomation() = 0;
+#endif
 };

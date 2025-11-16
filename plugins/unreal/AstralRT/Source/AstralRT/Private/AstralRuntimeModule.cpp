@@ -1,6 +1,7 @@
 #include "IAstralRT.h"
 #include "AstralLog.h"
 
+#include "Misc/CoreDelegates.h"
 #include "Modules/ModuleManager.h"
 #include "HAL/UnrealMemory.h"
 #include "Containers/StringConv.h"
@@ -121,18 +122,21 @@ public:
         }
 
         bInitialized = true;
+        if (!PreExitHandle.IsValid())
+        {
+            PreExitHandle = FCoreDelegates::OnPreExit.AddRaw(this, &FAstralRuntimeModule::HandleEnginePreExit);
+        }
         UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Initialized"));
     }
 
     virtual void ShutdownModule() override
     {
-        if (bInitialized)
+        if (PreExitHandle.IsValid())
         {
-            astral_shutdown();
-            bInitialized = false;
-            GAllocatorCounters.Reset();
-            UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Shutdown"));
+            FCoreDelegates::OnPreExit.Remove(PreExitHandle);
+            PreExitHandle.Reset();
         }
+        ShutdownRuntime(TEXT("ModuleUnload"));
     }
 
     virtual bool IsInitialized() const override
@@ -150,8 +154,34 @@ public:
         return GAllocatorCounters.Snapshot();
     }
 
+#if WITH_DEV_AUTOMATION_TESTS
+    virtual void SimulateEnginePreExitForAutomation() override
+    {
+        HandleEnginePreExit();
+    }
+#endif
+
 private:
+    void HandleEnginePreExit()
+    {
+        ShutdownRuntime(TEXT("EnginePreExit"));
+    }
+
+    void ShutdownRuntime(const TCHAR* Reason)
+    {
+        if (!bInitialized)
+        {
+            return;
+        }
+
+        astral_shutdown();
+        bInitialized = false;
+        GAllocatorCounters.Reset();
+        UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Shutdown (%s)"), Reason);
+    }
+
     bool bInitialized = false;
+    FDelegateHandle PreExitHandle;
 };
 
 IMPLEMENT_MODULE(FAstralRuntimeModule, AstralRT)
