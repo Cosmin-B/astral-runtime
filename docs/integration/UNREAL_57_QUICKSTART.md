@@ -132,6 +132,10 @@ Epic image tag and bundled Linux SDK preflight:
 ./scripts/run_unreal_container_ci.sh --ue-version 5.6 --variant slim --skip-native-build
 ```
 
+Use `--pull-timeout` or `ASTRAL_UNREAL_PULL_TIMEOUT` when a first-time Epic
+image pull needs more than the default bounded wait. If Docker already has the
+image, use `--skip-pull` so the run starts from the cached image digest.
+
 The compatibility container commands are smoke evidence. Release sign-off still
 requires the editor matrix below with all supported UE versions.
 

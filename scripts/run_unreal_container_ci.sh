@@ -4,7 +4,7 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 container_engine="${CONTAINER_ENGINE:-docker}"
-pull_timeout_seconds="${ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS:-120}"
+pull_timeout="${ASTRAL_UNREAL_PULL_TIMEOUT:-${ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS:-120}}"
 required_clang_version="${ASTRAL_UNREAL_REQUIRED_CLANG_VERSION:-}"
 required_linux_sdk_toolchain="${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN:-}"
 required_linux_sdk_clang="${ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG:-}"
@@ -31,6 +31,7 @@ Options:
   --image <ref>             Override container image reference
   --digest <sha256:...>     Override digest for --image or selected variant
   --skip-pull               Do not pull the image before running
+  --pull-timeout <duration> Bound manifest/pull waits (default: 120s)
   --install-cmake           Install cmake inside the temporary container if missing
   --skip-native-build       Do not rebuild the AstralRT ThirdParty package
   --editor <path>           UnrealEditor-Cmd path inside the container
@@ -39,8 +40,11 @@ Options:
 
 Environment:
   CONTAINER_ENGINE          Container CLI (default: docker)
+  ASTRAL_UNREAL_PULL_TIMEOUT
+                            Manifest and pull timeout, passed to timeout(1)
+                            (default: 120)
   ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS
-                            Pull timeout in seconds (default: 120)
+                            Backward-compatible alias for ASTRAL_UNREAL_PULL_TIMEOUT
   ASTRAL_UNREAL_REQUIRED_CLANG_VERSION
                             Override required clang version for the selected UE version
   ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN
@@ -127,7 +131,7 @@ EOF
 
 pull_container_image() {
   if command -v timeout >/dev/null 2>&1; then
-    timeout "${pull_timeout_seconds}" "${container_engine}" pull "${image_ref}" </dev/null
+    timeout "${pull_timeout}" "${container_engine}" pull "${image_ref}" </dev/null
   else
     "${container_engine}" pull "${image_ref}" </dev/null
   fi
@@ -135,7 +139,7 @@ pull_container_image() {
 
 inspect_container_manifest() {
   if command -v timeout >/dev/null 2>&1; then
-    timeout "${pull_timeout_seconds}" "${container_engine}" manifest inspect "${image_ref}" </dev/null
+    timeout "${pull_timeout}" "${container_engine}" manifest inspect "${image_ref}" </dev/null
   else
     "${container_engine}" manifest inspect "${image_ref}" </dev/null
   fi
@@ -162,6 +166,10 @@ while [[ $# -gt 0 ]]; do
     --skip-pull)
       pull_image=0
       shift
+      ;;
+    --pull-timeout)
+      pull_timeout="${2:-}"
+      shift 2
       ;;
     --install-cmake)
       install_cmake=1
@@ -241,7 +249,16 @@ EOF
     fi
   fi
   echo "[unreal_container] Pull image: ${image_ref}"
-  if ! pull_container_image; then
+  pull_status=0
+  pull_container_image || pull_status=$?
+  if [[ "${pull_status}" -ne 0 ]]; then
+    if [[ "${pull_status}" -eq 124 ]]; then
+      cat >&2 <<EOF
+Timed out pulling Unreal container image after ${pull_timeout}: ${image_ref}
+Pre-pull the image manually, increase --pull-timeout, or rerun with --skip-pull after the image is cached.
+EOF
+      exit 2
+    fi
     cat >&2 <<EOF
 Unable to pull Unreal container image: ${image_ref}
 Authenticate ${container_engine} with an Epic-linked GitHub account that can read ghcr.io/epicgames/unreal-engine, then rerun this command.

@@ -127,6 +127,55 @@ if(NOT manifest_auth_text MATCHES "dev-slim-5[.]7[.]4@sha256:5d8fa43dbbc07ea53e6
   message(FATAL_ERROR "run_unreal_container_ci.sh did not include the pinned slim image ref in the manifest failure: ${manifest_auth_text}")
 endif()
 
+set(pull_timeout_fake_engine "${out_dir}/fake-pull-timeout-engine")
+file(WRITE "${pull_timeout_fake_engine}" [=[
+#!/usr/bin/env bash
+if [[ "$1" == "manifest" && "$2" == "inspect" ]]; then
+  echo '{"schemaVersion":2}'
+  exit 0
+fi
+if [[ "$1" == "pull" ]]; then
+  sleep 5
+  exit 0
+fi
+echo fake-pull-timeout-engine should not continue after pull timeout >&2
+exit 99
+]=])
+file(CHMOD "${pull_timeout_fake_engine}"
+  PERMISSIONS
+    OWNER_READ OWNER_WRITE OWNER_EXECUTE
+    GROUP_READ GROUP_EXECUTE
+    WORLD_READ WORLD_EXECUTE
+)
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "CONTAINER_ENGINE=${pull_timeout_fake_engine}"
+    "DOCKER_CONFIG=${auth_docker_config}"
+    "HOME=${empty_home}"
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_unreal_container_ci.sh" --variant "slim" --pull-timeout "1"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE pull_timeout_result
+  OUTPUT_VARIABLE pull_timeout_output
+  ERROR_VARIABLE pull_timeout_error
+)
+if(pull_timeout_result EQUAL 0)
+  message(FATAL_ERROR "run_unreal_container_ci.sh accepted a timed-out Epic GHCR pull")
+endif()
+if(pull_timeout_result EQUAL 99)
+  message(FATAL_ERROR "run_unreal_container_ci.sh continued after the pull timeout")
+endif()
+set(pull_timeout_text "${pull_timeout_output}\n${pull_timeout_error}")
+if(NOT pull_timeout_text MATCHES "Pull image")
+  message(FATAL_ERROR "run_unreal_container_ci.sh did not announce the pull before timing out: ${pull_timeout_text}")
+endif()
+if(NOT pull_timeout_text MATCHES "Timed out pulling Unreal container image after 1")
+  message(FATAL_ERROR "run_unreal_container_ci.sh did not report the bounded pull timeout: ${pull_timeout_text}")
+endif()
+if(NOT pull_timeout_text MATCHES "--skip-pull")
+  message(FATAL_ERROR "run_unreal_container_ci.sh did not include the cached-image recovery path: ${pull_timeout_text}")
+endif()
+
 set(skip_pull_fake_engine "${out_dir}/fake-skip-pull-engine")
 file(WRITE "${skip_pull_fake_engine}" [=[
 #!/usr/bin/env bash
@@ -173,6 +222,9 @@ endif()
 
 file(READ "${ASTRAL_SOURCE_DIR}/scripts/run_unreal_container_ci.sh" runner_script)
 foreach(required_token
+    "ASTRAL_UNREAL_PULL_TIMEOUT"
+    "--pull-timeout"
+    "Timed out pulling Unreal container image"
     "command -v cmake"
     "cmake not found in container"
     "--install-cmake"

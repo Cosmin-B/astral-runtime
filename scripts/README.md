@@ -296,6 +296,11 @@ SDK toolchain preflight:
 ./scripts/run_unreal_container_ci.sh --ue-version 5.6 --variant slim --skip-native-build
 ```
 
+Image manifest and pull operations are bounded by `--pull-timeout` or
+`ASTRAL_UNREAL_PULL_TIMEOUT` so a slow Epic GHCR layer cannot hang a validation
+session indefinitely. If a large image has already been cached outside the
+runner, pass `--skip-pull` to avoid registry access.
+
 ```bash
 cmake --preset unreal-plugin
 cmake --build --preset unreal-plugin -j
