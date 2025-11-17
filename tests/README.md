@@ -84,6 +84,11 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_embedded_presets`: checks embedded presets keep VM, temp-file mmap, dynamic loading, JSON-schema grammar, and Astral worker threads disabled.
 - `gate_allocations`: tracked heap allocation gate for steady-state decode/stream. It runs mock coverage by default; CPU model coverage is opt-in with `ASTRAL_GATE_CPU_ALLOC=1`.
 
+`test_embeddings` always runs mock lifecycle and queue-pressure coverage. Set
+`ASTRAL_TEST_EMBED_MODEL` to a readable embeddings GGUF to run the CPU fixture
+probe; the log prints `[embedding_probe]` with model path, dimension, and vector
+sanity metadata.
+
 `test_abi_invalid_args` is the fast public C ABI boundary matrix. It exercises
 null outputs, invalid handles, and empty plugin paths without requiring model
 fixtures.

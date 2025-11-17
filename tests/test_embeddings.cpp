@@ -11,6 +11,7 @@
 #include "astral_rt.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <sys/stat.h>
@@ -303,6 +304,11 @@ TEST(embeddings_cpu_e2e_fixture_probe) {
         const float v = vec[i];
         sum_abs += (v >= 0.0f) ? v : -v;
     }
+    std::printf("[embedding_probe] backend=cpu model=%s dim=%u sum_abs=%.6f first=%.6f\n",
+                model_path,
+                dim,
+                sum_abs,
+                vec[0]);
     ASSERT_GT(sum_abs, 0.0);
 
     astral_embed_destroy(emb);

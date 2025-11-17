@@ -597,6 +597,20 @@ foreach(required_ci_ctest_text
   endif()
 endforeach()
 
+set(test_embeddings_file "${ROOT}/tests/test_embeddings.cpp")
+file(READ "${test_embeddings_file}" test_embeddings_content)
+foreach(required_embedding_probe_text
+    "ASTRAL_TEST_EMBED_MODEL"
+    "embeddings_cpu_e2e_fixture_probe"
+    "[embedding_probe] backend=cpu"
+    "sum_abs="
+    "ASSERT_GT(sum_abs, 0.0)")
+  string(FIND "${test_embeddings_content}" "${required_embedding_probe_text}" embedding_probe_pos)
+  if(embedding_probe_pos EQUAL -1)
+    message(FATAL_ERROR "Embedding fixture probe is missing '${required_embedding_probe_text}'")
+  endif()
+endforeach()
+
 set(fast_presubmit_file "${ROOT}/scripts/run_fast_presubmit.sh")
 if(NOT EXISTS "${fast_presubmit_file}")
   message(FATAL_ERROR "Fast presubmit runner missing: ${fast_presubmit_file}")
