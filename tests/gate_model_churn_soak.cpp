@@ -220,6 +220,13 @@ static void run_model_churn_soak(const ChurnConfig& cfg)
     }
 
 #if defined(__linux__)
+    const uint64_t max_rss_kb = rss_start + cfg.MaxRssDriftKb;
+    std::printf("[model_churn] backend=%s cycles=%u rss_start_kb=%llu rss_peak_kb=%llu rss_cap_kb=%llu\n",
+                cfg.Backend,
+                cfg.Cycles,
+                static_cast<unsigned long long>(rss_start),
+                static_cast<unsigned long long>(rss_peak),
+                static_cast<unsigned long long>(max_rss_kb));
     if (rss_start != 0 && rss_peak > rss_start + cfg.MaxRssDriftKb)
     {
         char msg[256];

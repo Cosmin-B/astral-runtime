@@ -57,5 +57,9 @@ ASTRAL_SOAK_MODEL=/models/model.gguf ASTRAL_SOAK_REAL_CYCLES=8 \
   ctest --preset release-with-tests -R '^gate_model_churn_soak$' -V
 ```
 
+The churn log prints one `[model_churn]` line per backend with cycle count and
+RSS start/peak/cap values. Keep those lines in release evidence so reviewers can
+tell whether the real-model probe ran or skipped.
+
 The remaining production gap is sustained model churn under real Unity/Unreal
 hosts: custom engine allocators, long streams, and engine-owned media buffers.

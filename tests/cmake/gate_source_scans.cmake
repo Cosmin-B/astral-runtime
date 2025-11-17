@@ -1116,6 +1116,8 @@ foreach(required_model_churn_text
     "ASTRAL_SOAK_REAL_CYCLES"
     "ASTRAL_SOAK_RSS_DRIFT_MB"
     "gate_model_churn_soak_real_model_probe"
+    "[model_churn] backend="
+    "rss_peak_kb="
     "model churn RSS drift exceeded")
   string(FIND "${model_churn_soak_content}" "${required_model_churn_text}" model_churn_text_pos)
   if(model_churn_text_pos EQUAL -1)
