@@ -139,6 +139,31 @@ image, use `--skip-pull` so the run starts from the cached image digest.
 The compatibility container commands are smoke evidence. Release sign-off still
 requires the editor matrix below with all supported UE versions.
 
+### Run Real-Model Smoke Probes
+
+The real-model Automation tests stay opt-in so ordinary fast lanes do not depend
+on local GGUF files. Download the small fixtures first:
+
+```bash
+./tests/model_downloader.sh --preset qwen3-0.6b-q8
+./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8
+```
+
+Then run the slim container against the package built by the full UE SDK lane:
+
+```bash
+ASTRAL_UNREAL_TEST_MODEL=/workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf \
+ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1 \
+ASTRAL_UNREAL_TEST_EMBED_MODEL=/workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf \
+ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1 \
+./scripts/run_unreal_container_ci.sh --ue-version 5.7 --variant slim --skip-pull --skip-native-build --filter AstralRT.Real
+```
+
+The Automation JSON report records `[unreal_generation_smoke]` and
+`[unreal_embedding_probe]` entries with the model path and sanity metadata. Keep
+the report and command line with release evidence; generated model files and
+container logs stay out of git.
+
 ## Run The Compatibility Matrix
 
 ```bash

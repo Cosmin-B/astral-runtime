@@ -38,6 +38,12 @@ export ASTRAL_TEST_MODEL="$PWD/astral/tests/models/gpt2.Q2_K.gguf"
 ```
 
 The downloader supports overrides via `--url/--file/--min-bytes` and env vars (`ASTRAL_TEST_MODEL_URL`, `ASTRAL_TEST_MODEL_FILE`, `ASTRAL_MODEL_MIN_BYTES`).
+For additional small smoke fixtures, use the Qwen3 presets:
+
+```bash
+./tests/model_downloader.sh --preset qwen3-0.6b-q8
+./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8
+```
 
 ## Media (vision/audio) tests
 
@@ -88,6 +94,24 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 `ASTRAL_TEST_EMBED_MODEL` to a readable embeddings GGUF to run the CPU fixture
 probe; the log prints `[embedding_probe]` with model path, dimension, and vector
 sanity metadata.
+
+Unreal real-model embedding evidence uses the same native CPU backend through
+`UAstralModel` and `UAstralEmbedder`. Run it inside a UE container with a model
+path that exists in the mounted workspace:
+
+```bash
+ASTRAL_UNREAL_TEST_MODEL=/workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf \
+ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1 \
+scripts/run_unreal_container_ci.sh --ue-version 5.7 --variant slim --skip-pull --skip-native-build --filter AstralRT.Real.GenerationSmoke
+
+ASTRAL_UNREAL_TEST_EMBED_MODEL=/workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf \
+ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1 \
+scripts/run_unreal_container_ci.sh --ue-version 5.7 --variant slim --skip-pull --skip-native-build --filter AstralRT.Real.EmbeddingProbe
+```
+
+The generation smoke log prints `[unreal_generation_smoke]` with byte-count and
+text evidence. The embedding probe log prints `[unreal_embedding_probe]` with
+backend, model path, dimension, and vector sanity metadata.
 
 `test_abi_invalid_args` is the fast public C ABI boundary matrix. It exercises
 null outputs, invalid handles, and empty plugin paths without requiring model

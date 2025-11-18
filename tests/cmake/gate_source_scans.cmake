@@ -611,6 +611,47 @@ foreach(required_embedding_probe_text
   endif()
 endforeach()
 
+set(unreal_embedding_probe_file "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/Tests/AstralRTTests.cpp")
+file(READ "${unreal_embedding_probe_file}" unreal_embedding_probe_content)
+foreach(required_unreal_embedding_probe_text
+    "AstralRT.Real.EmbeddingProbe"
+    "ASTRAL_UNREAL_TEST_EMBED_MODEL"
+    "ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING"
+    "[unreal_embedding_probe] backend=cpu"
+    "SumAbs > 0.0")
+  string(FIND "${unreal_embedding_probe_content}" "${required_unreal_embedding_probe_text}" unreal_embedding_probe_pos)
+  if(unreal_embedding_probe_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal real embedding probe is missing '${required_unreal_embedding_probe_text}'")
+  endif()
+endforeach()
+
+foreach(required_unreal_generation_smoke_text
+    "AstralRT.Real.GenerationSmoke"
+    "ASTRAL_UNREAL_TEST_MODEL"
+    "ASTRAL_UNREAL_REQUIRE_REAL_GENERATION"
+    "[unreal_generation_smoke] backend=cpu"
+    "ByteCount > 0")
+  string(FIND "${unreal_embedding_probe_content}" "${required_unreal_generation_smoke_text}" unreal_generation_smoke_pos)
+  if(unreal_generation_smoke_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal real generation smoke is missing '${required_unreal_generation_smoke_text}'")
+  endif()
+endforeach()
+
+set(model_downloader_file "${ROOT}/tests/model_downloader.sh")
+file(READ "${model_downloader_file}" model_downloader_content)
+foreach(required_model_downloader_text
+    "qwen3-0.6b-q8"
+    "Qwen/Qwen3-0.6B-GGUF"
+    "Qwen3-0.6B-Q8_0.gguf"
+    "qwen3-embed-0.6b-q8"
+    "Qwen/Qwen3-Embedding-0.6B-GGUF"
+    "Qwen3-Embedding-0.6B-Q8_0.gguf")
+  string(FIND "${model_downloader_content}" "${required_model_downloader_text}" model_downloader_pos)
+  if(model_downloader_pos EQUAL -1)
+    message(FATAL_ERROR "Model downloader is missing '${required_model_downloader_text}'")
+  endif()
+endforeach()
+
 set(fast_presubmit_file "${ROOT}/scripts/run_fast_presubmit.sh")
 if(NOT EXISTS "${fast_presubmit_file}")
   message(FATAL_ERROR "Fast presubmit runner missing: ${fast_presubmit_file}")
@@ -778,6 +819,10 @@ foreach(required_unreal_container_script_text
     "sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
     "dev-slim-5.7.4"
     "sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
+    "ASTRAL_UNREAL_TEST_MODEL"
+    "ASTRAL_UNREAL_REQUIRE_REAL_GENERATION"
+    "ASTRAL_UNREAL_TEST_EMBED_MODEL"
+    "ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING"
     "Epic Unreal container access is not configured"
     "ASTRAL_UNREAL_PULL_TIMEOUT_SECONDS"
     "ASTRAL_UNREAL_REQUIRED_CLANG_VERSION"

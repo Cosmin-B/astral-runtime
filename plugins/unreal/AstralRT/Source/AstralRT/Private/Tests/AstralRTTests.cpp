@@ -2,12 +2,17 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "AstralLog.h"
 #include "AstralEmbedder.h"
 #include "AstralMediaLibrary.h"
 #include "AstralModel.h"
 #include "AstralSession.h"
 #include "IAstralRT.h"
 #include "astral_rt.h"
+
+#include "HAL/PlatformMisc.h"
+#include "Math/UnrealMathUtility.h"
+#include "Misc/Paths.h"
 
 namespace {
 
@@ -43,6 +48,22 @@ static FString bytes_to_ascii_string(const TArray<uint8>& bytes) {
     return FString(ANSI_TO_TCHAR(text.GetData()));
 }
 
+static FString printable_ascii_summary(const TArray<uint8>& bytes, int32 max_chars) {
+    FString out;
+    out.Reserve(FMath::Min(bytes.Num(), max_chars));
+    for (const uint8 b : bytes) {
+        if (out.Len() >= max_chars) {
+            break;
+        }
+        if (b >= 0x20 && b < 0x7f) {
+            out.AppendChar(static_cast<TCHAR>(b));
+        } else {
+            out.AppendChar(TEXT(' '));
+        }
+    }
+    return out.TrimStartAndEnd();
+}
+
 static FString bytes_to_hex_string(const TArray<uint8>& bytes) {
     FString out;
     out.Reserve(bytes.Num() * 3);
@@ -59,6 +80,37 @@ static void append_ascii(TArray<uint8>& out, const char* lit) {
     }
     const int32 lit_len = FCStringAnsi::Strlen(lit);
     out.Append(reinterpret_cast<const uint8*>(lit), lit_len);
+}
+
+static bool env_enabled(const TCHAR* name) {
+    const FString value = FPlatformMisc::GetEnvironmentVariable(name);
+    return value == TEXT("1") || value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+}
+
+static FString readable_model_path_from_env(const TCHAR* path_env,
+                                            const TCHAR* require_env,
+                                            const TCHAR* test_name,
+                                            FAutomationTestBase& test,
+                                            bool& out_should_run) {
+    const FString ModelPath = FPlatformMisc::GetEnvironmentVariable(path_env);
+    const bool RequireProbe = env_enabled(require_env);
+    out_should_run = false;
+    if (!ModelPath.IsEmpty() && FPaths::FileExists(ModelPath)) {
+        out_should_run = true;
+        return ModelPath;
+    }
+
+    if (RequireProbe) {
+        test.AddError(FString::Printf(
+            TEXT("%s must name a readable GGUF when %s=1 for %s: %s"),
+            path_env,
+            require_env,
+            test_name,
+            ModelPath.IsEmpty() ? TEXT("<empty>") : *ModelPath));
+    } else {
+        test.AddInfo(FString::Printf(TEXT("%s is not configured; %s not run."), path_env, test_name));
+    }
+    return FString();
 }
 
 static bool run_mock_session_once(AstralHandle session, TArray<uint8>& out_bytes) {
@@ -104,6 +156,28 @@ static bool run_mock_session_once(AstralHandle session, TArray<uint8>& out_bytes
         out_bytes.Append(buf, n);
     }
     return true;
+}
+
+static int32 drain_stream(UAstralSession& Session, TArray<uint8>& OutBytes) {
+    OutBytes.Reset();
+    TArray<uint8> Chunk;
+    Chunk.SetNumUninitialized(512);
+
+    int32 Total = 0;
+    for (;;) {
+        const int32 Count = Session.StreamRead(Chunk, 0);
+        if (Count == ASTRAL_E_TIMEOUT) {
+            continue;
+        }
+        if (Count < 0) {
+            return Count;
+        }
+        if (Count == 0) {
+            return Total;
+        }
+        OutBytes.Append(Chunk.GetData(), Count);
+        Total += Count;
+    }
 }
 
 } // namespace
@@ -417,6 +491,174 @@ bool FAstralRTMockEmbeddingsTest::RunTest(const FString& Parameters) {
     astral_embed_destroy(emb);
     astral_model_release(model);
     return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTRealGenerationSmokeTest,
+    "AstralRT.Real.GenerationSmoke",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTRealGenerationSmokeTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    bool ShouldRun = false;
+    const FString ModelPath = readable_model_path_from_env(
+        TEXT("ASTRAL_UNREAL_TEST_MODEL"),
+        TEXT("ASTRAL_UNREAL_REQUIRE_REAL_GENERATION"),
+        TEXT("AstralRT.Real.GenerationSmoke"),
+        *this,
+        ShouldRun);
+    if (!ShouldRun) {
+        return !env_enabled(TEXT("ASTRAL_UNREAL_REQUIRE_REAL_GENERATION"));
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("cpu");
+    ModelDesc.ModelPath = ModelPath;
+    ModelDesc.ContextSize = 256;
+    ModelDesc.BatchSize = 128;
+    ModelDesc.NumThreads = 2;
+
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("real generation model load"), ok);
+    if (!ok) {
+        Model->ConditionalBeginDestroy();
+        return false;
+    }
+
+    UAstralSession* Session = NewObject<UAstralSession>();
+    TestNotNull(TEXT("session allocated"), Session);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 8;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 1;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = true;
+    SessionDesc.Seed = 19;
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("real session create"), ok);
+    if (!ok) {
+        Model->Release();
+        Model->ConditionalBeginDestroy();
+        return false;
+    }
+
+    ok = Session->FeedPrompt(TEXT("The capital of France is"), true);
+    TestTrue(TEXT("real prompt feed"), ok);
+    ok = Session->Decode();
+    TestTrue(TEXT("real decode"), ok);
+    const int32 WaitResult = Session->Wait(120000);
+    TestEqual(TEXT("real decode wait"), WaitResult, static_cast<int32>(ASTRAL_OK));
+
+    TArray<uint8> OutBytes;
+    const int32 ByteCount = drain_stream(*Session, OutBytes);
+    TestTrue(TEXT("real generation produced bytes"), ByteCount > 0);
+
+    const FString Output = printable_ascii_summary(OutBytes, 160);
+    const FString Evidence = FString::Printf(
+        TEXT("[unreal_generation_smoke] backend=cpu model=%s bytes=%d text=%s"),
+        *ModelPath,
+        ByteCount,
+        *Output);
+    AddInfo(Evidence);
+    UE_LOG(LogAstralRT, Display, TEXT("%s"), *Evidence);
+
+    Session->ConditionalBeginDestroy();
+    Model->Release();
+    Model->ConditionalBeginDestroy();
+    return ok && WaitResult == ASTRAL_OK && ByteCount > 0;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTRealEmbeddingProbeTest,
+    "AstralRT.Real.EmbeddingProbe",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTRealEmbeddingProbeTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    bool ShouldRun = false;
+    const FString ModelPath = readable_model_path_from_env(
+        TEXT("ASTRAL_UNREAL_TEST_EMBED_MODEL"),
+        TEXT("ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING"),
+        TEXT("AstralRT.Real.EmbeddingProbe"),
+        *this,
+        ShouldRun);
+    if (!ShouldRun) {
+        return !env_enabled(TEXT("ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING"));
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("cpu");
+    ModelDesc.ModelPath = ModelPath;
+    ModelDesc.ContextSize = 0;
+    ModelDesc.BatchSize = 0;
+    ModelDesc.NumThreads = 0;
+    ModelDesc.bEmbeddingsOnly = true;
+
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("real embedding model load"), ok);
+    if (!ok) {
+        Model->ConditionalBeginDestroy();
+        return false;
+    }
+
+    UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>();
+    TestNotNull(TEXT("embedder allocated"), Embedder);
+
+    ok = Embedder->Create(Model);
+    TestTrue(TEXT("real embedder create"), ok);
+    if (!ok) {
+        Model->Release();
+        Model->ConditionalBeginDestroy();
+        return false;
+    }
+
+    TArray<uint8> Bytes;
+    append_ascii(Bytes, "hi");
+
+    TArray<float> Vec;
+    ok = Embedder->EmbedUtf8Bytes(Bytes, Vec);
+    TestTrue(TEXT("real embedding collect"), ok);
+    TestTrue(TEXT("real embedding dim bounded"), Vec.Num() > 0 && Vec.Num() < 8192);
+
+    double SumAbs = 0.0;
+    for (const float Value : Vec) {
+        SumAbs += static_cast<double>(FMath::Abs(Value));
+    }
+
+    const float First = Vec.Num() > 0 ? Vec[0] : 0.0f;
+    const FString Evidence = FString::Printf(
+        TEXT("[unreal_embedding_probe] backend=cpu model=%s dim=%d sum_abs=%.6f first=%.6f"),
+        *ModelPath,
+        Vec.Num(),
+        SumAbs,
+        First);
+    AddInfo(Evidence);
+    UE_LOG(LogAstralRT, Display, TEXT("%s"), *Evidence);
+    TestTrue(TEXT("real embedding vector has signal"), SumAbs > 0.0);
+
+    Embedder->Destroy();
+    Embedder->ConditionalBeginDestroy();
+    Model->Release();
+    Model->ConditionalBeginDestroy();
+    return ok && Vec.Num() > 0 && SumAbs > 0.0;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

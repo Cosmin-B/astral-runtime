@@ -51,6 +51,14 @@ Environment:
                             Override Linux SDK toolchain marker for the selected UE version
   ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG
                             Override Linux SDK clang marker for the selected UE version
+  ASTRAL_UNREAL_TEST_EMBED_MODEL
+                            Absolute model path inside the container for the gated real embedding Automation probe
+  ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING
+                            Set to 1 with ASTRAL_UNREAL_TEST_EMBED_MODEL to fail hard when the probe cannot run
+  ASTRAL_UNREAL_TEST_MODEL
+                            Absolute model path inside the container for the gated real generation Automation smoke
+  ASTRAL_UNREAL_REQUIRE_REAL_GENERATION
+                            Set to 1 with ASTRAL_UNREAL_TEST_MODEL to fail hard when the smoke cannot run
   UNREAL_EDITOR             Same as --editor
   UNREAL_TEST_FILTER        Same as --filter
 
@@ -415,6 +423,10 @@ fi
   -e "ASTRAL_UNREAL_REQUIRED_CLANG_VERSION=${required_clang_version}" \
   -e "ASTRAL_UNREAL_REQUIRED_LINUX_SDK_TOOLCHAIN=${required_linux_sdk_toolchain}" \
   -e "ASTRAL_UNREAL_REQUIRED_LINUX_SDK_CLANG=${required_linux_sdk_clang}" \
+  -e "ASTRAL_UNREAL_TEST_MODEL=${ASTRAL_UNREAL_TEST_MODEL:-}" \
+  -e "ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=${ASTRAL_UNREAL_REQUIRE_REAL_GENERATION:-}" \
+  -e "ASTRAL_UNREAL_TEST_EMBED_MODEL=${ASTRAL_UNREAL_TEST_EMBED_MODEL:-}" \
+  -e "ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=${ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING:-}" \
   -e "UNREAL_EDITOR=${unreal_editor}" \
   -e "UNREAL_TEST_FILTER=${test_filter}" \
   -v "${root_dir}:/workspace/astral" \
