@@ -6,6 +6,10 @@
 #include "HAL/UnrealMemory.h"
 #include "Containers/StringConv.h"
 
+#if WITH_EDITOR
+#include "Editor.h"
+#endif
+
 #include "astral_rt.h"
 
 #include <atomic>
@@ -98,39 +102,32 @@ class FAstralRuntimeModule : public IAstralRT
 public:
     virtual void StartupModule() override
     {
-        AstralAllocator Allocator{};
-        Allocator.alloc = &UEAlloc;
-        Allocator.free = &UEFree;
-        Allocator.user = nullptr;
-
-        AstralInit InitCfg{};
-        InitCfg.sys_alloc = Allocator;
-        InitCfg.log_cb = &UELog;
-        InitCfg.log_user = nullptr;
-        InitCfg.reserve_bytes = 2ull << 30;
-        InitCfg.thread_count = 0;
-        InitCfg.numa_node = 0xFFFFFFFFu;
-        InitCfg.enable_hugepages = 0;
-
-        const AstralErr Err = astral_init(&InitCfg);
-        if (Err != ASTRAL_OK)
+        if (!InitializeRuntime())
         {
-            bInitialized = false;
-            GAllocatorCounters.Reset();
-            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_init failed (%d)"), static_cast<int32>(Err));
             return;
         }
 
-        bInitialized = true;
         if (!PreExitHandle.IsValid())
         {
             PreExitHandle = FCoreDelegates::OnPreExit.AddRaw(this, &FAstralRuntimeModule::HandleEnginePreExit);
         }
-        UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Initialized"));
+#if WITH_EDITOR
+        if (!EndPIEHandle.IsValid())
+        {
+            EndPIEHandle = FEditorDelegates::EndPIE.AddRaw(this, &FAstralRuntimeModule::HandleEditorEndPIE);
+        }
+#endif
     }
 
     virtual void ShutdownModule() override
     {
+#if WITH_EDITOR
+        if (EndPIEHandle.IsValid())
+        {
+            FEditorDelegates::EndPIE.Remove(EndPIEHandle);
+            EndPIEHandle.Reset();
+        }
+#endif
         if (PreExitHandle.IsValid())
         {
             FCoreDelegates::OnPreExit.Remove(PreExitHandle);
@@ -159,13 +156,68 @@ public:
     {
         HandleEnginePreExit();
     }
+#if WITH_EDITOR
+    virtual void SimulateEditorEndPIEForAutomation() override
+    {
+        HandleEditorEndPIE(false);
+    }
+#endif
 #endif
 
 private:
+    bool InitializeRuntime()
+    {
+        if (bInitialized)
+        {
+            return true;
+        }
+
+        AstralAllocator Allocator{};
+        Allocator.alloc = &UEAlloc;
+        Allocator.free = &UEFree;
+        Allocator.user = nullptr;
+
+        AstralInit InitCfg{};
+        InitCfg.sys_alloc = Allocator;
+        InitCfg.log_cb = &UELog;
+        InitCfg.log_user = nullptr;
+        InitCfg.reserve_bytes = 2ull << 30;
+        InitCfg.thread_count = 0;
+        InitCfg.numa_node = 0xFFFFFFFFu;
+        InitCfg.enable_hugepages = 0;
+
+        const AstralErr Err = astral_init(&InitCfg);
+        if (Err != ASTRAL_OK)
+        {
+            bInitialized = false;
+            GAllocatorCounters.Reset();
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_init failed (%d)"), static_cast<int32>(Err));
+            return false;
+        }
+
+        bInitialized = true;
+        UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Initialized"));
+        return true;
+    }
+
     void HandleEnginePreExit()
     {
         ShutdownRuntime(TEXT("EnginePreExit"));
     }
+
+#if WITH_EDITOR
+    void HandleEditorEndPIE(bool bIsSimulating)
+    {
+        (void)bIsSimulating;
+        if (!bInitialized)
+        {
+            return;
+        }
+
+        ShutdownRuntime(TEXT("EndPIE"));
+        InitializeRuntime();
+    }
+#endif
 
     void ShutdownRuntime(const TCHAR* Reason)
     {
@@ -182,6 +234,9 @@ private:
 
     bool bInitialized = false;
     FDelegateHandle PreExitHandle;
+#if WITH_EDITOR
+    FDelegateHandle EndPIEHandle;
+#endif
 };
 
 IMPLEMENT_MODULE(FAstralRuntimeModule, AstralRT)

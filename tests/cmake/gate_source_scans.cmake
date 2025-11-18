@@ -1325,10 +1325,12 @@ foreach(required_unreal_lifecycle_text
     "AstralRT.Mock.DestroyInvalidation"
     "AstralRT.Module.ShutdownRestart"
     "AstralRT.Module.EnginePreExit"
+    "AstralRT.Module.EndPIE"
     "empty memory model load fails"
     "invalid model create rejected"
     "runtime reinitializes after startup"
     "runtime reinitializes after engine pre-exit"
+    "runtime remains initialized after editor EndPIE"
     "Session->Cancel"
     "Session->Reset"
     "ASTRAL_E_CANCELED"
@@ -1349,6 +1351,27 @@ foreach(required_unreal_preexit_text
     "ModuleUnload")
   if(NOT unreal_runtime_module_text MATCHES "${required_unreal_preexit_text}")
     message(FATAL_ERROR "Unreal runtime module is missing editor pre-exit lifecycle hook: ${required_unreal_preexit_text}")
+  endif()
+endforeach()
+
+foreach(required_unreal_endpie_text
+    "FEditorDelegates::EndPIE"
+    "HandleEditorEndPIE"
+    "SimulateEditorEndPIEForAutomation"
+    "ShutdownRuntime[(]TEXT[(]\"EndPIE\"[)][)]"
+    "InitializeRuntime[(][)]")
+  if(NOT unreal_runtime_module_text MATCHES "${required_unreal_endpie_text}")
+    message(FATAL_ERROR "Unreal runtime module is missing editor EndPIE lifecycle hook: ${required_unreal_endpie_text}")
+  endif()
+endforeach()
+
+set(unreal_build_rules "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/AstralRT.Build.cs")
+file(READ "${unreal_build_rules}" unreal_build_rules_text)
+foreach(required_unreal_editor_dependency
+    "Target.bBuildEditor"
+    "PrivateDependencyModuleNames.Add[(]\"UnrealEd\"[)]")
+  if(NOT unreal_build_rules_text MATCHES "${required_unreal_editor_dependency}")
+    message(FATAL_ERROR "Unreal build rules are missing editor-only UnrealEd dependency: ${required_unreal_editor_dependency}")
   endif()
 endforeach()
 

@@ -267,6 +267,43 @@ bool FAstralRTModuleEnginePreExitTest::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTModuleEndPIETest,
+    "AstralRT.Module.EndPIE",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTModuleEndPIETest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    IAstralRT& Runtime = IAstralRT::Get();
+    Runtime.SimulateEditorEndPIEForAutomation();
+    TestTrue(TEXT("runtime remains initialized after editor EndPIE"), Runtime.IsInitialized());
+
+    Runtime.SimulateEditorEndPIEForAutomation();
+    TestTrue(TEXT("second editor EndPIE remains initialized"), Runtime.IsInitialized());
+
+    AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    const char* backend = "mock";
+    model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+    model_desc.backend_name.len = static_cast<uint32_t>(FCStringAnsi::Strlen(backend));
+    model_desc.n_ctx = 128;
+
+    AstralHandle model = 0;
+    const AstralErr err = astral_model_load(&model_desc, &model);
+    TestEqual(TEXT("mock model loads after editor EndPIE"), static_cast<int32>(err), static_cast<int32>(ASTRAL_OK));
+    TestTrue(TEXT("mock model handle after editor EndPIE"), model != 0);
+    if (model != 0) {
+        astral_model_release(model);
+    }
+    return Runtime.IsInitialized() && err == ASTRAL_OK && model != 0;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTFMemoryAllocatorTest,
     "AstralRT.Memory.FMemoryAllocator",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter

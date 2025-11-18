@@ -34,5 +34,8 @@ public:
     virtual FAstralRTAllocatorStats GetAllocatorStats() const = 0;
 #if WITH_DEV_AUTOMATION_TESTS
     virtual void SimulateEnginePreExitForAutomation() = 0;
+#if WITH_EDITOR
+    virtual void SimulateEditorEndPIEForAutomation() = 0;
+#endif
 #endif
 };

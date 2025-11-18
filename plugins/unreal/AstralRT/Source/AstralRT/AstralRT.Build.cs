@@ -28,6 +28,11 @@ public class AstralRT : ModuleRules
             "Engine"
         });
 
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("UnrealEd");
+        }
+
         // ThirdParty: AstralCore
         string ThirdPartyPath = Path.Combine(ModuleDirectory, "../ThirdParty/AstralCore");
         string IncludePath = Path.Combine(ThirdPartyPath, "include");
