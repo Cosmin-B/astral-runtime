@@ -104,14 +104,20 @@ ASTRAL_UNREAL_TEST_MODEL=/workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf \
 ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1 \
 scripts/run_unreal_container_ci.sh --ue-version 5.7 --variant slim --skip-pull --skip-native-build --filter AstralRT.Real.GenerationSmoke
 
+ASTRAL_UNREAL_TEST_MODEL=/workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf \
+ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE=1 \
+scripts/run_unreal_container_ci.sh --ue-version 5.7 --variant slim --skip-pull --skip-native-build --filter AstralRT.Real.SessionLifecycle
+
 ASTRAL_UNREAL_TEST_EMBED_MODEL=/workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf \
 ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1 \
 scripts/run_unreal_container_ci.sh --ue-version 5.7 --variant slim --skip-pull --skip-native-build --filter AstralRT.Real.EmbeddingProbe
 ```
 
 The generation smoke log prints `[unreal_generation_smoke]` with byte-count and
-text evidence. The embedding probe log prints `[unreal_embedding_probe]` with
-backend, model path, dimension, and vector sanity metadata.
+text evidence. The session lifecycle smoke prints `[unreal_session_lifecycle]`
+with cancel, reset, and reuse evidence. The embedding probe log prints
+`[unreal_embedding_probe]` with backend, model path, dimension, and vector
+sanity metadata.
 
 `test_abi_invalid_args` is the fast public C ABI boundary matrix. It exercises
 null outputs, invalid handles, and empty plugin paths without requiring model

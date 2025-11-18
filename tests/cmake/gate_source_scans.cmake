@@ -637,6 +637,18 @@ foreach(required_unreal_generation_smoke_text
   endif()
 endforeach()
 
+foreach(required_unreal_lifecycle_smoke_text
+    "AstralRT.Real.SessionLifecycle"
+    "ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE"
+    "[unreal_session_lifecycle] backend=cpu"
+    "CancelWait == ASTRAL_E_CANCELED"
+    "ReuseByteCount > 0")
+  string(FIND "${unreal_embedding_probe_content}" "${required_unreal_lifecycle_smoke_text}" unreal_lifecycle_smoke_pos)
+  if(unreal_lifecycle_smoke_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal real session lifecycle smoke is missing '${required_unreal_lifecycle_smoke_text}'")
+  endif()
+endforeach()
+
 set(model_downloader_file "${ROOT}/tests/model_downloader.sh")
 file(READ "${model_downloader_file}" model_downloader_content)
 foreach(required_model_downloader_text
@@ -821,6 +833,7 @@ foreach(required_unreal_container_script_text
     "sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
     "ASTRAL_UNREAL_TEST_MODEL"
     "ASTRAL_UNREAL_REQUIRE_REAL_GENERATION"
+    "ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE"
     "ASTRAL_UNREAL_TEST_EMBED_MODEL"
     "ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING"
     "Epic Unreal container access is not configured"

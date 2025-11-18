@@ -11,6 +11,7 @@
 #include "astral_rt.h"
 
 #include "HAL/PlatformMisc.h"
+#include "HAL/PlatformProcess.h"
 #include "Math/UnrealMathUtility.h"
 #include "Misc/Paths.h"
 
@@ -659,6 +660,117 @@ bool FAstralRTRealEmbeddingProbeTest::RunTest(const FString& Parameters) {
     Model->Release();
     Model->ConditionalBeginDestroy();
     return ok && Vec.Num() > 0 && SumAbs > 0.0;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTRealSessionLifecycleTest,
+    "AstralRT.Real.SessionLifecycle",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTRealSessionLifecycleTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    bool ShouldRun = false;
+    const FString ModelPath = readable_model_path_from_env(
+        TEXT("ASTRAL_UNREAL_TEST_MODEL"),
+        TEXT("ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE"),
+        TEXT("AstralRT.Real.SessionLifecycle"),
+        *this,
+        ShouldRun);
+    if (!ShouldRun) {
+        return !env_enabled(TEXT("ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE"));
+    }
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("cpu");
+    ModelDesc.ModelPath = ModelPath;
+    ModelDesc.ContextSize = 512;
+    ModelDesc.BatchSize = 128;
+    ModelDesc.NumThreads = 2;
+
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("real lifecycle model load"), ok);
+    if (!ok) {
+        Model->ConditionalBeginDestroy();
+        return false;
+    }
+
+    UAstralSession* Session = NewObject<UAstralSession>();
+    TestNotNull(TEXT("session allocated"), Session);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 256;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 1;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = true;
+    SessionDesc.Seed = 37;
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("real lifecycle session create"), ok);
+    if (!ok) {
+        Model->Release();
+        Model->ConditionalBeginDestroy();
+        return false;
+    }
+
+    ok = Session->FeedPrompt(TEXT("Repeat the word engine until stopped: engine"), true);
+    TestTrue(TEXT("real lifecycle prompt feed"), ok);
+    ok = Session->Decode();
+    TestTrue(TEXT("real lifecycle decode start"), ok);
+    FPlatformProcess::Sleep(0.01f);
+    const bool CancelOk = Session->Cancel();
+    TestTrue(TEXT("real lifecycle cancel request"), CancelOk);
+    const int32 CancelWait = Session->Wait(120000);
+    TestEqual(TEXT("real lifecycle cancel wait"), CancelWait, static_cast<int32>(ASTRAL_E_CANCELED));
+
+    TArray<uint8> CanceledBytes;
+    const int32 CanceledByteCount = drain_stream(*Session, CanceledBytes);
+    TestTrue(TEXT("real lifecycle canceled stream drain"), CanceledByteCount >= 0);
+
+    SessionDesc.MaxTokens = 8;
+    SessionDesc.Seed = 41;
+    ok = Session->Reset(SessionDesc);
+    TestTrue(TEXT("real lifecycle reset after cancel"), ok);
+    ok = Session->FeedPrompt(TEXT("The capital of France is"), true);
+    TestTrue(TEXT("real lifecycle reuse prompt feed"), ok);
+    ok = Session->Decode();
+    TestTrue(TEXT("real lifecycle reuse decode"), ok);
+    const int32 ReuseWait = Session->Wait(120000);
+    TestEqual(TEXT("real lifecycle reuse wait"), ReuseWait, static_cast<int32>(ASTRAL_OK));
+
+    TArray<uint8> ReuseBytes;
+    const int32 ReuseByteCount = drain_stream(*Session, ReuseBytes);
+    TestTrue(TEXT("real lifecycle reuse produced bytes"), ReuseByteCount > 0);
+
+    const FString ReuseOutput = printable_ascii_summary(ReuseBytes, 160);
+    const FString Evidence = FString::Printf(
+        TEXT("[unreal_session_lifecycle] backend=cpu model=%s cancel_wait=%d canceled_bytes=%d reuse_wait=%d reuse_bytes=%d text=%s"),
+        *ModelPath,
+        CancelWait,
+        CanceledByteCount,
+        ReuseWait,
+        ReuseByteCount,
+        *ReuseOutput);
+    AddInfo(Evidence);
+    UE_LOG(LogAstralRT, Display, TEXT("%s"), *Evidence);
+
+    Session->ConditionalBeginDestroy();
+    Model->Release();
+    Model->ConditionalBeginDestroy();
+    return ok &&
+        CancelOk &&
+        CancelWait == ASTRAL_E_CANCELED &&
+        CanceledByteCount >= 0 &&
+        ReuseWait == ASTRAL_OK &&
+        ReuseByteCount > 0;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

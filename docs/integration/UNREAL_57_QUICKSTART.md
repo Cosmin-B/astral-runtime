@@ -154,15 +154,17 @@ Then run the slim container against the package built by the full UE SDK lane:
 ```bash
 ASTRAL_UNREAL_TEST_MODEL=/workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf \
 ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1 \
+ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE=1 \
 ASTRAL_UNREAL_TEST_EMBED_MODEL=/workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf \
 ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1 \
 ./scripts/run_unreal_container_ci.sh --ue-version 5.7 --variant slim --skip-pull --skip-native-build --filter AstralRT.Real
 ```
 
 The Automation JSON report records `[unreal_generation_smoke]` and
-`[unreal_embedding_probe]` entries with the model path and sanity metadata. Keep
-the report and command line with release evidence; generated model files and
-container logs stay out of git.
+`[unreal_session_lifecycle]` entries for the text model, plus
+`[unreal_embedding_probe]` entries for the embedding model. Keep the report and
+command line with release evidence; generated model files and container logs
+stay out of git.
 
 ## Run The Compatibility Matrix
 
