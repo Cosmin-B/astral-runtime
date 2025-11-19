@@ -54,16 +54,17 @@
         "clang version 20.1.8",
         "v26",
         "Unreal ThirdParty provenance OK",
-        "Found 14 automation tests",
+        "automation tests based on 'AstralRT'",
         "AstralRT.Module.ShutdownRestart",
         "AstralRT.Module.EnginePreExit",
+        "AstralRT.Module.EndPIE",
         "AstralRT: Shutdown (EnginePreExit)",
         "[unreal-results] OK"
       ]
     },
     "unreal_57_slim_container": {
       "status": "pass",
-      "command": "./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT --skip-native-build",
+      "command": "ASTRAL_UNREAL_TEST_MODEL=/workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1 ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE=1 ASTRAL_UNREAL_TEST_EMBED_MODEL=/workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1 ./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT --skip-native-build",
       "artifacts": [
         "logs/unreal-57-slim-container.log"
       ],
@@ -73,9 +74,16 @@
         "clang version 20.1.8",
         "v26",
         "Unreal ThirdParty provenance OK",
-        "Found 14 automation tests",
+        "automation tests based on 'AstralRT'",
         "AstralRT.Module.ShutdownRestart",
         "AstralRT.Module.EnginePreExit",
+        "AstralRT.Module.EndPIE",
+        "AstralRT.Real.GenerationSmoke",
+        "AstralRT.Real.SessionLifecycle",
+        "AstralRT.Real.EmbeddingProbe",
+        "[unreal_generation_smoke] backend=cpu",
+        "[unreal_session_lifecycle] backend=cpu",
+        "[unreal_embedding_probe] backend=cpu",
         "AstralRT: Shutdown (EnginePreExit)",
         "[unreal-results] OK"
       ]

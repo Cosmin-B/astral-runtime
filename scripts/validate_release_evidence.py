@@ -64,6 +64,11 @@ REQUIRED_COMMAND_TOKENS = {
         "sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce",
     ),
     "unreal_57_slim_container": (
+        "ASTRAL_UNREAL_TEST_MODEL",
+        "ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1",
+        "ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE=1",
+        "ASTRAL_UNREAL_TEST_EMBED_MODEL",
+        "ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1",
         "run_unreal_container_ci.sh",
         "--variant slim",
         "--filter AstralRT",
@@ -155,11 +160,21 @@ UNREAL_CONTAINER_COMMON_TOKENS = (
     "20.1.8",
     "Unreal ThirdParty provenance OK",
     "[unreal_ci] Filter: AstralRT",
-    "Found 14 automation tests",
+    "automation tests based on 'AstralRT'",
     "AstralRT.Module.ShutdownRestart",
     "AstralRT.Module.EnginePreExit",
+    "AstralRT.Module.EndPIE",
     "AstralRT: Shutdown (EnginePreExit)",
     "[unreal-results] OK:",
+)
+
+UNREAL_REAL_MODEL_TOKENS = (
+    "AstralRT.Real.GenerationSmoke",
+    "AstralRT.Real.SessionLifecycle",
+    "AstralRT.Real.EmbeddingProbe",
+    "[unreal_generation_smoke] backend=cpu",
+    "[unreal_session_lifecycle] backend=cpu",
+    "[unreal_embedding_probe] backend=cpu",
 )
 
 UNREAL_CONTAINER_FAILURE_TOKENS = (
@@ -316,6 +331,10 @@ def validate_unreal_container_artifacts(lane_name, paths):
     for token in (expected["image"], expected["digest"], *UNREAL_CONTAINER_COMMON_TOKENS):
         if token not in text:
             raise ValueError(f"{lane_name} log is missing {token}")
+    if lane_name == "unreal_57_slim_container":
+        for token in UNREAL_REAL_MODEL_TOKENS:
+            if token not in text:
+                raise ValueError(f"{lane_name} log is missing {token}")
     for token in UNREAL_CONTAINER_FAILURE_TOKENS:
         if token in text:
             raise ValueError(f"{lane_name} log contains failure marker {token}")

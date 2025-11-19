@@ -664,6 +664,19 @@ foreach(required_model_downloader_text
   endif()
 endforeach()
 
+set(hf_manifest_file "${ROOT}/scripts/hf_gguf_manifest_full.json")
+file(READ "${hf_manifest_file}" hf_manifest_content)
+foreach(required_hf_manifest_text
+    "Qwen/Qwen3-0.6B-GGUF"
+    "^Qwen3-0\\\\.6B-Q8_0\\\\.gguf$"
+    "Qwen/Qwen3-Embedding-0.6B-GGUF"
+    "^Qwen3-Embedding-0\\\\.6B-Q8_0\\\\.gguf$")
+  string(FIND "${hf_manifest_content}" "${required_hf_manifest_text}" hf_manifest_pos)
+  if(hf_manifest_pos EQUAL -1)
+    message(FATAL_ERROR "HF GGUF manifest is missing '${required_hf_manifest_text}'")
+  endif()
+endforeach()
+
 set(fast_presubmit_file "${ROOT}/scripts/run_fast_presubmit.sh")
 if(NOT EXISTS "${fast_presubmit_file}")
   message(FATAL_ERROR "Fast presubmit runner missing: ${fast_presubmit_file}")

@@ -3,6 +3,14 @@
   "description": "Pinned Hugging Face GGUF sources for Astral benchmarking (CPU + CUDA).",
   "repos": [
     {
+      "repo": "Qwen/Qwen3-0.6B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 2,
+      "include": [
+        "^Qwen3-0\\.6B-Q8_0\\.gguf$"
+      ]
+    },
+    {
       "repo": "Qwen/Qwen3-8B-GGUF",
       "mode": "all",
       "max_gb_per_file": 200
@@ -16,6 +24,14 @@
       "repo": "bartowski/Qwen_Qwen3-32B-GGUF",
       "mode": "all",
       "max_gb_per_file": 200
+    },
+    {
+      "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 2,
+      "include": [
+        "^Qwen3-Embedding-0\\.6B-Q8_0\\.gguf$"
+      ]
     },
     {
       "repo": "Qwen/Qwen3-Embedding-8B-GGUF",
@@ -49,4 +65,3 @@
     }
   ]
 }
-

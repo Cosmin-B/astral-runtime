@@ -25,14 +25,18 @@ release candidate.
 |---|---|---|
 | UE 5.7 access preflight | `./scripts/check_unreal_validation_access.sh --check-registry` | Yes |
 | UE 5.7 full container | `./scripts/run_unreal_container_ci.sh --variant full --filter AstralRT --install-cmake` using `ghcr.io/epicgames/unreal-engine:dev-5.7.4`; this lane rebuilds the ThirdParty package inside Epic's UE Linux SDK | Yes |
-| UE 5.7 slim container | `./scripts/run_unreal_container_ci.sh --variant slim --filter AstralRT --skip-native-build` using `ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4`; this lane reuses the package staged by the full-container build | Yes |
+| UE 5.7 slim container | `ASTRAL_UNREAL_TEST_MODEL=... ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1 ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE=1 ASTRAL_UNREAL_TEST_EMBED_MODEL=... ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1 ./scripts/run_unreal_container_ci.sh --variant slim --filter AstralRT --skip-native-build` using `ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4`; this lane reuses the package staged by the full-container build and runs the lightweight real-model probes | Yes |
 | Automation tests | `UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh` | Yes |
 | UE 5.4/5.5/5.6/5.7 compatibility | `UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh` | Yes |
 | UE 5.7 sample package and runtime smoke | `UNREAL_RUNUAT=... ./scripts/run_unreal_sample_package.sh --platform Linux`, then launch `build/unreal-sample-package/archive/Linux/AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout` | Yes |
 
 UE 5.7 container logs must show the pinned image/digest, manifest access check,
 local image digest, clang `20.1.8`, Linux SDK `v26`/`20.1.8`, Unreal ThirdParty
-provenance, and `[unreal-results] OK`.
+provenance, module lifecycle Automation including EndPIE, and `[unreal-results]
+OK`. The slim release lane must also show `AstralRT.Real.GenerationSmoke`,
+`AstralRT.Real.SessionLifecycle`, `AstralRT.Real.EmbeddingProbe`, and the
+`[unreal_generation_smoke]`, `[unreal_session_lifecycle]`, and
+`[unreal_embedding_probe]` evidence markers.
 
 UE compatibility matrix logs must include a non-skipped `[unreal_matrix] UE ...`
 section for every supported editor version from 5.4 through 5.7, with
@@ -50,7 +54,7 @@ packaged-content plus Saved-cache memory model loads.
 | CPU llama | Native tests plus feature benchmark with a real GGUF | Yes |
 | CUDA | `./scripts/run_cuda_parity_matrix.sh --preset-set release --arch <deployed-arch-list> --strict` on a real GPU runner with `ASTRAL_TEST_CUDA_PARITY_INFER=1` and `ASTRAL_TEST_CUDA_E2E=1` | Yes |
 | Multimodal | `./scripts/run_multimodal_validation.sh --bench` with real vision and audio model/projector fixtures, preserving `mtmd-features.txt` with `features.media feed_image` and `features.media feed_audio` rows | Yes |
-| HF matrix | Pinned GGUF matrix logs and pass/fail summary | Yes |
+| HF matrix | Pinned GGUF matrix logs and pass/fail summary. The pinned manifest includes narrow Qwen3 0.6B text and Qwen3 Embedding 0.6B includes for fast real-model coverage, alongside the larger release matrix repos. | Yes |
 | Windows large pages | `pwsh -File .\scripts\run_windows_large_page_validation.ps1 -ExpectFallback`, then `-ExpectLargePages` from a token with `SeLockMemoryPrivilege` | Yes |
 
 ## Release Artifacts
