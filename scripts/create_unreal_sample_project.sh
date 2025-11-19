@@ -243,6 +243,9 @@ public:
     FString BackendName = TEXT("mock");
 
     UPROPERTY(EditAnywhere, Category = "Astral")
+    FString MemoryBackendName = TEXT("mock");
+
+    UPROPERTY(EditAnywhere, Category = "Astral")
     FString ModelPath;
 
     UPROPERTY(EditAnywhere, Category = "Astral")
@@ -389,6 +392,10 @@ void AAstralSampleActor::ApplyCommandLineOverrides()
     {
         BackendName = OverrideValue;
     }
+    if (FParse::Value(CommandLine, TEXT("AstralMemoryBackend="), OverrideValue))
+    {
+        MemoryBackendName = OverrideValue;
+    }
     if (FParse::Value(CommandLine, TEXT("AstralModel="), OverrideValue))
     {
         ModelPath = OverrideValue;
@@ -402,8 +409,9 @@ void AAstralSampleActor::ApplyCommandLineOverrides()
         Prompt = OverrideValue;
     }
 
-    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: backend=%s model=%s embedding_model=%s"),
+    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: backend=%s memory_backend=%s model=%s embedding_model=%s"),
         *BackendName,
+        *MemoryBackendName,
         ModelPath.IsEmpty() ? TEXT("<mock/default>") : *ModelPath,
         EmbeddingModelPath.IsEmpty() ? TEXT("<model/default>") : *EmbeddingModelPath);
 }
@@ -435,7 +443,7 @@ bool AAstralSampleActor::LoadMemoryModel(TObjectPtr<UAstralModel>& Model, const 
     FAstralModelDesc Desc{};
     Desc.SourceKind = EAstralModelSourceKind::Memory;
     Desc.ModelBytes = ModelBytes;
-    Desc.BackendName = BackendName;
+    Desc.BackendName = MemoryBackendName;
     Desc.ContextSize = 128;
 
     if (!Model->Load(Desc))
@@ -638,10 +646,14 @@ generated project:
 ```bash
 AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit \
   -AstralBackend=cpu \
+  -AstralMemoryBackend=mock \
   -AstralModel=/absolute/path/to/Qwen3-0.6B-Q8_0.gguf \
   -AstralEmbeddingModel=/absolute/path/to/Qwen3-Embedding-0.6B-Q8_0.gguf \
   -AstralPrompt="Say hello from Astral."
 ```
+
+`-AstralMemoryBackend=mock` keeps the packaged Content/Saved byte demos on the
+mock backend while text generation and embeddings use the real CPU backend.
 
 Real production sign-off still requires packaging this project on the UE 5.7
 release runner and recording the Automation/package logs as release evidence.

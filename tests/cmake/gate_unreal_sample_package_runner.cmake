@@ -94,12 +94,16 @@ if(sample_actor_cpp_text MATCHES "void AAstralSampleActor::RunErrorDemo\\(\\)\\n
   message(FATAL_ERROR "generated RunErrorDemo has an extra opening brace")
 endif()
 foreach(required_sample_text
+    "FString MemoryBackendName = TEXT(\"mock\");"
     "FString EmbeddingModelPath;"
     "void ApplyCommandLineOverrides();"
     "FParse::Value(CommandLine, TEXT(\"AstralBackend=\"), OverrideValue)"
+    "FParse::Value(CommandLine, TEXT(\"AstralMemoryBackend=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralModel=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralEmbeddingModel=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralPrompt=\"), OverrideValue)"
+    "memory_backend=%s"
+    "Desc.BackendName = MemoryBackendName;"
     "ApplyCommandLineOverrides();"
     "Desc.ModelPath = ModelPath;"
     "Desc.ModelPath = EmbeddingModelPath.IsEmpty() ? ModelPath : EmbeddingModelPath;"
