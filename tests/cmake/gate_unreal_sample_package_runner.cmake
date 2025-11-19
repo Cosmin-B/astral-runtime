@@ -75,9 +75,40 @@ endforeach()
 foreach(required_file
     "${project_dir}/AstralSample.uproject"
     "${project_dir}/Plugins/AstralRT/AstralRT.uplugin"
+    "${project_dir}/Source/AstralSample/AstralSampleActor.h"
     "${project_dir}/Source/AstralSample/AstralSampleActor.cpp")
   if(NOT EXISTS "${required_file}")
     message(FATAL_ERROR "sample package runner did not create ${required_file}")
+  endif()
+endforeach()
+
+set(sample_actor_header "${project_dir}/Source/AstralSample/AstralSampleActor.h")
+set(sample_actor_cpp "${project_dir}/Source/AstralSample/AstralSampleActor.cpp")
+file(READ "${sample_actor_header}" sample_actor_header_text)
+file(READ "${sample_actor_cpp}" sample_actor_cpp_text)
+
+if(sample_actor_header_text MATCHES "UFUNCTION\\([^\\n]+\\)\\n    UFUNCTION")
+  message(FATAL_ERROR "generated AstralSampleActor.h has duplicate adjacent UFUNCTION markers")
+endif()
+if(sample_actor_cpp_text MATCHES "void AAstralSampleActor::RunErrorDemo\\(\\)\\n\\{\\n\\{")
+  message(FATAL_ERROR "generated RunErrorDemo has an extra opening brace")
+endif()
+foreach(required_sample_text
+    "FString EmbeddingModelPath;"
+    "void ApplyCommandLineOverrides();"
+    "FParse::Value(CommandLine, TEXT(\"AstralBackend=\"), OverrideValue)"
+    "FParse::Value(CommandLine, TEXT(\"AstralModel=\"), OverrideValue)"
+    "FParse::Value(CommandLine, TEXT(\"AstralEmbeddingModel=\"), OverrideValue)"
+    "FParse::Value(CommandLine, TEXT(\"AstralPrompt=\"), OverrideValue)"
+    "ApplyCommandLineOverrides();"
+    "Desc.ModelPath = ModelPath;"
+    "Desc.ModelPath = EmbeddingModelPath.IsEmpty() ? ModelPath : EmbeddingModelPath;"
+    "void RunPackagedMemorySourceDemo();"
+    "void AAstralSampleActor::RunErrorDemo()"
+    "Astral sample: expected load failure:")
+  string(FIND "${sample_actor_header_text}\n${sample_actor_cpp_text}" "${required_sample_text}" sample_text_pos)
+  if(sample_text_pos EQUAL -1)
+    message(FATAL_ERROR "generated Astral sample source is missing '${required_sample_text}'")
   endif()
 endforeach()
 

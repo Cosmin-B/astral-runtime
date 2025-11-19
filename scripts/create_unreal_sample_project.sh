@@ -246,6 +246,9 @@ public:
     FString ModelPath;
 
     UPROPERTY(EditAnywhere, Category = "Astral")
+    FString EmbeddingModelPath;
+
+    UPROPERTY(EditAnywhere, Category = "Astral")
     FString Prompt = TEXT("Say hello from Astral.");
 
     UFUNCTION(BlueprintCallable, Category = "Astral")
@@ -289,6 +292,7 @@ private:
     UPROPERTY()
     TObjectPtr<UAstralModel> SavedCacheModel;
 
+    void ApplyCommandLineOverrides();
     bool LoadGenerationModel();
     bool CreateSession();
     bool LoadMemoryModel(TObjectPtr<UAstralModel>& Model, const TArray<uint8>& ModelBytes, const TCHAR* Label);
@@ -324,6 +328,8 @@ AAstralSampleActor::AAstralSampleActor()
 void AAstralSampleActor::BeginPlay()
 {
     Super::BeginPlay();
+
+    ApplyCommandLineOverrides();
 
     RunGenerationDemo();
     CancelStreamingDemo();
@@ -372,6 +378,34 @@ void AAstralSampleActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
     }
 
     Super::EndPlay(EndPlayReason);
+}
+
+void AAstralSampleActor::ApplyCommandLineOverrides()
+{
+    const TCHAR* CommandLine = FCommandLine::Get();
+    FString OverrideValue;
+
+    if (FParse::Value(CommandLine, TEXT("AstralBackend="), OverrideValue))
+    {
+        BackendName = OverrideValue;
+    }
+    if (FParse::Value(CommandLine, TEXT("AstralModel="), OverrideValue))
+    {
+        ModelPath = OverrideValue;
+    }
+    if (FParse::Value(CommandLine, TEXT("AstralEmbeddingModel="), OverrideValue))
+    {
+        EmbeddingModelPath = OverrideValue;
+    }
+    if (FParse::Value(CommandLine, TEXT("AstralPrompt="), OverrideValue))
+    {
+        Prompt = OverrideValue;
+    }
+
+    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: backend=%s model=%s embedding_model=%s"),
+        *BackendName,
+        ModelPath.IsEmpty() ? TEXT("<mock/default>") : *ModelPath,
+        EmbeddingModelPath.IsEmpty() ? TEXT("<model/default>") : *EmbeddingModelPath);
 }
 
 bool AAstralSampleActor::LoadGenerationModel()
@@ -478,7 +512,7 @@ void AAstralSampleActor::RunEmbeddingDemo()
 
     FAstralModelDesc Desc{};
     Desc.SourceKind = EAstralModelSourceKind::Path;
-    Desc.ModelPath = ModelPath;
+    Desc.ModelPath = EmbeddingModelPath.IsEmpty() ? ModelPath : EmbeddingModelPath;
     Desc.BackendName = BackendName;
     Desc.ContextSize = 128;
     Desc.bEmbeddingsOnly = true;
@@ -597,6 +631,17 @@ Open `AstralSample.uproject` in UE 5.7 and run the default map. The sample
 GameMode spawns `AAstralSampleActor`, which demonstrates model load, streaming generation,
 cancellation, embeddings, packaged content bytes, Saved cache bytes, and expected error logging
 through `LogAstralSample`.
+
+For real-model local runs, pass command-line overrides instead of editing the
+generated project:
+
+```bash
+AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit \
+  -AstralBackend=cpu \
+  -AstralModel=/absolute/path/to/Qwen3-0.6B-Q8_0.gguf \
+  -AstralEmbeddingModel=/absolute/path/to/Qwen3-Embedding-0.6B-Q8_0.gguf \
+  -AstralPrompt="Say hello from Astral."
+```
 
 Real production sign-off still requires packaging this project on the UE 5.7
 release runner and recording the Automation/package logs as release evidence.
