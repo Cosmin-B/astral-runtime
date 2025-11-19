@@ -266,6 +266,7 @@ bool FAstralRTModuleEnginePreExitTest::RunTest(const FString& Parameters) {
     return Runtime.IsInitialized();
 }
 
+#if WITH_EDITOR
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTModuleEndPIETest,
     "AstralRT.Module.EndPIE",
@@ -302,6 +303,7 @@ bool FAstralRTModuleEndPIETest::RunTest(const FString& Parameters) {
     }
     return Runtime.IsInitialized() && err == ASTRAL_OK && model != 0;
 }
+#endif
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTFMemoryAllocatorTest,

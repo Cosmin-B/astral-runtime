@@ -1352,6 +1352,9 @@ foreach(required_unreal_lifecycle_text
     message(FATAL_ERROR "Unreal lifecycle Automation coverage is missing ${required_unreal_lifecycle_text}")
   endif()
 endforeach()
+if(NOT unreal_automation_text MATCHES "#if WITH_EDITOR[^\n]*\nIMPLEMENT_SIMPLE_AUTOMATION_TEST\\(\n    FAstralRTModuleEndPIETest")
+  message(FATAL_ERROR "AstralRT.Module.EndPIE Automation must stay behind WITH_EDITOR for packaged game targets")
+endif()
 
 set(unreal_runtime_module_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralRuntimeModule.cpp")
 file(READ "${unreal_runtime_module_source}" unreal_runtime_module_text)
