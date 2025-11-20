@@ -97,6 +97,7 @@ REQUIRED_COMMAND_TOKENS = {
         "--sample-model",
         "--sample-embedding-model",
         "--sample-memory-backend mock",
+        "--sample-media-backend mock",
     ),
     "unity_editmode_abi": ("UNITY_EDITOR", "run_unity_ci_tests.sh"),
     "cuda_parity_matrix": (
@@ -229,6 +230,7 @@ UNREAL_SAMPLE_RUNTIME_TOKENS = (
     "AstralSampleAutoQuit",
     "Mounted IoStore container",
     "Mounted Pak file",
+    "Astral sample: media feed demo loaded",
     "Astral sample: packaged content bytes read",
     "Astral sample: packaged content memory model loaded",
     "Astral sample: saved cache bytes read",

@@ -13,6 +13,7 @@ build_native=1
 run_sample="${ASTRAL_UNREAL_SAMPLE_RUN:-0}"
 sample_backend="${ASTRAL_UNREAL_SAMPLE_BACKEND:-}"
 sample_memory_backend="${ASTRAL_UNREAL_SAMPLE_MEMORY_BACKEND:-mock}"
+sample_media_backend="${ASTRAL_UNREAL_SAMPLE_MEDIA_BACKEND:-mock}"
 sample_model="${ASTRAL_UNREAL_SAMPLE_MODEL:-}"
 sample_embedding_model="${ASTRAL_UNREAL_SAMPLE_EMBED_MODEL:-}"
 sample_prompt="${ASTRAL_UNREAL_SAMPLE_PROMPT:-Say hello from Astral.}"
@@ -38,6 +39,8 @@ Options:
   --sample-backend <name>  Backend for generation/embedding demos
   --sample-memory-backend <name>
                           Backend for packaged Content/Saved byte demos
+  --sample-media-backend <name>
+                          Backend for sample image/audio feed demo
   --sample-model <path>    GGUF path passed as -AstralModel
   --sample-embedding-model <path>
                           GGUF path passed as -AstralEmbeddingModel
@@ -51,6 +54,7 @@ Environment:
   ASTRAL_UNREAL_SAMPLE_RUN
   ASTRAL_UNREAL_SAMPLE_BACKEND
   ASTRAL_UNREAL_SAMPLE_MEMORY_BACKEND
+  ASTRAL_UNREAL_SAMPLE_MEDIA_BACKEND
   ASTRAL_UNREAL_SAMPLE_MODEL
   ASTRAL_UNREAL_SAMPLE_EMBED_MODEL
   ASTRAL_UNREAL_SAMPLE_PROMPT
@@ -105,6 +109,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --sample-memory-backend)
       sample_memory_backend="${2:-}"
+      shift 2
+      ;;
+    --sample-media-backend)
+      sample_media_backend="${2:-}"
       shift 2
       ;;
     --sample-model)
@@ -254,6 +262,7 @@ runtime_args=(
   -stdout
   "-AstralBackend=${sample_backend}"
   "-AstralMemoryBackend=${sample_memory_backend}"
+  "-AstralMediaBackend=${sample_media_backend}"
 )
 if [[ -n "${sample_model}" ]]; then
   runtime_args+=("-AstralModel=${sample_model}")
@@ -268,6 +277,7 @@ fi
 echo "[unreal_sample] Runtime: ${sample_exe}"
 echo "[unreal_sample] Runtime backend: ${sample_backend}"
 echo "[unreal_sample] Runtime memory backend: ${sample_memory_backend}"
+echo "[unreal_sample] Runtime media backend: ${sample_media_backend}"
 if [[ -n "${sample_runtime_log}" ]]; then
   mkdir -p "$(dirname "${sample_runtime_log}")"
   echo "[unreal_sample] Runtime log: ${sample_runtime_log}"

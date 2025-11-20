@@ -53,6 +53,7 @@ for token in \
   "-AstralSampleAutoQuit" \
   "-AstralBackend=cpu" \
   "-AstralMemoryBackend=mock" \
+  "-AstralMediaBackend=mock" \
   "-AstralModel=/tmp/text.gguf" \
   "-AstralEmbeddingModel=/tmp/embed.gguf"; do
   case " $* " in
@@ -132,10 +133,12 @@ foreach(required_runtime_text
     "[unreal_sample] Runtime:"
     "[unreal_sample] Runtime backend: cpu"
     "[unreal_sample] Runtime memory backend: mock"
+    "[unreal_sample] Runtime media backend: mock"
     "[unreal_sample] Runtime log:"
     "fake sample:"
     "-AstralBackend=cpu"
     "-AstralMemoryBackend=mock"
+    "-AstralMediaBackend=mock"
     "-AstralModel=/tmp/text.gguf"
     "-AstralEmbeddingModel=/tmp/embed.gguf"
     "[unreal_sample] Runtime OK")
@@ -175,11 +178,20 @@ foreach(required_sample_text
     "void ApplyCommandLineOverrides();"
     "FParse::Value(CommandLine, TEXT(\"AstralBackend=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralMemoryBackend=\"), OverrideValue)"
+    "FParse::Value(CommandLine, TEXT(\"AstralMediaBackend=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralModel=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralEmbeddingModel=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralPrompt=\"), OverrideValue)"
     "memory_backend=%s"
+    "media_backend=%s"
+    "UE_LOG(LogAstralSample, Display"
     "Desc.BackendName = MemoryBackendName;"
+    "void RunMediaFeedDemo();"
+    "UAstralMediaLibrary::MakeRGBA8ImageFromBytes"
+    "UAstralMediaLibrary::MakePCM16AudioFromBytes"
+    "MediaSession->FeedImage(Image, false)"
+    "MediaSession->FeedAudio(Audio, true)"
+    "Astral sample: media feed demo loaded"
     "ApplyCommandLineOverrides();"
     "Desc.ModelPath = ModelPath;"
     "Desc.ModelPath = EmbeddingModelPath.IsEmpty() ? ModelPath : EmbeddingModelPath;"

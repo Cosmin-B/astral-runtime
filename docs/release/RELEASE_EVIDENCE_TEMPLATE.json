@@ -105,7 +105,7 @@
     },
     "unreal_sample_package": {
       "status": "pass",
-      "command": "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux --run-sample --runtime-log build/unreal-sample-package/runtime.log --sample-model /workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf --sample-embedding-model /workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf --sample-memory-backend mock",
+      "command": "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux --run-sample --runtime-log build/unreal-sample-package/runtime.log --sample-model /workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf --sample-embedding-model /workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf --sample-memory-backend mock --sample-media-backend mock",
       "artifacts": [
         "logs/unreal-sample-package.log",
         "logs/unreal-sample-runtime.log"

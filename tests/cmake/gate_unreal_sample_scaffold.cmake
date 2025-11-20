@@ -94,6 +94,9 @@ foreach(required_actor_text
     "AstralSampleAutoQuit"
     "OnStreamBytesNative"
     "EmbedUtf8Bytes"
+    "RunMediaFeedDemo"
+    "UAstralMediaLibrary::MakeRGBA8ImageFromBytes"
+    "MediaSession->FeedAudio"
     "astral_last_error"
     "LogAstralSample")
   if(NOT actor_text MATCHES "${required_actor_text}")
@@ -108,6 +111,7 @@ foreach(required_readme_text
     "streaming generation"
     "cancellation"
     "embeddings"
+    "image/audio media feed"
     "packaged content bytes"
     "Saved cache bytes"
     "expected error logging")

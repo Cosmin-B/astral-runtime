@@ -61,7 +61,7 @@ endif()
 if(NOT good_output MATCHES "Unreal UE 5[.]7 slim container: scripts/run_unreal_container_ci\\.sh --variant slim --filter AstralRT --skip-native-build")
   message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not require the Unreal slim container lane: ${good_output}")
 endif()
-if(NOT good_output MATCHES "Unreal sample package: scripts/run_unreal_sample_package\\.sh --platform Linux --run-sample .* --sample-memory-backend mock")
+if(NOT good_output MATCHES "Unreal sample package: scripts/run_unreal_sample_package\\.sh --platform Linux --run-sample .* --sample-memory-backend mock --sample-media-backend mock")
   message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not require the Unreal sample package lane: ${good_output}")
 endif()
 

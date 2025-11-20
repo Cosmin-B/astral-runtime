@@ -246,6 +246,9 @@ public:
     FString MemoryBackendName = TEXT("mock");
 
     UPROPERTY(EditAnywhere, Category = "Astral")
+    FString MediaBackendName = TEXT("mock");
+
+    UPROPERTY(EditAnywhere, Category = "Astral")
     FString ModelPath;
 
     UPROPERTY(EditAnywhere, Category = "Astral")
@@ -262,6 +265,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Astral")
     void RunEmbeddingDemo();
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    void RunMediaFeedDemo();
 
     UFUNCTION(BlueprintCallable, Category = "Astral")
     void RunPackagedMemorySourceDemo();
@@ -290,6 +296,12 @@ private:
     TObjectPtr<UAstralEmbedder> Embedder;
 
     UPROPERTY()
+    TObjectPtr<UAstralModel> MediaModel;
+
+    UPROPERTY()
+    TObjectPtr<UAstralSession> MediaSession;
+
+    UPROPERTY()
     TObjectPtr<UAstralModel> ContentMemoryModel;
 
     UPROPERTY()
@@ -307,6 +319,7 @@ cat > "${project_dir}/Source/AstralSample/AstralSampleActor.cpp" <<'EOF'
 #include "AstralSampleActor.h"
 
 #include "AstralEmbedder.h"
+#include "AstralMediaLibrary.h"
 #include "AstralModel.h"
 #include "AstralSession.h"
 #include "AstralTypes.h"
@@ -337,6 +350,7 @@ void AAstralSampleActor::BeginPlay()
     RunGenerationDemo();
     CancelStreamingDemo();
     RunEmbeddingDemo();
+    RunMediaFeedDemo();
     RunPackagedMemorySourceDemo();
     RunSavedCacheDemo();
     RunErrorDemo();
@@ -369,6 +383,16 @@ void AAstralSampleActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
         EmbeddingModel->Release();
         EmbeddingModel = nullptr;
     }
+    if (MediaSession != nullptr)
+    {
+        MediaSession->Cancel();
+        MediaSession = nullptr;
+    }
+    if (MediaModel != nullptr)
+    {
+        MediaModel->Release();
+        MediaModel = nullptr;
+    }
     if (ContentMemoryModel != nullptr)
     {
         ContentMemoryModel->Release();
@@ -396,6 +420,10 @@ void AAstralSampleActor::ApplyCommandLineOverrides()
     {
         MemoryBackendName = OverrideValue;
     }
+    if (FParse::Value(CommandLine, TEXT("AstralMediaBackend="), OverrideValue))
+    {
+        MediaBackendName = OverrideValue;
+    }
     if (FParse::Value(CommandLine, TEXT("AstralModel="), OverrideValue))
     {
         ModelPath = OverrideValue;
@@ -409,9 +437,10 @@ void AAstralSampleActor::ApplyCommandLineOverrides()
         Prompt = OverrideValue;
     }
 
-    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: backend=%s memory_backend=%s model=%s embedding_model=%s"),
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: backend=%s memory_backend=%s media_backend=%s model=%s embedding_model=%s"),
         *BackendName,
         *MemoryBackendName,
+        *MediaBackendName,
         ModelPath.IsEmpty() ? TEXT("<mock/default>") : *ModelPath,
         EmbeddingModelPath.IsEmpty() ? TEXT("<model/default>") : *EmbeddingModelPath);
 }
@@ -452,7 +481,7 @@ bool AAstralSampleActor::LoadMemoryModel(TObjectPtr<UAstralModel>& Model, const 
         return false;
     }
 
-    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: %s memory model loaded from %d bytes"), Label, ModelBytes.Num());
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: %s memory model loaded from %d bytes"), Label, ModelBytes.Num());
     return true;
 }
 
@@ -511,7 +540,7 @@ void AAstralSampleActor::CancelStreamingDemo()
     }
 
     const int32 WaitResult = Session->Wait(1000);
-    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: canceled stream wait result %d"), WaitResult);
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: canceled stream wait result %d"), WaitResult);
 }
 
 void AAstralSampleActor::RunEmbeddingDemo()
@@ -549,7 +578,72 @@ void AAstralSampleActor::RunEmbeddingDemo()
         return;
     }
 
-    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: embedding dimension %d"), Vector.Num());
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: embedding dimension %d"), Vector.Num());
+}
+
+void AAstralSampleActor::RunMediaFeedDemo()
+{
+    MediaModel = NewObject<UAstralModel>(this);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.SourceKind = EAstralModelSourceKind::Path;
+    ModelDesc.BackendName = MediaBackendName;
+    ModelDesc.ContextSize = 128;
+
+    if (!MediaModel->Load(ModelDesc))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media model load failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        return;
+    }
+
+    MediaSession = NewObject<UAstralSession>(this);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 16;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 0;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = false;
+    SessionDesc.Seed = 17;
+
+    if (!MediaSession->Create(MediaModel, SessionDesc))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media session create failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        return;
+    }
+
+    TArray<uint8> RgbaBytes;
+    RgbaBytes.SetNumZeroed(2 * 2 * 4);
+
+    FAstralImageDesc Image{};
+    if (!UAstralMediaLibrary::MakeRGBA8ImageFromBytes(RgbaBytes, 2, 2, Image))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media image descriptor failed"));
+        return;
+    }
+
+    TArray<uint8> PcmBytes;
+    PcmBytes.SetNumZeroed(4 * static_cast<int32>(sizeof(int16)));
+
+    FAstralAudioDesc Audio{};
+    if (!UAstralMediaLibrary::MakePCM16AudioFromBytes(PcmBytes, 1, 16000, Audio))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media audio descriptor failed"));
+        return;
+    }
+
+    if (!MediaSession->FeedImage(Image, false))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media image feed failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        return;
+    }
+    if (!MediaSession->FeedAudio(Audio, true))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media audio feed failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        return;
+    }
+
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: media feed demo loaded %s backend with RGBA image and PCM16 audio"), *MediaBackendName);
 }
 
 void AAstralSampleActor::RunPackagedMemorySourceDemo()
@@ -563,7 +657,7 @@ void AAstralSampleActor::RunPackagedMemorySourceDemo()
         return;
     }
 
-    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: packaged content bytes read from %s"), *ContentModelPath);
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: packaged content bytes read from %s"), *ContentModelPath);
     LoadMemoryModel(ContentMemoryModel, ModelBytes, TEXT("packaged content"));
 }
 
@@ -594,7 +688,7 @@ void AAstralSampleActor::RunSavedCacheDemo()
         return;
     }
 
-    UE_LOG(LogAstralSample, Log, TEXT("Astral sample: saved cache bytes read from %s"), *CachePath);
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: saved cache bytes read from %s"), *CachePath);
     LoadMemoryModel(SavedCacheModel, CachedBytes, TEXT("saved cache"));
 }
 
@@ -619,7 +713,7 @@ void AAstralSampleActor::RunErrorDemo()
 void AAstralSampleActor::OnStreamBytes(TConstArrayView<uint8> Bytes)
 {
     FUTF8ToTCHAR Text(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), Bytes.Num());
-    UE_LOG(LogAstralSample, Log, TEXT("Astral sample stream: %.*s"), Text.Length(), Text.Get());
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample stream: %.*s"), Text.Length(), Text.Get());
 }
 EOF
 
@@ -637,8 +731,8 @@ cmake --build --preset unreal-plugin -j
 
 Open `AstralSample.uproject` in UE 5.7 and run the default map. The sample
 GameMode spawns `AAstralSampleActor`, which demonstrates model load, streaming generation,
-cancellation, embeddings, packaged content bytes, Saved cache bytes, and expected error logging
-through `LogAstralSample`.
+cancellation, embeddings, image/audio media feed, packaged content bytes,
+Saved cache bytes, and expected error logging through `LogAstralSample`.
 
 For real-model local runs, pass command-line overrides instead of editing the
 generated project:
@@ -647,6 +741,7 @@ generated project:
 AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit \
   -AstralBackend=cpu \
   -AstralMemoryBackend=mock \
+  -AstralMediaBackend=mock \
   -AstralModel=/absolute/path/to/Qwen3-0.6B-Q8_0.gguf \
   -AstralEmbeddingModel=/absolute/path/to/Qwen3-Embedding-0.6B-Q8_0.gguf \
   -AstralPrompt="Say hello from Astral."
@@ -654,6 +749,8 @@ AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit \
 
 `-AstralMemoryBackend=mock` keeps the packaged Content/Saved byte demos on the
 mock backend while text generation and embeddings use the real CPU backend.
+`-AstralMediaBackend=mock` keeps the sample image/audio feed demo lightweight;
+real projector validation remains part of the MTMD release lane.
 
 Real production sign-off still requires packaging this project on the UE 5.7
 release runner and recording the Automation/package logs as release evidence.

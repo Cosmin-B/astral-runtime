@@ -28,7 +28,7 @@ release candidate.
 | UE 5.7 slim container | `ASTRAL_UNREAL_TEST_MODEL=... ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1 ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE=1 ASTRAL_UNREAL_TEST_EMBED_MODEL=... ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1 ./scripts/run_unreal_container_ci.sh --variant slim --filter AstralRT --skip-native-build` using `ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4`; this lane reuses the package staged by the full-container build and runs the lightweight real-model probes | Yes |
 | Automation tests | `UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh` | Yes |
 | UE 5.4/5.5/5.6/5.7 compatibility | `UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh` | Yes |
-| UE 5.7 sample package and runtime smoke | `UNREAL_RUNUAT=... ./scripts/run_unreal_sample_package.sh --platform Linux --run-sample --runtime-log build/unreal-sample-package/runtime.log --sample-model ... --sample-embedding-model ... --sample-memory-backend mock` | Yes |
+| UE 5.7 sample package and runtime smoke | `UNREAL_RUNUAT=... ./scripts/run_unreal_sample_package.sh --platform Linux --run-sample --runtime-log build/unreal-sample-package/runtime.log --sample-model ... --sample-embedding-model ... --sample-memory-backend mock --sample-media-backend mock` | Yes |
 
 UE 5.7 container logs must show the pinned image/digest, manifest access check,
 local image digest, clang `20.1.8`, Linux SDK `v26`/`20.1.8`, Unreal ThirdParty

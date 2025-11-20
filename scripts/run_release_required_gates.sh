@@ -74,6 +74,7 @@ unreal_sample_args=(
   --sample-model "${unreal_sample_model}"
   --sample-embedding-model "${unreal_sample_embed_model}"
   --sample-memory-backend mock
+  --sample-media-backend mock
 )
 
 require_env_for_plan() {

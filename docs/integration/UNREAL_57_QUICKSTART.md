@@ -96,7 +96,7 @@ UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
   --runtime-log build/unreal-sample-package/runtime.log \
   --sample-model "$PWD/tests/models/Qwen3-0.6B-Q8_0.gguf" \
   --sample-embedding-model "$PWD/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf" \
-  --sample-memory-backend mock
+  --sample-memory-backend mock --sample-media-backend mock
 ```
 
 ## Run Local Automation
