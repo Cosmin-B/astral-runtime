@@ -67,6 +67,8 @@ Presets:
     - Embeddings model (Nomic v1.5; larger than MiniLM/BGE)
   liquid-lfm2-350m-q4km
     - Small LiquidAI generative model (still hundreds of MB)
+  gemma3-270m-q4km
+    - Tiny Gemma 3 generative GGUF, useful for fast local and Unreal smoke runs
   qwen3-0.6b-q8
     - Small Qwen3 generative GGUF from the official Qwen repo
   qwen3-embed-0.6b-q8
@@ -117,6 +119,14 @@ apply_preset() {
             HF_REVISION="main"
             MODEL_URL=""
             MODEL_MIN_BYTES=200000000
+            ;;
+        gemma3-270m-q4km)
+            MODEL_FILE_NAME="gemma-3-270m-q4_k_m.gguf"
+            HF_REPO="gguf-org/gemma-3-270m-gguf"
+            HF_FILE="gemma-3-270m-q4_k_m.gguf"
+            HF_REVISION="main"
+            MODEL_URL=""
+            MODEL_MIN_BYTES=230000000
             ;;
         qwen3-0.6b-q8)
             MODEL_FILE_NAME="Qwen3-0.6B-Q8_0.gguf"

@@ -655,6 +655,9 @@ foreach(required_model_downloader_text
     "qwen3-0.6b-q8"
     "Qwen/Qwen3-0.6B-GGUF"
     "Qwen3-0.6B-Q8_0.gguf"
+    "gemma3-270m-q4km"
+    "gguf-org/gemma-3-270m-gguf"
+    "gemma-3-270m-q4_k_m.gguf"
     "qwen3-embed-0.6b-q8"
     "Qwen/Qwen3-Embedding-0.6B-GGUF"
     "Qwen3-Embedding-0.6B-Q8_0.gguf")
@@ -669,6 +672,8 @@ file(READ "${hf_manifest_file}" hf_manifest_content)
 foreach(required_hf_manifest_text
     "Qwen/Qwen3-0.6B-GGUF"
     "^Qwen3-0\\\\.6B-Q8_0\\\\.gguf$"
+    "gguf-org/gemma-3-270m-gguf"
+    "^gemma-3-270m-q4_k_m\\\\.gguf$"
     "Qwen/Qwen3-Embedding-0.6B-GGUF"
     "^Qwen3-Embedding-0\\\\.6B-Q8_0\\\\.gguf$")
   string(FIND "${hf_manifest_content}" "${required_hf_manifest_text}" hf_manifest_pos)

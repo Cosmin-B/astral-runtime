@@ -45,6 +45,12 @@ For additional small smoke fixtures, use the Qwen3 presets:
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8
 ```
 
+For a newer tiny text-generation fixture, use Gemma 3 270M:
+
+```bash
+./tests/model_downloader.sh --preset gemma3-270m-q4km
+```
+
 ## Media (vision/audio) tests
 
 `test_media` exercises mock vision/audio feeds + multimodal embeddings. Real CPU media init smoke checks run when:

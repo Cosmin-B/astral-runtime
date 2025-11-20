@@ -11,6 +11,14 @@
       ]
     },
     {
+      "repo": "gguf-org/gemma-3-270m-gguf",
+      "mode": "all",
+      "max_gb_per_file": 1,
+      "include": [
+        "^gemma-3-270m-q4_k_m\\.gguf$"
+      ]
+    },
+    {
       "repo": "Qwen/Qwen3-8B-GGUF",
       "mode": "all",
       "max_gb_per_file": 200
