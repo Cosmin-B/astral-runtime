@@ -92,7 +92,11 @@ REQUIRED_COMMAND_TOKENS = {
         "UNREAL_RUNUAT",
         "run_unreal_sample_package.sh",
         "--platform Linux",
-        "AstralSampleAutoQuit",
+        "--run-sample",
+        "--runtime-log",
+        "--sample-model",
+        "--sample-embedding-model",
+        "--sample-memory-backend mock",
     ),
     "unity_editmode_abi": ("UNITY_EDITOR", "run_unity_ci_tests.sh"),
     "cuda_parity_matrix": (

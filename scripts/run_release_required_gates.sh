@@ -64,6 +64,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+unreal_sample_model="${ASTRAL_UNREAL_SAMPLE_MODEL:-${root_dir}/tests/models/Qwen3-0.6B-Q8_0.gguf}"
+unreal_sample_embed_model="${ASTRAL_UNREAL_SAMPLE_EMBED_MODEL:-${root_dir}/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf}"
+unreal_sample_runtime_log="${ASTRAL_UNREAL_SAMPLE_RUNTIME_LOG:-build/unreal-sample-package/runtime.log}"
+unreal_sample_args=(
+  --platform Linux
+  --run-sample
+  --runtime-log "${unreal_sample_runtime_log}"
+  --sample-model "${unreal_sample_model}"
+  --sample-embedding-model "${unreal_sample_embed_model}"
+  --sample-memory-backend mock
+)
+
 require_env_for_plan() {
   local missing=0
   for name in "$@"; do
@@ -92,7 +104,7 @@ print_release_plan() {
     echo "  Unreal UE 5.7 full container: scripts/run_unreal_container_ci.sh --variant full --filter AstralRT --install-cmake"
     echo "  Unreal UE 5.7 slim container: scripts/run_unreal_container_ci.sh --variant slim --filter AstralRT --skip-native-build"
     echo "  Unreal matrix: scripts/run_unreal_compatibility_matrix.sh"
-    echo "  Unreal sample package: scripts/run_unreal_sample_package.sh --platform Linux"
+    echo "  Unreal sample package: scripts/run_unreal_sample_package.sh ${unreal_sample_args[*]}"
   else
     echo "  Unreal container, matrix, and sample package: skipped for local diagnosis"
   fi
@@ -192,7 +204,7 @@ if [[ "${run_unreal}" -eq 1 ]]; then
   scripts/run_unreal_compatibility_matrix.sh
 
   echo "[release-gate] Unreal 5.7 sample package"
-  scripts/run_unreal_sample_package.sh --platform Linux
+  scripts/run_unreal_sample_package.sh "${unreal_sample_args[@]}"
 else
   echo "[release-gate] Unreal container, compatibility matrix, and sample package skipped"
 fi

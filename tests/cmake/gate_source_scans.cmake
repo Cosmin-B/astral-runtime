@@ -801,6 +801,10 @@ foreach(required_unreal_sample_package_script_text
     "BuildCookRun"
     "-platform="
     "-archive"
+    "--run-sample"
+    "ASTRAL_UNREAL_SAMPLE_MODEL"
+    "-AstralMemoryBackend="
+    "[unreal_sample] Runtime OK"
     "[unreal_sample] OK:")
   string(FIND "${unreal_sample_package_script_text}" "${required_unreal_sample_package_script_text}" unreal_sample_package_script_pos)
   if(unreal_sample_package_script_pos EQUAL -1)

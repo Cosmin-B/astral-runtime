@@ -10,6 +10,13 @@ runuat="${UNREAL_RUNUAT:-}"
 unreal_editor="${UNREAL_EDITOR:-}"
 engine_dir="${UNREAL_ENGINE_DIR:-}"
 build_native=1
+run_sample="${ASTRAL_UNREAL_SAMPLE_RUN:-0}"
+sample_backend="${ASTRAL_UNREAL_SAMPLE_BACKEND:-}"
+sample_memory_backend="${ASTRAL_UNREAL_SAMPLE_MEMORY_BACKEND:-mock}"
+sample_model="${ASTRAL_UNREAL_SAMPLE_MODEL:-}"
+sample_embedding_model="${ASTRAL_UNREAL_SAMPLE_EMBED_MODEL:-}"
+sample_prompt="${ASTRAL_UNREAL_SAMPLE_PROMPT:-Say hello from Astral.}"
+sample_runtime_log="${ASTRAL_UNREAL_SAMPLE_RUNTIME_LOG:-}"
 
 usage() {
   cat <<'USAGE'
@@ -26,12 +33,28 @@ Options:
   --editor <path>          UnrealEditor-Cmd/UnrealEditor path used to infer RunUAT
   --engine-dir <path>      Unreal engine root used to infer RunUAT
   --skip-native-build      Do not rebuild the AstralRT ThirdParty package first
+  --run-sample             Launch the archived sample after packaging
+  --runtime-log <path>     Capture packaged sample output to this log
+  --sample-backend <name>  Backend for generation/embedding demos
+  --sample-memory-backend <name>
+                          Backend for packaged Content/Saved byte demos
+  --sample-model <path>    GGUF path passed as -AstralModel
+  --sample-embedding-model <path>
+                          GGUF path passed as -AstralEmbeddingModel
+  --sample-prompt <text>   Prompt passed as -AstralPrompt
   -h, --help               Show this help
 
 Environment:
   UNREAL_RUNUAT            Same as --runuat
   UNREAL_ENGINE_DIR        Same as --engine-dir
   UNREAL_EDITOR            Same as --editor
+  ASTRAL_UNREAL_SAMPLE_RUN
+  ASTRAL_UNREAL_SAMPLE_BACKEND
+  ASTRAL_UNREAL_SAMPLE_MEMORY_BACKEND
+  ASTRAL_UNREAL_SAMPLE_MODEL
+  ASTRAL_UNREAL_SAMPLE_EMBED_MODEL
+  ASTRAL_UNREAL_SAMPLE_PROMPT
+  ASTRAL_UNREAL_SAMPLE_RUNTIME_LOG
 
 The generated sample project is a sidecar artifact and must not be committed to
 the Astral repo.
@@ -67,6 +90,34 @@ while [[ $# -gt 0 ]]; do
     --skip-native-build)
       build_native=0
       shift
+      ;;
+    --run-sample)
+      run_sample=1
+      shift
+      ;;
+    --runtime-log)
+      sample_runtime_log="${2:-}"
+      shift 2
+      ;;
+    --sample-backend)
+      sample_backend="${2:-}"
+      shift 2
+      ;;
+    --sample-memory-backend)
+      sample_memory_backend="${2:-}"
+      shift 2
+      ;;
+    --sample-model)
+      sample_model="${2:-}"
+      shift 2
+      ;;
+    --sample-embedding-model)
+      sample_embedding_model="${2:-}"
+      shift 2
+      ;;
+    --sample-prompt)
+      sample_prompt="${2:-}"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -131,6 +182,14 @@ if [[ "${runuat}" != *.bat && ! -x "${runuat}" ]]; then
   exit 2
 fi
 
+if [[ -z "${sample_backend}" ]]; then
+  if [[ -n "${sample_model}" || -n "${sample_embedding_model}" ]]; then
+    sample_backend="cpu"
+  else
+    sample_backend="mock"
+  fi
+fi
+
 if [[ "${build_native}" -eq 1 ]]; then
   cmake --preset unreal-plugin
   cmake --build --preset unreal-plugin -j
@@ -169,3 +228,63 @@ echo "[unreal_sample] BuildCookRun"
   -utf8output
 
 echo "[unreal_sample] OK: ${archive_dir}"
+
+if [[ "${run_sample}" != "1" ]]; then
+  exit 0
+fi
+
+if [[ "${platform}" != "Linux" ]]; then
+  echo "Packaged sample launch currently supports Linux archives only, got: ${platform}" >&2
+  exit 2
+fi
+
+sample_exe="${archive_dir}/${platform}/AstralSample.sh"
+if [[ ! -x "${sample_exe}" ]]; then
+  echo "Packaged sample executable is missing or not executable: ${sample_exe}" >&2
+  exit 2
+fi
+
+runtime_args=(
+  -NullRHI
+  -Unattended
+  -NoSplash
+  -NoSound
+  -AstralSampleAutoQuit
+  -log
+  -stdout
+  "-AstralBackend=${sample_backend}"
+  "-AstralMemoryBackend=${sample_memory_backend}"
+)
+if [[ -n "${sample_model}" ]]; then
+  runtime_args+=("-AstralModel=${sample_model}")
+fi
+if [[ -n "${sample_embedding_model}" ]]; then
+  runtime_args+=("-AstralEmbeddingModel=${sample_embedding_model}")
+fi
+if [[ -n "${sample_prompt}" ]]; then
+  runtime_args+=("-AstralPrompt=${sample_prompt}")
+fi
+
+echo "[unreal_sample] Runtime: ${sample_exe}"
+echo "[unreal_sample] Runtime backend: ${sample_backend}"
+echo "[unreal_sample] Runtime memory backend: ${sample_memory_backend}"
+if [[ -n "${sample_runtime_log}" ]]; then
+  mkdir -p "$(dirname "${sample_runtime_log}")"
+  echo "[unreal_sample] Runtime log: ${sample_runtime_log}"
+  set +e
+  "${sample_exe}" "${runtime_args[@]}" 2>&1 | tee "${sample_runtime_log}"
+  runtime_status=${PIPESTATUS[0]}
+  set -e
+else
+  set +e
+  "${sample_exe}" "${runtime_args[@]}"
+  runtime_status=$?
+  set -e
+fi
+
+if [[ "${runtime_status}" -ne 0 ]]; then
+  echo "[unreal_sample] Runtime failed: ${runtime_status}" >&2
+  exit "${runtime_status}"
+fi
+
+echo "[unreal_sample] Runtime OK"

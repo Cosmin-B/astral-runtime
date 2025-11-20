@@ -87,6 +87,18 @@ The sample GameMode spawns `AAstralSampleActor` on the default engine entry map;
 the log should include successful packaged-content and Saved-cache memory model
 loads before exit.
 
+To package and immediately launch the sample against local real text and
+embedding GGUFs:
+
+```bash
+UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
+  ./scripts/run_unreal_sample_package.sh --platform Linux --run-sample \
+  --runtime-log build/unreal-sample-package/runtime.log \
+  --sample-model "$PWD/tests/models/Qwen3-0.6B-Q8_0.gguf" \
+  --sample-embedding-model "$PWD/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf" \
+  --sample-memory-backend mock
+```
+
 ## Run Local Automation
 
 Use an installed UnrealEditor or UnrealEditor-Cmd:

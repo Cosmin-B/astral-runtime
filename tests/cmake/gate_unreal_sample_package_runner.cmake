@@ -33,7 +33,42 @@ if(NOT missing_text MATCHES "Missing Unreal RunUAT path")
 endif()
 
 set(fake_runuat "${out_dir}/RunUAT.sh")
-file(WRITE "${fake_runuat}" "#!/usr/bin/env bash\necho \"fake RunUAT: $*\"\ncase \" $* \" in\n  *\" BuildCookRun \"*\" -platform=Linux \"*\" -archive \"*) exit 0 ;;\nesac\necho \"missing BuildCookRun package args\" >&2\nexit 42\n")
+file(WRITE "${fake_runuat}" [=[
+#!/usr/bin/env bash
+echo "fake RunUAT: $*"
+archive_dir=""
+for arg in "$@"; do
+  case "$arg" in
+    -archivedirectory=*) archive_dir="${arg#-archivedirectory=}" ;;
+  esac
+done
+case " $* " in
+  *" BuildCookRun "*" -platform=Linux "*" -archive "*)
+    if [[ -n "${archive_dir}" ]]; then
+      mkdir -p "${archive_dir}/Linux"
+      cat >"${archive_dir}/Linux/AstralSample.sh" <<'SH'
+#!/usr/bin/env bash
+echo "fake sample: $*"
+for token in \
+  "-AstralSampleAutoQuit" \
+  "-AstralBackend=cpu" \
+  "-AstralMemoryBackend=mock" \
+  "-AstralModel=/tmp/text.gguf" \
+  "-AstralEmbeddingModel=/tmp/embed.gguf"; do
+  case " $* " in
+    *" ${token} "*) ;;
+    *) echo "missing runtime arg: ${token}" >&2; exit 43 ;;
+  esac
+done
+SH
+      chmod +x "${archive_dir}/Linux/AstralSample.sh"
+    fi
+    exit 0
+    ;;
+esac
+echo "missing BuildCookRun package args" >&2
+exit 42
+]=])
 file(CHMOD "${fake_runuat}"
   PERMISSIONS
     OWNER_READ OWNER_WRITE OWNER_EXECUTE
@@ -71,6 +106,47 @@ foreach(required_text
     message(FATAL_ERROR "run_unreal_sample_package.sh output missing '${required_text}': ${package_text}")
   endif()
 endforeach()
+
+set(runtime_log "${out_dir}/runtime.log")
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_unreal_sample_package.sh"
+    --out "${project_dir}"
+    --archive-dir "${archive_dir}"
+    --runuat "${fake_runuat}"
+    --skip-native-build
+    --run-sample
+    --runtime-log "${runtime_log}"
+    --sample-model "/tmp/text.gguf"
+    --sample-embedding-model "/tmp/embed.gguf"
+    --sample-prompt "hello from gate"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE runtime_result
+  OUTPUT_VARIABLE runtime_output
+  ERROR_VARIABLE runtime_error
+)
+if(NOT runtime_result EQUAL 0)
+  message(FATAL_ERROR "run_unreal_sample_package.sh failed fake runtime smoke: ${runtime_error}")
+endif()
+set(runtime_text "${runtime_output}\n${runtime_error}")
+foreach(required_runtime_text
+    "[unreal_sample] Runtime:"
+    "[unreal_sample] Runtime backend: cpu"
+    "[unreal_sample] Runtime memory backend: mock"
+    "[unreal_sample] Runtime log:"
+    "fake sample:"
+    "-AstralBackend=cpu"
+    "-AstralMemoryBackend=mock"
+    "-AstralModel=/tmp/text.gguf"
+    "-AstralEmbeddingModel=/tmp/embed.gguf"
+    "[unreal_sample] Runtime OK")
+  string(FIND "${runtime_text}" "${required_runtime_text}" required_runtime_text_pos)
+  if(required_runtime_text_pos EQUAL -1)
+    message(FATAL_ERROR "run_unreal_sample_package.sh runtime output missing '${required_runtime_text}': ${runtime_text}")
+  endif()
+endforeach()
+if(NOT EXISTS "${runtime_log}")
+  message(FATAL_ERROR "sample package runner did not write ${runtime_log}")
+endif()
 
 foreach(required_file
     "${project_dir}/AstralSample.uproject"

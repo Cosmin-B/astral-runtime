@@ -102,7 +102,7 @@ foreach(lane IN LISTS required_lanes)
     set(command "UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT")
   elseif(lane STREQUAL "unreal_sample_package")
     set(artifacts "[\"logs/unreal-sample-package.log\", \"logs/unreal-sample-runtime.log\"]")
-    set(command "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux && build/unreal-sample-package/archive/Linux/AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout")
+    set(command "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux --run-sample --runtime-log build/unreal-sample-package/runtime.log --sample-model /workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf --sample-embedding-model /workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf --sample-memory-backend mock")
   elseif(lane STREQUAL "unity_editmode_abi")
     set(command "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh")
   elseif(lane STREQUAL "cuda_parity_matrix")
@@ -373,7 +373,7 @@ file(WRITE "${evidence_dir}/logs/unreal-compatibility-matrix.log" "[unreal_matri
 set(bad_unreal_sample_manifest "${out_dir}/bad-unreal-sample-evidence.json")
 file(READ "${good_manifest}" bad_unreal_sample_text)
 string(REPLACE
-  "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux && build/unreal-sample-package/archive/Linux/AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout"
+  "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux --run-sample --runtime-log build/unreal-sample-package/runtime.log --sample-model /workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf --sample-embedding-model /workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf --sample-memory-backend mock"
   "./scripts/create_unreal_sample_project.sh --out /tmp/AstralSample"
   bad_unreal_sample_text
   "${bad_unreal_sample_text}"
