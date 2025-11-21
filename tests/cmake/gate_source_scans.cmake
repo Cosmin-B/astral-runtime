@@ -601,8 +601,12 @@ set(test_embeddings_file "${ROOT}/tests/test_embeddings.cpp")
 file(READ "${test_embeddings_file}" test_embeddings_content)
 foreach(required_embedding_probe_text
     "ASTRAL_TEST_EMBED_MODEL"
+    "find_env_model_path"
     "embeddings_cpu_e2e_fixture_probe"
+    "embeddings_cpu_throughput_fixture_probe"
     "[embedding_probe] backend=cpu"
+    "[embedding_throughput] backend=cpu"
+    "ASTRAL_TEST_EMBED_THROUGHPUT_ITERS"
     "sum_abs="
     "ASSERT_GT(sum_abs, 0.0)")
   string(FIND "${test_embeddings_content}" "${required_embedding_probe_text}" embedding_probe_pos)

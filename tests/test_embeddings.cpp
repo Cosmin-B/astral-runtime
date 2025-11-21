@@ -10,6 +10,7 @@
 #include "test_framework.hpp"
 #include "astral_rt.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -29,27 +30,54 @@ static bool file_exists_min_size(const char* path, uint64_t min_bytes) {
     return static_cast<uint64_t>(st.st_size) >= min_bytes;
 }
 
+static const char* find_env_model_path(const char* env_name) {
+    const char* path = std::getenv(env_name);
+    if (file_exists_min_size(path, 5ULL * 1024ULL * 1024ULL)) {
+        return path;
+    }
+    if (path == nullptr || path[0] == '\0' || path[0] == '/') {
+        return nullptr;
+    }
+
+    static char resolved[4096];
+    static const char* prefixes[] = {
+        "../",
+        "../../",
+        "../../../",
+    };
+    for (const char* prefix : prefixes) {
+        const int written = std::snprintf(resolved, sizeof(resolved), "%s%s", prefix, path);
+        if (written > 0 &&
+            static_cast<size_t>(written) < sizeof(resolved) &&
+            file_exists_min_size(resolved, 5ULL * 1024ULL * 1024ULL)) {
+            return resolved;
+        }
+    }
+
+    return nullptr;
+}
+
 static const char* find_test_model_path() {
-    const char* env_embed = std::getenv("ASTRAL_TEST_EMBED_MODEL");
-    if (file_exists_min_size(env_embed, 5ULL * 1024ULL * 1024ULL)) {
+    const char* env_embed = find_env_model_path("ASTRAL_TEST_EMBED_MODEL");
+    if (env_embed != nullptr) {
         return env_embed;
     }
 
-    const char* env = std::getenv("ASTRAL_TEST_MODEL");
-    if (file_exists_min_size(env, 5ULL * 1024ULL * 1024ULL)) {
+    const char* env = find_env_model_path("ASTRAL_TEST_MODEL");
+    if (env != nullptr) {
         return env;
     }
 
     static const char* paths[] = {
-        "tests/models/gpt2.Q2_K.gguf",
-        "../tests/models/gpt2.Q2_K.gguf",
-        "../../tests/models/gpt2.Q2_K.gguf",
-        "../../../tests/models/gpt2.Q2_K.gguf",
-
         "tests/models/all-MiniLM-L6-v2-Q2_K.gguf",
         "../tests/models/all-MiniLM-L6-v2-Q2_K.gguf",
         "../../tests/models/all-MiniLM-L6-v2-Q2_K.gguf",
         "../../../tests/models/all-MiniLM-L6-v2-Q2_K.gguf",
+
+        "tests/models/gpt2.Q2_K.gguf",
+        "../tests/models/gpt2.Q2_K.gguf",
+        "../../tests/models/gpt2.Q2_K.gguf",
+        "../../../tests/models/gpt2.Q2_K.gguf",
     };
 
     for (const char* p : paths) {
@@ -59,6 +87,26 @@ static const char* find_test_model_path() {
     }
 
     return nullptr;
+}
+
+static const char* find_required_embedding_model_path() {
+    return find_env_model_path("ASTRAL_TEST_EMBED_MODEL");
+}
+
+static uint32_t embedding_throughput_iters() {
+    const char* env = std::getenv("ASTRAL_TEST_EMBED_THROUGHPUT_ITERS");
+    if (env == nullptr || env[0] == '\0') {
+        return 16u;
+    }
+
+    const unsigned long parsed = std::strtoul(env, nullptr, 10);
+    if (parsed < 4ul) {
+        return 4u;
+    }
+    if (parsed > 256ul) {
+        return 256u;
+    }
+    return static_cast<uint32_t>(parsed);
 }
 
 static AstralSpanU8 span_from_cstr(const char* text) {
@@ -310,6 +358,95 @@ TEST(embeddings_cpu_e2e_fixture_probe) {
                 sum_abs,
                 vec[0]);
     ASSERT_GT(sum_abs, 0.0);
+
+    astral_embed_destroy(emb);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(embeddings_cpu_throughput_fixture_probe) {
+    const char* model_path = find_required_embedding_model_path();
+    if (model_path == nullptr) {
+        SKIP_TEST("ASTRAL_TEST_EMBED_MODEL is required for CPU embedding throughput coverage");
+    }
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = 2ULL << 30;
+    cfg.thread_count = 4;
+    cfg.numa_node = 0xFFFFFFFFu;
+    cfg.enable_hugepages = 0;
+
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    model_desc.model_path = span_from_cstr(model_path);
+    model_desc.backend_name = span_from_cstr("cpu");
+    model_desc.n_ctx = 0;
+    model_desc.n_batch = 0;
+    model_desc.n_threads = 4;
+    model_desc.embeddings_only = 1;
+
+    AstralHandle model = 0;
+    err = astral_model_load(&model_desc, &model);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    uint32_t dim = 0;
+    err = astral_model_embedding_dim(model, &dim);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_GT(dim, 0u);
+    ASSERT_LE(dim, 8192u);
+
+    AstralHandle emb = 0;
+    err = astral_embed_create(model, &emb);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    static float vec[8192];
+    AstralMutSpanU8 out{};
+    out.data = reinterpret_cast<uint8_t*>(vec);
+    out.len = static_cast<uint32_t>(sizeof(vec));
+
+    const char* texts[] = {
+        "search result title",
+        "gameplay quest state",
+        "player inventory note",
+        "dialogue memory shard",
+    };
+    constexpr uint32_t kTextCount = static_cast<uint32_t>(sizeof(texts) / sizeof(texts[0]));
+    const uint32_t iters = embedding_throughput_iters();
+
+    double sum_abs = 0.0;
+    const auto start = std::chrono::steady_clock::now();
+    for (uint32_t i = 0; i < iters; ++i) {
+        uint64_t ticket = 0;
+        err = astral_embed_enqueue(emb, span_from_cstr(texts[i % kTextCount]), &ticket);
+        ASSERT_EQ(err, ASTRAL_OK);
+        ASSERT_NE(ticket, 0ULL);
+
+        err = astral_embed_collect(emb, ticket, out);
+        ASSERT_EQ(err, ASTRAL_OK);
+
+        for (uint32_t j = 0; j < dim; ++j) {
+            const float v = vec[j];
+            sum_abs += (v >= 0.0f) ? v : -v;
+        }
+    }
+    const auto end = std::chrono::steady_clock::now();
+
+    const std::chrono::duration<double> elapsed = end - start;
+    const double seconds = elapsed.count();
+    const double embeds_per_sec = seconds > 0.0 ? static_cast<double>(iters) / seconds : 0.0;
+    std::printf("[embedding_throughput] backend=cpu model=%s dim=%u iters=%u seconds=%.6f embeds_per_sec=%.3f sum_abs=%.6f\n",
+                model_path,
+                dim,
+                iters,
+                seconds,
+                embeds_per_sec,
+                sum_abs);
+    ASSERT_GT(sum_abs, 0.0);
+    ASSERT_GT(embeds_per_sec, 0.0);
 
     astral_embed_destroy(emb);
     astral_model_release(model);
