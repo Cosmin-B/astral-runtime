@@ -31,6 +31,18 @@ UAstralSession::UAstralSession()
     TickTextScratch.Reserve(4096);
 }
 
+bool UAstralSession::IsCurrentRuntimeGeneration() const
+{
+    return IAstralRT::IsAvailable() &&
+        IAstralRT::Get().IsInitialized() &&
+        IAstralRT::Get().GetRuntimeGeneration() == RuntimeGeneration;
+}
+
+bool UAstralSession::IsValid() const
+{
+    return SessionHandle != 0 && IsCurrentRuntimeGeneration();
+}
+
 void UAstralSession::BeginDestroy()
 {
     if (TickerHandle.IsValid())
@@ -39,13 +51,14 @@ void UAstralSession::BeginDestroy()
         TickerHandle.Reset();
     }
 
-    if (SessionHandle != 0 && IAstralRT::IsAvailable() && IAstralRT::Get().IsInitialized())
+    if (SessionHandle != 0 && IsCurrentRuntimeGeneration())
     {
         astral_session_destroy(static_cast<AstralHandle>(SessionHandle));
     }
 
     SessionHandle = 0;
     ModelHandle = 0;
+    RuntimeGeneration = 0;
 
     Super::BeginDestroy();
 }
@@ -54,8 +67,17 @@ bool UAstralSession::Create(UAstralModel* Model, const FAstralSessionDesc& Desc)
 {
     if (SessionHandle != 0)
     {
-        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session already created"));
-        return false;
+        if (!IsCurrentRuntimeGeneration())
+        {
+            SessionHandle = 0;
+            ModelHandle = 0;
+            RuntimeGeneration = 0;
+        }
+        else
+        {
+            UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session already created"));
+            return false;
+        }
     }
 
     if (Model == nullptr || !Model->IsValid())
@@ -89,6 +111,7 @@ bool UAstralSession::Create(UAstralModel* Model, const FAstralSessionDesc& Desc)
 
     SessionHandle = static_cast<uint64>(Out);
     ModelHandle = Model->GetHandle();
+    RuntimeGeneration = IAstralRT::Get().GetRuntimeGeneration();
 
     UpdateTicker(Desc.bStreamEnabled);
     return true;
@@ -102,7 +125,7 @@ bool UAstralSession::FeedPrompt(const FString& Prompt, bool bFinalize)
 
 bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
@@ -125,7 +148,7 @@ bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinali
 
 bool UAstralSession::FeedImage(const FAstralImageDesc& Image, bool bFinalize)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
@@ -164,7 +187,7 @@ bool UAstralSession::FeedImage(const FAstralImageDesc& Image, bool bFinalize)
 
 bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
@@ -222,7 +245,7 @@ bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
 
 bool UAstralSession::Decode()
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
@@ -240,7 +263,7 @@ bool UAstralSession::Decode()
 
 bool UAstralSession::Cancel()
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -250,7 +273,7 @@ bool UAstralSession::Cancel()
 
 int32 UAstralSession::Wait(int32 TimeoutMs)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return static_cast<int32>(ASTRAL_E_INVALID);
     }
@@ -260,7 +283,7 @@ int32 UAstralSession::Wait(int32 TimeoutMs)
 
 bool UAstralSession::Reset(const FAstralSessionDesc& Desc)
 {
-    if (SessionHandle == 0 || ModelHandle == 0)
+    if (!IsValid() || ModelHandle == 0)
     {
         return false;
     }
@@ -287,7 +310,7 @@ bool UAstralSession::Reset(const FAstralSessionDesc& Desc)
 
 bool UAstralSession::SetSampler(const FAstralSamplerDesc& Desc)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -314,7 +337,7 @@ bool UAstralSession::SetSampler(const FAstralSamplerDesc& Desc)
 
 bool UAstralSession::StopClear()
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -324,7 +347,7 @@ bool UAstralSession::StopClear()
 
 bool UAstralSession::StopAddUtf8Bytes(TConstArrayView<uint8> Utf8Data)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -344,7 +367,7 @@ bool UAstralSession::StopAddString(const FString& Utf8Text)
 
 int32 UAstralSession::StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return static_cast<int32>(ASTRAL_E_INVALID);
     }
@@ -378,7 +401,7 @@ FAstralStats UAstralSession::GetStats() const
 {
     FAstralStats Result{};
 
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return Result;
     }
@@ -405,7 +428,7 @@ bool UAstralSession::TickStream(float DeltaTime)
 
     (void)DeltaTime;
 
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         TickerHandle.Reset();
         return false;

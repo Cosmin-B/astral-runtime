@@ -93,9 +93,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     FAstralStats GetStats() const;
 
-    /** True while this object owns a live native session handle. */
+    /** True while this object owns a native session from the current runtime generation. */
     UFUNCTION(BlueprintPure, Category = "Astral")
-    bool IsValid() const { return SessionHandle != 0; }
+    bool IsValid() const;
 
     /** Raw bytes streaming (UTF-8). Recommended for low-overhead C++ consumers. */
     FAstralStreamBytesNative& OnStreamBytesNative() { return StreamBytesNative; }
@@ -114,8 +114,11 @@ public:
     virtual void BeginDestroy() override;
 
 private:
+    bool IsCurrentRuntimeGeneration() const;
+
     uint64 SessionHandle = 0;
     uint64 ModelHandle = 0;
+    uint64 RuntimeGeneration = 0;
 
     TArray<uint8> TokenBuffer;
     TArray<uint8> TickUtf8Buffer;

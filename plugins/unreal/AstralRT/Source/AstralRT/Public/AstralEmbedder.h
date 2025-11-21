@@ -29,13 +29,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     void Destroy();
 
-    /** True while this object owns a live native embedder handle. */
+    /** True while this object owns a native embedder from the current runtime generation. */
     UFUNCTION(BlueprintPure, Category = "Astral")
-    bool IsValid() const { return EmbedderHandle != 0; }
+    bool IsValid() const;
 
     /** Vector dimension cached at Create time. */
     UFUNCTION(BlueprintPure, Category = "Astral")
-    int32 GetDim() const { return EmbeddingDim; }
+    int32 GetDim() const;
 
     /** Enqueue caller-owned UTF-8 bytes and return a native ticket. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
@@ -73,7 +73,10 @@ public:
     virtual void BeginDestroy() override;
 
 private:
+    bool IsCurrentRuntimeGeneration() const;
+
     uint64 EmbedderHandle = 0;
     uint64 ModelHandle = 0;
+    uint64 RuntimeGeneration = 0;
     int32 EmbeddingDim = 0;
 };

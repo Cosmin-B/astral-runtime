@@ -266,6 +266,108 @@ bool FAstralRTModuleEnginePreExitTest::RunTest(const FString& Parameters) {
     return Runtime.IsInitialized();
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTModuleRuntimeGenerationInvalidationTest,
+    "AstralRT.Module.RuntimeGenerationInvalidation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTModuleRuntimeGenerationInvalidationTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+    if (!ensure_astral_initialized(*this)) {
+        return false;
+    }
+
+    IAstralRT& Runtime = IAstralRT::Get();
+
+    UAstralModel* Model = NewObject<UAstralModel>();
+    TestNotNull(TEXT("model allocated"), Model);
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+    bool ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("model loads before runtime generation change"), ok);
+    TestTrue(TEXT("model valid before runtime generation change"), Model->IsValid());
+
+    UAstralSession* Session = NewObject<UAstralSession>();
+    TestNotNull(TEXT("session allocated"), Session);
+
+    FAstralSessionDesc SessionDesc{};
+    SessionDesc.MaxTokens = 16;
+    SessionDesc.Temperature = 0.0f;
+    SessionDesc.TopK = 0;
+    SessionDesc.TopP = 1.0f;
+    SessionDesc.bStreamEnabled = false;
+    SessionDesc.Seed = 17;
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("session creates before runtime generation change"), ok);
+    TestTrue(TEXT("session valid before runtime generation change"), Session->IsValid());
+
+    UAstralModel* EmbeddingModel = NewObject<UAstralModel>();
+    TestNotNull(TEXT("embedding model allocated"), EmbeddingModel);
+
+    FAstralModelDesc EmbeddingModelDesc = ModelDesc;
+    EmbeddingModelDesc.bEmbeddingsOnly = true;
+    ok = EmbeddingModel->Load(EmbeddingModelDesc);
+    TestTrue(TEXT("embedding model loads before runtime generation change"), ok);
+    TestTrue(TEXT("embedding model valid before runtime generation change"), EmbeddingModel->IsValid());
+
+    UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>();
+    TestNotNull(TEXT("embedder allocated"), Embedder);
+    ok = Embedder->Create(EmbeddingModel);
+    TestTrue(TEXT("embedder creates before runtime generation change"), ok);
+    TestTrue(TEXT("embedder valid before runtime generation change"), Embedder->IsValid());
+    TestTrue(TEXT("embedder dim before runtime generation change"), Embedder->GetDim() > 0);
+
+    Runtime.ShutdownModule();
+    TestFalse(TEXT("runtime reports uninitialized after generation shutdown"), Runtime.IsInitialized());
+    TestFalse(TEXT("model invalid after runtime generation change"), Model->IsValid());
+    TestFalse(TEXT("embedding model invalid after runtime generation change"), EmbeddingModel->IsValid());
+    TestFalse(TEXT("session invalid after runtime generation change"), Session->IsValid());
+    TestFalse(TEXT("embedder invalid after runtime generation change"), Embedder->IsValid());
+    TestEqual(TEXT("embedder dim cleared by generation check"), Embedder->GetDim(), 0);
+    TestFalse(TEXT("stale session cancel rejected after generation change"), Session->Cancel());
+    TestFalse(TEXT("stale session reset rejected after generation change"), Session->Reset(SessionDesc));
+    TestEqual(
+        TEXT("stale session wait returns invalid after generation change"),
+        Session->Wait(0),
+        static_cast<int32>(ASTRAL_E_INVALID));
+
+    Runtime.StartupModule();
+    TestTrue(TEXT("runtime reinitializes after generation invalidation"), Runtime.IsInitialized());
+    TestFalse(TEXT("stale model remains invalid after runtime restart"), Model->IsValid());
+    TestFalse(TEXT("stale embedding model remains invalid after runtime restart"), EmbeddingModel->IsValid());
+    TestFalse(TEXT("stale session remains invalid after runtime restart"), Session->IsValid());
+    TestFalse(TEXT("stale embedder remains invalid after runtime restart"), Embedder->IsValid());
+
+    ok = Model->Load(ModelDesc);
+    TestTrue(TEXT("model reload clears stale generation handle"), ok);
+    TestTrue(TEXT("model valid after reload into current generation"), Model->IsValid());
+
+    ok = Session->Create(Model, SessionDesc);
+    TestTrue(TEXT("session recreate clears stale generation handle"), ok);
+    TestTrue(TEXT("session valid after recreate into current generation"), Session->IsValid());
+
+    ok = EmbeddingModel->Load(EmbeddingModelDesc);
+    TestTrue(TEXT("embedding model reload clears stale generation handle"), ok);
+    TestTrue(TEXT("embedding model valid after reload into current generation"), EmbeddingModel->IsValid());
+
+    ok = Embedder->Create(EmbeddingModel);
+    TestTrue(TEXT("embedder recreate clears stale generation handle"), ok);
+    TestTrue(TEXT("embedder valid after recreate into current generation"), Embedder->IsValid());
+
+    Embedder->Destroy();
+    Embedder->ConditionalBeginDestroy();
+    EmbeddingModel->Release();
+    EmbeddingModel->ConditionalBeginDestroy();
+    Session->ConditionalBeginDestroy();
+    Model->Release();
+    Model->ConditionalBeginDestroy();
+    return Runtime.IsInitialized();
+}
+
 #if WITH_EDITOR
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FAstralRTModuleEndPIETest,

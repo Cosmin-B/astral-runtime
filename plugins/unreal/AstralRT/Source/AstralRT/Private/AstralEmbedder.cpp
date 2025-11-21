@@ -8,6 +8,23 @@
 
 #include "astral_rt.h"
 
+bool UAstralEmbedder::IsCurrentRuntimeGeneration() const
+{
+    return IAstralRT::IsAvailable() &&
+        IAstralRT::Get().IsInitialized() &&
+        IAstralRT::Get().GetRuntimeGeneration() == RuntimeGeneration;
+}
+
+bool UAstralEmbedder::IsValid() const
+{
+    return EmbedderHandle != 0 && IsCurrentRuntimeGeneration();
+}
+
+int32 UAstralEmbedder::GetDim() const
+{
+    return IsValid() ? EmbeddingDim : 0;
+}
+
 void UAstralEmbedder::BeginDestroy()
 {
     Destroy();
@@ -52,6 +69,7 @@ bool UAstralEmbedder::Create(UAstralModel* Model)
 
     EmbedderHandle = static_cast<uint64>(Out);
     ModelHandle = Model->GetHandle();
+    RuntimeGeneration = IAstralRT::Get().GetRuntimeGeneration();
     EmbeddingDim = Dim;
     return true;
 }
@@ -63,17 +81,19 @@ void UAstralEmbedder::Destroy()
     if (EmbedderHandle == 0)
     {
         ModelHandle = 0;
+        RuntimeGeneration = 0;
         EmbeddingDim = 0;
         return;
     }
 
-    if (IAstralRT::IsAvailable() && IAstralRT::Get().IsInitialized())
+    if (IsCurrentRuntimeGeneration())
     {
         astral_embed_destroy(static_cast<AstralHandle>(EmbedderHandle));
     }
 
     EmbedderHandle = 0;
     ModelHandle = 0;
+    RuntimeGeneration = 0;
     EmbeddingDim = 0;
 }
 
@@ -82,7 +102,7 @@ bool UAstralEmbedder::EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& Ou
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueUtf8Bytes);
 
     OutTicket = 0;
-    if (EmbedderHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -107,7 +127,7 @@ bool UAstralEmbedder::EnqueueImage(const FAstralImageDesc& Image, int64& OutTick
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueImage);
 
     OutTicket = 0;
-    if (EmbedderHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -146,7 +166,7 @@ bool UAstralEmbedder::EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTick
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueAudio);
 
     OutTicket = 0;
-    if (EmbedderHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -207,7 +227,7 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueMultimodal);
 
     OutTicket = 0;
-    if (EmbedderHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -294,7 +314,7 @@ bool UAstralEmbedder::Collect(int64 Ticket, TArray<float>& OutVector)
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Collect);
 
-    if (EmbedderHandle == 0 || Ticket <= 0 || EmbeddingDim <= 0)
+    if (!IsValid() || Ticket <= 0 || EmbeddingDim <= 0)
     {
         return false;
     }

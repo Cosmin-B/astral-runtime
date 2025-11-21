@@ -141,6 +141,11 @@ public:
         return bInitialized;
     }
 
+    virtual uint64 GetRuntimeGeneration() const override
+    {
+        return RuntimeGeneration;
+    }
+
     virtual void ResetAllocatorStats() override
     {
         GAllocatorCounters.Reset();
@@ -196,6 +201,7 @@ private:
         }
 
         bInitialized = true;
+        ++RuntimeGeneration;
         UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Initialized"));
         return true;
     }
@@ -228,11 +234,13 @@ private:
 
         astral_shutdown();
         bInitialized = false;
+        ++RuntimeGeneration;
         GAllocatorCounters.Reset();
         UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Shutdown (%s)"), Reason);
     }
 
     bool bInitialized = false;
+    uint64 RuntimeGeneration = 0;
     FDelegateHandle PreExitHandle;
 #if WITH_EDITOR
     FDelegateHandle EndPIEHandle;

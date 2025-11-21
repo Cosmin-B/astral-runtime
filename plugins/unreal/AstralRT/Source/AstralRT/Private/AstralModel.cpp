@@ -50,6 +50,18 @@ void UAstralModel::BeginDestroy()
     Super::BeginDestroy();
 }
 
+bool UAstralModel::IsCurrentRuntimeGeneration() const
+{
+    return IAstralRT::IsAvailable() &&
+        IAstralRT::Get().IsInitialized() &&
+        IAstralRT::Get().GetRuntimeGeneration() == RuntimeGeneration;
+}
+
+bool UAstralModel::IsValid() const
+{
+    return ModelHandle != 0 && IsCurrentRuntimeGeneration();
+}
+
 bool UAstralModel::Load(const FAstralModelDesc& Desc)
 {
     Release();
@@ -116,13 +128,14 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
     }
 
     ModelHandle = static_cast<uint64>(Out);
+    RuntimeGeneration = IAstralRT::Get().GetRuntimeGeneration();
     return true;
 }
 
 bool UAstralModel::GetEmbeddingDim(int32& OutDim) const
 {
     OutDim = 0;
-    if (ModelHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -141,7 +154,7 @@ bool UAstralModel::GetEmbeddingDim(int32& OutDim) const
 bool UAstralModel::GetCaps(int64& OutCaps) const
 {
     OutCaps = 0;
-    if (ModelHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -160,7 +173,7 @@ bool UAstralModel::GetCaps(int64& OutCaps) const
 bool UAstralModel::GetLimits(FAstralModelLimits& OutLimits) const
 {
     OutLimits = FAstralModelLimits{};
-    if (ModelHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -181,7 +194,7 @@ bool UAstralModel::GetLimits(FAstralModelLimits& OutLimits) const
 
 bool UAstralModel::InitMedia(const FAstralModelMediaDesc& Desc)
 {
-    if (ModelHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -228,7 +241,7 @@ bool UAstralModel::InitMedia(const FAstralModelMediaDesc& Desc)
 bool UAstralModel::GetMediaInfo(FAstralMediaInfo& OutInfo) const
 {
     OutInfo = FAstralMediaInfo{};
-    if (ModelHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -256,10 +269,11 @@ void UAstralModel::Release()
         return;
     }
 
-    if (IAstralRT::IsAvailable() && IAstralRT::Get().IsInitialized())
+    if (IsCurrentRuntimeGeneration())
     {
         astral_model_release(static_cast<AstralHandle>(ModelHandle));
     }
 
     ModelHandle = 0;
+    RuntimeGeneration = 0;
 }

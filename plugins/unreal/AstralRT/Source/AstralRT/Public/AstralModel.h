@@ -26,9 +26,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     void Release();
 
-    /** True while this object owns a live native model handle. */
+    /** True while this object owns a native model from the current runtime generation. */
     UFUNCTION(BlueprintPure, Category = "Astral")
-    bool IsValid() const { return ModelHandle != 0; }
+    bool IsValid() const;
 
     /** Query the embedding vector dimension reported by the loaded model. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
@@ -56,5 +56,8 @@ public:
     virtual void BeginDestroy() override;
 
 private:
+    bool IsCurrentRuntimeGeneration() const;
+
     uint64 ModelHandle = 0;
+    uint64 RuntimeGeneration = 0;
 };
