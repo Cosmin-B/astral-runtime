@@ -24,6 +24,24 @@ These are “small” relative to multi-billions, but still much larger than GPT
   - Repo: `LiquidAI/LFM2-350M-GGUF`
   - File: `LFM2-350M-Q4_K_M.gguf`
 
+## Newer small generative fixtures
+These are useful for local and Unreal real-model smoke runs when GPT-2 is too old or too weak:
+- Preset: `gemma3-270m-q4km`
+  - Repo: `gguf-org/gemma-3-270m-gguf`
+  - File: `gemma-3-270m-q4_k_m.gguf`
+- Preset: `gemma3-1b-it-q4km`
+  - Repo: `ggml-org/gemma-3-1b-it-GGUF`
+  - File: `gemma-3-1b-it-Q4_K_M.gguf`
+- Preset: `qwen3-0.6b-q8`
+  - Repo: `Qwen/Qwen3-0.6B-GGUF`
+  - File: `Qwen3-0.6B-Q8_0.gguf`
+- Preset: `qwen3-1.7b-q8`
+  - Repo: `Qwen/Qwen3-1.7B-GGUF`
+  - File: `Qwen3-1.7B-Q8_0.gguf`
+- Preset: `smollm3-3b-q4km`
+  - Repo: `ggml-org/SmolLM3-3B-GGUF`
+  - File: `SmolLM3-Q4_K_M.gguf`
+
 ## LiquidAI (multimodal / v2.5)
 Used for vision/audio coverage and benches:
 - `LFM2.5-1.2B-Base` (text): `LiquidAI/LFM2.5-1.2B-Base-GGUF`
@@ -41,6 +59,11 @@ Download helpers:
 ### Presets (recommended)
 - `./tests/model_downloader.sh --preset gpt2-q2k`
 - `./tests/model_downloader.sh --preset embed-minilm-q2k`
+- `./tests/model_downloader.sh --preset gemma3-270m-q4km`
+- `./tests/model_downloader.sh --preset gemma3-1b-it-q4km`
+- `./tests/model_downloader.sh --preset qwen3-0.6b-q8`
+- `./tests/model_downloader.sh --preset qwen3-1.7b-q8`
+- `./tests/model_downloader.sh --preset smollm3-3b-q4km`
 
 ### Environment variables
 Astral uses a single model for decode/stream gates and (optionally) a different model for embeddings tests:

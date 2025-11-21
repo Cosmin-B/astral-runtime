@@ -51,6 +51,14 @@ For a newer tiny text-generation fixture, use Gemma 3 270M:
 ./tests/model_downloader.sh --preset gemma3-270m-q4km
 ```
 
+For stronger small Hugging Face text fixtures, use one of:
+
+```bash
+./tests/model_downloader.sh --preset gemma3-1b-it-q4km
+./tests/model_downloader.sh --preset qwen3-1.7b-q8
+./tests/model_downloader.sh --preset smollm3-3b-q4km
+```
+
 ## Media (vision/audio) tests
 
 `test_media` exercises mock vision/audio feeds + multimodal embeddings. Real CPU media init smoke checks run when:

@@ -658,9 +658,18 @@ foreach(required_model_downloader_text
     "gemma3-270m-q4km"
     "gguf-org/gemma-3-270m-gguf"
     "gemma-3-270m-q4_k_m.gguf"
+    "gemma3-1b-it-q4km"
+    "ggml-org/gemma-3-1b-it-GGUF"
+    "gemma-3-1b-it-Q4_K_M.gguf"
+    "smollm3-3b-q4km"
+    "ggml-org/SmolLM3-3B-GGUF"
+    "SmolLM3-Q4_K_M.gguf"
     "qwen3-embed-0.6b-q8"
     "Qwen/Qwen3-Embedding-0.6B-GGUF"
-    "Qwen3-Embedding-0.6B-Q8_0.gguf")
+    "Qwen3-Embedding-0.6B-Q8_0.gguf"
+    "qwen3-1.7b-q8"
+    "Qwen/Qwen3-1.7B-GGUF"
+    "Qwen3-1.7B-Q8_0.gguf")
   string(FIND "${model_downloader_content}" "${required_model_downloader_text}" model_downloader_pos)
   if(model_downloader_pos EQUAL -1)
     message(FATAL_ERROR "Model downloader is missing '${required_model_downloader_text}'")
@@ -674,6 +683,12 @@ foreach(required_hf_manifest_text
     "^Qwen3-0\\\\.6B-Q8_0\\\\.gguf$"
     "gguf-org/gemma-3-270m-gguf"
     "^gemma-3-270m-q4_k_m\\\\.gguf$"
+    "ggml-org/gemma-3-1b-it-GGUF"
+    "^gemma-3-1b-it-Q4_K_M\\\\.gguf$"
+    "ggml-org/SmolLM3-3B-GGUF"
+    "^SmolLM3-Q4_K_M\\\\.gguf$"
+    "Qwen/Qwen3-1.7B-GGUF"
+    "^Qwen3-1\\\\.7B-Q8_0\\\\.gguf$"
     "Qwen/Qwen3-Embedding-0.6B-GGUF"
     "^Qwen3-Embedding-0\\\\.6B-Q8_0\\\\.gguf$")
   string(FIND "${hf_manifest_content}" "${required_hf_manifest_text}" hf_manifest_pos)
