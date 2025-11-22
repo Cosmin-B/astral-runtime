@@ -1342,6 +1342,7 @@ foreach(required_unreal_type
     "EAstralUnrealPathRoot"
     "EAstralModelSourceKind SourceKind"
     "EAstralUnrealPathRoot PathRoot"
+    "EAstralUnrealPathRoot MediaPathRoot"
     "TArray<uint8> ModelBytes")
   if(NOT unreal_types_text MATCHES "${required_unreal_type}")
     message(FATAL_ERROR "Unreal model source wrapper is missing ${required_unreal_type}")
@@ -1352,6 +1353,8 @@ foreach(required_unreal_model_text
     "FPaths::ProjectContentDir"
     "FPaths::ProjectSavedDir"
     "FPaths::ProjectPersistentDownloadDir"
+    "resolve_media_path"
+    "Desc.MediaPathRoot"
     "Native.source_kind = static_cast<AstralModelSourceKind>"
     "Native.model_bytes.data = Desc.ModelBytes.GetData")
   if(NOT unreal_model_text MATCHES "${required_unreal_model_text}")

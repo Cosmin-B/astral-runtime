@@ -227,6 +227,10 @@ struct ASTRALRT_API FAstralModelMediaDesc
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
     FString MediaPath;
 
+    /** Root for relative MediaPath values. Absolute paths are passed through unchanged. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    EAstralUnrealPathRoot MediaPathRoot = EAstralUnrealPathRoot::Raw;
+
     /** Projector bytes used when SourceKind is Memory. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
     TArray<uint8> MediaBytes;

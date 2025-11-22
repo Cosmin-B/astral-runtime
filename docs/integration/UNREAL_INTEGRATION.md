@@ -323,6 +323,7 @@ audio payloads into sessions or embedders.
 FAstralModelMediaDesc MediaDesc;
 MediaDesc.SourceKind = EAstralModelSourceKind::Path;
 MediaDesc.MediaPath = TEXT("/path/to/media.gguf");
+MediaDesc.MediaPathRoot = EAstralUnrealPathRoot::Raw;
 
 if (!Model->InitMedia(MediaDesc))
 {
@@ -330,6 +331,11 @@ if (!Model->InitMedia(MediaDesc))
     return;
 }
 ```
+
+`MediaPathRoot` follows the same relative-path policy as `FAstralModelDesc`:
+absolute projector paths pass through unchanged, `Raw` relative paths become
+full process-relative paths, and packaged projects can resolve projector files
+under `ProjectContent`, `ProjectSaved`, or `ProjectPersistentDownload`.
 
 `FAstralImageDesc::Pixels` and `FAstralAudioDesc::Samples` are passed to native
 code for the duration of the call. `FAstralAudioDesc::FrameCount` may be set to

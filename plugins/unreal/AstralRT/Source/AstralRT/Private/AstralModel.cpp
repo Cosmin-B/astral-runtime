@@ -26,20 +26,30 @@ static FString path_root_dir(EAstralUnrealPathRoot Root)
     }
 }
 
-static FString resolve_model_path(const FAstralModelDesc& Desc)
+static FString resolve_unreal_path(const FString& Path, EAstralUnrealPathRoot RootKind)
 {
-    if (Desc.ModelPath.IsEmpty() || FPaths::IsRelative(Desc.ModelPath) == false)
+    if (Path.IsEmpty() || FPaths::IsRelative(Path) == false)
     {
-        return Desc.ModelPath;
+        return Path;
     }
 
-    const FString Root = path_root_dir(Desc.PathRoot);
+    const FString Root = path_root_dir(RootKind);
     if (Root.IsEmpty())
     {
-        return FPaths::ConvertRelativePathToFull(Desc.ModelPath);
+        return FPaths::ConvertRelativePathToFull(Path);
     }
 
-    return FPaths::ConvertRelativePathToFull(FPaths::Combine(Root, Desc.ModelPath));
+    return FPaths::ConvertRelativePathToFull(FPaths::Combine(Root, Path));
+}
+
+static FString resolve_model_path(const FAstralModelDesc& Desc)
+{
+    return resolve_unreal_path(Desc.ModelPath, Desc.PathRoot);
+}
+
+static FString resolve_media_path(const FAstralModelMediaDesc& Desc)
+{
+    return resolve_unreal_path(Desc.MediaPath, Desc.MediaPathRoot);
 }
 
 } // namespace
@@ -210,10 +220,11 @@ bool UAstralModel::InitMedia(const FAstralModelMediaDesc& Desc)
     Native.gpu_device_mask = static_cast<uint64_t>(Desc.GpuDeviceMask);
     Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Desc.GpuStream));
 
-    FTCHARToUTF8 MediaPathUtf8(*Desc.MediaPath);
+    const FString ResolvedMediaPath = resolve_media_path(Desc);
+    FTCHARToUTF8 MediaPathUtf8(*ResolvedMediaPath);
     if (Desc.SourceKind == EAstralModelSourceKind::Path)
     {
-        if (Desc.MediaPath.IsEmpty())
+        if (ResolvedMediaPath.IsEmpty())
         {
             return false;
         }

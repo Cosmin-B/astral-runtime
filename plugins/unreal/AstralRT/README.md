@@ -126,6 +126,7 @@ Media support requires a projector/encoder GGUF and a native Astral build compil
 ```cpp
 FAstralModelMediaDesc MediaDesc;
 MediaDesc.MediaPath = TEXT("/path/to/media.gguf");
+MediaDesc.MediaPathRoot = EAstralUnrealPathRoot::Raw;
 Model->InitMedia(MediaDesc);
 ```
 
@@ -133,6 +134,8 @@ Feed media into a session prompt. `FAstralImageDesc::Pixels` and `FAstralAudioDe
 
 For packaged projects, `FAstralModelDesc::PathRoot` resolves relative model
 paths under `ProjectContent`, `ProjectSaved`, or `ProjectPersistentDownload`.
+`FAstralModelMediaDesc::MediaPathRoot` applies the same rule to media projector
+paths before they cross the native ABI.
 Pak/IoStore model payloads should use `SourceKind = Memory` and fill
 `ModelBytes`, or copy the model to a managed `Saved` cache and load by path.
 The generated `AstralSample` project stages a small payload under `Content`,
