@@ -777,6 +777,10 @@ foreach(required_unreal_sample_script_text
     "AstralMediaBackend="
     "UE_LOG(LogAstralSample, Display"
     "UAstralMediaLibrary::MakeRGBA8ImageFromBytes"
+    "UAstralMediaLibrary::MakeRGBA8ImageFromTexture"
+    "UTexture2D::CreateTransient"
+    "PF_B8G8R8A8"
+    "MediaSession->FeedImage(TextureImage, false)"
     "MediaSession->FeedAudio"
     "OnStreamBytesNative"
     "EmbedUtf8Bytes"
@@ -1477,6 +1481,10 @@ endforeach()
 foreach(required_unreal_media_test
     "AstralRT.Media.DescriptorHelpers"
     "MakeRGBA8ImageFromBytes"
+    "MakeRGBA8ImageFromTexture"
+    "UTexture2D::CreateTransient"
+    "texture descriptor"
+    "feed texture helper image"
     "MakePCM16AudioFromBytes"
     "feed helper image"
     "feed helper audio")

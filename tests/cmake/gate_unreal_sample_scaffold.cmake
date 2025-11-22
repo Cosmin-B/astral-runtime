@@ -96,6 +96,10 @@ foreach(required_actor_text
     "EmbedUtf8Bytes"
     "RunMediaFeedDemo"
     "UAstralMediaLibrary::MakeRGBA8ImageFromBytes"
+    "UAstralMediaLibrary::MakeRGBA8ImageFromTexture"
+    "UTexture2D::CreateTransient"
+    "PF_B8G8R8A8"
+    "MediaSession->FeedImage\\(TextureImage, false\\)"
     "MediaSession->FeedAudio"
     "astral_last_error"
     "LogAstralSample")

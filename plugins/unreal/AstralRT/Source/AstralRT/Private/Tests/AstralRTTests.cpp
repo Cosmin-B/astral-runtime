@@ -10,10 +10,12 @@
 #include "IAstralRT.h"
 #include "astral_rt.h"
 
+#include "Engine/Texture2D.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformProcess.h"
 #include "Math/UnrealMathUtility.h"
 #include "Misc/Paths.h"
+#include "PixelFormat.h"
 
 namespace {
 
@@ -1337,6 +1339,45 @@ bool FAstralRTMediaDescriptorHelpersTest::RunTest(const FString& Parameters) {
     ok = UAstralMediaLibrary::MakeRGBA8ImageFromBytes(BadRgba, 2, 2, Image);
     TestFalse(TEXT("reject undersized RGBA bytes"), ok);
 
+    UTexture2D* Texture = UTexture2D::CreateTransient(2, 1, PF_B8G8R8A8);
+    TestNotNull(TEXT("transient texture allocated"), Texture);
+    if (Texture != nullptr && Texture->GetPlatformData() != nullptr && Texture->GetPlatformData()->Mips.Num() > 0) {
+        FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
+        void* Locked = Mip.BulkData.Lock(LOCK_READ_WRITE);
+        TestNotNull(TEXT("texture bulk data locked"), Locked);
+        if (Locked != nullptr) {
+            uint8* Bgra = static_cast<uint8*>(Locked);
+            Bgra[0] = 30;
+            Bgra[1] = 20;
+            Bgra[2] = 10;
+            Bgra[3] = 255;
+            Bgra[4] = 60;
+            Bgra[5] = 50;
+            Bgra[6] = 40;
+            Bgra[7] = 128;
+        }
+        Mip.BulkData.Unlock();
+    }
+
+    FAstralImageDesc TextureImage{};
+    ok = UAstralMediaLibrary::MakeRGBA8ImageFromTexture(Texture, TextureImage);
+    TestTrue(TEXT("texture descriptor"), ok);
+    TestEqual(TEXT("texture image format"), static_cast<uint32>(TextureImage.Format), static_cast<uint32>(EAstralImageFormat::RGBA8));
+    TestEqual(TEXT("texture image width"), static_cast<int32>(TextureImage.Width), 2);
+    TestEqual(TEXT("texture image height"), static_cast<int32>(TextureImage.Height), 1);
+    TestEqual(TEXT("texture image stride"), static_cast<int32>(TextureImage.RowStride), 8);
+    TestEqual(TEXT("texture image byte count"), TextureImage.Pixels.Num(), 8);
+    if (TextureImage.Pixels.Num() == 8) {
+        TestEqual(TEXT("texture first red"), TextureImage.Pixels[0], static_cast<uint8>(10));
+        TestEqual(TEXT("texture first green"), TextureImage.Pixels[1], static_cast<uint8>(20));
+        TestEqual(TEXT("texture first blue"), TextureImage.Pixels[2], static_cast<uint8>(30));
+        TestEqual(TEXT("texture first alpha"), TextureImage.Pixels[3], static_cast<uint8>(255));
+        TestEqual(TEXT("texture second red"), TextureImage.Pixels[4], static_cast<uint8>(40));
+        TestEqual(TEXT("texture second green"), TextureImage.Pixels[5], static_cast<uint8>(50));
+        TestEqual(TEXT("texture second blue"), TextureImage.Pixels[6], static_cast<uint8>(60));
+        TestEqual(TEXT("texture second alpha"), TextureImage.Pixels[7], static_cast<uint8>(128));
+    }
+
     TArray<uint8> Pcm;
     Pcm.SetNumZeroed(4 * static_cast<int32>(sizeof(int16)));
 
@@ -1386,6 +1427,8 @@ bool FAstralRTMediaDescriptorHelpersTest::RunTest(const FString& Parameters) {
 
     ok = Session->FeedImage(GoodImage, false);
     TestTrue(TEXT("feed helper image"), ok);
+    ok = Session->FeedImage(TextureImage, false);
+    TestTrue(TEXT("feed texture helper image"), ok);
     ok = Session->FeedAudio(GoodAudio, true);
     TestTrue(TEXT("feed helper audio"), ok);
 

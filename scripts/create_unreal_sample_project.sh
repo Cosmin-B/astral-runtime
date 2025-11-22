@@ -327,12 +327,14 @@ cat > "${project_dir}/Source/AstralSample/AstralSampleActor.cpp" <<'EOF'
 
 #include "Containers/ArrayView.h"
 #include "Containers/StringConv.h"
+#include "Engine/Texture2D.h"
 #include "GenericPlatform/GenericPlatformMisc.h"
 #include "HAL/FileManager.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "PixelFormat.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAstralSample, Log, All);
 
@@ -622,6 +624,39 @@ void AAstralSampleActor::RunMediaFeedDemo()
         return;
     }
 
+    UTexture2D* Texture = UTexture2D::CreateTransient(2, 1, PF_B8G8R8A8);
+    if (Texture == nullptr || Texture->GetPlatformData() == nullptr || Texture->GetPlatformData()->Mips.Num() == 0)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media texture allocation failed"));
+        return;
+    }
+
+    FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
+    void* Locked = Mip.BulkData.Lock(LOCK_READ_WRITE);
+    if (Locked == nullptr)
+    {
+        Mip.BulkData.Unlock();
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media texture lock failed"));
+        return;
+    }
+    uint8* Bgra = static_cast<uint8*>(Locked);
+    Bgra[0] = 30;
+    Bgra[1] = 20;
+    Bgra[2] = 10;
+    Bgra[3] = 255;
+    Bgra[4] = 60;
+    Bgra[5] = 50;
+    Bgra[6] = 40;
+    Bgra[7] = 128;
+    Mip.BulkData.Unlock();
+
+    FAstralImageDesc TextureImage{};
+    if (!UAstralMediaLibrary::MakeRGBA8ImageFromTexture(Texture, TextureImage))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media texture descriptor failed"));
+        return;
+    }
+
     TArray<uint8> PcmBytes;
     PcmBytes.SetNumZeroed(4 * static_cast<int32>(sizeof(int16)));
 
@@ -637,13 +672,18 @@ void AAstralSampleActor::RunMediaFeedDemo()
         UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media image feed failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return;
     }
+    if (!MediaSession->FeedImage(TextureImage, false))
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media texture image feed failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        return;
+    }
     if (!MediaSession->FeedAudio(Audio, true))
     {
         UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media audio feed failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return;
     }
 
-    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: media feed demo loaded %s backend with RGBA image and PCM16 audio"), *MediaBackendName);
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: media feed demo loaded %s backend with RGBA byte image, texture image, and PCM16 audio"), *MediaBackendName);
 }
 
 void AAstralSampleActor::RunPackagedMemorySourceDemo()

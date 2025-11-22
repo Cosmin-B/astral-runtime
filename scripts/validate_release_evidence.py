@@ -238,6 +238,7 @@ UNREAL_SAMPLE_RUNTIME_TOKENS = (
     "Mounted IoStore container",
     "Mounted Pak file",
     "Astral sample: media feed demo loaded",
+    "texture image",
     "Astral sample: packaged content bytes read",
     "Astral sample: packaged content memory model loaded",
     "Astral sample: saved cache bytes read",
