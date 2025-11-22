@@ -77,6 +77,8 @@ REQUIRED_COMMAND_TOKENS = {
         "sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6",
     ),
     "unreal_compatibility_matrix": (
+        "ASTRAL_UNREAL_TEST_MODEL",
+        "ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1",
         "UNREAL_54_EDITOR",
         "UNREAL_55_EDITOR",
         "UNREAL_56_EDITOR",
@@ -193,6 +195,11 @@ UNREAL_CONTAINER_FAILURE_TOKENS = (
 )
 
 UNREAL_COMPATIBILITY_VERSIONS = ("5.4", "5.5", "5.6", "5.7")
+
+UNREAL_COMPATIBILITY_54_REAL_TOKENS = (
+    "AstralRT.Real.GenerationSmoke",
+    "[unreal_generation_smoke] backend=cpu",
+)
 
 UNREAL_COMPATIBILITY_FAILURE_TOKENS = (
     "[unreal_matrix] Skipping UE",
@@ -353,14 +360,23 @@ def validate_unreal_compatibility_artifacts(paths):
 
     text = log_path.read_text(encoding="utf-8", errors="replace")
     for version in UNREAL_COMPATIBILITY_VERSIONS:
+        section_start = text.find(f"[unreal_matrix] UE {version}:")
+        if section_start == -1:
+            raise ValueError(f"unreal_compatibility_matrix log is missing [unreal_matrix] UE {version}:")
+        next_section = text.find("[unreal_matrix] UE ", section_start + 1)
+        section = text[section_start:] if next_section == -1 else text[section_start:next_section]
         for token in (
             f"[unreal_matrix] UE {version}:",
             f"build/unreal-ci-results/ue-{version}",
             "[unreal_ci] Filter: AstralRT",
             "[unreal-results] OK:",
         ):
-            if token not in text:
+            if token not in section:
                 raise ValueError(f"unreal_compatibility_matrix log is missing {token}")
+        if version == "5.4":
+            for token in UNREAL_COMPATIBILITY_54_REAL_TOKENS:
+                if token not in section:
+                    raise ValueError(f"unreal_compatibility_matrix UE 5.4 log is missing {token}")
     for token in UNREAL_COMPATIBILITY_FAILURE_TOKENS:
         if token in text:
             raise ValueError(f"unreal_compatibility_matrix log contains failure marker {token}")
