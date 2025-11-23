@@ -11,6 +11,7 @@ endif()
 set(out_dir "${ASTRAL_BUILD_DIR}/unreal-sample-package-gate")
 set(project_dir "${out_dir}/AstralSample")
 set(archive_dir "${out_dir}/archive")
+set(matrix_runner "${ASTRAL_SOURCE_DIR}/scripts/run_unreal_small_model_matrix.sh")
 file(REMOVE_RECURSE "${out_dir}")
 file(MAKE_DIRECTORY "${out_dir}")
 
@@ -158,6 +159,69 @@ endforeach()
 if(NOT EXISTS "${runtime_log}")
   message(FATAL_ERROR "sample package runner did not write ${runtime_log}")
 endif()
+
+set(matrix_models_dir "${out_dir}/models")
+file(MAKE_DIRECTORY "${matrix_models_dir}")
+set(matrix_text_model "${matrix_models_dir}/Qwen3-0.6B-Q8_0.gguf")
+set(matrix_alt_model "${matrix_models_dir}/gemma-3-270m-q4_k_m.gguf")
+set(matrix_embed_model "${matrix_models_dir}/Qwen3-Embedding-0.6B-Q8_0.gguf")
+file(WRITE "${matrix_text_model}" "tiny")
+file(WRITE "${matrix_alt_model}" "tiny")
+file(WRITE "${matrix_embed_model}" "tiny")
+
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${matrix_runner}"
+    --models-dir "${matrix_models_dir}"
+    --list
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE matrix_list_result
+  OUTPUT_VARIABLE matrix_list_output
+  ERROR_VARIABLE matrix_list_error
+)
+if(NOT matrix_list_result EQUAL 0)
+  message(FATAL_ERROR "run_unreal_small_model_matrix.sh rejected list mode with fake fixtures: ${matrix_list_error}")
+endif()
+foreach(required_matrix_list_text
+    "Qwen3-0.6B-Q8_0.gguf"
+    "gemma-3-270m-q4_k_m.gguf"
+    "embedding_model: ${matrix_embed_model}")
+  string(FIND "${matrix_list_output}" "${required_matrix_list_text}" required_matrix_list_pos)
+  if(required_matrix_list_pos EQUAL -1)
+    message(FATAL_ERROR "small-model matrix list output missing '${required_matrix_list_text}': ${matrix_list_output}")
+  endif()
+endforeach()
+
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${matrix_runner}"
+    --models-dir "${matrix_models_dir}"
+    --preset qwen3-0.6b-q8
+    --out "${out_dir}/matrix"
+    --runuat "${fake_runuat}"
+    --skip-native-build
+    --dry-run
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE matrix_dry_run_result
+  OUTPUT_VARIABLE matrix_dry_run_output
+  ERROR_VARIABLE matrix_dry_run_error
+)
+if(NOT matrix_dry_run_result EQUAL 0)
+  message(FATAL_ERROR "run_unreal_small_model_matrix.sh rejected dry-run mode: ${matrix_dry_run_error}")
+endif()
+foreach(required_matrix_dry_run_text
+    "[unreal_small_matrix] run:"
+    "run_unreal_sample_package.sh"
+    "--run-sample"
+    "--sample-model"
+    "Qwen3-0.6B-Q8_0.gguf"
+    "--sample-embedding-model"
+    "Qwen3-Embedding-0.6B-Q8_0.gguf"
+    "--skip-native-build"
+    "[unreal_small_matrix] OK")
+  string(FIND "${matrix_dry_run_output}" "${required_matrix_dry_run_text}" required_matrix_dry_run_pos)
+  if(required_matrix_dry_run_pos EQUAL -1)
+    message(FATAL_ERROR "small-model matrix dry-run output missing '${required_matrix_dry_run_text}': ${matrix_dry_run_output}")
+  endif()
+endforeach()
 
 foreach(required_file
     "${project_dir}/AstralSample.uproject"

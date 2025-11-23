@@ -178,6 +178,21 @@ The Automation JSON report records `[unreal_generation_smoke]` and
 command line with release evidence; generated model files and container logs
 stay out of git.
 
+To cycle the packaged sample through the downloaded small Hugging Face text
+fixtures, use the matrix wrapper. It auto-selects known small GGUFs already
+present under `tests/models` and reuses the Qwen3 embedding fixture when it is
+available:
+
+```bash
+./scripts/run_unreal_small_model_matrix.sh \
+  --runuat "$UNREAL_RUNUAT" \
+  --skip-native-build
+```
+
+Use `--dry-run` to inspect the generated `run_unreal_sample_package.sh`
+commands before starting Unreal, or `--preset qwen3-0.6b-q8` to run one
+candidate.
+
 ## Run The Compatibility Matrix
 
 ```bash

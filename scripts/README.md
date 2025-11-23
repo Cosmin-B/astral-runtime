@@ -421,6 +421,19 @@ investigation, not for release evidence.
 alive on a remote runner. Use `--dry-run` to inspect the exact commands before
 letting it start background jobs.
 
+For Unreal packaged-sample smoke runs across the downloaded small text fixtures,
+use:
+
+```bash
+./scripts/run_unreal_small_model_matrix.sh --list
+./scripts/run_unreal_small_model_matrix.sh --dry-run --preset qwen3-0.6b-q8
+./scripts/run_unreal_small_model_matrix.sh --runuat "$UNREAL_RUNUAT" --skip-native-build
+```
+
+The runner is intentionally a thin wrapper around
+`run_unreal_sample_package.sh`: it chooses the local GGUF paths, creates
+per-model output directories, and keeps runtime logs out of the repo.
+
 ## Windows Large Pages
 
 Run the Windows large-page validation script twice on a Windows host:
