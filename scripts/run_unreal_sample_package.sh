@@ -16,6 +16,8 @@ sample_memory_backend="${ASTRAL_UNREAL_SAMPLE_MEMORY_BACKEND:-mock}"
 sample_media_backend="${ASTRAL_UNREAL_SAMPLE_MEDIA_BACKEND:-mock}"
 sample_model="${ASTRAL_UNREAL_SAMPLE_MODEL:-}"
 sample_embedding_model="${ASTRAL_UNREAL_SAMPLE_EMBED_MODEL:-}"
+sample_media_path="${ASTRAL_UNREAL_SAMPLE_MEDIA_PATH:-}"
+sample_media_path_root="${ASTRAL_UNREAL_SAMPLE_MEDIA_PATH_ROOT:-Raw}"
 sample_prompt="${ASTRAL_UNREAL_SAMPLE_PROMPT:-Say hello from Astral.}"
 sample_runtime_log="${ASTRAL_UNREAL_SAMPLE_RUNTIME_LOG:-}"
 
@@ -44,6 +46,10 @@ Options:
   --sample-model <path>    GGUF path passed as -AstralModel
   --sample-embedding-model <path>
                           GGUF path passed as -AstralEmbeddingModel
+  --sample-media-path <path>
+                          Projector/encoder GGUF path passed as -AstralMediaPath
+  --sample-media-path-root <Raw|ProjectContent|ProjectSaved|ProjectPersistentDownload>
+                          Path root passed as -AstralMediaPathRoot (default: Raw)
   --sample-prompt <text>   Prompt passed as -AstralPrompt
   -h, --help               Show this help
 
@@ -57,6 +63,8 @@ Environment:
   ASTRAL_UNREAL_SAMPLE_MEDIA_BACKEND
   ASTRAL_UNREAL_SAMPLE_MODEL
   ASTRAL_UNREAL_SAMPLE_EMBED_MODEL
+  ASTRAL_UNREAL_SAMPLE_MEDIA_PATH
+  ASTRAL_UNREAL_SAMPLE_MEDIA_PATH_ROOT
   ASTRAL_UNREAL_SAMPLE_PROMPT
   ASTRAL_UNREAL_SAMPLE_RUNTIME_LOG
 
@@ -123,6 +131,14 @@ while [[ $# -gt 0 ]]; do
       sample_embedding_model="${2:-}"
       shift 2
       ;;
+    --sample-media-path)
+      sample_media_path="${2:-}"
+      shift 2
+      ;;
+    --sample-media-path-root)
+      sample_media_path_root="${2:-}"
+      shift 2
+      ;;
     --sample-prompt)
       sample_prompt="${2:-}"
       shift 2
@@ -179,6 +195,15 @@ Set UNREAL_RUNUAT, UNREAL_ENGINE_DIR, or UNREAL_EDITOR so the sample package lan
 EOF
   exit 2
 fi
+
+case "${sample_media_path_root}" in
+  Raw|ProjectContent|ProjectSaved|ProjectPersistentDownload)
+    ;;
+  *)
+    echo "--sample-media-path-root must be Raw, ProjectContent, ProjectSaved, or ProjectPersistentDownload" >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! -f "${runuat}" ]]; then
   echo "RunUAT path does not exist: ${runuat}" >&2
@@ -270,6 +295,10 @@ fi
 if [[ -n "${sample_embedding_model}" ]]; then
   runtime_args+=("-AstralEmbeddingModel=${sample_embedding_model}")
 fi
+if [[ -n "${sample_media_path}" ]]; then
+  runtime_args+=("-AstralMediaPath=${sample_media_path}")
+  runtime_args+=("-AstralMediaPathRoot=${sample_media_path_root}")
+fi
 if [[ -n "${sample_prompt}" ]]; then
   runtime_args+=("-AstralPrompt=${sample_prompt}")
 fi
@@ -278,6 +307,10 @@ echo "[unreal_sample] Runtime: ${sample_exe}"
 echo "[unreal_sample] Runtime backend: ${sample_backend}"
 echo "[unreal_sample] Runtime memory backend: ${sample_memory_backend}"
 echo "[unreal_sample] Runtime media backend: ${sample_media_backend}"
+if [[ -n "${sample_media_path}" ]]; then
+  echo "[unreal_sample] Runtime media path: ${sample_media_path}"
+  echo "[unreal_sample] Runtime media path root: ${sample_media_path_root}"
+fi
 if [[ -n "${sample_runtime_log}" ]]; then
   mkdir -p "$(dirname "${sample_runtime_log}")"
   echo "[unreal_sample] Runtime log: ${sample_runtime_log}"

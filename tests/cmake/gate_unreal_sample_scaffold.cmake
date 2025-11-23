@@ -48,9 +48,11 @@ file(READ "${out_dir}/AstralSample.uproject" uproject_text)
 file(READ "${out_dir}/Config/DefaultGame.ini" default_game_text)
 file(READ "${out_dir}/Source/AstralSample/AstralSample.Build.cs" build_text)
 file(READ "${out_dir}/Source/AstralSample/AstralSampleGameMode.cpp" game_mode_text)
+file(READ "${out_dir}/Source/AstralSample/AstralSampleActor.h" actor_header_text)
 file(READ "${out_dir}/Source/AstralSample/AstralSampleActor.cpp" actor_text)
 file(READ "${out_dir}/README.md" readme_text)
 file(READ "${out_dir}/Content/AstralSample/Models/mock-model.bytes" mock_model_text)
+set(actor_full_text "${actor_header_text}\n${actor_text}")
 
 foreach(required_project_text
     "\"EngineAssociation\": \"5.7\""
@@ -95,15 +97,26 @@ foreach(required_actor_text
     "OnStreamBytesNative"
     "EmbedUtf8Bytes"
     "RunMediaFeedDemo"
+    "FString MediaPath"
+    "EAstralUnrealPathRoot MediaPathRoot = EAstralUnrealPathRoot::Raw"
+    "AstralSampleParsePathRoot"
+    "FParse::Value(CommandLine, TEXT(\"AstralMediaPath=\"), OverrideValue)"
+    "FParse::Value(CommandLine, TEXT(\"AstralMediaPathRoot=\"), OverrideValue)"
+    "ModelDesc.ModelPath = ModelPath;"
+    "MediaDesc.MediaPath = MediaPath;"
+    "MediaDesc.MediaPathRoot = MediaPathRoot;"
+    "MediaModel->InitMedia(MediaDesc)"
+    "Astral sample: media projector initialized"
     "UAstralMediaLibrary::MakeRGBA8ImageFromBytes"
     "UAstralMediaLibrary::MakeRGBA8ImageFromTexture"
     "UTexture2D::CreateTransient"
     "PF_B8G8R8A8"
-    "MediaSession->FeedImage\\(TextureImage, false\\)"
+    "MediaSession->FeedImage(TextureImage, false)"
     "MediaSession->FeedAudio"
     "astral_last_error"
     "LogAstralSample")
-  if(NOT actor_text MATCHES "${required_actor_text}")
+  string(FIND "${actor_full_text}" "${required_actor_text}" required_actor_text_pos)
+  if(required_actor_text_pos EQUAL -1)
     message(FATAL_ERROR "Unreal sample actor is missing ${required_actor_text}")
   endif()
 endforeach()

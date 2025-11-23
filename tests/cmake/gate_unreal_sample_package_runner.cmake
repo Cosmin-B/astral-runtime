@@ -55,7 +55,9 @@ for token in \
   "-AstralMemoryBackend=mock" \
   "-AstralMediaBackend=mock" \
   "-AstralModel=/tmp/text.gguf" \
-  "-AstralEmbeddingModel=/tmp/embed.gguf"; do
+  "-AstralEmbeddingModel=/tmp/embed.gguf" \
+  "-AstralMediaPath=/tmp/mmproj.gguf" \
+  "-AstralMediaPathRoot=Raw"; do
   case " $* " in
     *" ${token} "*) ;;
     *) echo "missing runtime arg: ${token}" >&2; exit 43 ;;
@@ -119,6 +121,8 @@ execute_process(
     --runtime-log "${runtime_log}"
     --sample-model "/tmp/text.gguf"
     --sample-embedding-model "/tmp/embed.gguf"
+    --sample-media-path "/tmp/mmproj.gguf"
+    --sample-media-path-root "Raw"
     --sample-prompt "hello from gate"
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE runtime_result
@@ -134,6 +138,8 @@ foreach(required_runtime_text
     "[unreal_sample] Runtime backend: cpu"
     "[unreal_sample] Runtime memory backend: mock"
     "[unreal_sample] Runtime media backend: mock"
+    "[unreal_sample] Runtime media path: /tmp/mmproj.gguf"
+    "[unreal_sample] Runtime media path root: Raw"
     "[unreal_sample] Runtime log:"
     "fake sample:"
     "-AstralBackend=cpu"
@@ -141,6 +147,8 @@ foreach(required_runtime_text
     "-AstralMediaBackend=mock"
     "-AstralModel=/tmp/text.gguf"
     "-AstralEmbeddingModel=/tmp/embed.gguf"
+    "-AstralMediaPath=/tmp/mmproj.gguf"
+    "-AstralMediaPathRoot=Raw"
     "[unreal_sample] Runtime OK")
   string(FIND "${runtime_text}" "${required_runtime_text}" required_runtime_text_pos)
   if(required_runtime_text_pos EQUAL -1)
@@ -175,18 +183,30 @@ endif()
 foreach(required_sample_text
     "FString MemoryBackendName = TEXT(\"mock\");"
     "FString EmbeddingModelPath;"
+    "FString MediaPath"
+    "EAstralUnrealPathRoot MediaPathRoot = EAstralUnrealPathRoot::Raw"
     "void ApplyCommandLineOverrides();"
+    "AstralSampleParsePathRoot"
     "FParse::Value(CommandLine, TEXT(\"AstralBackend=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralMemoryBackend=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralMediaBackend=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralModel=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralEmbeddingModel=\"), OverrideValue)"
+    "FParse::Value(CommandLine, TEXT(\"AstralMediaPath=\"), OverrideValue)"
+    "FParse::Value(CommandLine, TEXT(\"AstralMediaPathRoot=\"), OverrideValue)"
     "FParse::Value(CommandLine, TEXT(\"AstralPrompt=\"), OverrideValue)"
     "memory_backend=%s"
     "media_backend=%s"
+    "media_path=%s"
+    "media_path_root=%s"
     "UE_LOG(LogAstralSample, Display"
     "Desc.BackendName = MemoryBackendName;"
     "void RunMediaFeedDemo();"
+    "ModelDesc.ModelPath = ModelPath;"
+    "MediaDesc.MediaPath = MediaPath;"
+    "MediaDesc.MediaPathRoot = MediaPathRoot;"
+    "MediaModel->InitMedia(MediaDesc)"
+    "Astral sample: media projector initialized"
     "UAstralMediaLibrary::MakeRGBA8ImageFromBytes"
     "UAstralMediaLibrary::MakeRGBA8ImageFromTexture"
     "UTexture2D::CreateTransient"

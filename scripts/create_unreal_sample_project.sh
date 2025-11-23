@@ -223,6 +223,7 @@ cat > "${project_dir}/Source/AstralSample/AstralSampleActor.h" <<'EOF'
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AstralTypes.h"
 #include "GameFramework/Actor.h"
 
 #include "AstralSampleActor.generated.h"
@@ -253,6 +254,12 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Astral")
     FString EmbeddingModelPath;
+
+    UPROPERTY(EditAnywhere, Category = "Astral")
+    FString MediaPath;
+
+    UPROPERTY(EditAnywhere, Category = "Astral")
+    EAstralUnrealPathRoot MediaPathRoot = EAstralUnrealPathRoot::Raw;
 
     UPROPERTY(EditAnywhere, Category = "Astral")
     FString Prompt = TEXT("Say hello from Astral.");
@@ -337,6 +344,43 @@ cat > "${project_dir}/Source/AstralSample/AstralSampleActor.cpp" <<'EOF'
 #include "PixelFormat.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAstralSample, Log, All);
+
+static EAstralUnrealPathRoot AstralSampleParsePathRoot(const FString& Value, EAstralUnrealPathRoot Fallback)
+{
+    if (Value.Equals(TEXT("Raw"), ESearchCase::IgnoreCase))
+    {
+        return EAstralUnrealPathRoot::Raw;
+    }
+    if (Value.Equals(TEXT("ProjectContent"), ESearchCase::IgnoreCase))
+    {
+        return EAstralUnrealPathRoot::ProjectContent;
+    }
+    if (Value.Equals(TEXT("ProjectSaved"), ESearchCase::IgnoreCase))
+    {
+        return EAstralUnrealPathRoot::ProjectSaved;
+    }
+    if (Value.Equals(TEXT("ProjectPersistentDownload"), ESearchCase::IgnoreCase))
+    {
+        return EAstralUnrealPathRoot::ProjectPersistentDownload;
+    }
+    return Fallback;
+}
+
+static const TCHAR* AstralSamplePathRootName(EAstralUnrealPathRoot Root)
+{
+    switch (Root)
+    {
+    case EAstralUnrealPathRoot::ProjectContent:
+        return TEXT("ProjectContent");
+    case EAstralUnrealPathRoot::ProjectSaved:
+        return TEXT("ProjectSaved");
+    case EAstralUnrealPathRoot::ProjectPersistentDownload:
+        return TEXT("ProjectPersistentDownload");
+    case EAstralUnrealPathRoot::Raw:
+    default:
+        return TEXT("Raw");
+    }
+}
 
 AAstralSampleActor::AAstralSampleActor()
 {
@@ -434,17 +478,27 @@ void AAstralSampleActor::ApplyCommandLineOverrides()
     {
         EmbeddingModelPath = OverrideValue;
     }
+    if (FParse::Value(CommandLine, TEXT("AstralMediaPath="), OverrideValue))
+    {
+        MediaPath = OverrideValue;
+    }
+    if (FParse::Value(CommandLine, TEXT("AstralMediaPathRoot="), OverrideValue))
+    {
+        MediaPathRoot = AstralSampleParsePathRoot(OverrideValue, MediaPathRoot);
+    }
     if (FParse::Value(CommandLine, TEXT("AstralPrompt="), OverrideValue))
     {
         Prompt = OverrideValue;
     }
 
-    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: backend=%s memory_backend=%s media_backend=%s model=%s embedding_model=%s"),
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: backend=%s memory_backend=%s media_backend=%s model=%s embedding_model=%s media_path=%s media_path_root=%s"),
         *BackendName,
         *MemoryBackendName,
         *MediaBackendName,
         ModelPath.IsEmpty() ? TEXT("<mock/default>") : *ModelPath,
-        EmbeddingModelPath.IsEmpty() ? TEXT("<model/default>") : *EmbeddingModelPath);
+        EmbeddingModelPath.IsEmpty() ? TEXT("<model/default>") : *EmbeddingModelPath,
+        MediaPath.IsEmpty() ? TEXT("<none>") : *MediaPath,
+        AstralSamplePathRootName(MediaPathRoot));
 }
 
 bool AAstralSampleActor::LoadGenerationModel()
@@ -589,6 +643,7 @@ void AAstralSampleActor::RunMediaFeedDemo()
 
     FAstralModelDesc ModelDesc{};
     ModelDesc.SourceKind = EAstralModelSourceKind::Path;
+    ModelDesc.ModelPath = ModelPath;
     ModelDesc.BackendName = MediaBackendName;
     ModelDesc.ContextSize = 128;
 
@@ -596,6 +651,20 @@ void AAstralSampleActor::RunMediaFeedDemo()
     {
         UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media model load failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
         return;
+    }
+
+    if (!MediaPath.IsEmpty())
+    {
+        FAstralModelMediaDesc MediaDesc{};
+        MediaDesc.SourceKind = EAstralModelSourceKind::Path;
+        MediaDesc.MediaPath = MediaPath;
+        MediaDesc.MediaPathRoot = MediaPathRoot;
+        if (!MediaModel->InitMedia(MediaDesc))
+        {
+            UE_LOG(LogAstralSample, Error, TEXT("Astral sample: media projector init failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+            return;
+        }
+        UE_LOG(LogAstralSample, Display, TEXT("Astral sample: media projector initialized path=%s root=%s"), *MediaPath, AstralSamplePathRootName(MediaPathRoot));
     }
 
     MediaSession = NewObject<UAstralSession>(this);
@@ -784,13 +853,17 @@ AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit \
   -AstralMediaBackend=mock \
   -AstralModel=/absolute/path/to/Qwen3-0.6B-Q8_0.gguf \
   -AstralEmbeddingModel=/absolute/path/to/Qwen3-Embedding-0.6B-Q8_0.gguf \
+  -AstralMediaPath=/absolute/path/to/mmproj.gguf \
+  -AstralMediaPathRoot=Raw \
   -AstralPrompt="Say hello from Astral."
 ```
 
 `-AstralMemoryBackend=mock` keeps the packaged Content/Saved byte demos on the
 mock backend while text generation and embeddings use the real CPU backend.
-`-AstralMediaBackend=mock` keeps the sample image/audio feed demo lightweight;
-real projector validation remains part of the MTMD release lane.
+`-AstralMediaPath` and `-AstralMediaPathRoot` initialize a media projector for
+the media feed demo; leave them unset with `-AstralMediaBackend=mock` for a
+lightweight descriptor/bridge smoke. Real projector validation remains part of
+the MTMD release lane.
 
 Real production sign-off still requires packaging this project on the UE 5.7
 release runner and recording the Automation/package logs as release evidence.
