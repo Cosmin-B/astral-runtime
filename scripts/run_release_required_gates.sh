@@ -28,6 +28,8 @@ Options:
 MTMD fixtures are supplied through:
   ASTRAL_TEST_VISION_MODEL, ASTRAL_TEST_VISION_MEDIA
   ASTRAL_TEST_AUDIO_MODEL, ASTRAL_TEST_AUDIO_MEDIA
+or:
+  ASTRAL_MTMD_FIXTURE_MANIFEST, ASTRAL_MTMD_FIXTURE_DIR
 
 Engine gates are supplied through:
   Epic GHCR access or cached UE 5.7 full/slim container images
@@ -88,6 +90,19 @@ require_env_for_plan() {
   return "${missing}"
 }
 
+require_mtmd_env_for_plan() {
+  if [[ -n "${ASTRAL_MTMD_FIXTURE_MANIFEST:-}" || -n "${ASTRAL_MTMD_FIXTURE_DIR:-}" ]]; then
+    require_env_for_plan ASTRAL_MTMD_FIXTURE_MANIFEST ASTRAL_MTMD_FIXTURE_DIR
+    return $?
+  fi
+
+  require_env_for_plan \
+    ASTRAL_TEST_VISION_MODEL \
+    ASTRAL_TEST_VISION_MEDIA \
+    ASTRAL_TEST_AUDIO_MODEL \
+    ASTRAL_TEST_AUDIO_MEDIA
+}
+
 print_release_plan() {
   local missing=0
 
@@ -115,11 +130,7 @@ print_release_plan() {
     echo "  Unity EditMode ABI: skipped for local diagnosis"
   fi
 
-  require_env_for_plan \
-    ASTRAL_TEST_VISION_MODEL \
-    ASTRAL_TEST_VISION_MEDIA \
-    ASTRAL_TEST_AUDIO_MODEL \
-    ASTRAL_TEST_AUDIO_MEDIA || missing=1
+  require_mtmd_env_for_plan || missing=1
 
   if [[ -z "${cuda_arch}" ]]; then
     echo "[release-gate] missing required option: --cuda-arch <deployed-arch-list>" >&2

@@ -19,6 +19,9 @@ Options:
   --vision-media <path>    Vision projector/media GGUF
   --audio-model <path>     Audio model GGUF
   --audio-media <path>     Audio projector/media GGUF
+  --fixture-manifest <json>
+                           Resolve missing fixture paths from a pinned manifest
+  --fixture-dir <dir>      Directory containing manifest required_files
   --check-fixtures         Validate fixture paths and sizes, then exit
   --bench                  Also require feature bench media feed rows
   --out <file>             Bench log path (default: benchmarks/results/mtmd-features.txt)
@@ -28,6 +31,7 @@ Options:
 Environment fallbacks:
   ASTRAL_TEST_VISION_MODEL, ASTRAL_TEST_VISION_MEDIA
   ASTRAL_TEST_AUDIO_MODEL, ASTRAL_TEST_AUDIO_MEDIA
+  ASTRAL_MTMD_FIXTURE_MANIFEST, ASTRAL_MTMD_FIXTURE_DIR
   ASTRAL_MTMD_MIN_MODEL_BYTES, ASTRAL_MTMD_MIN_MEDIA_BYTES
 EOF
 }
@@ -39,6 +43,8 @@ vision_model="${ASTRAL_TEST_VISION_MODEL:-}"
 vision_media="${ASTRAL_TEST_VISION_MEDIA:-}"
 audio_model="${ASTRAL_TEST_AUDIO_MODEL:-}"
 audio_media="${ASTRAL_TEST_AUDIO_MEDIA:-}"
+fixture_manifest="${ASTRAL_MTMD_FIXTURE_MANIFEST:-}"
+fixture_dir="${ASTRAL_MTMD_FIXTURE_DIR:-}"
 min_model_bytes="${ASTRAL_MTMD_MIN_MODEL_BYTES:-$((100 * 1024 * 1024))}"
 min_media_bytes="${ASTRAL_MTMD_MIN_MEDIA_BYTES:-$((1 * 1024 * 1024))}"
 check_fixtures=0
@@ -55,6 +61,8 @@ while [[ $# -gt 0 ]]; do
     --vision-media) vision_media="${2:-}"; shift 2 ;;
     --audio-model) audio_model="${2:-}"; shift 2 ;;
     --audio-media) audio_media="${2:-}"; shift 2 ;;
+    --fixture-manifest) fixture_manifest="${2:-}"; shift 2 ;;
+    --fixture-dir) fixture_dir="${2:-}"; shift 2 ;;
     --check-fixtures) check_fixtures=1; shift ;;
     --bench) bench=1; shift ;;
     --out) out_file="${2:-}"; shift 2 ;;
@@ -63,6 +71,39 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+if [[ -n "${fixture_manifest}" || -n "${fixture_dir}" ]]; then
+  if [[ -z "${fixture_manifest}" ]]; then
+    echo "[mtmd] missing fixture manifest" >&2
+    exit 2
+  fi
+  if [[ -z "${fixture_dir}" ]]; then
+    echo "[mtmd] missing fixture directory" >&2
+    exit 2
+  fi
+
+  resolved_vision_model=""
+  resolved_vision_media=""
+  resolved_audio_model=""
+  resolved_audio_media=""
+  resolved_fixture_lines="$("${root_dir}/scripts/resolve_mtmd_fixtures.py" \
+    --manifest "${fixture_manifest}" \
+    --fixture-dir "${fixture_dir}")"
+  while IFS=$'\t' read -r key path; do
+    [[ -n "${key}" ]] || continue
+    case "${key}" in
+      vision_model) resolved_vision_model="${path}" ;;
+      vision_media) resolved_vision_media="${path}" ;;
+      audio_model) resolved_audio_model="${path}" ;;
+      audio_media) resolved_audio_media="${path}" ;;
+    esac
+  done <<< "${resolved_fixture_lines}"
+
+  vision_model="${vision_model:-${resolved_vision_model}}"
+  vision_media="${vision_media:-${resolved_vision_media}}"
+  audio_model="${audio_model:-${resolved_audio_model}}"
+  audio_media="${audio_media:-${resolved_audio_media}}"
+fi
 
 require_file() {
   local label="$1"
@@ -93,6 +134,10 @@ require_file "audio media/projector" "${audio_media}" "${min_media_bytes}"
 
 if [[ "${check_fixtures}" -eq 1 ]]; then
   echo "[mtmd] fixture preflight OK"
+  if [[ -n "${fixture_manifest}" ]]; then
+    echo "[mtmd] fixture manifest: ${fixture_manifest}"
+    echo "[mtmd] fixture dir: ${fixture_dir}"
+  fi
   echo "[mtmd] vision model: ${vision_model}"
   echo "[mtmd] vision media/projector: ${vision_media}"
   echo "[mtmd] audio model: ${audio_model}"

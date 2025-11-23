@@ -12,6 +12,7 @@ if(NOT DEFINED ASTRAL_PYTHON_EXECUTABLE)
 endif()
 
 set(script "${ASTRAL_SOURCE_DIR}/scripts/validate_mtmd_fixture_manifest.py")
+set(resolver "${ASTRAL_SOURCE_DIR}/scripts/resolve_mtmd_fixtures.py")
 set(runner "${ASTRAL_SOURCE_DIR}/scripts/run_multimodal_validation.sh")
 set(manifest "${ASTRAL_SOURCE_DIR}/scripts/mtmd_fixture_manifest_lfm25.json")
 set(out_dir "${ASTRAL_BUILD_DIR}/mtmd-fixture-manifest-gate")
@@ -28,6 +29,28 @@ execute_process(
 if(NOT good_result EQUAL 0)
   message(FATAL_ERROR "MTMD fixture manifest validator rejected the committed manifest: ${good_output}${good_error}")
 endif()
+
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${resolver}"
+    --manifest "${manifest}"
+    --fixture-dir "${out_dir}/fixtures"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE resolver_result
+  OUTPUT_VARIABLE resolver_output
+  ERROR_VARIABLE resolver_error
+)
+if(NOT resolver_result EQUAL 0)
+  message(FATAL_ERROR "MTMD fixture resolver rejected the committed manifest: ${resolver_output}${resolver_error}")
+endif()
+foreach(required_resolved
+    "vision_model"
+    "vision_media"
+    "audio_model"
+    "audio_media")
+  if(NOT resolver_output MATCHES "${required_resolved}")
+    message(FATAL_ERROR "MTMD fixture resolver did not print ${required_resolved}: ${resolver_output}")
+  endif()
+endforeach()
 
 set(unpinned_manifest "${out_dir}/unpinned.json")
 file(WRITE "${unpinned_manifest}"
@@ -135,6 +158,26 @@ if(NOT missing_fixture_error MATCHES "missing vision model")
   message(FATAL_ERROR "MTMD fixture preflight failed for the wrong missing-fixture reason: ${missing_fixture_error}")
 endif()
 
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_VISION_MODEL="
+    "ASTRAL_TEST_VISION_MEDIA="
+    "ASTRAL_TEST_AUDIO_MODEL="
+    "ASTRAL_TEST_AUDIO_MEDIA="
+    "${ASTRAL_BASH_EXECUTABLE}" "${runner}"
+      --fixture-manifest "${manifest}"
+      --check-fixtures
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE missing_fixture_dir_result
+  ERROR_VARIABLE missing_fixture_dir_error
+)
+if(missing_fixture_dir_result EQUAL 0)
+  message(FATAL_ERROR "MTMD fixture preflight accepted manifest mode without a fixture directory")
+endif()
+if(NOT missing_fixture_dir_error MATCHES "missing fixture directory")
+  message(FATAL_ERROR "MTMD fixture preflight failed for the wrong missing-dir reason: ${missing_fixture_dir_error}")
+endif()
+
 set(fixture_dir "${out_dir}/fixtures")
 file(MAKE_DIRECTORY "${fixture_dir}")
 set(vision_model "${fixture_dir}/vision-model.gguf")
@@ -185,6 +228,69 @@ if(NOT good_fixture_result EQUAL 0)
 endif()
 if(NOT good_fixture_output MATCHES "fixture preflight OK")
   message(FATAL_ERROR "MTMD fixture preflight did not print success evidence: ${good_fixture_output}")
+endif()
+
+set(lfm_vision_model "${fixture_dir}/LFM2.5-VL-1.6B-Q4_0.gguf")
+set(lfm_vision_media "${fixture_dir}/mmproj-LFM2.5-VL-1.6b-Q8_0.gguf")
+set(lfm_audio_model "${fixture_dir}/LFM2.5-Audio-1.5B-Q4_0.gguf")
+set(lfm_audio_media "${fixture_dir}/mmproj-LFM2.5-Audio-1.5B-Q4_0.gguf")
+file(WRITE "${lfm_vision_model}" "tiny")
+file(WRITE "${lfm_vision_media}" "tiny")
+file(WRITE "${lfm_audio_model}" "tiny")
+file(WRITE "${lfm_audio_media}" "tiny")
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_VISION_MODEL="
+    "ASTRAL_TEST_VISION_MEDIA="
+    "ASTRAL_TEST_AUDIO_MODEL="
+    "ASTRAL_TEST_AUDIO_MEDIA="
+    "ASTRAL_MTMD_MIN_MODEL_BYTES=1"
+    "ASTRAL_MTMD_MIN_MEDIA_BYTES=1"
+    "${ASTRAL_BASH_EXECUTABLE}" "${runner}"
+      --fixture-manifest "${manifest}"
+      --fixture-dir "${fixture_dir}"
+      --check-fixtures
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE manifest_fixture_result
+  OUTPUT_VARIABLE manifest_fixture_output
+  ERROR_VARIABLE manifest_fixture_error
+)
+if(NOT manifest_fixture_result EQUAL 0)
+  message(FATAL_ERROR "MTMD fixture preflight rejected manifest-resolved fixtures: ${manifest_fixture_output}${manifest_fixture_error}")
+endif()
+if(NOT manifest_fixture_output MATCHES "fixture manifest: ${manifest}")
+  message(FATAL_ERROR "MTMD fixture preflight did not report the manifest source: ${manifest_fixture_output}")
+endif()
+if(NOT manifest_fixture_output MATCHES "LFM2.5-VL-1.6B-Q4_0.gguf")
+  message(FATAL_ERROR "MTMD fixture preflight did not report the manifest-resolved vision model: ${manifest_fixture_output}")
+endif()
+
+set(override_vision_model "${fixture_dir}/override-vision-model.gguf")
+file(WRITE "${override_vision_model}" "tiny")
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_VISION_MODEL="
+    "ASTRAL_TEST_VISION_MEDIA="
+    "ASTRAL_TEST_AUDIO_MODEL="
+    "ASTRAL_TEST_AUDIO_MEDIA="
+    "ASTRAL_MTMD_MIN_MODEL_BYTES=1"
+    "ASTRAL_MTMD_MIN_MEDIA_BYTES=1"
+    "${ASTRAL_BASH_EXECUTABLE}" "${runner}"
+      --fixture-manifest "${manifest}"
+      --fixture-dir "${fixture_dir}"
+      --vision-model "${override_vision_model}"
+      --check-fixtures
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE override_fixture_result
+  OUTPUT_VARIABLE override_fixture_output
+  ERROR_VARIABLE override_fixture_error
+)
+if(NOT override_fixture_result EQUAL 0)
+  message(FATAL_ERROR "MTMD fixture preflight rejected explicit override with manifest defaults: ${override_fixture_output}${override_fixture_error}")
+endif()
+if(NOT override_fixture_output MATCHES "override-vision-model.gguf")
+  message(FATAL_ERROR "MTMD fixture preflight did not prefer explicit vision-model override: ${override_fixture_output}")
 endif()
 
 message(STATUS "gate_mtmd_fixture_manifest: OK")

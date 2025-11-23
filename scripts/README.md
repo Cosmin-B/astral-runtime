@@ -396,13 +396,22 @@ starting configure, build, or CTest:
 ```bash
 ./scripts/validate_mtmd_fixture_manifest.py scripts/mtmd_fixture_manifest_lfm25.json
 ./scripts/hf_gguf_download_lfm25_all.sh --out tests/models/hf-lfm25
-./scripts/run_multimodal_validation.sh --check-fixtures
-./scripts/run_multimodal_validation.sh --bench
+./scripts/run_multimodal_validation.sh \
+  --fixture-manifest scripts/mtmd_fixture_manifest_lfm25.json \
+  --fixture-dir tests/models/hf-lfm25 \
+  --check-fixtures
+./scripts/run_multimodal_validation.sh \
+  --fixture-manifest scripts/mtmd_fixture_manifest_lfm25.json \
+  --fixture-dir tests/models/hf-lfm25 \
+  --bench
 ```
 
 The fixture manifest pins the Hugging Face repo revisions, license metadata, and
-required GGUF model/projector filenames. Do not replace it with a floating
-`main` download for release evidence.
+required GGUF model/projector filenames. The validation runner can resolve its
+vision/audio paths from that manifest plus the download directory; explicit
+`--vision-*` and `--audio-*` paths still override manifest defaults for local
+experiments with newer small Hugging Face models. Do not replace release
+manifests with floating `main` downloads.
 
 The HF GGUF matrix is fail-hard by default: any `[bench] FAILED` row makes
 `run_hf_bench_matrix.sh` exit non-zero. Use `--allow-failures` only for local

@@ -67,6 +67,33 @@ endif()
 
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_TEST_VISION_MODEL="
+    "ASTRAL_TEST_VISION_MEDIA="
+    "ASTRAL_TEST_AUDIO_MODEL="
+    "ASTRAL_TEST_AUDIO_MEDIA="
+    "ASTRAL_MTMD_FIXTURE_MANIFEST=${ASTRAL_SOURCE_DIR}/scripts/mtmd_fixture_manifest_lfm25.json"
+    "ASTRAL_MTMD_FIXTURE_DIR=/models/hf-lfm25"
+    "UNREAL_54_EDITOR=/opt/Unreal-5.4/Engine/Binaries/Linux/UnrealEditor-Cmd"
+    "UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd"
+    "UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd"
+    "UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd"
+    "UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh"
+    "UNITY_EDITOR=/opt/Unity/Editor/Unity"
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --cuda-arch native
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE manifest_env_result
+  OUTPUT_VARIABLE manifest_env_output
+  ERROR_VARIABLE manifest_env_error
+)
+if(NOT manifest_env_result EQUAL 0)
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan rejected manifest-driven MTMD environment: ${manifest_env_error}")
+endif()
+if(NOT manifest_env_output MATCHES "plan environment OK")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not accept manifest-driven MTMD environment: ${manifest_env_output}")
+endif()
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
     ${plan_env}
     "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --cuda-strict --mtmd-bench
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"

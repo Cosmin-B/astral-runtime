@@ -108,9 +108,21 @@ Real media init smoke tests:
 The default `test_media` run skips real fixtures when they are absent. The release lane makes them required:
 
 ```bash
-./scripts/run_multimodal_validation.sh --check-fixtures
-./scripts/run_multimodal_validation.sh --bench
+./scripts/run_multimodal_validation.sh \
+  --fixture-manifest scripts/mtmd_fixture_manifest_lfm25.json \
+  --fixture-dir tests/models/hf-lfm25 \
+  --check-fixtures
+./scripts/run_multimodal_validation.sh \
+  --fixture-manifest scripts/mtmd_fixture_manifest_lfm25.json \
+  --fixture-dir tests/models/hf-lfm25 \
+  --bench
 ```
+
+The manifest path is the release-default route because it pins Hugging Face
+revisions and filenames. For local experiments with newer small multimodal
+fixtures, keep the manifest format and pass explicit `--vision-model`,
+`--vision-media`, `--audio-model`, or `--audio-media` overrides only when
+comparing candidates.
 
 Feature bench inputs:
 

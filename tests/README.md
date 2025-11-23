@@ -73,8 +73,14 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 ```bash
 ./scripts/validate_mtmd_fixture_manifest.py scripts/mtmd_fixture_manifest_lfm25.json
 ./scripts/hf_gguf_download_lfm25_all.sh --out tests/models/hf-lfm25
-./scripts/run_multimodal_validation.sh --check-fixtures
-./scripts/run_multimodal_validation.sh --bench
+./scripts/run_multimodal_validation.sh \
+  --fixture-manifest scripts/mtmd_fixture_manifest_lfm25.json \
+  --fixture-dir tests/models/hf-lfm25 \
+  --check-fixtures
+./scripts/run_multimodal_validation.sh \
+  --fixture-manifest scripts/mtmd_fixture_manifest_lfm25.json \
+  --fixture-dir tests/models/hf-lfm25 \
+  --bench
 ```
 
 ## What the gates cover
@@ -96,7 +102,7 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_unreal_sample_scaffold`: generates a temporary UE sample project and checks that it includes model load, streaming, cancellation, embeddings, and error-reporting sample code.
 - `gate_unity_editmode_results`: smoke-checks the Unity EditMode XML validator for pass, failed-result, and malformed-result cases.
 - `gate_hf_matrix_log`: checks that HF matrix logs can be parsed and that failed, empty, skipped-only, or incomplete feature logs are rejected when pass evidence is required.
-- `gate_mtmd_fixture_manifest`: checks that the MTMD fixture manifest uses pinned revisions, license metadata, required vision/audio model/projector files, and the runner's fast fixture preflight.
+- `gate_mtmd_fixture_manifest`: checks that the MTMD fixture manifest uses pinned revisions, license metadata, required vision/audio model/projector files, manifest-driven path resolution, and the runner's fast fixture preflight.
 - `gate_cuda_parity_runner`: checks that CUDA parity runners require real inference/e2e flags and GPU/toolkit runner visibility unless probe-only mode is explicit, and that the release matrix still covers auto, cuBLAS, and MMQ presets.
 - `gate_model_churn_soak`: repeated model/session load, decode, reset, unload, and RSS-drift sampling. It runs a fast mock churn by default; real GGUF churn is opt-in with `ASTRAL_SOAK_MODEL`.
 - `gate_release_notes`: checks release notes include artifact, validation, engine, rollback, and known-gap evidence.
