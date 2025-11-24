@@ -230,6 +230,7 @@ execute_process(
       --print-command
       --variant slim
       --preset qwen3-0.6b-q8
+      --download-missing
       --dry-run
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE small_matrix_container_result
@@ -251,6 +252,7 @@ foreach(required_small_matrix_container_text
     "5.7"
     "--preset"
     "qwen3-0.6b-q8"
+    "--download-missing"
     "--dry-run"
     "--skip-native-build")
   string(FIND "${small_matrix_container_text}" "${required_small_matrix_container_text}" required_small_matrix_container_pos)
@@ -286,6 +288,7 @@ foreach(required_small_matrix_container_token
     "--skip-native-build"
     "run_unreal_small_model_matrix.sh"
     "--expect-engine-version"
+    "--download-missing"
     "--skip-runtime-validation"
     "Engine root:")
   if(NOT small_matrix_container_script MATCHES "${required_small_matrix_container_token}")

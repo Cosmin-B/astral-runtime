@@ -36,6 +36,7 @@ Options:
   --preset <name>          Forwarded to the matrix runner; repeatable
   --embedding-model <path> Forwarded to the matrix runner
   --out <dir>              Forwarded to the matrix runner
+  --download-missing       Forwarded to the matrix runner
   --skip-runtime-validation
                            Forwarded to the matrix runner for local bring-up
   --list                   Forwarded to the matrix runner
@@ -96,6 +97,7 @@ while [[ $# -gt 0 ]]; do
     --preset) matrix_args+=(--preset "${2:-}"); shift 2 ;;
     --embedding-model) matrix_args+=(--embedding-model "${2:-}"); shift 2 ;;
     --out) out_dir="${2:-}"; shift 2 ;;
+    --download-missing) matrix_args+=(--download-missing); shift ;;
     --skip-runtime-validation) matrix_args+=(--skip-runtime-validation); shift ;;
     --list) matrix_args+=(--list); shift ;;
     --dry-run) matrix_args+=(--dry-run); shift ;;

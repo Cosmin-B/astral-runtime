@@ -427,6 +427,7 @@ use:
 ```bash
 ./scripts/run_unreal_small_model_matrix.sh --list
 ./scripts/run_unreal_small_model_matrix.sh --dry-run --preset qwen3-0.6b-q8
+./scripts/run_unreal_small_model_matrix.sh --download-missing --preset gemma3-1b-it-q4km --dry-run
 ./scripts/run_unreal_small_model_matrix.sh --runuat "$UNREAL_RUNUAT" --skip-native-build
 ```
 
@@ -434,7 +435,10 @@ The runner is intentionally a thin wrapper around
 `run_unreal_sample_package.sh`: it chooses the local GGUF paths, creates
 per-model output directories, keeps runtime logs out of the repo, and validates
 each runtime log after a real sample launch. Use `--skip-runtime-validation`
-only for local bring-up when the sample is expected to be incomplete.
+only for local bring-up when the sample is expected to be incomplete. Use
+`--download-missing` to fetch missing known Gemma/Qwen/SmolLM presets through
+`tests/model_downloader.sh`; downloaded GGUFs stay under ignored
+`tests/models/` paths.
 
 ```bash
 ./scripts/validate_unreal_sample_runtime_log.py \

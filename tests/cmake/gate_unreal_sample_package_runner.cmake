@@ -227,6 +227,40 @@ foreach(required_matrix_dry_run_text
   endif()
 endforeach()
 
+execute_process(
+  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${matrix_runner}"
+    --models-dir "${matrix_models_dir}"
+    --preset gemma3-1b-it-q4km
+    --download-missing
+    --out "${out_dir}/matrix-download"
+    --runuat "${fake_runuat}"
+    --skip-native-build
+    --dry-run
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE matrix_download_dry_run_result
+  OUTPUT_VARIABLE matrix_download_dry_run_output
+  ERROR_VARIABLE matrix_download_dry_run_error
+)
+if(NOT matrix_download_dry_run_result EQUAL 0)
+  message(FATAL_ERROR "run_unreal_small_model_matrix.sh rejected download-missing dry-run mode: ${matrix_download_dry_run_error}")
+endif()
+foreach(required_matrix_download_text
+    "[unreal_small_matrix] download:"
+    "tests/model_downloader.sh"
+    "--preset"
+    "gemma3-1b-it-q4km"
+    "--dir"
+    "${matrix_models_dir}"
+    "gemma-3-1b-it-Q4_K_M.gguf"
+    "[unreal_small_matrix] run:"
+    "[unreal_small_matrix] validate:"
+    "[unreal_small_matrix] OK")
+  string(FIND "${matrix_download_dry_run_output}" "${required_matrix_download_text}" required_matrix_download_pos)
+  if(required_matrix_download_pos EQUAL -1)
+    message(FATAL_ERROR "small-model matrix download dry-run output missing '${required_matrix_download_text}': ${matrix_download_dry_run_output}")
+  endif()
+endforeach()
+
 foreach(required_file
     "${project_dir}/AstralSample.uproject"
     "${project_dir}/Plugins/AstralRT/AstralRT.uplugin"

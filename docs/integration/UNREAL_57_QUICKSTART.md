@@ -191,7 +191,9 @@ available:
 
 Use `--dry-run` to inspect the generated `run_unreal_sample_package.sh`
 commands before starting Unreal, or `--preset qwen3-0.6b-q8` to run one
-candidate.
+candidate. Add `--download-missing` when a known Gemma/Qwen/SmolLM preset is
+not present under `tests/models`; the runner downloads it through
+`tests/model_downloader.sh` and keeps the GGUF outside git.
 
 When the editor is only available through the cached Epic container images, run
 the same matrix inside the container:

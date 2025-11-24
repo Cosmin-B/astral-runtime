@@ -16,9 +16,17 @@ sample_memory_backend="${ASTRAL_UNREAL_SAMPLE_MEMORY_BACKEND:-mock}"
 sample_media_backend="${ASTRAL_UNREAL_SAMPLE_MEDIA_BACKEND:-mock}"
 expect_engine_version="${ASTRAL_UNREAL_SAMPLE_EXPECT_ENGINE_VERSION:-}"
 validate_runtime=1
+download_missing=0
 build_native=1
 dry_run=0
 list_only=0
+known_presets=(
+  gemma3-270m-q4km
+  gemma3-1b-it-q4km
+  qwen3-0.6b-q8
+  qwen3-1.7b-q8
+  smollm3-3b-q4km
+)
 declare -a selected_models=()
 declare -a passthrough_args=()
 declare -a normalized_models=()
@@ -44,6 +52,7 @@ Options:
   --sample-prompt <text>   Prompt passed to each sample run
   --expect-engine-version <text>
                           Expected UE version substring in runtime logs
+  --download-missing       Download missing known presets via tests/model_downloader.sh
   --skip-runtime-validation
                           Do not validate runtime logs after sample launches
   --dry-run                Print commands without running Unreal
@@ -70,6 +79,17 @@ preset_filename() {
       echo "Unknown small-model preset: $1" >&2
       exit 2
       ;;
+  esac
+}
+
+downloader_preset_for_file() {
+  case "$(basename "$1")" in
+    gemma-3-270m-q4_k_m.gguf) printf '%s\n' "gemma3-270m-q4km" ;;
+    gemma-3-1b-it-Q4_K_M.gguf) printf '%s\n' "gemma3-1b-it-q4km" ;;
+    Qwen3-0.6B-Q8_0.gguf) printf '%s\n' "qwen3-0.6b-q8" ;;
+    Qwen3-1.7B-Q8_0.gguf) printf '%s\n' "qwen3-1.7b-q8" ;;
+    SmolLM3-Q4_K_M.gguf) printf '%s\n' "smollm3-3b-q4km" ;;
+    *) printf '\n' ;;
   esac
 }
 
@@ -112,6 +132,7 @@ while [[ $# -gt 0 ]]; do
     --skip-native-build) build_native=0; shift ;;
     --sample-prompt) sample_prompt="${2:-}"; shift 2 ;;
     --expect-engine-version) expect_engine_version="${2:-}"; shift 2 ;;
+    --download-missing) download_missing=1; shift ;;
     --skip-runtime-validation) validate_runtime=0; shift ;;
     --dry-run) dry_run=1; shift ;;
     --list) list_only=1; shift ;;
@@ -127,14 +148,9 @@ if [[ -n "${embedding_model}" ]]; then
 fi
 
 if [[ "${#selected_models[@]}" -eq 0 ]]; then
-  for preset in \
-    gemma3-270m-q4km \
-    gemma3-1b-it-q4km \
-    qwen3-0.6b-q8 \
-    qwen3-1.7b-q8 \
-    smollm3-3b-q4km; do
+  for preset in "${known_presets[@]}"; do
     candidate="${models_dir}/$(preset_filename "${preset}")"
-    if [[ -f "${candidate}" ]]; then
+    if [[ -f "${candidate}" || "${download_missing}" -eq 1 ]]; then
       add_model_once "${candidate}"
     fi
   done
@@ -153,6 +169,20 @@ fi
 for model in "${selected_models[@]}"; do
   model="$(abs_under_root "${model}")"
   if [[ ! -f "${model}" ]]; then
+    downloader_preset="$(downloader_preset_for_file "${model}")"
+    if [[ "${download_missing}" -eq 1 && -n "${downloader_preset}" ]]; then
+      download_cmd=("${root_dir}/tests/model_downloader.sh" --preset "${downloader_preset}" --dir "${models_dir}")
+      if [[ "${list_only}" -eq 0 ]]; then
+        printf '[unreal_small_matrix] download:'
+        printf ' %q' "${download_cmd[@]}"
+        printf '\n'
+      fi
+      if [[ "${dry_run}" -eq 0 && "${list_only}" -eq 0 ]]; then
+        "${download_cmd[@]}"
+      fi
+    fi
+  fi
+  if [[ ! -f "${model}" && "${dry_run}" -eq 0 && "${list_only}" -eq 0 ]]; then
     echo "[unreal_small_matrix] model not found: ${model}" >&2
     exit 2
   fi
