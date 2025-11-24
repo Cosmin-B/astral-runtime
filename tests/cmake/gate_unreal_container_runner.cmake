@@ -220,6 +220,46 @@ if(NOT skip_pull_text MATCHES "fake skip-pull reached container run")
   message(FATAL_ERROR "run_unreal_container_ci.sh --skip-pull did not reach the fake container run: ${skip_pull_text}")
 endif()
 
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "CONTAINER_ENGINE=${skip_pull_fake_engine}"
+    "DOCKER_CONFIG=${empty_docker_config}"
+    "HOME=${empty_home}"
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_unreal_small_model_matrix_container.sh"
+      --skip-pull
+      --print-command
+      --variant slim
+      --preset qwen3-0.6b-q8
+      --dry-run
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE small_matrix_container_result
+  OUTPUT_VARIABLE small_matrix_container_output
+  ERROR_VARIABLE small_matrix_container_error
+)
+if(NOT small_matrix_container_result EQUAL 0)
+  message(FATAL_ERROR "run_unreal_small_model_matrix_container.sh rejected print-command mode: ${small_matrix_container_error}")
+endif()
+set(small_matrix_container_text "${small_matrix_container_output}\n${small_matrix_container_error}")
+foreach(required_small_matrix_container_text
+    "dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
+    "/workspace/astral"
+    "run_unreal_small_model_matrix.sh"
+    "--engine-dir"
+    "--models-dir"
+    "tests/models"
+    "--preset"
+    "qwen3-0.6b-q8"
+    "--dry-run"
+    "--skip-native-build")
+  string(FIND "${small_matrix_container_text}" "${required_small_matrix_container_text}" required_small_matrix_container_pos)
+  if(required_small_matrix_container_pos EQUAL -1)
+    message(FATAL_ERROR "small-model matrix container command missing '${required_small_matrix_container_text}': ${small_matrix_container_text}")
+  endif()
+endforeach()
+if(small_matrix_container_text MATCHES "Pull image|fake skip-pull reached container run")
+  message(FATAL_ERROR "small-model matrix container print-command mode should not pull or run: ${small_matrix_container_text}")
+endif()
+
 file(READ "${ASTRAL_SOURCE_DIR}/scripts/run_unreal_container_ci.sh" runner_script)
 foreach(required_token
     "ASTRAL_UNREAL_PULL_TIMEOUT"
@@ -234,6 +274,18 @@ foreach(required_token
 )
   if(NOT runner_script MATCHES "${required_token}")
     message(FATAL_ERROR "run_unreal_container_ci.sh is missing cmake preflight token: ${required_token}")
+  endif()
+endforeach()
+
+file(READ "${ASTRAL_SOURCE_DIR}/scripts/run_unreal_small_model_matrix_container.sh" small_matrix_container_script)
+foreach(required_small_matrix_container_token
+    "dev-slim-5.7.4"
+    "dev-5.7.4"
+    "--skip-native-build"
+    "run_unreal_small_model_matrix.sh"
+    "Engine root:")
+  if(NOT small_matrix_container_script MATCHES "${required_small_matrix_container_token}")
+    message(FATAL_ERROR "run_unreal_small_model_matrix_container.sh is missing token: ${required_small_matrix_container_token}")
   endif()
 endforeach()
 

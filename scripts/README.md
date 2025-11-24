@@ -434,6 +434,18 @@ The runner is intentionally a thin wrapper around
 `run_unreal_sample_package.sh`: it chooses the local GGUF paths, creates
 per-model output directories, and keeps runtime logs out of the repo.
 
+When RunUAT is only available inside a cached Epic image, use the container
+wrapper:
+
+```bash
+./scripts/run_unreal_small_model_matrix_container.sh --skip-pull --print-command --preset qwen3-0.6b-q8
+./scripts/run_unreal_small_model_matrix_container.sh --skip-pull --variant slim --preset qwen3-0.6b-q8 --dry-run
+```
+
+The container wrapper mounts the repo at `/workspace/astral`, detects the engine
+root in the image, and then invokes the same matrix runner. It reuses the staged
+ThirdParty package by default; use `--build-native` for a UE Linux SDK rebuild.
+
 ## Windows Large Pages
 
 Run the Windows large-page validation script twice on a Windows host:

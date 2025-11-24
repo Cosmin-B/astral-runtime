@@ -19,6 +19,7 @@ dry_run=0
 list_only=0
 declare -a selected_models=()
 declare -a passthrough_args=()
+declare -a normalized_models=()
 
 usage() {
   cat <<'USAGE'
@@ -73,6 +74,13 @@ slug_for_model() {
   printf '%s\n' "${name//[^A-Za-z0-9._-]/_}"
 }
 
+abs_under_root() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s\n' "${root_dir}/$1" ;;
+  esac
+}
+
 add_model_once() {
   local model="$1"
   local existing
@@ -104,6 +112,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+models_dir="$(abs_under_root "${models_dir}")"
+out_root="$(abs_under_root "${out_root}")"
+if [[ -n "${embedding_model}" ]]; then
+  embedding_model="$(abs_under_root "${embedding_model}")"
+fi
+
 if [[ "${#selected_models[@]}" -eq 0 ]]; then
   for preset in \
     gemma3-270m-q4km \
@@ -129,11 +143,14 @@ if [[ -z "${embedding_model}" && -f "${models_dir}/Qwen3-Embedding-0.6B-Q8_0.ggu
 fi
 
 for model in "${selected_models[@]}"; do
+  model="$(abs_under_root "${model}")"
   if [[ ! -f "${model}" ]]; then
     echo "[unreal_small_matrix] model not found: ${model}" >&2
     exit 2
   fi
+  normalized_models+=("${model}")
 done
+selected_models=("${normalized_models[@]}")
 if [[ -n "${embedding_model}" && ! -f "${embedding_model}" ]]; then
   echo "[unreal_small_matrix] embedding model not found: ${embedding_model}" >&2
   exit 2

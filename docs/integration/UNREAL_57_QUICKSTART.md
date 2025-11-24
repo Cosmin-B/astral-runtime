@@ -193,6 +193,21 @@ Use `--dry-run` to inspect the generated `run_unreal_sample_package.sh`
 commands before starting Unreal, or `--preset qwen3-0.6b-q8` to run one
 candidate.
 
+When the editor is only available through the cached Epic container images, run
+the same matrix inside the container:
+
+```bash
+./scripts/run_unreal_small_model_matrix_container.sh \
+  --variant slim \
+  --skip-pull \
+  --preset qwen3-0.6b-q8 \
+  --dry-run
+```
+
+Drop `--dry-run` for an actual packaged-sample launch. The wrapper defaults to
+reusing the already staged ThirdParty package; pass `--build-native` when the
+container should rebuild it with the UE Linux SDK first.
+
 ## Run The Compatibility Matrix
 
 ```bash
