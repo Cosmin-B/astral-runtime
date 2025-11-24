@@ -433,6 +433,15 @@ use:
 The runner is intentionally a thin wrapper around
 `run_unreal_sample_package.sh`: it chooses the local GGUF paths, creates
 per-model output directories, and keeps runtime logs out of the repo.
+Validate any runtime log that will be used as evidence before copying it into a
+release manifest:
+
+```bash
+./scripts/validate_unreal_sample_runtime_log.py \
+  --log build/unreal-small-model-matrix/Qwen3-0.6B-Q8_0/runtime.log \
+  --expect-model Qwen3-0.6B-Q8_0.gguf \
+  --expect-embedding-model Qwen3-Embedding-0.6B-Q8_0.gguf
+```
 
 When RunUAT is only available inside a cached Epic image, use the container
 wrapper:

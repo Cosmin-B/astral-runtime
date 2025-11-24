@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from validate_unreal_sample_runtime_log import validate_runtime_log
 
 REQUIRED_LANES = (
     "native_dev_ctest",
@@ -233,26 +234,6 @@ UNREAL_SAMPLE_PACKAGE_FAILURE_TOKENS = (
     "Automation output contains failure marker",
 )
 
-UNREAL_SAMPLE_RUNTIME_TOKENS = (
-    "AstralSampleAutoQuit",
-    "Mounted IoStore container",
-    "Mounted Pak file",
-    "Astral sample: media feed demo loaded",
-    "texture image",
-    "Astral sample: packaged content bytes read",
-    "Astral sample: packaged content memory model loaded",
-    "Astral sample: saved cache bytes read",
-    "Astral sample: saved cache memory model loaded",
-)
-
-UNREAL_SAMPLE_RUNTIME_FAILURE_TOKENS = (
-    "packaged content model read failed",
-    "saved cache write failed",
-    "saved cache read failed",
-    "memory model load failed",
-)
-
-
 def fail(message):
     print(f"[release-evidence] {message}", file=sys.stderr)
     return 1
@@ -399,13 +380,10 @@ def validate_unreal_sample_package_artifacts(paths):
         if token in text:
             raise ValueError(f"unreal_sample_package log contains failure marker {token}")
 
-    runtime_text = runtime_log_path.read_text(encoding="utf-8", errors="replace")
-    for token in UNREAL_SAMPLE_RUNTIME_TOKENS:
-        if token not in runtime_text:
-            raise ValueError(f"unreal_sample_package runtime log is missing {token}")
-    for token in UNREAL_SAMPLE_RUNTIME_FAILURE_TOKENS:
-        if token in runtime_text:
-            raise ValueError(f"unreal_sample_package runtime log contains failure marker {token}")
+    try:
+        validate_runtime_log(runtime_log_path)
+    except ValueError as exc:
+        raise ValueError(f"unreal_sample_package runtime log is invalid: {exc}") from exc
 
 
 def require_artifact_names(lane_name, paths):

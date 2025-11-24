@@ -208,6 +208,16 @@ Drop `--dry-run` for an actual packaged-sample launch. The wrapper defaults to
 reusing the already staged ThirdParty package; pass `--build-native` when the
 container should rebuild it with the UE Linux SDK first.
 
+Before treating a matrix result as release evidence, validate its runtime log:
+
+```bash
+./scripts/validate_unreal_sample_runtime_log.py \
+  --log build/unreal-small-model-matrix/Qwen3-0.6B-Q8_0/runtime.log \
+  --expect-engine-version 5.7.4 \
+  --expect-model Qwen3-0.6B-Q8_0.gguf \
+  --expect-embedding-model Qwen3-Embedding-0.6B-Q8_0.gguf
+```
+
 ## Run The Compatibility Matrix
 
 ```bash
