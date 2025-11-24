@@ -432,9 +432,9 @@ use:
 
 The runner is intentionally a thin wrapper around
 `run_unreal_sample_package.sh`: it chooses the local GGUF paths, creates
-per-model output directories, and keeps runtime logs out of the repo.
-Validate any runtime log that will be used as evidence before copying it into a
-release manifest:
+per-model output directories, keeps runtime logs out of the repo, and validates
+each runtime log after a real sample launch. Use `--skip-runtime-validation`
+only for local bring-up when the sample is expected to be incomplete.
 
 ```bash
 ./scripts/validate_unreal_sample_runtime_log.py \

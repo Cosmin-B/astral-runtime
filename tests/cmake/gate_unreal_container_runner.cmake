@@ -247,6 +247,8 @@ foreach(required_small_matrix_container_text
     "--engine-dir"
     "--models-dir"
     "tests/models"
+    "--expect-engine-version"
+    "5.7"
     "--preset"
     "qwen3-0.6b-q8"
     "--dry-run"
@@ -283,6 +285,8 @@ foreach(required_small_matrix_container_token
     "dev-5.7.4"
     "--skip-native-build"
     "run_unreal_small_model_matrix.sh"
+    "--expect-engine-version"
+    "--skip-runtime-validation"
     "Engine root:")
   if(NOT small_matrix_container_script MATCHES "${required_small_matrix_container_token}")
     message(FATAL_ERROR "run_unreal_small_model_matrix_container.sh is missing token: ${required_small_matrix_container_token}")

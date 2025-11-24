@@ -215,6 +215,10 @@ foreach(required_matrix_dry_run_text
     "Qwen3-0.6B-Q8_0.gguf"
     "--sample-embedding-model"
     "Qwen3-Embedding-0.6B-Q8_0.gguf"
+    "[unreal_small_matrix] validate:"
+    "validate_unreal_sample_runtime_log.py"
+    "--expect-model"
+    "--expect-embedding-model"
     "--skip-native-build"
     "[unreal_small_matrix] OK")
   string(FIND "${matrix_dry_run_output}" "${required_matrix_dry_run_text}" required_matrix_dry_run_pos)

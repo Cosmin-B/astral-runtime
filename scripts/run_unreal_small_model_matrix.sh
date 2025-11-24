@@ -14,6 +14,8 @@ embedding_model="${ASTRAL_UNREAL_SAMPLE_EMBED_MODEL:-}"
 sample_prompt="${ASTRAL_UNREAL_SAMPLE_PROMPT:-Say hello from Astral.}"
 sample_memory_backend="${ASTRAL_UNREAL_SAMPLE_MEMORY_BACKEND:-mock}"
 sample_media_backend="${ASTRAL_UNREAL_SAMPLE_MEDIA_BACKEND:-mock}"
+expect_engine_version="${ASTRAL_UNREAL_SAMPLE_EXPECT_ENGINE_VERSION:-}"
+validate_runtime=1
 build_native=1
 dry_run=0
 list_only=0
@@ -40,6 +42,10 @@ Options:
   --editor <path>          Forwarded to run_unreal_sample_package.sh
   --skip-native-build      Reuse an already staged ThirdParty package
   --sample-prompt <text>   Prompt passed to each sample run
+  --expect-engine-version <text>
+                          Expected UE version substring in runtime logs
+  --skip-runtime-validation
+                          Do not validate runtime logs after sample launches
   --dry-run                Print commands without running Unreal
   --list                   Print resolved model list and exit
   -h, --help               Show help
@@ -105,6 +111,8 @@ while [[ $# -gt 0 ]]; do
     --editor) editor="${2:-}"; shift 2 ;;
     --skip-native-build) build_native=0; shift ;;
     --sample-prompt) sample_prompt="${2:-}"; shift 2 ;;
+    --expect-engine-version) expect_engine_version="${2:-}"; shift 2 ;;
+    --skip-runtime-validation) validate_runtime=0; shift ;;
     --dry-run) dry_run=1; shift ;;
     --list) list_only=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -207,6 +215,27 @@ for model in "${selected_models[@]}"; do
   printf '\n'
   if [[ "${dry_run}" -eq 0 ]]; then
     "${cmd[@]}"
+  fi
+
+  if [[ "${validate_runtime}" -eq 1 ]]; then
+    validate_cmd=(
+      "${root_dir}/scripts/validate_unreal_sample_runtime_log.py"
+      --log "${runtime_log}"
+      --expect-model "$(basename "${model}")"
+    )
+    if [[ -n "${embedding_model}" ]]; then
+      validate_cmd+=(--expect-embedding-model "$(basename "${embedding_model}")")
+    fi
+    if [[ -n "${expect_engine_version}" ]]; then
+      validate_cmd+=(--expect-engine-version "${expect_engine_version}")
+    fi
+
+    printf '[unreal_small_matrix] validate:'
+    printf ' %q' "${validate_cmd[@]}"
+    printf '\n'
+    if [[ "${dry_run}" -eq 0 ]]; then
+      "${validate_cmd[@]}"
+    fi
   fi
 done
 

@@ -36,6 +36,8 @@ Options:
   --preset <name>          Forwarded to the matrix runner; repeatable
   --embedding-model <path> Forwarded to the matrix runner
   --out <dir>              Forwarded to the matrix runner
+  --skip-runtime-validation
+                           Forwarded to the matrix runner for local bring-up
   --list                   Forwarded to the matrix runner
   --dry-run                Forwarded to the matrix runner
   -h, --help               Show help
@@ -94,6 +96,7 @@ while [[ $# -gt 0 ]]; do
     --preset) matrix_args+=(--preset "${2:-}"); shift 2 ;;
     --embedding-model) matrix_args+=(--embedding-model "${2:-}"); shift 2 ;;
     --out) out_dir="${2:-}"; shift 2 ;;
+    --skip-runtime-validation) matrix_args+=(--skip-runtime-validation); shift ;;
     --list) matrix_args+=(--list); shift ;;
     --dry-run) matrix_args+=(--dry-run); shift ;;
     -h|--help) usage; exit 0 ;;
@@ -130,7 +133,7 @@ if [[ "${pull_image}" -eq 1 ]]; then
   fi
 fi
 
-inner_args=(--models-dir "${models_dir}" --out "${out_dir}" "${matrix_args[@]}")
+inner_args=(--models-dir "${models_dir}" --out "${out_dir}" --expect-engine-version "${ue_version}" "${matrix_args[@]}")
 if [[ "${build_native}" -eq 0 ]]; then
   inner_args+=(--skip-native-build)
 fi

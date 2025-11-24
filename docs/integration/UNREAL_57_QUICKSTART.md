@@ -206,9 +206,12 @@ the same matrix inside the container:
 
 Drop `--dry-run` for an actual packaged-sample launch. The wrapper defaults to
 reusing the already staged ThirdParty package; pass `--build-native` when the
-container should rebuild it with the UE Linux SDK first.
+container should rebuild it with the UE Linux SDK first. Real matrix launches
+validate their `runtime.log` files automatically; use
+`--skip-runtime-validation` only for local bring-up while debugging a broken
+sample.
 
-Before treating a matrix result as release evidence, validate its runtime log:
+To recheck a matrix result manually before copying it into release evidence, run:
 
 ```bash
 ./scripts/validate_unreal_sample_runtime_log.py \
