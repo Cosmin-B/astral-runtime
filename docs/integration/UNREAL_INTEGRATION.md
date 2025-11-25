@@ -20,6 +20,28 @@ For the UE 5.7 container path, use
 - Blueprint delegates are available for convenience and may copy or marshal
   streamed data on the game thread.
 
+## Blueprint Surface
+
+`UAstralBlueprintLibrary` provides Blueprint-callable entry points for common
+setup and diagnostics:
+
+- `CreateAstralModel`, `CreateAstralSession`, and `CreateAstralEmbedder`
+  allocate the existing UObject wrappers with a caller-provided owner.
+- `GetLastAstralError` returns the native thread-local error text after a
+  failed Astral call.
+- `ErrorCodeName` maps native integer error codes to stable symbolic names such
+  as `ASTRAL_E_TIMEOUT`.
+- `HasEmbeddings`, `HasSamplerControls`, `HasStopSequences`,
+  `HasGpuOffload`, `HasLora`, `HasImageInput`, `HasAudioInput`,
+  `HasMultimodalEmbeddings`, `HasGrammar`, `HasLogprobs`, `HasKvState`,
+  `HasSlots`, `HasGbnfGrammar`, and `HasJsonSchemaGrammar` decode the int64
+  capability mask returned by `UAstralModel::GetCaps`.
+
+The factories do not load models or create native sessions by themselves. They
+only create wrapper objects; ownership, model lifetime, and session creation
+still follow the contracts on `UAstralModel`, `UAstralSession`, and
+`UAstralEmbedder`.
+
 ## Layout
 
 ```text
@@ -30,6 +52,7 @@ plugins/unreal/AstralRT/
     AstralRT/
       AstralRT.Build.cs
       Public/
+        AstralBlueprintLibrary.h
         AstralEmbedder.h
         AstralLog.h
         AstralMediaLibrary.h
@@ -38,6 +61,7 @@ plugins/unreal/AstralRT/
         AstralTypes.h
         IAstralRT.h
       Private/
+        AstralBlueprintLibrary.cpp
         AstralEmbedder.cpp
         AstralMediaLibrary.cpp
         AstralModel.cpp

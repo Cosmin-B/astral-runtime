@@ -2,6 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "AstralBlueprintLibrary.h"
 #include "AstralLog.h"
 #include "AstralEmbedder.h"
 #include "AstralMediaLibrary.h"
@@ -16,6 +17,7 @@
 #include "Math/UnrealMathUtility.h"
 #include "Misc/Paths.h"
 #include "PixelFormat.h"
+#include "UObject/Package.h"
 
 namespace {
 
@@ -198,6 +200,62 @@ bool FAstralRTModuleInitTest::RunTest(const FString& Parameters) {
         return false;
     }
     TestTrue(TEXT("AstralRT initialized"), ok);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FAstralRTBlueprintLibraryTest,
+    "AstralRT.Blueprint.LibraryHelpers",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
+    (void)Parameters;
+
+    UAstralModel* Model = UAstralBlueprintLibrary::CreateAstralModel(GetTransientPackage());
+    UAstralSession* Session = UAstralBlueprintLibrary::CreateAstralSession(GetTransientPackage());
+    UAstralEmbedder* Embedder = UAstralBlueprintLibrary::CreateAstralEmbedder(GetTransientPackage());
+    TestNotNull(TEXT("Blueprint model factory"), Model);
+    TestNotNull(TEXT("Blueprint session factory"), Session);
+    TestNotNull(TEXT("Blueprint embedder factory"), Embedder);
+
+    TestEqual(TEXT("timeout error name"),
+              UAstralBlueprintLibrary::ErrorCodeName(static_cast<int32>(ASTRAL_E_TIMEOUT)),
+              FString(TEXT("ASTRAL_E_TIMEOUT")));
+    TestEqual(TEXT("unknown error name"),
+              UAstralBlueprintLibrary::ErrorCodeName(-12345),
+              FString(TEXT("ASTRAL_E_-12345")));
+
+    const int64 Caps = static_cast<int64>(ASTRAL_CAP_EMBEDDINGS |
+                                          ASTRAL_CAP_SAMPLER_EXT |
+                                          ASTRAL_CAP_STOP_SEQS |
+                                          ASTRAL_CAP_GPU_OFFLOAD |
+                                          ASTRAL_CAP_LORA |
+                                          ASTRAL_CAP_IMAGE |
+                                          ASTRAL_CAP_AUDIO |
+                                          ASTRAL_CAP_MM_EMBEDDINGS |
+                                          ASTRAL_CAP_GRAMMAR |
+                                          ASTRAL_CAP_LOGPROBS |
+                                          ASTRAL_CAP_KV_STATE |
+                                          ASTRAL_CAP_SLOTS |
+                                          ASTRAL_CAP_GRAMMAR_GBNF |
+                                          ASTRAL_CAP_GRAMMAR_JSON_SCHEMA);
+    TestTrue(TEXT("embeddings cap"), UAstralBlueprintLibrary::HasEmbeddings(Caps));
+    TestTrue(TEXT("sampler controls cap"), UAstralBlueprintLibrary::HasSamplerControls(Caps));
+    TestTrue(TEXT("stop sequences cap"), UAstralBlueprintLibrary::HasStopSequences(Caps));
+    TestTrue(TEXT("gpu cap"), UAstralBlueprintLibrary::HasGpuOffload(Caps));
+    TestTrue(TEXT("lora cap"), UAstralBlueprintLibrary::HasLora(Caps));
+    TestTrue(TEXT("image cap"), UAstralBlueprintLibrary::HasImageInput(Caps));
+    TestTrue(TEXT("audio cap"), UAstralBlueprintLibrary::HasAudioInput(Caps));
+    TestTrue(TEXT("mm embeddings cap"), UAstralBlueprintLibrary::HasMultimodalEmbeddings(Caps));
+    TestTrue(TEXT("grammar cap"), UAstralBlueprintLibrary::HasGrammar(Caps));
+    TestTrue(TEXT("logprobs cap"), UAstralBlueprintLibrary::HasLogprobs(Caps));
+    TestTrue(TEXT("kv state cap"), UAstralBlueprintLibrary::HasKvState(Caps));
+    TestTrue(TEXT("slots cap"), UAstralBlueprintLibrary::HasSlots(Caps));
+    TestTrue(TEXT("gbnf grammar cap"), UAstralBlueprintLibrary::HasGbnfGrammar(Caps));
+    TestTrue(TEXT("json schema grammar cap"), UAstralBlueprintLibrary::HasJsonSchemaGrammar(Caps));
+    TestFalse(TEXT("empty caps"), UAstralBlueprintLibrary::HasEmbeddings(0));
+
     return true;
 }
 

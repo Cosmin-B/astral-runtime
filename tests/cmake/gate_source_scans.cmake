@@ -1156,6 +1156,58 @@ string(FIND "${unreal_plugin_model_header_text}" "bool GetCaps(int64& OutCaps) c
 if(unreal_model_header_caps_pos EQUAL -1)
   message(FATAL_ERROR "AstralRT Unreal model header must expose GetCaps through Blueprint-compatible int64")
 endif()
+set(unreal_blueprint_header "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Public/AstralBlueprintLibrary.h")
+set(unreal_blueprint_source "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/Private/AstralBlueprintLibrary.cpp")
+if(NOT EXISTS "${unreal_blueprint_header}")
+  message(FATAL_ERROR "AstralRT Blueprint library header is missing")
+endif()
+if(NOT EXISTS "${unreal_blueprint_source}")
+  message(FATAL_ERROR "AstralRT Blueprint library source is missing")
+endif()
+file(READ "${unreal_blueprint_header}" unreal_blueprint_header_text)
+file(READ "${unreal_blueprint_source}" unreal_blueprint_source_text)
+foreach(required_unreal_blueprint_header_text
+    "UAstralBlueprintLibrary"
+    "CreateAstralModel"
+    "CreateAstralSession"
+    "CreateAstralEmbedder"
+    "GetLastAstralError"
+    "ErrorCodeName"
+    "HasEmbeddings"
+    "HasSamplerControls"
+    "HasStopSequences"
+    "HasGpuOffload"
+    "HasLora"
+    "HasImageInput"
+    "HasAudioInput"
+    "HasMultimodalEmbeddings"
+    "HasGrammar"
+    "HasLogprobs"
+    "HasKvState"
+    "HasSlots"
+    "HasGbnfGrammar"
+    "HasJsonSchemaGrammar")
+  string(FIND "${unreal_blueprint_header_text}" "${required_unreal_blueprint_header_text}" unreal_blueprint_header_pos)
+  if(unreal_blueprint_header_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Blueprint library header is missing '${required_unreal_blueprint_header_text}'")
+  endif()
+endforeach()
+foreach(required_unreal_blueprint_source_text
+    "NewObject<UAstralModel>"
+    "NewObject<UAstralSession>"
+    "NewObject<UAstralEmbedder>"
+    "astral_last_error"
+    "ASTRAL_E_TIMEOUT"
+    "ASTRAL_CAP_SAMPLER_EXT"
+    "ASTRAL_CAP_STOP_SEQS"
+    "ASTRAL_CAP_EMBEDDINGS"
+    "ASTRAL_CAP_LOGPROBS"
+    "ASTRAL_CAP_MM_EMBEDDINGS")
+  string(FIND "${unreal_blueprint_source_text}" "${required_unreal_blueprint_source_text}" unreal_blueprint_source_pos)
+  if(unreal_blueprint_source_pos EQUAL -1)
+    message(FATAL_ERROR "AstralRT Blueprint library source is missing '${required_unreal_blueprint_source_text}'")
+  endif()
+endforeach()
 foreach(required_unreal_plugin_session_source_text
     "FMath::Max(TimeoutMs, 0)"
     "const uint32 NativeTimeoutMs")
@@ -1497,6 +1549,15 @@ foreach(required_unreal_media_test
     "feed helper audio")
   if(NOT unreal_automation_text MATCHES "${required_unreal_media_test}")
     message(FATAL_ERROR "Unreal media bridge Automation coverage is missing ${required_unreal_media_test}")
+  endif()
+endforeach()
+foreach(required_unreal_blueprint_test
+    "AstralRT.Blueprint.LibraryHelpers"
+    "Blueprint model factory"
+    "HasSamplerControls"
+    "HasMultimodalEmbeddings")
+  if(NOT unreal_automation_text MATCHES "${required_unreal_blueprint_test}")
+    message(FATAL_ERROR "Unreal Blueprint library Automation coverage is missing ${required_unreal_blueprint_test}")
   endif()
 endforeach()
 
