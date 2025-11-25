@@ -138,6 +138,7 @@ public class AstralSampleTarget : TargetRules
     {
         Type = TargetType.Game;
         DefaultBuildSettings = BuildSettingsVersion.Latest;
+        IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
         ExtraModuleNames.Add("AstralSample");
     }
 }
@@ -153,6 +154,7 @@ public class AstralSampleEditorTarget : TargetRules
     {
         Type = TargetType.Editor;
         DefaultBuildSettings = BuildSettingsVersion.Latest;
+        IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
         ExtraModuleNames.Add("AstralSample");
     }
 }
