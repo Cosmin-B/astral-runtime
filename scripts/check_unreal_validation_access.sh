@@ -35,6 +35,19 @@ package the sample, or start UnrealEditor.
 EOF
 }
 
+compat_slim_image_for_version() {
+  case "$1" in
+    5.4) printf 'ghcr.io/epicgames/unreal-engine:dev-slim-5.4.4\n' ;;
+    5.5) printf 'ghcr.io/epicgames/unreal-engine:dev-slim-5.5.4\n' ;;
+    5.6) printf 'ghcr.io/epicgames/unreal-engine:dev-slim-5.6.1\n' ;;
+    5.7) printf '%s\n' "${slim_image}" ;;
+    *)
+      echo "Unsupported Unreal version '$1'" >&2
+      exit 2
+      ;;
+  esac
+}
+
 has_ghcr_auth_config() {
   if [[ -n "${DOCKER_AUTH_CONFIG:-}" && "${DOCKER_AUTH_CONFIG}" == *"ghcr.io"* ]]; then
     return 0
@@ -70,6 +83,16 @@ image_has_digest() {
   [[ "${digests}" == *"${digest}"* ]]
 }
 
+image_is_cached() {
+  local ref="$1"
+
+  if ! command -v "${container_engine}" >/dev/null 2>&1; then
+    return 1
+  fi
+
+  "${container_engine}" image inspect "${ref}" >/dev/null 2>&1
+}
+
 manifest_is_readable() {
   local ref="$1"
 
@@ -78,6 +101,20 @@ manifest_is_readable() {
   fi
 
   run_with_timeout "${container_engine}" manifest inspect "${ref}" >/dev/null 2>&1
+}
+
+check_compat_container_cache() {
+  local version image
+
+  echo "[unreal_access] UE 5.4-5.7 slim compatibility cache:"
+  for version in 5.4 5.5 5.6 5.7; do
+    image="$(compat_slim_image_for_version "${version}")"
+    if image_is_cached "${image}"; then
+      echo "[unreal_access] OK: UE ${version} slim image cached: ${image}"
+    else
+      echo "[unreal_access] MISSING: UE ${version} slim image not cached: ${image}"
+    fi
+  done
 }
 
 check_container_variant() {
@@ -221,6 +258,7 @@ if command -v "${container_engine}" >/dev/null 2>&1; then
 else
   echo "[unreal_access] MISSING: container engine not found"
 fi
+check_compat_container_cache
 
 container_ready=0
 if check_container_variant "full" "${full_image}" "${full_digest}"; then

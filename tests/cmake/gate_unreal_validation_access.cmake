@@ -58,6 +58,8 @@ foreach(required_missing_text
     "BLOCKED: real Unreal validation needs Epic GHCR access"
     "dev-5[.]7[.]4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
     "dev-slim-5[.]7[.]4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
+    "UE 5[.]4-5[.]7 slim compatibility cache"
+    "MISSING: UE 5[.]5 slim image not cached: ghcr[.]io/epicgames/unreal-engine:dev-slim-5[.]5[.]4"
     "UNREAL_54_EDITOR is unset"
     "RunUAT path is not configured")
   if(NOT missing_text MATCHES "${required_missing_text}")
@@ -69,9 +71,20 @@ set(cached_engine "${out_dir}/fake-cached-engine")
 file(WRITE "${cached_engine}" [=[
 #!/usr/bin/env bash
 if [[ "$1" == "image" && "$2" == "inspect" ]]; then
-  echo "ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
-  echo "ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
-  exit 0
+  case "$3" in
+    ghcr.io/epicgames/unreal-engine:dev-slim-5.4.4)
+      exit 0
+      ;;
+    ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce)
+      echo "ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce"
+      exit 0
+      ;;
+    ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4|ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6)
+      echo "ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4@sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6"
+      exit 0
+      ;;
+  esac
+  exit 1
 fi
 echo fake-cached-engine should only inspect cached images >&2
 exit 99
@@ -102,6 +115,15 @@ set(cached_text "${cached_output}\n${cached_error}")
 if(NOT cached_text MATCHES "READY: UE 5[.]7 full/slim container access is available")
   message(FATAL_ERROR "Unreal access cached-output did not report container readiness: ${cached_text}")
 endif()
+foreach(required_cached_text
+    "OK: UE 5[.]4 slim image cached: ghcr[.]io/epicgames/unreal-engine:dev-slim-5[.]4[.]4"
+    "MISSING: UE 5[.]5 slim image not cached: ghcr[.]io/epicgames/unreal-engine:dev-slim-5[.]5[.]4"
+    "MISSING: UE 5[.]6 slim image not cached: ghcr[.]io/epicgames/unreal-engine:dev-slim-5[.]6[.]1"
+    "OK: UE 5[.]7 slim image cached: ghcr[.]io/epicgames/unreal-engine:dev-slim-5[.]7[.]4")
+  if(NOT cached_text MATCHES "${required_cached_text}")
+    message(FATAL_ERROR "Unreal access cached-output missing compatibility cache text '${required_cached_text}': ${cached_text}")
+  endif()
+endforeach()
 
 set(auth_docker_config "${out_dir}/auth-docker")
 file(MAKE_DIRECTORY "${auth_docker_config}")
