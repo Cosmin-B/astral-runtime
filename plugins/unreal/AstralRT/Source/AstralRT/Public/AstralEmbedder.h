@@ -62,6 +62,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Collect(int64 Ticket, TArray<float>& OutVector);
 
+    /** Cancel a queued ticket that has not started collecting. */
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool Cancel(int64 Ticket);
+
     /** Enqueue and collect in one call using caller-owned UTF-8 bytes. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EmbedUtf8Bytes(const TArray<uint8>& Utf8Bytes, TArray<float>& OutVector);

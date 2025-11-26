@@ -330,6 +330,20 @@ bool UAstralEmbedder::Collect(int64 Ticket, TArray<float>& OutVector)
     return Err == ASTRAL_OK;
 }
 
+bool UAstralEmbedder::Cancel(int64 Ticket)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Cancel);
+
+    if (!IsValid() || Ticket <= 0)
+    {
+        return false;
+    }
+
+    const AstralErr Err =
+        astral_embed_cancel(static_cast<AstralHandle>(EmbedderHandle), static_cast<uint64_t>(Ticket));
+    return Err == ASTRAL_OK;
+}
+
 bool UAstralEmbedder::EmbedUtf8Bytes(const TArray<uint8>& Utf8Bytes, TArray<float>& OutVector)
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EmbedUtf8Bytes);

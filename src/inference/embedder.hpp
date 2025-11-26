@@ -18,6 +18,7 @@ AstralErr embedder_enqueue_multimodal(Embedder* embedder,
                                       const AstralImageDesc* image,
                                       const AstralAudioDesc* audio,
                                       uint64_t* out_ticket);
+AstralErr embedder_cancel(Embedder* embedder, uint64_t ticket);
 AstralErr embedder_collect(Embedder* embedder, uint64_t ticket, AstralMutSpanU8 out_vector);
 
 } // namespace astral::inference

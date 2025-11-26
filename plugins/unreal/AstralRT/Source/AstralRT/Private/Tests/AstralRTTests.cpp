@@ -1036,16 +1036,49 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
     TestFalse(TEXT("overflow returns busy through wrapper"), ok);
     TestEqual(TEXT("overflow ticket remains zero"), OverflowTicket, static_cast<int64>(0));
 
+    constexpr int32 CanceledIndex = 3;
+    ok = Embedder->Cancel(Tickets[CanceledIndex]);
+    TestTrue(TEXT("cancel queued embedding ticket"), ok);
+    ok = Embedder->Cancel(Tickets[CanceledIndex]);
+    TestFalse(TEXT("cancel stale embedding ticket fails"), ok);
+
+    int64 ReplacementTicket = 0;
+    append_ascii(Bytes, "replacement");
+    ok = Embedder->EnqueueUtf8Bytes(Bytes, ReplacementTicket);
+    TestTrue(TEXT("enqueue after cancel frees capacity"), ok);
+    TestTrue(TEXT("replacement ticket valid"), ReplacementTicket > 0);
+
     TArray<float> Vec;
+    int32 Collected = 0;
+    double SumAbs = 0.0;
+    const double StartSeconds = FPlatformTime::Seconds();
     for (int32 Offset = 0; Offset < Inflight; ++Offset) {
         const int32 Index = Inflight - 1 - Offset;
+        if (Index == CanceledIndex) {
+            continue;
+        }
         ok = Embedder->Collect(Tickets[Index], Vec);
         TestTrue(TEXT("collect out of order"), ok);
         TestEqual(TEXT("vector size"), Vec.Num(), Embedder->GetDim());
+        if (Vec.Num() > 0) {
+            SumAbs += FMath::Abs(static_cast<double>(Vec[0]));
+        }
+        ++Collected;
     }
+
+    ok = Embedder->Collect(ReplacementTicket, Vec);
+    TestTrue(TEXT("collect replacement ticket"), ok);
+    TestEqual(TEXT("replacement vector size"), Vec.Num(), Embedder->GetDim());
+    if (Vec.Num() > 0) {
+        SumAbs += FMath::Abs(static_cast<double>(Vec[0]));
+    }
+    ++Collected;
+    const double ElapsedSeconds = FPlatformTime::Seconds() - StartSeconds;
 
     ok = Embedder->Collect(Tickets[0], Vec);
     TestFalse(TEXT("stale ticket rejected"), ok);
+    ok = Embedder->Collect(Tickets[CanceledIndex], Vec);
+    TestFalse(TEXT("canceled ticket rejected"), ok);
 
     int64 ReuseTicket = 0;
     append_ascii(Bytes, "reuse");
@@ -1054,6 +1087,19 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
     TestTrue(TEXT("reuse ticket valid"), ReuseTicket > 0);
     ok = Embedder->Collect(ReuseTicket, Vec);
     TestTrue(TEXT("collect reuse ticket"), ok);
+
+    const double EmbedsPerSec = ElapsedSeconds > 0.0 ? static_cast<double>(Collected) / ElapsedSeconds : 0.0;
+    const FString Evidence = FString::Printf(
+        TEXT("[unreal_embedding_acceptance] batch=%d canceled=1 backpressure=busy seconds=%.6f embeds_per_sec=%.3f sum_abs=%.6f"),
+        Collected,
+        ElapsedSeconds,
+        EmbedsPerSec,
+        SumAbs);
+    AddInfo(Evidence);
+    UE_LOG(LogAstralRT, Display, TEXT("%s"), *Evidence);
+    TestEqual(TEXT("acceptance batch count"), Collected, Inflight);
+    TestTrue(TEXT("acceptance throughput positive"), EmbedsPerSec > 0.0);
+    TestTrue(TEXT("acceptance vector signal"), SumAbs > 0.0);
 
     Embedder->Destroy();
     Embedder->ConditionalBeginDestroy();

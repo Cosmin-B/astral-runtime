@@ -40,7 +40,10 @@ provenance, module lifecycle Automation including EndPIE, and `[unreal-results]
 OK`. The slim release lane must also show `AstralRT.Real.GenerationSmoke`,
 `AstralRT.Real.SessionLifecycle`, `AstralRT.Real.EmbeddingProbe`, and the
 `[unreal_generation_smoke]`, `[unreal_session_lifecycle]`, and
-`[unreal_embedding_probe]` evidence markers.
+`[unreal_embedding_probe]` evidence markers. Mock embedder Automation must keep
+covering queued batching, cancellation, queue backpressure, and positive
+throughput through `AstralRT.Mock.EmbedderQueuePressure` and the
+`[unreal_embedding_acceptance]` marker.
 
 UE compatibility matrix logs must include a non-skipped `[unreal_matrix] UE ...`
 section for every supported editor version from 5.4 through 5.7, with

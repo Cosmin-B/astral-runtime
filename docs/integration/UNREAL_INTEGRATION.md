@@ -415,8 +415,10 @@ if (Embedder->EnqueueUtf8Bytes(Utf8Bytes, Ticket))
 ```
 
 `EmbedText` is the `FString` convenience path. `EmbedUtf8Bytes` keeps callers on
-the UTF-8 byte path. Image, audio, and multimodal embedding calls require media
-initialization when the backend needs a projector.
+the UTF-8 byte path. `Cancel` releases a queued ticket that has not started
+collecting yet, which lets batching callers shed work under queue pressure.
+Image, audio, and multimodal embedding calls require media initialization when
+the backend needs a projector.
 
 ## Diagnostics And Profiling
 
@@ -441,6 +443,7 @@ Editor-only Automation tests live under
 - `AstralRT.Module.Init`
 - `AstralRT.Mock.E2E`
 - `AstralRT.Mock.Embeddings`
+- `AstralRT.Mock.EmbedderQueuePressure`
 - `AstralRT.Mock.MediaFeed`
 - `AstralRT.Mock.MultimodalEmbed`
 

@@ -556,6 +556,42 @@ AstralErr embedder_enqueue_multimodal(Embedder* embedder,
     return ASTRAL_OK;
 }
 
+AstralErr embedder_cancel(Embedder* embedder, uint64_t ticket) {
+    ASTRAL_ZONE_N("astral.embedder_cancel");
+
+    auto* e = embedder;
+    if (e == nullptr || ticket == 0) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const uint32_t idx = ticket_index(ticket);
+    if (idx >= kMaxInflight) {
+        return ASTRAL_E_INVALID;
+    }
+
+    Embedder::Slot& slot = e->slots[idx];
+    if (slot.ticket.load(std::memory_order_acquire) != ticket) {
+        return ASTRAL_E_INVALID;
+    }
+
+    lock(&slot.lock);
+    const uint32_t state = slot.state.load(std::memory_order_acquire);
+    if (state != static_cast<uint32_t>(Embedder::SlotState::Ready)) {
+        unlock(&slot.lock);
+        return ASTRAL_E_BUSY;
+    }
+
+    slot_clear_buffers(slot);
+    slot.ticket.store(0, std::memory_order_release);
+    slot.state.store(static_cast<uint32_t>(Embedder::SlotState::Free), std::memory_order_release);
+    unlock(&slot.lock);
+
+    lock(&e->free_lock);
+    e->free_stack[e->free_count++] = idx;
+    unlock(&e->free_lock);
+    return ASTRAL_OK;
+}
+
 AstralErr embedder_collect(Embedder* embedder, uint64_t ticket, AstralMutSpanU8 out_vector) {
     ASTRAL_ZONE_N("astral.embedder_collect");
 

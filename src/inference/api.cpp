@@ -1927,4 +1927,29 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_embed_collect(
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_embed_cancel(
+    AstralHandle emb,
+    uint64_t ticket
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (emb == 0 || ticket == 0) {
+        set_err_invalid("emb/ticket");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* e =
+        static_cast<astral::inference::Embedder*>(astral::core::lookup_handle(emb, astral::core::HandleKind::Embedder));
+    if (e == nullptr) {
+        set_err_invalid("emb (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::embedder_cancel(e, ticket);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 } // extern "C"

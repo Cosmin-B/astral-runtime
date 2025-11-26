@@ -211,6 +211,7 @@ TEST(embeddings_mock_e2e) {
 
 TEST(embeddings_mock_queue_pressure) {
     constexpr uint32_t kInflight = 8;
+    constexpr uint32_t kCanceledIndex = 3;
 
     AstralInit cfg{};
     cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
@@ -255,21 +256,49 @@ TEST(embeddings_mock_queue_pressure) {
     err = astral_embed_enqueue(emb, span_from_cstr("overflow"), &overflow_ticket);
     ASSERT_EQ(err, ASTRAL_E_BUSY);
 
+    err = astral_embed_cancel(emb, tickets[kCanceledIndex]);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_embed_cancel(emb, tickets[kCanceledIndex]);
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+
+    uint64_t replacement_ticket = 0;
+    err = astral_embed_enqueue(emb, span_from_cstr("replacement"), &replacement_ticket);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_NE(replacement_ticket, 0ULL);
+
     float vec[64] = {};
     AstralMutSpanU8 out{};
     out.data = reinterpret_cast<uint8_t*>(vec);
     out.len = static_cast<uint32_t>(sizeof(vec));
 
+    uint32_t collected = 0;
+    double sum_abs = 0.0;
+    const auto start = std::chrono::steady_clock::now();
     for (uint32_t offset = 0; offset < kInflight; ++offset) {
         const uint32_t i = kInflight - 1u - offset;
+        if (i == kCanceledIndex) {
+            continue;
+        }
         std::memset(vec, 0, sizeof(vec));
         err = astral_embed_collect(emb, tickets[i], out);
         ASSERT_EQ(err, ASTRAL_OK);
         ASSERT_EQ(vec[0], mock_embedding_first_value(texts[i]));
         ASSERT_EQ(vec[1], mock_embedding_first_value(texts[i]) + 1.0f);
+        sum_abs += vec[0] >= 0.0f ? vec[0] : -vec[0];
+        ++collected;
     }
 
+    std::memset(vec, 0, sizeof(vec));
+    err = astral_embed_collect(emb, replacement_ticket, out);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(vec[0], mock_embedding_first_value("replacement"));
+    sum_abs += vec[0] >= 0.0f ? vec[0] : -vec[0];
+    ++collected;
+    const auto end = std::chrono::steady_clock::now();
+
     err = astral_embed_collect(emb, tickets[0], out);
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+    err = astral_embed_collect(emb, tickets[kCanceledIndex], out);
     ASSERT_EQ(err, ASTRAL_E_INVALID);
 
     uint64_t reuse_ticket = 0;
@@ -280,6 +309,18 @@ TEST(embeddings_mock_queue_pressure) {
     err = astral_embed_collect(emb, reuse_ticket, out);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(vec[0], mock_embedding_first_value("reuse"));
+
+    const std::chrono::duration<double> elapsed = end - start;
+    const double seconds = elapsed.count();
+    const double embeds_per_sec = seconds > 0.0 ? static_cast<double>(collected) / seconds : 0.0;
+    std::printf("[embedding_mock_acceptance] batch=%u canceled=1 backpressure=busy seconds=%.6f embeds_per_sec=%.3f sum_abs=%.6f\n",
+                collected,
+                seconds,
+                embeds_per_sec,
+                sum_abs);
+    ASSERT_EQ(collected, kInflight);
+    ASSERT_GT(sum_abs, 0.0);
+    ASSERT_GT(embeds_per_sec, 0.0);
 
     astral_embed_destroy(emb);
     astral_model_release(model);

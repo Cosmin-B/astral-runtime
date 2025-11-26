@@ -1334,6 +1334,17 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_embed_enqueue_multimodal(
 );
 
 /**
+ * Cancel a queued embedding ticket.
+ * Releases the ticket's queue slot if the work has not started collecting yet.
+ * Thread-safety: Safe to call from multiple threads.
+ *
+ * @param emb Embedder handle (must not be NULL)
+ * @param ticket Ticket ID returned by an enqueue call
+ * @return ASTRAL_OK on success; ASTRAL_E_INVALID for stale/unknown tickets; ASTRAL_E_BUSY if already collecting
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_embed_cancel(AstralHandle emb, uint64_t ticket);
+
+/**
  * Collect embedding vector for a ticket.
  * Blocks until embedding is ready.
  * Thread-safety: Safe to call from multiple threads.

@@ -414,6 +414,8 @@ TEST(abi_invalid_args_embedding_surface) {
     ASSERT_EQ(astral_embed_enqueue_audio(0, nullptr, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_embed_enqueue_multimodal(0, null_span(), nullptr, nullptr, &ticket), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_embed_enqueue_multimodal(0, null_span(), nullptr, nullptr, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_embed_cancel(0, 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_embed_cancel(0, 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_embed_collect(0, 0, null_mut_span()), ASTRAL_E_INVALID);
 
     astral_shutdown();

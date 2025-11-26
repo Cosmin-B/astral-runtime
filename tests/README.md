@@ -110,13 +110,15 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_embedded_presets`: checks embedded presets keep VM, temp-file mmap, dynamic loading, JSON-schema grammar, and Astral worker threads disabled.
 - `gate_allocations`: tracked heap allocation gate for steady-state decode/stream. It runs mock coverage by default; CPU model coverage is opt-in with `ASTRAL_GATE_CPU_ALLOC=1`.
 
-`test_embeddings` always runs mock lifecycle and queue-pressure coverage. Set
+`test_embeddings` always runs mock lifecycle and queue-pressure coverage,
+including queued-ticket cancellation and a small mock throughput sample. Set
 `ASTRAL_TEST_EMBED_MODEL` to a readable embeddings GGUF, using either an
 absolute path or a repo-relative path such as `tests/models/...`, to run the CPU
 fixture probe and throughput loop. The log prints `[embedding_probe]` with model
-path, dimension, and vector sanity metadata, then `[embedding_throughput]` with
-iteration count and embeds-per-second. Use `ASTRAL_TEST_EMBED_THROUGHPUT_ITERS`
-to raise the default 16 iterations for a slower release-lane sample.
+path, dimension, and vector sanity metadata, `[embedding_mock_acceptance]` for
+batch/cancel/backpressure coverage, then `[embedding_throughput]` with iteration
+count and embeds-per-second. Use `ASTRAL_TEST_EMBED_THROUGHPUT_ITERS` to raise
+the default 16 iterations for a slower release-lane sample.
 
 Unreal real-model embedding evidence uses the same native CPU backend through
 `UAstralModel` and `UAstralEmbedder`. Run it inside a UE container with a model

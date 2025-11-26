@@ -604,6 +604,8 @@ foreach(required_embedding_probe_text
     "find_env_model_path"
     "embeddings_cpu_e2e_fixture_probe"
     "embeddings_cpu_throughput_fixture_probe"
+    "astral_embed_cancel"
+    "[embedding_mock_acceptance]"
     "[embedding_probe] backend=cpu"
     "[embedding_throughput] backend=cpu"
     "ASTRAL_TEST_EMBED_THROUGHPUT_ITERS"
@@ -1507,8 +1509,11 @@ endforeach()
 foreach(required_unreal_embedder_text
     "AstralRT.Mock.EmbedderQueuePressure"
     "overflow returns busy through wrapper"
+    "cancel queued embedding ticket"
+    "enqueue after cancel frees capacity"
     "collect out of order"
     "stale ticket rejected"
+    "[unreal_embedding_acceptance]"
     "enqueue after drain")
   if(NOT unreal_automation_text MATCHES "${required_unreal_embedder_text}")
     message(FATAL_ERROR "Unreal embedder queue-pressure Automation coverage is missing ${required_unreal_embedder_text}")
