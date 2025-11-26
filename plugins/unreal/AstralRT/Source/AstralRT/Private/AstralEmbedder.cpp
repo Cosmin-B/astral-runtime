@@ -1,10 +1,29 @@
 #include "AstralEmbedder.h"
+#include "AstralLog.h"
 #include "AstralModel.h"
 #include "IAstralRT.h"
 
 #include "Containers/UnrealString.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "astral_rt.h"
+
+bool UAstralEmbedder::IsCurrentRuntimeGeneration() const
+{
+    return IAstralRT::IsAvailable() &&
+        IAstralRT::Get().IsInitialized() &&
+        IAstralRT::Get().GetRuntimeGeneration() == RuntimeGeneration;
+}
+
+bool UAstralEmbedder::IsValid() const
+{
+    return EmbedderHandle != 0 && IsCurrentRuntimeGeneration();
+}
+
+int32 UAstralEmbedder::GetDim() const
+{
+    return IsValid() ? EmbeddingDim : 0;
+}
 
 void UAstralEmbedder::BeginDestroy()
 {
@@ -14,24 +33,26 @@ void UAstralEmbedder::BeginDestroy()
 
 bool UAstralEmbedder::Create(UAstralModel* Model)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Create);
+
     Destroy();
 
     if (Model == nullptr || !Model->IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: invalid model for embedder"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: invalid model for embedder"));
         return false;
     }
 
     if (!IAstralRT::IsAvailable() || !IAstralRT::Get().IsInitialized())
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: runtime not initialized"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: runtime not initialized"));
         return false;
     }
 
     int32 Dim = 0;
     if (!Model->GetEmbeddingDim(Dim) || Dim <= 0)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: model does not report a valid embedding dim"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: model does not report a valid embedding dim"));
         return false;
     }
 
@@ -40,7 +61,7 @@ bool UAstralEmbedder::Create(UAstralModel* Model)
     if (Err != ASTRAL_OK || Out == 0)
     {
         const char* Last = astral_last_error();
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_embed_create failed (%d): %s"),
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_embed_create failed (%d): %s"),
                static_cast<int32>(Err),
                Last ? UTF8_TO_TCHAR(Last) : TEXT("<no error>"));
         return false;
@@ -48,33 +69,40 @@ bool UAstralEmbedder::Create(UAstralModel* Model)
 
     EmbedderHandle = static_cast<uint64>(Out);
     ModelHandle = Model->GetHandle();
+    RuntimeGeneration = IAstralRT::Get().GetRuntimeGeneration();
     EmbeddingDim = Dim;
     return true;
 }
 
 void UAstralEmbedder::Destroy()
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Destroy);
+
     if (EmbedderHandle == 0)
     {
         ModelHandle = 0;
+        RuntimeGeneration = 0;
         EmbeddingDim = 0;
         return;
     }
 
-    if (IAstralRT::IsAvailable() && IAstralRT::Get().IsInitialized())
+    if (IsCurrentRuntimeGeneration())
     {
         astral_embed_destroy(static_cast<AstralHandle>(EmbedderHandle));
     }
 
     EmbedderHandle = 0;
     ModelHandle = 0;
+    RuntimeGeneration = 0;
     EmbeddingDim = 0;
 }
 
 bool UAstralEmbedder::EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& OutTicket)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueUtf8Bytes);
+
     OutTicket = 0;
-    if (EmbedderHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -83,7 +111,7 @@ bool UAstralEmbedder::EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& Ou
     Text.data = Utf8Bytes.GetData();
     Text.len = static_cast<uint32_t>(Utf8Bytes.Num());
 
-    uint64 Ticket = 0;
+    uint64_t Ticket = 0;
     const AstralErr Err = astral_embed_enqueue(static_cast<AstralHandle>(EmbedderHandle), Text, &Ticket);
     if (Err != ASTRAL_OK)
     {
@@ -96,8 +124,10 @@ bool UAstralEmbedder::EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& Ou
 
 bool UAstralEmbedder::EnqueueImage(const FAstralImageDesc& Image, int64& OutTicket)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueImage);
+
     OutTicket = 0;
-    if (EmbedderHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -109,18 +139,18 @@ bool UAstralEmbedder::EnqueueImage(const FAstralImageDesc& Image, int64& OutTick
     AstralImageDesc Native{};
     Native.size = sizeof(AstralImageDesc);
     Native.format = static_cast<AstralImageFormat>(Image.Format);
-    Native.width = Image.Width;
-    Native.height = Image.Height;
-    Native.row_stride = Image.RowStride;
-    Native.flags = Image.Flags;
+    Native.width = static_cast<uint32_t>(Image.Width);
+    Native.height = static_cast<uint32_t>(Image.Height);
+    Native.row_stride = static_cast<uint32_t>(Image.RowStride);
+    Native.flags = static_cast<uint32_t>(Image.Flags);
     Native.pixels.data = Image.Pixels.GetData();
     Native.pixels.len = static_cast<uint32_t>(Image.Pixels.Num());
     Native.gpu_device = Image.GpuDevice;
-    Native.gpu_route_flags = Image.GpuRouteFlags;
-    Native.gpu_device_mask = Image.GpuDeviceMask;
+    Native.gpu_route_flags = static_cast<uint32_t>(Image.GpuRouteFlags);
+    Native.gpu_device_mask = static_cast<uint64_t>(Image.GpuDeviceMask);
     Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Image.GpuStream));
 
-    uint64 Ticket = 0;
+    uint64_t Ticket = 0;
     const AstralErr Err = astral_embed_enqueue_image(static_cast<AstralHandle>(EmbedderHandle), &Native, &Ticket);
     if (Err != ASTRAL_OK)
     {
@@ -133,8 +163,10 @@ bool UAstralEmbedder::EnqueueImage(const FAstralImageDesc& Image, int64& OutTick
 
 bool UAstralEmbedder::EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTicket)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueAudio);
+
     OutTicket = 0;
-    if (EmbedderHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -151,7 +183,7 @@ bool UAstralEmbedder::EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTick
         return false;
     }
 
-    uint64 FrameCount = Audio.FrameCount;
+    uint64 FrameCount = static_cast<uint64>(Audio.FrameCount);
     if (FrameCount == 0)
     {
         const uint32 BytesPerSample = (Audio.Format == EAstralAudioFormat::F32) ? 4u : 2u;
@@ -163,18 +195,18 @@ bool UAstralEmbedder::EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTick
         FrameCount = TotalSamples / Audio.Channels;
     }
 
-    Native.channels = Audio.Channels;
-    Native.sample_rate = Audio.SampleRate;
+    Native.channels = static_cast<uint32_t>(Audio.Channels);
+    Native.sample_rate = static_cast<uint32_t>(Audio.SampleRate);
     Native.frame_count = FrameCount;
     Native.samples.data = Audio.Samples.GetData();
     Native.samples.len = static_cast<uint32_t>(Audio.Samples.Num());
-    Native.flags = Audio.Flags;
+    Native.flags = static_cast<uint32_t>(Audio.Flags);
     Native.gpu_device = Audio.GpuDevice;
-    Native.gpu_route_flags = Audio.GpuRouteFlags;
-    Native.gpu_device_mask = Audio.GpuDeviceMask;
+    Native.gpu_route_flags = static_cast<uint32_t>(Audio.GpuRouteFlags);
+    Native.gpu_device_mask = static_cast<uint64_t>(Audio.GpuDeviceMask);
     Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Audio.GpuStream));
 
-    uint64 Ticket = 0;
+    uint64_t Ticket = 0;
     const AstralErr Err = astral_embed_enqueue_audio(static_cast<AstralHandle>(EmbedderHandle), &Native, &Ticket);
     if (Err != ASTRAL_OK)
     {
@@ -192,8 +224,10 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
                                         bool bUseAudio,
                                         int64& OutTicket)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueMultimodal);
+
     OutTicket = 0;
-    if (EmbedderHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -213,15 +247,15 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
         }
         ImageNative.size = sizeof(AstralImageDesc);
         ImageNative.format = static_cast<AstralImageFormat>(Image.Format);
-        ImageNative.width = Image.Width;
-        ImageNative.height = Image.Height;
-        ImageNative.row_stride = Image.RowStride;
-        ImageNative.flags = Image.Flags;
+        ImageNative.width = static_cast<uint32_t>(Image.Width);
+        ImageNative.height = static_cast<uint32_t>(Image.Height);
+        ImageNative.row_stride = static_cast<uint32_t>(Image.RowStride);
+        ImageNative.flags = static_cast<uint32_t>(Image.Flags);
         ImageNative.pixels.data = Image.Pixels.GetData();
         ImageNative.pixels.len = static_cast<uint32_t>(Image.Pixels.Num());
         ImageNative.gpu_device = Image.GpuDevice;
-        ImageNative.gpu_route_flags = Image.GpuRouteFlags;
-        ImageNative.gpu_device_mask = Image.GpuDeviceMask;
+        ImageNative.gpu_route_flags = static_cast<uint32_t>(Image.GpuRouteFlags);
+        ImageNative.gpu_device_mask = static_cast<uint64_t>(Image.GpuDeviceMask);
         ImageNative.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Image.GpuStream));
         ImagePtr = &ImageNative;
     }
@@ -240,7 +274,7 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
         {
             return false;
         }
-        uint64 FrameCount = Audio.FrameCount;
+        uint64 FrameCount = static_cast<uint64>(Audio.FrameCount);
         if (FrameCount == 0)
         {
             const uint32 BytesPerSample = (Audio.Format == EAstralAudioFormat::F32) ? 4u : 2u;
@@ -251,20 +285,20 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
             }
             FrameCount = TotalSamples / Audio.Channels;
         }
-        AudioNative.channels = Audio.Channels;
-        AudioNative.sample_rate = Audio.SampleRate;
+        AudioNative.channels = static_cast<uint32_t>(Audio.Channels);
+        AudioNative.sample_rate = static_cast<uint32_t>(Audio.SampleRate);
         AudioNative.frame_count = FrameCount;
         AudioNative.samples.data = Audio.Samples.GetData();
         AudioNative.samples.len = static_cast<uint32_t>(Audio.Samples.Num());
-        AudioNative.flags = Audio.Flags;
+        AudioNative.flags = static_cast<uint32_t>(Audio.Flags);
         AudioNative.gpu_device = Audio.GpuDevice;
-        AudioNative.gpu_route_flags = Audio.GpuRouteFlags;
-        AudioNative.gpu_device_mask = Audio.GpuDeviceMask;
+        AudioNative.gpu_route_flags = static_cast<uint32_t>(Audio.GpuRouteFlags);
+        AudioNative.gpu_device_mask = static_cast<uint64_t>(Audio.GpuDeviceMask);
         AudioNative.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Audio.GpuStream));
         AudioPtr = &AudioNative;
     }
 
-    uint64 Ticket = 0;
+    uint64_t Ticket = 0;
     const AstralErr Err = astral_embed_enqueue_multimodal(
         static_cast<AstralHandle>(EmbedderHandle), TextSpan, ImagePtr, AudioPtr, &Ticket);
     if (Err != ASTRAL_OK)
@@ -278,7 +312,9 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
 
 bool UAstralEmbedder::Collect(int64 Ticket, TArray<float>& OutVector)
 {
-    if (EmbedderHandle == 0 || Ticket <= 0 || EmbeddingDim <= 0)
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Collect);
+
+    if (!IsValid() || Ticket <= 0 || EmbeddingDim <= 0)
     {
         return false;
     }
@@ -290,12 +326,14 @@ bool UAstralEmbedder::Collect(int64 Ticket, TArray<float>& OutVector)
     Out.len = static_cast<uint32_t>(OutVector.Num() * sizeof(float));
 
     const AstralErr Err =
-        astral_embed_collect(static_cast<AstralHandle>(EmbedderHandle), static_cast<uint64>(Ticket), Out);
+        astral_embed_collect(static_cast<AstralHandle>(EmbedderHandle), static_cast<uint64_t>(Ticket), Out);
     return Err == ASTRAL_OK;
 }
 
 bool UAstralEmbedder::EmbedUtf8Bytes(const TArray<uint8>& Utf8Bytes, TArray<float>& OutVector)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EmbedUtf8Bytes);
+
     int64 Ticket = 0;
     if (!EnqueueUtf8Bytes(Utf8Bytes, Ticket))
     {
@@ -306,6 +344,8 @@ bool UAstralEmbedder::EmbedUtf8Bytes(const TArray<uint8>& Utf8Bytes, TArray<floa
 
 bool UAstralEmbedder::EmbedText(const FString& Text, TArray<float>& OutVector)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EmbedText);
+
     FTCHARToUTF8 Utf8(*Text);
     TArray<uint8> Bytes;
     Bytes.Append(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());

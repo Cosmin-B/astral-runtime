@@ -12,3 +12,5 @@ It copies:
 - `include/astral_rt.h`
 - `lib/<Platform>/*` (static library for the target platform)
 
+The build checks the staged header and platform library against the current
+source header and native target by SHA-256 before the package target succeeds.

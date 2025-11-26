@@ -2,6 +2,10 @@
 
 This is a UE5 plugin scaffold that wraps Astral's C ABI (`astral_rt.h`) with engine-friendly types and a bytes-first streaming path (UTF-8 chunks via `TConstArrayView<uint8>` / `TArray<uint8>`).
 
+Current status: the native ThirdParty package can be staged and checked locally,
+but real UE 5.7 container runs and UE 5.4+ editor compatibility runs remain
+required before release sign-off.
+
 ## Build and package (native)
 
 This repo includes a CMake preset that packages the native static library + headers into the plugin's `ThirdParty/` layout:
@@ -16,6 +20,27 @@ After this, the plugin will contain:
 - `AstralRT/Source/ThirdParty/AstralCore/include/astral_rt.h`
 - `AstralRT/Source/ThirdParty/AstralCore/lib/<Platform>/*`
 
+The package target hashes the staged header and native library after copy, then
+fails if either one differs from the current source header or built `astral_rt`
+target.
+
+For the full UE 5.7 path, including container commands and release evidence,
+see [UNREAL_57_QUICKSTART.md](../../../docs/integration/UNREAL_57_QUICKSTART.md).
+
+To generate a sidecar sample project outside the repo:
+
+```bash
+./scripts/create_unreal_sample_project.sh --out /tmp/AstralSample
+```
+
+For release-candidate package evidence, run the package wrapper on a machine
+with UE 5.7:
+
+```bash
+UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
+  ./scripts/run_unreal_sample_package.sh --platform Linux
+```
+
 ## Use in a UE project
 
 Copy `astral/plugins/unreal/AstralRT/` into your Unreal project:
@@ -24,7 +49,8 @@ Copy `astral/plugins/unreal/AstralRT/` into your Unreal project:
 <YourProject>/Plugins/AstralRT/
 ```
 
-Enable the plugin and build the project.
+Enable the plugin and build the project. Treat a local native package build as
+staging evidence only; release evidence still needs UnrealEditor Automation.
 
 ## Minimal example (mock backend)
 
@@ -32,6 +58,7 @@ This uses the mock backend (no GGUF needed) and streams UTF-8 bytes via `UAstral
 
 ```cpp
 // AMyAIActor.h
+#include "AstralLog.h"
 #include "AstralModel.h"
 #include "AstralSession.h"
 
@@ -54,9 +81,10 @@ public:
         Model = NewObject<UAstralModel>(this);
         FAstralModelDesc ModelDesc;
         ModelDesc.BackendName = TEXT("mock");
+        ModelDesc.SourceKind = EAstralModelSourceKind::Path;
         if (!Model->Load(ModelDesc))
         {
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: Model load failed"));
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: Model load failed"));
             return;
         }
 
@@ -68,7 +96,7 @@ public:
 
         if (!Session->Create(Model, SessionDesc))
         {
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: Session create failed"));
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: Session create failed"));
             return;
         }
 
@@ -82,7 +110,7 @@ public:
         // Low-overhead path: keep bytes as UTF-8.
         // This sample just logs the bytes as text.
         FUTF8ToTCHAR Text(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), Bytes.Num());
-        UE_LOG(LogTemp, Log, TEXT("%.*s"), Text.Length(), Text.Get());
+        UE_LOG(LogAstralRT, Log, TEXT("%.*s"), Text.Length(), Text.Get());
     }
 };
 ```
@@ -93,37 +121,51 @@ For Blueprint convenience, `UAstralSession` also exposes:
 
 ## Vision / Audio (Media)
 
-Media support requires a projector/encoder GGUF. Initialize once per model:
+Media support requires a projector/encoder GGUF and a native Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:
 
 ```cpp
 FAstralModelMediaDesc MediaDesc;
 MediaDesc.MediaPath = TEXT("/path/to/media.gguf");
+MediaDesc.MediaPathRoot = EAstralUnrealPathRoot::Raw;
 Model->InitMedia(MediaDesc);
 ```
 
-Feed media into a session prompt:
+Feed media into a session prompt. `FAstralImageDesc::Pixels` and `FAstralAudioDesc::Samples` must remain valid until the feed call returns.
+
+For packaged projects, `FAstralModelDesc::PathRoot` resolves relative model
+paths under `ProjectContent`, `ProjectSaved`, or `ProjectPersistentDownload`.
+`FAstralModelMediaDesc::MediaPathRoot` applies the same rule to media projector
+paths before they cross the native ABI.
+Pak/IoStore model payloads should use `SourceKind = Memory` and fill
+`ModelBytes`, or copy the model to a managed `Saved` cache and load by path.
+The generated `AstralSample` project stages a small payload under `Content`,
+loads it through `FPaths::ProjectContentDir()`, copies it to
+`FPaths::ProjectSavedDir()`, and loads both byte arrays with
+`SourceKind = Memory` as the maintained packaged-project smoke.
 
 ```cpp
 FAstralImageDesc Image;
-Image.Format = EAstralImageFormat::RGB8;
-Image.Width = 224;
-Image.Height = 224;
-Image.Pixels.SetNumZeroed(224 * 224 * 3);
+TArray<uint8> RgbaBytes;
+RgbaBytes.SetNumZeroed(224 * 224 * 4);
+UAstralMediaLibrary::MakeRGBA8ImageFromBytes(RgbaBytes, 224, 224, Image);
 Session->FeedImage(Image, true);
 
 FAstralAudioDesc Audio;
-Audio.Format = EAstralAudioFormat::I16;
-Audio.Channels = 1;
-Audio.SampleRate = 16000;
-Audio.FrameCount = 16000;
-Audio.Samples.SetNumZeroed(16000 * 2);
+TArray<uint8> Pcm16Bytes;
+Pcm16Bytes.SetNumZeroed(16000 * sizeof(int16));
+UAstralMediaLibrary::MakePCM16AudioFromBytes(Pcm16Bytes, 1, 16000, Audio);
 Session->FeedAudio(Audio, true);
 ```
 
+`UAstralMediaLibrary::MakeRGBA8ImageFromTexture` copies CPU-readable
+`PF_B8G8R8A8` texture data into an RGBA8 descriptor. It returns `false` when the
+texture is compressed, GPU-only, stripped, or otherwise not readable.
+
 ## Multimodal Embeddings
 
+Load the model with `FAstralModelDesc::bEmbeddingsOnly = true`; call `InitMedia` first when image or audio embeddings are used.
+
 ```cpp
-// Requires embeddings-only model
 UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>(this);
 Embedder->Create(Model);
 
@@ -137,15 +179,17 @@ Embedder->Collect(Ticket, Vec);
 ## Notes
 
 - The module initializes Astral at startup and shuts it down on module unload.
+- Runtime allocations cross the native ABI through Unreal's `FMemory` callbacks; `IAstralRT::GetAllocatorStats()` exposes debug counters for Automation.
 - Streaming is pull-based via `astral_stream_read()` into a pre-sized `TArray<uint8>`.
 
 ## Automation tests
 
 Editor-only Automation tests live under `Source/AstralRT/Private/Tests/`:
 - `AstralRT.Module.Init`
+- `AstralRT.Memory.FMemoryAllocator`
 - `AstralRT.Mock.E2E`
 - `AstralRT.Mock.MediaFeed`
 - `AstralRT.Mock.MultimodalEmbed`
 
 Run from Unreal's Automation window or via console:
-`Automation RunTests AstralRT.*`
+`Automation RunTests AstralRT`

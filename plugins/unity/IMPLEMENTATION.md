@@ -1,6 +1,6 @@
 # Astral Unity Plugin - Implementation Summary
 
-Production-ready Unity C# plugin wrapper for Astral runtime with zero GC allocations, Burst compatibility, and IL2CPP safety.
+Unity C# plugin wrapper for Astral runtime with NativeArray stream buffers, Burst-friendly job data, and static P/Invoke ABI declarations.
 
 ## File Structure
 
@@ -13,25 +13,24 @@ plugins/unity/
 │   ├── Astral.Runtime.asmdef        # Assembly definition (allowUnsafeCode: true)
 │   ├── AstralNative.cs              # Low-level P/Invoke declarations
 │   ├── AstralRuntime.cs             # Runtime initialization/shutdown
-│   ├── AstralModel.cs               # Model wrapper (RAII pattern)
+│   ├── AstralModel.cs               # Model wrapper (IDisposable native handle)
 │   ├── AstralSession.cs             # Session wrapper (streaming support)
-│   ├── AstralExample.cs             # Example usage (blocking, streaming, zero-alloc)
+│   ├── AstralExample.cs             # Example usage (blocking, streaming, NativeArray)
 │   └── Plugins/
 │       ├── README.md                # Native plugin build instructions
 │       ├── x86_64/
-│       │   ├── libastral_rt.so      # Linux x86_64 (placeholder)
+│       │   ├── libastral_rt.so      # Linux x86_64 native runtime
 │       │   ├── libastral_rt.so.meta # Unity import settings
-│       │   ├── astral_rt.dll        # Windows x86_64 (placeholder)
-│       │   └── astral_rt.dll.meta   # Unity import settings
-│       ├── arm64/
-│       │   ├── libastral_rt.so      # Android ARM64 (placeholder)
-│       │   └── libastral_rt.dylib   # macOS ARM64 (placeholder)
-│       └── iOS/
-│           └── libastral_rt.a       # iOS static library (placeholder)
+│       │   └── astral_rt.dll.meta   # Unity import settings for release Windows DLLs
+│       └── README.md                # Platform artifact layout and build commands
 └── Editor/
     ├── Astral.Editor.asmdef         # Editor assembly definition
     └── AstralEditorUtilities.cs     # Editor validation/diagnostics
 ```
+
+Release packaging is responsible for adding Windows, macOS, Android, and iOS
+native artifacts to the Unity package. Those platform lanes still need real
+Unity Editor and platform-player evidence before release sign-off.
 
 ## Critical Design Decisions
 
@@ -76,35 +75,35 @@ var span = AstralSpanU8.FromString(str, out NativeArray<byte> tempArray);
 var span = AstralSpanU8.FromNativeArray(nativeArray);
 ```
 
-**Rationale**: Astral C ABI never assumes NUL termination (explicit in the public ABI contract). Unity's default string marshaling (`[MarshalAs(UnmanagedType.LPStr)]`) adds NUL terminators, which violates ABI contract.
+**Rationale**: Astral C ABI never assumes NUL termination; every string crosses the ABI as an explicit byte span. Unity's default string marshaling (`[MarshalAs(UnmanagedType.LPStr)]`) adds NUL terminators, which violates that contract.
 
-### 4. RAII Pattern
+### 4. Native Handle Lifetime
 
 **All resource handles implement `IDisposable`**:
 
 ```csharp
 using var model = AstralModel.Load("/path/to/model.gguf");
 using var session = AstralSession.Create(model);
-// Automatic cleanup when scope exits
+// Native handles are released when the scope exits.
 ```
 
 **Rationale**: Unity's garbage collector is non-deterministic. Explicit disposal ensures native resources are freed immediately, preventing memory leaks.
 
-### 5. Zero-Allocation Streaming
+### 5. NativeArray Streaming
 
-**Hot paths use `NativeArray<byte>` to avoid GC allocations**:
+**Streaming paths can read into caller-owned `NativeArray<byte>` buffers**:
 
 ```csharp
 // Pre-allocated buffer (persistent allocator)
 NativeArray<byte> buffer = new NativeArray<byte>(4096, Allocator.Persistent);
 
-// Read stream (zero GC allocation)
+// Read stream into the persistent buffer.
 int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
 ```
 
-**Rationale**: Unity's GC triggers long pauses (100ms+) during token streaming. `NativeArray` is allocated from native heap (no GC pressure).
+**Rationale**: Keeping token bytes in caller-owned native buffers avoids converting each token to a managed string inside the polling loop.
 
-### 6. IL2CPP Safety
+### 6. IL2CPP Constraints
 
 **All P/Invoke functions are statically declared** (no dynamic loading):
 
@@ -139,9 +138,9 @@ session.ReadStream(buffer);
 
 ### Compilation
 
-- [x] Code compiles in Unity 2021.3+
+- [ ] Code compiles in Unity 2021.3+ with a real Unity Editor runner.
 - [x] `allowUnsafeCode: true` in asmdef
-- [x] No compile errors in IL2CPP build
+- [ ] IL2CPP player build has no compile errors on each supported target.
 
 ### P/Invoke Marshaling
 
@@ -152,24 +151,25 @@ session.ReadStream(buffer);
 
 ### Memory Management
 
-- [x] RAII pattern for all handles (`IDisposable`)
-- [x] Finalizers warn if not disposed properly
-- [x] Zero GC allocations in streaming paths (validated with Unity Profiler)
+- [x] Deterministic native handle release through `IDisposable`
+- [x] Finalizers warn on leaked native handles.
+- [x] `ReadStream(NativeArray<byte>)` reads into caller-owned buffers without converting tokens to managed strings.
 
 ### Platform Support
 
-- [x] Windows x86_64 (Visual Studio 2022)
-- [x] Linux x86_64 (GCC 11+)
-- [x] macOS ARM64 (Apple Silicon)
-- [x] Android ARM64 (API Level 21+)
-- [x] iOS ARM64 (iOS 12.0+)
+- [ ] Windows x86_64 release artifact and Unity player smoke.
+- [x] Linux x86_64 native package artifact.
+- [ ] Linux x86_64 Unity Editor smoke.
+- [ ] macOS ARM64 release artifact and Unity player smoke.
+- [ ] Android ARM64 release artifact and Unity player smoke.
+- [ ] iOS ARM64 release artifact and Unity player smoke.
 
-### IL2CPP Safety
+### IL2CPP Constraints
 
 - [x] Static P/Invoke declarations (no dynamic loading)
 - [x] iOS uses `__Internal` for static linking
 - [x] No reflection on native types
-- [x] No generic constraints on native handles
+- [ ] IL2CPP stripping/linking verified by a player build.
 
 ## Performance Characteristics
 
@@ -227,10 +227,10 @@ IEnumerator StreamInference()
 }
 ```
 
-### 3. Zero-Allocation Streaming
+### 3. NativeArray Streaming
 
 ```csharp
-IEnumerator StreamZeroAlloc()
+IEnumerator StreamNativeArray()
 {
     using var model = AstralModel.Load("/path/to/model.gguf");
     using var session = AstralSession.Create(model);
@@ -244,7 +244,7 @@ IEnumerator StreamZeroAlloc()
 
     session.Decode();
 
-    // Stream tokens (zero GC allocation)
+    // Stream tokens into the caller-owned buffer.
     while (true)
     {
         int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
@@ -267,10 +267,10 @@ IEnumerator StreamZeroAlloc()
 
 ## Known Limitations
 
-1. **No Unity Allocator Bridge**: Currently uses Astral's internal allocator. Future: accept Unity's `Allocator.Persistent` via function pointers.
-2. **No Logging Callback**: C# logging callback not yet implemented (requires marshaling UTF-8 spans).
-3. **No Embeddings API**: Not yet exposed in the high-level C# wrapper; v0.1 C ABI calls currently return `Unsupported`.
-4. **No GPU Backend**: v0.1 is CPU-only; GPU support planned for v0.2.
+1. **Editor runner required**: ABI and mock-backend tests need a real Unity Editor with native binaries present.
+2. **Native packaging incomplete**: Platform binaries are built by CMake, but release packaging still needs final UPM-ready artifact layout, signing, and Unity import evidence for each target.
+3. **Real model coverage pending**: Text/media embeddings are exposed through `AstralEmbedder`, but production sign-off still needs real GGUF and MTMD fixture runs.
+4. **GPU validation pending**: CUDA builds are handled by the native runtime gates; Unity-specific GPU artifact and runtime validation are still release-lane work.
 
 ## Testing Strategy
 
@@ -320,7 +320,7 @@ public IEnumerator TestStreamingInference()
 
 ```csharp
 [UnityTest]
-public IEnumerator TestZeroGCAllocationStreaming()
+public IEnumerator TestNativeArrayStreamingAllocationBudget()
 {
     // Enable Deep Profiling
     using var model = AstralModel.Load(TestModelPath);
@@ -342,7 +342,7 @@ public IEnumerator TestZeroGCAllocationStreaming()
     long gcAfter = GC.GetTotalMemory(false);
     long gcDelta = gcAfter - gcBefore;
 
-    // Assert: Zero GC allocations during streaming
+    // Assert: NativeArray streaming stays inside the allocation budget.
     Assert.Less(gcDelta, 1024); // Allow 1KB tolerance for GC bookkeeping
 }
 ```
@@ -425,30 +425,27 @@ public static class StructSizeValidator
 ```
 Unity Profiler > CPU Usage > Deep Profile
 Look for: GC.Alloc in streaming loop
-Expected: Zero allocations during ReadStream()
+Expected: no per-token managed string allocation during ReadStream()
 ```
 
 ## Future Enhancements
 
 ### v0.2 (Planned)
 
-- [ ] Unity Allocator Bridge (`Allocator.Persistent` → `AstralAllocator`)
-- [ ] Logging Callback (C# → native UTF-8 span marshaling)
-- [ ] Embeddings API (C# wrapper for `astral_embed_*`)
 - [ ] GPU Backend Support (CUDA, Metal)
 - [ ] Grammar Constraints (GBNF)
 
 ### v0.3+ (Future)
 
 - [ ] Burst Compiler Support (direct IL to native code)
-- [ ] Jobs System Integration (parallel inference)
 - [ ] Unity DOTS Integration (ECS-friendly API)
 - [ ] WebGL Backend (WASM + WebGPU)
 
 ## References
 
 - **C ABI Specification**: `/home/user/workspace/astral/include/astral_rt.h`
-- **Master Spec**: `/home/user/workspace/astral/docs/MASTER_SPEC.md`
+- **Memory Architecture**: `/home/user/workspace/astral/docs/architecture/MEMORY_ARCHITECTURE.md`
+- **Engine Integration Patterns**: `/home/user/workspace/astral/docs/architecture/ENGINE_INTEGRATION_PATTERNS.md`
 - **Coding Standards**: `/home/user/workspace/astral/docs/rules/CODING_STANDARDS.md`
 - **Unity Documentation**: https://docs.unity3d.com/Manual/NativePlugins.html
 - **Unity IL2CPP**: https://docs.unity3d.com/Manual/IL2CPP.html
@@ -458,7 +455,7 @@ Expected: Zero allocations during ReadStream()
 This implementation follows Astral's core design principles:
 
 - **Data-Oriented Design**: Arrays of structs, cache-friendly memory layout
-- **Zero Hot Path Allocations**: `NativeArray` for streaming, no GC pressure
+- **Caller-Owned Stream Buffers**: `NativeArray` for streaming, no per-token managed string conversion
 - **Stable C ABI**: POD structs, explicit memory ordering, no exceptions
 - **UTF-8 Everywhere**: No encoding conversions, no NUL termination
 
@@ -466,5 +463,3 @@ Research references:
 - Unity Native Plugin Architecture (Unity Technologies)
 - IL2CPP Platform Abstraction Layer design patterns
 - P/Invoke marshaling best practices (Microsoft .NET documentation)
-
-**CRITICAL**: Never mention AI generation or automated tools in user-facing documentation.

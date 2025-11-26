@@ -35,6 +35,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY)
         test_utf8
         test_logging
         test_core
+        test_abi_invalid_args
         test_arena
         test_model_sources
         test_backend
@@ -83,6 +84,8 @@ foreach(test_file ${TEST_FILES})
         target_compile_definitions(${test_file} PRIVATE
             $<$<BOOL:${ASTRAL_ENABLE_CUDA}>:ASTRAL_ENABLE_CUDA=1>
             $<$<NOT:$<BOOL:${ASTRAL_ENABLE_CUDA}>>:ASTRAL_ENABLE_CUDA=0>
+            $<$<BOOL:${ASTRAL_ENABLE_MTMD}>:ASTRAL_ENABLE_MTMD=1>
+            $<$<NOT:$<BOOL:${ASTRAL_ENABLE_MTMD}>>:ASTRAL_ENABLE_MTMD=0>
             ASTRAL_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
         )
 
@@ -184,6 +187,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
             target_compile_definitions(${test_file}_tsan PRIVATE
                 $<$<BOOL:${ASTRAL_ENABLE_CUDA}>:ASTRAL_ENABLE_CUDA=1>
                 $<$<NOT:$<BOOL:${ASTRAL_ENABLE_CUDA}>>:ASTRAL_ENABLE_CUDA=0>
+                $<$<BOOL:${ASTRAL_ENABLE_MTMD}>:ASTRAL_ENABLE_MTMD=1>
+                $<$<NOT:$<BOOL:${ASTRAL_ENABLE_MTMD}>>:ASTRAL_ENABLE_MTMD=0>
             )
 
             target_include_directories(${test_file}_tsan PRIVATE
@@ -253,6 +258,423 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_source_scans.cmake)
     message(STATUS "Configured test: gate_source_scans")
 endif()
 
+if(TARGET astral_rt_shared AND UNIX AND NOT APPLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_shared_exports.cmake)
+    add_test(
+        NAME gate_shared_exports
+        COMMAND ${CMAKE_COMMAND}
+            -DASTRAL_SHARED_LIBRARY=$<TARGET_FILE:astral_rt_shared>
+            -DASTRAL_PUBLIC_HEADER=${CMAKE_SOURCE_DIR}/include/astral_rt.h
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_shared_exports.cmake
+    )
+    set_tests_properties(gate_shared_exports PROPERTIES
+        TIMEOUT 30
+        LABELS "gate;abi"
+    )
+    message(STATUS "Configured test: gate_shared_exports")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_header_mirror.cmake)
+    add_test(
+        NAME gate_unreal_header_mirror
+        COMMAND ${CMAKE_COMMAND}
+            -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_header_mirror.cmake
+    )
+    set_tests_properties(gate_unreal_header_mirror PROPERTIES
+        TIMEOUT 30
+        LABELS "gate;abi;unreal"
+    )
+    message(STATUS "Configured test: gate_unreal_header_mirror")
+endif()
+
+if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout_report.sh)
+    find_program(ASTRAL_BASH_EXECUTABLE bash)
+    if(ASTRAL_BASH_EXECUTABLE)
+        find_program(ASTRAL_PYTHON_EXECUTABLE python3)
+
+        add_test(
+            NAME gate_abi_layout_report
+            COMMAND ${CMAKE_COMMAND} -E env
+                CXX=${CMAKE_CXX_COMPILER}
+                ${ASTRAL_BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout_report.sh --check
+        )
+        set_tests_properties(gate_abi_layout_report PROPERTIES
+            TIMEOUT 30
+            LABELS "gate;abi"
+        )
+        message(STATUS "Configured test: gate_abi_layout_report")
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_metadata.cmake)
+            add_test(
+                NAME gate_release_metadata
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -DASTRAL_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_metadata.cmake
+            )
+            set_tests_properties(gate_release_metadata PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release;abi"
+            )
+            message(STATUS "Configured test: gate_release_metadata")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_artifact_signature.cmake)
+            add_test(
+                NAME gate_release_artifact_signature
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_artifact_signature.cmake
+            )
+            set_tests_properties(gate_release_artifact_signature PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_artifact_signature")
+        endif()
+
+        if(EXISTS ${CMAKE_SOURCE_DIR}/scripts/validate_release_notes.sh)
+            add_test(
+                NAME gate_release_notes
+                COMMAND ${ASTRAL_BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/validate_release_notes.sh
+                    --allow-placeholders
+            )
+            set_tests_properties(gate_release_notes PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_notes")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_notes_policy.cmake)
+            add_test(
+                NAME gate_release_notes_policy
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_notes_policy.cmake
+            )
+            set_tests_properties(gate_release_notes_policy PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_notes_policy")
+        endif()
+
+        if(EXISTS ${CMAKE_SOURCE_DIR}/scripts/validate_dependency_pins.sh)
+            add_test(
+                NAME gate_dependency_pins
+                COMMAND ${ASTRAL_BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/validate_dependency_pins.sh
+            )
+            set_tests_properties(gate_dependency_pins PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_dependency_pins")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/validate_embedded_presets.py)
+            add_test(
+                NAME gate_embedded_presets
+                COMMAND ${ASTRAL_PYTHON_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/scripts/validate_embedded_presets.py
+                    ${CMAKE_SOURCE_DIR}/CMakePresets.json
+            )
+            set_tests_properties(gate_embedded_presets PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;embedded"
+            )
+            message(STATUS "Configured test: gate_embedded_presets")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_comment_inventory.cmake)
+            add_test(
+                NAME gate_comment_inventory
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_comment_inventory.cmake
+            )
+            set_tests_properties(gate_comment_inventory PROPERTIES
+                TIMEOUT 30
+                LABELS "gate"
+            )
+            message(STATUS "Configured test: gate_comment_inventory")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_doc_links.cmake)
+            add_test(
+                NAME gate_doc_links
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_doc_links.cmake
+            )
+            set_tests_properties(gate_doc_links PROPERTIES
+                TIMEOUT 30
+                LABELS "gate"
+            )
+            message(STATUS "Configured test: gate_doc_links")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_error_taxonomy.cmake)
+            add_test(
+                NAME gate_error_taxonomy
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_error_taxonomy.cmake
+            )
+            set_tests_properties(gate_error_taxonomy PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;abi"
+            )
+            message(STATUS "Configured test: gate_error_taxonomy")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_evidence.cmake)
+            add_test(
+                NAME gate_release_evidence
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_evidence.cmake
+            )
+            set_tests_properties(gate_release_evidence PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_evidence")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_automation_results.cmake)
+            add_test(
+                NAME gate_unreal_automation_results
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_automation_results.cmake
+            )
+            set_tests_properties(gate_unreal_automation_results PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_automation_results")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_container_runner.cmake)
+            add_test(
+                NAME gate_unreal_container_runner
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_container_runner.cmake
+            )
+            set_tests_properties(gate_unreal_container_runner PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_container_runner")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_validation_access.cmake)
+            add_test(
+                NAME gate_unreal_validation_access
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_validation_access.cmake
+            )
+            set_tests_properties(gate_unreal_validation_access PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_validation_access")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_compatibility_matrix.cmake)
+            add_test(
+                NAME gate_unreal_compatibility_matrix
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_compatibility_matrix.cmake
+            )
+            set_tests_properties(gate_unreal_compatibility_matrix PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_compatibility_matrix")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_sample_scaffold.cmake)
+            add_test(
+                NAME gate_unreal_sample_scaffold
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_sample_scaffold.cmake
+            )
+            set_tests_properties(gate_unreal_sample_scaffold PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_sample_scaffold")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_sample_package_runner.cmake)
+            add_test(
+                NAME gate_unreal_sample_package_runner
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_sample_package_runner.cmake
+            )
+            set_tests_properties(gate_unreal_sample_package_runner PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_sample_package_runner")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_sample_runtime_log.cmake)
+            add_test(
+                NAME gate_unreal_sample_runtime_log
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_sample_runtime_log.cmake
+            )
+            set_tests_properties(gate_unreal_sample_runtime_log PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_sample_runtime_log")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unity_editmode_results.cmake)
+            add_test(
+                NAME gate_unity_editmode_results
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unity_editmode_results.cmake
+            )
+            set_tests_properties(gate_unity_editmode_results PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unity"
+            )
+            message(STATUS "Configured test: gate_unity_editmode_results")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_hf_matrix_log.cmake)
+            add_test(
+                NAME gate_hf_matrix_log
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_hf_matrix_log.cmake
+            )
+            set_tests_properties(gate_hf_matrix_log PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_hf_matrix_log")
+        endif()
+
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_mtmd_fixture_manifest.cmake)
+            add_test(
+                NAME gate_mtmd_fixture_manifest
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BUILD_DIR=${CMAKE_BINARY_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -DASTRAL_PYTHON_EXECUTABLE=${ASTRAL_PYTHON_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_mtmd_fixture_manifest.cmake
+            )
+            set_tests_properties(gate_mtmd_fixture_manifest PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release;mtmd"
+            )
+            message(STATUS "Configured test: gate_mtmd_fixture_manifest")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_cuda_parity_runner.cmake)
+            add_test(
+                NAME gate_cuda_parity_runner
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_cuda_parity_runner.cmake
+            )
+            set_tests_properties(gate_cuda_parity_runner PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;cuda"
+            )
+            message(STATUS "Configured test: gate_cuda_parity_runner")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_required_plan.cmake)
+            add_test(
+                NAME gate_release_required_plan
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -DASTRAL_BASH_EXECUTABLE=${ASTRAL_BASH_EXECUTABLE}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_required_plan.cmake
+            )
+            set_tests_properties(gate_release_required_plan PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_required_plan")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_sign_workflow.cmake)
+            add_test(
+                NAME gate_release_sign_workflow
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_release_sign_workflow.cmake
+            )
+            set_tests_properties(gate_release_sign_workflow PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_release_sign_workflow")
+        endif()
+
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_windows_large_page_runner.cmake)
+            add_test(
+                NAME gate_windows_large_page_runner
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_windows_large_page_runner.cmake
+            )
+            set_tests_properties(gate_windows_large_page_runner PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;platform"
+            )
+            message(STATUS "Configured test: gate_windows_large_page_runner")
+        endif()
+    endif()
+endif()
+
 # Print test summary
 message(STATUS "========================================")
 message(STATUS "Astral Test Suite Configuration")
@@ -269,7 +691,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 message(STATUS "========================================")
 
-# Gate: no allocations in steady-state decode/stream (best-effort portable).
+# Gate: no tracked heap allocations in steady-state decode/stream.
 if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
     add_executable(gate_allocations
         gate_allocations.cpp
@@ -315,7 +737,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allo
     message(STATUS "Configured test: gate_allocations")
 endif()
 
-# Gate: no steady-state I/O syscalls in decode/stream (best-effort portable).
+# Gate: no tracked steady-state I/O syscalls in decode/stream.
 if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
     add_executable(gate_io_syscalls
         gate_io_syscalls.cpp
@@ -398,4 +820,36 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_rss_
         LABELS "gate"
     )
     message(STATUS "Configured test: gate_rss_cap")
+endif()
+
+# Gate: repeated model/session churn with RSS drift sampling.
+if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_model_churn_soak.cpp)
+    add_executable(gate_model_churn_soak
+        gate_model_churn_soak.cpp
+        main.cpp
+    )
+
+    target_link_libraries(gate_model_churn_soak PRIVATE
+        astral_rt
+        astral_test_framework
+    )
+    target_include_directories(gate_model_churn_soak PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    set_target_properties(gate_model_churn_soak PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(gate_model_churn_soak PRIVATE pthread dl)
+    endif()
+
+    add_test(NAME gate_model_churn_soak COMMAND gate_model_churn_soak)
+    set_tests_properties(gate_model_churn_soak PROPERTIES
+        TIMEOUT 60
+        RUN_SERIAL TRUE
+        LABELS "gate;memory;soak"
+    )
+    message(STATUS "Configured test: gate_model_churn_soak")
 endif()

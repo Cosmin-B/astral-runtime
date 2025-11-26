@@ -383,7 +383,7 @@ namespace Astral.Runtime
             public fixed byte _padding1[3];
 #endif
 
-            // Optional CUDA multi-GPU config (best-effort)
+            // CUDA multi-GPU routing fields consumed by backends that implement ggml CUDA routing.
             public int gpu_main;
             public int gpu_split_mode; // AstralGpuSplitMode
             public uint gpu_flags;     // AstralGpuConfigFlags

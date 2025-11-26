@@ -213,7 +213,7 @@ static void run_provider_case(const ProviderCase& c) {
 
 } // namespace
 
-TEST(provider_swap_harness_mock_and_cpu) {
+TEST(provider_swap_harness_mock) {
     AstralInit cfg{};
     cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 4;
@@ -225,16 +225,29 @@ TEST(provider_swap_harness_mock_and_cpu) {
     // Mock backend is always available and requires no model file.
     run_provider_case(ProviderCase{"mock", nullptr});
 
-    // CPU backend requires a GGUF. Skip if none found.
+    astral_shutdown();
+}
+
+TEST(provider_swap_harness_cpu_fixture_probe) {
     const char* gguf = find_test_model_path();
-    if (gguf != nullptr) {
-        run_provider_case(ProviderCase{"cpu", gguf});
+    if (gguf == nullptr) {
+        SKIP_TEST("ASTRAL_TEST_DECODE_MODEL or ASTRAL_TEST_MODEL is required for CPU provider swap coverage");
     }
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
+    cfg.thread_count = 4;
+    cfg.numa_node = 0xFFFFFFFFu;
+    cfg.enable_hugepages = 0;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    run_provider_case(ProviderCase{"cpu", gguf});
 
     astral_shutdown();
 }
 
-TEST(provider_plugin_sample_load_and_run) {
+TEST(provider_plugin_sample_load_and_run_probe) {
 #if defined(ASTRAL_SAMPLE_BACKEND_PLUGIN_PATH)
     const char* plugin_path = ASTRAL_SAMPLE_BACKEND_PLUGIN_PATH;
     ASSERT_TRUE(plugin_path != nullptr);
@@ -258,21 +271,38 @@ TEST(provider_plugin_sample_load_and_run) {
 
     astral_shutdown();
 #else
-    // Sample plugin not built in this configuration.
-    ASSERT_TRUE(true);
+    SKIP_TEST("ASTRAL_SAMPLE_BACKEND_PLUGIN_PATH is not defined in this build configuration");
 #endif
 }
 
-TEST(provider_plugin_cpu_llama_load_and_run) {
+TEST(provider_plugin_loader_rejects_relative_path) {
+    const char* plugin_path = "astral_backend_sample_plugin.so";
+    AstralSpanU8 path{};
+    path.data = reinterpret_cast<const uint8_t*>(plugin_path);
+    path.len = static_cast<uint32_t>(std::strlen(plugin_path));
+
+    AstralErr err = astral_backend_load_plugin(path);
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+}
+
+TEST(provider_plugin_loader_rejects_embedded_nul_path) {
+    const uint8_t plugin_path[] = {'/', 't', 'm', 'p', '/', 'a', 0, 'b'};
+    AstralSpanU8 path{};
+    path.data = plugin_path;
+    path.len = static_cast<uint32_t>(sizeof(plugin_path));
+
+    AstralErr err = astral_backend_load_plugin(path);
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+}
+
+TEST(provider_plugin_cpu_llama_load_and_run_probe) {
 #if defined(ASTRAL_CPU_LLAMA_BACKEND_PLUGIN_PATH)
     const char* plugin_path = ASTRAL_CPU_LLAMA_BACKEND_PLUGIN_PATH;
     ASSERT_TRUE(plugin_path != nullptr);
 
     const char* gguf = find_test_model_path();
     if (gguf == nullptr) {
-        // No GGUF present; skip.
-        ASSERT_TRUE(true);
-        return;
+        SKIP_TEST("ASTRAL_TEST_DECODE_MODEL or ASTRAL_TEST_MODEL is required for CPU llama plugin runtime coverage");
     }
 
     AstralSpanU8 path{};
@@ -294,12 +324,11 @@ TEST(provider_plugin_cpu_llama_load_and_run) {
 
     astral_shutdown();
 #else
-    // CPU llama plugin not built in this configuration.
-    ASSERT_TRUE(true);
+    SKIP_TEST("ASTRAL_CPU_LLAMA_BACKEND_PLUGIN_PATH is not defined in this build configuration");
 #endif
 }
 
-TEST(provider_plugin_toy_load_and_run) {
+TEST(provider_plugin_toy_load_and_run_probe) {
 #if defined(ASTRAL_TOY_BACKEND_PLUGIN_PATH)
     const char* plugin_path = ASTRAL_TOY_BACKEND_PLUGIN_PATH;
     ASSERT_TRUE(plugin_path != nullptr);
@@ -324,7 +353,7 @@ TEST(provider_plugin_toy_load_and_run) {
 
     astral_shutdown();
 #else
-    ASSERT_TRUE(true);
+    SKIP_TEST("ASTRAL_TOY_BACKEND_PLUGIN_PATH is not defined in this build configuration");
 #endif
 }
 

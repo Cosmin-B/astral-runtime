@@ -6,8 +6,8 @@
  * - Keep CPU-only builds unaffected (no CUDA toolkit required; tests still compile/run).
  *
  * Notes:
- * - This test does NOT require a GPU unless the optional inference parity section is enabled.
- * - Enable the inference parity run by setting ASTRAL_TEST_CUDA_PARITY_INFER=1.
+ * - CPU-only builds run the API-surface coverage without a GPU or CUDA toolkit.
+ * - Real CUDA inference parity requires ASTRAL_TEST_CUDA_PARITY_INFER=1.
  */
 
 #include "test_framework.hpp"

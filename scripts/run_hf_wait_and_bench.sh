@@ -49,6 +49,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "${only}" in
+  cpu|cuda|all) ;;
+  *)
+    echo "[hf-wait] unsupported --only mode: ${only} (expected cpu, cuda, or all)" >&2
+    exit 2
+    ;;
+esac
+
 if [[ -z "${out_dir}" ]]; then
   out_dir="benchmarks/results/hf-full-$(date -Iseconds | tr ':' '-')"
 fi
@@ -87,8 +95,7 @@ mkdir -p "${out_dir}"
 
 for f in "${out_dir}"/*cuda-auto.txt "${out_dir}"/*cuda-cublas.txt "${out_dir}"/*cuda-mmq.txt "${out_dir}"/*cpu.txt; do
   [[ -f "${f}" ]] || continue
-  ./scripts/parse_hf_matrix_log.py --in "${f}" --out "${f%.txt}.csv"
+  ./scripts/parse_hf_matrix_log.py --in "${f}" --out "${f%.txt}.csv" --require-pass
 done
 
 echo "[hf-wait] done: ${out_dir}"
-

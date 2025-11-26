@@ -96,13 +96,15 @@ TEST(logging_format_string) {
 }
 
 TEST(logging_null_callback) {
-    // Should not crash with null callback
     set_callback(nullptr, nullptr);
     set_min_level(Level::Info);
 
-    info("This should not crash");
+    info("null callback path");
 
-    // No assertion - just verify no crash
+    LogCallbackData data;
+    set_callback(test_log_callback, &data);
+    info("callback restored");
+    ASSERT_EQ(data.call_count.load(), 1);
 }
 
 TEST(logging_empty_message) {

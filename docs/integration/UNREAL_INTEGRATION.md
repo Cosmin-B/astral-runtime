@@ -1,81 +1,87 @@
-# Unreal Engine 5 Integration Specification
+# Unreal Integration
 
-## Goals
+This page describes the Unreal plugin that lives in
+`plugins/unreal/AstralRT`. It is a current integration guide, not a release
+sign-off. Real UE 5.7 container runs and UE 5.4+ compatibility editor runs are
+still required before the plugin can be called production-ready.
 
-1. **Bytes-first streaming**: Avoid per-chunk `FString` allocations in hot paths; stream UTF-8 via `TConstArrayView<uint8>` / `TArray<uint8>`
-2. **FMemory Integration**: Bridge UE's memory allocator to Astral's `AstralAllocator`
-3. **Thread Safety**: Integrate with UE task graph or use library's own workers
-4. **Platform Coverage**: Windows, macOS, Linux, Android, iOS (consoles explicitly out of scope for now)
-5. **Shipping-Ready**: Static linking, symbol stripping, minimal binary size impact
+For the UE 5.7 container path, use
+[`UNREAL_57_QUICKSTART.md`](UNREAL_57_QUICKSTART.md).
 
-## Architecture
+## Supported Shape
 
+- UE 5.7 is the lead target.
+- UE 5.4, 5.5, 5.6, and 5.7 are compatibility targets.
+- The plugin is a runtime module named `AstralRT`.
+- The native runtime is linked from the plugin `Source/ThirdParty/AstralCore`
+  directory populated by the CMake `unreal-plugin` preset.
+- C++ code can consume streaming bytes without converting each chunk to
+  `FString`.
+- Blueprint delegates are available for convenience and may copy or marshal
+  streamed data on the game thread.
+
+## Blueprint Surface
+
+`UAstralBlueprintLibrary` provides Blueprint-callable entry points for common
+setup and diagnostics:
+
+- `CreateAstralModel`, `CreateAstralSession`, and `CreateAstralEmbedder`
+  allocate the existing UObject wrappers with a caller-provided owner.
+- `GetLastAstralError` returns the native thread-local error text after a
+  failed Astral call.
+- `ErrorCodeName` maps native integer error codes to stable symbolic names such
+  as `ASTRAL_E_TIMEOUT`.
+- `HasEmbeddings`, `HasSamplerControls`, `HasStopSequences`,
+  `HasGpuOffload`, `HasLora`, `HasImageInput`, `HasAudioInput`,
+  `HasMultimodalEmbeddings`, `HasGrammar`, `HasLogprobs`, `HasKvState`,
+  `HasSlots`, `HasGbnfGrammar`, and `HasJsonSchemaGrammar` decode the int64
+  capability mask returned by `UAstralModel::GetCaps`.
+
+The factories do not load models or create native sessions by themselves. They
+only create wrapper objects; ownership, model lifetime, and session creation
+still follow the contracts on `UAstralModel`, `UAstralSession`, and
+`UAstralEmbedder`.
+
+## Layout
+
+```text
+plugins/unreal/AstralRT/
+  AstralRT.uplugin
+  README.md
+  Source/
+    AstralRT/
+      AstralRT.Build.cs
+      Public/
+        AstralBlueprintLibrary.h
+        AstralEmbedder.h
+        AstralLog.h
+        AstralMediaLibrary.h
+        AstralModel.h
+        AstralSession.h
+        AstralTypes.h
+        IAstralRT.h
+      Private/
+        AstralBlueprintLibrary.cpp
+        AstralEmbedder.cpp
+        AstralMediaLibrary.cpp
+        AstralModel.cpp
+        AstralRuntimeModule.cpp
+        AstralSession.cpp
+        AstralSessionStreamPump.cpp
+        AstralSessionStreamPump.h
+        Tests/AstralRTTests.cpp
+    ThirdParty/AstralCore/
+      README.md
+      include/astral_rt.h
+      lib/<Platform>/...
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Unreal Engine (C++)                                          │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ UAstralSession (UObject)                                │ │
-│ │   ├─ FeedPromptRaw(TConstArrayView<uint8>)             │ │
-│ │   ├─ TokenBuffer (pre-sized)                           │ │
-│ │   ├─ OnStreamBytesNative(): TConstArrayView<uint8>     │ │
-│ │   ├─ OnBytesReceived: TArray<uint8> (Blueprint)        │ │
-│ │   └─ FTicker: non-blocking poll + stop on EOS          │ │
-│ └─────────────────────────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ FAstralRuntimeModule (IModuleInterface)                 │ │
-│ │   ├─ Init: astral_init()                                │ │
-│ │   ├─ Shutdown: astral_shutdown()                        │ │
-│ │   └─ Allocator: FMemory → AstralAllocator              │ │
-│ └─────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                           │ C ABI
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│ ThirdParty/AstralCore (static lib)                          │
-│   ├─ astral_rt.h (C ABI)                                    │
-│   ├─ libastral_rt.a (Linux/macOS)                           │
-│   └─ astral_rt.lib (Windows; may be `astral_rt_static.lib` when building both static+shared) │
-└─────────────────────────────────────────────────────────────┘
-```
 
-## Plugin Structure
+The descriptor has `CanContainContent: false`; samples live in docs and tests,
+not as plugin content assets.
 
-```
-Plugins/
-└── AstralRT/
-    ├── AstralRT.uplugin
-    ├── Source/
-    │   ├── AstralRT/
-    │   │   ├── AstralRT.Build.cs
-    │   │   ├── Public/
-    │   │   │   ├── IAstralRT.h             # Module interface
-    │   │   │   ├── AstralSession.h          # High-level C++ API
-    │   │   │   └── AstralTypes.h            # Structs, enums
-    │   │   └── Private/
-    │   │       ├── AstralRuntimeModule.cpp  # Module lifecycle
-    │   │       ├── AstralModel.cpp          # Model wrapper
-    │   │       ├── AstralSession.cpp        # Implementation
-    │   └── ThirdParty/
-│       └── AstralCore/
-│           ├── include/
-│           │   ├── astral_rt.h
-│           └── lib/
-    │               ├── Win64/
-    │               │   └── astral_rt.lib (or `astral_rt_static.lib`)
-    │               ├── Linux/
-    │               │   └── libastral_rt.a
-    │               ├── Mac/
-    │               │   └── libastral_rt.a
-    │               ├── Android/
-    │               │   └── arm64-v8a/libastral_rt.a
-    │               └── IOS/
-    │                   └── libastral_rt.a
-    ├── Content/
-    │   └── (Blueprint assets, example widgets)
-    └── README.md
-```
+## Descriptor
 
-## Module Definition (`AstralRT.uplugin`)
+The committed descriptor is:
 
 ```json
 {
@@ -83,14 +89,14 @@ Plugins/
   "Version": 1,
   "VersionName": "0.1.0",
   "FriendlyName": "Astral Runtime",
-  "Description": "High-performance LLM inference for Unreal Engine",
+  "Description": "Native LLM runtime bindings for Unreal Engine",
   "Category": "AI",
-  "CreatedBy": "Astral Team",
-  "CreatedByURL": "",
-  "DocsURL": "",
+  "CreatedBy": "Astral",
+  "CreatedByURL": "https://github.com/Cosmin-B/astral",
+  "DocsURL": "https://github.com/Cosmin-B/astral/tree/main/docs/integration",
   "MarketplaceURL": "",
-  "SupportURL": "",
-  "CanContainContent": true,
+  "SupportURL": "https://github.com/Cosmin-B/astral/issues",
+  "CanContainContent": false,
   "IsBetaVersion": true,
   "IsExperimentalVersion": false,
   "Installed": false,
@@ -111,621 +117,174 @@ Plugins/
 }
 ```
 
-## Build Rules (`AstralRT.Build.cs`)
+`docs/release/dependency-pins.tsv` pins the descriptor version and URL fields.
 
-```csharp
-using UnrealBuildTool;
-using System.IO;
+## Build The Native Package
 
-public class AstralRT : ModuleRules
+Run this before copying the plugin into an Unreal project or running
+Automation:
+
+```bash
+cmake --preset unreal-plugin
+cmake --build --preset unreal-plugin -j
+```
+
+The build stages:
+
+- `Source/ThirdParty/AstralCore/include/astral_rt.h`
+- `Source/ThirdParty/AstralCore/lib/Linux/libastral_rt.a`
+- the corresponding static library path for other configured platform presets
+
+The package target hashes the staged header and native library after copy and
+prints `Unreal ThirdParty provenance OK` when they match the source header and
+the built native target.
+
+## Build Rules
+
+`AstralRT.Build.cs` adds `Core`, `CoreUObject`, and `Engine`, then links the
+static Astral runtime from `Source/ThirdParty/AstralCore/lib/<Platform>`.
+It fails during UnrealBuildTool module evaluation if the staged C ABI header or
+selected static library is missing, and prints the `unreal-plugin` rebuild
+command in the error.
+
+The current platform library names are:
+
+| Unreal platform | Library path |
+|---|---|
+| Win64 | `Win64/astral_rt.lib`, falling back to `Win64/astral_rt_static.lib` |
+| Linux | `Linux/libastral_rt.a` |
+| Mac | `Mac/libastral_rt.a` |
+| Android | `Android/arm64-v8a/libastral_rt.a` |
+| IOS | `IOS/libastral_rt.a` |
+
+The module builds with `bEnableExceptions = false` and `bUseRTTI = false`.
+
+## Runtime Module
+
+`IAstralRT` exposes:
+
+- `IAstralRT::Get()`
+- `IAstralRT::IsAvailable()`
+- `IsInitialized()`
+- `ResetAllocatorStats()`
+- `GetAllocatorStats()`
+
+`FAstralRuntimeModule` initializes the native runtime during module startup and
+shuts it down during module unload. It also bridges native logs into
+`LogAstralRT`. The runtime module does not expose direct model/session creation
+methods; use the UObject wrappers below.
+
+Module startup passes Unreal's `FMemory::Malloc` and `FMemory::Free` through the
+native `AstralAllocator` hook before models or sessions are created.
+`ResetAllocatorStats()` and `GetAllocatorStats()` expose test/debug counters so
+Automation can prove model/session work used the engine-owned allocation path.
+They are validation counters, not gameplay telemetry.
+
+## Public Wrappers
+
+### Models
+
+`UAstralModel` owns a native model handle.
+
+```cpp
+UAstralModel* Model = NewObject<UAstralModel>(this);
+
+FAstralModelDesc ModelDesc;
+ModelDesc.BackendName = TEXT("mock");
+
+if (!Model->Load(ModelDesc))
 {
-    public AstralRT(ReadOnlyTargetRules Target) : base(Target)
-    {
-        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-
-        PublicDependencyModuleNames.AddRange(new string[]
-        {
-            "Core",
-            "CoreUObject",
-            "Engine"
-        });
-
-        PrivateDependencyModuleNames.AddRange(new string[]
-        {
-            // Add any private dependencies here
-        });
-
-        // ThirdParty: Astral Core
-        string ThirdPartyPath = Path.Combine(ModuleDirectory, "../../ThirdParty/AstralCore");
-        string IncludePath = Path.Combine(ThirdPartyPath, "include");
-        string LibPath = Path.Combine(ThirdPartyPath, "lib");
-
-        PublicIncludePaths.Add(IncludePath);
-
-        if (Target.Platform == UnrealTargetPlatform.Win64)
-        {
-            string StaticLib = Path.Combine(LibPath, "Win64", "astral_rt.lib");
-            string StaticLibAlt = Path.Combine(LibPath, "Win64", "astral_rt_static.lib");
-            PublicAdditionalLibraries.Add(File.Exists(StaticLib) ? StaticLib : StaticLibAlt);
-        }
-        else if (Target.Platform == UnrealTargetPlatform.Linux)
-        {
-            string LibFilePath = Path.Combine(LibPath, "Linux", "libastral_rt.a");
-            PublicAdditionalLibraries.Add(LibFilePath);
-        }
-        else if (Target.Platform == UnrealTargetPlatform.Mac)
-        {
-            string LibFilePath = Path.Combine(LibPath, "Mac", "libastral_rt.a");
-            PublicAdditionalLibraries.Add(LibFilePath);
-        }
-        else if (Target.Platform == UnrealTargetPlatform.Android)
-        {
-            string Arm64LibPath = Path.Combine(LibPath, "Android", "arm64-v8a", "libastral_rt.a");
-            PublicAdditionalLibraries.Add(Arm64LibPath);
-        }
-        else if (Target.Platform == UnrealTargetPlatform.IOS)
-        {
-            string LibFilePath = Path.Combine(LibPath, "IOS", "libastral_rt.a");
-            PublicAdditionalLibraries.Add(LibFilePath);
-        }
-
-        // Disable exceptions across C ABI
-        bEnableExceptions = false;
-        bUseRTTI = false;
-    }
+    UE_LOG(LogAstralRT, Error, TEXT("AstralRT: model load failed"));
+    return;
 }
 ```
 
-## Module Interface (`IAstralRT.h`)
+`Load` releases any previous handle before opening the new model. Keep the
+`UAstralModel` object alive for sessions and embedders created from it. Call
+`Release` before destroying dependent sessions or embedders when the lifetime is
+managed manually.
+
+Model source behavior:
+
+- `SourceKind = Path` passes a real filesystem path to the native backend.
+- `PathRoot = ProjectContent`, `ProjectSaved`, or `ProjectPersistentDownload`
+  resolves relative paths under Unreal's content, saved, or persistent download
+  directories before the C ABI call. Absolute paths bypass root resolution.
+- `SourceKind = Memory` passes `ModelBytes` directly to native code. Use this
+  for cooked pak/IoStore payloads or any model loaded through Unreal asset/bulk
+  data APIs.
+- The CPU llama backend may materialize `Memory` input to a temporary file in
+  desktop presets so llama.cpp can use its file-backed loader. Use `Saved` or a
+  project-managed cache for production-sized models when startup time and disk
+  lifetime matter.
+- `SourceKind = IO` is a native ABI option, but the Unreal UObject wrapper does
+  not expose callback-backed IO yet.
+
+Useful queries:
+
+- `GetEmbeddingDim`
+- `GetCaps`
+- `GetLimits`
+- `InitMedia`
+- `GetMediaInfo`
+
+### Sessions
+
+`UAstralSession` owns a native session handle and keeps the model handle value
+used at creation so `Reset` can rebuild native state for the same model.
 
 ```cpp
-#pragma once
+UAstralSession* Session = NewObject<UAstralSession>(this);
 
-#include "CoreMinimal.h"
-#include "Modules/ModuleInterface.h"
+FAstralSessionDesc SessionDesc;
+SessionDesc.MaxTokens = 64;
+SessionDesc.Temperature = 0.0f;
+SessionDesc.Seed = 1;
 
-/**
- * Astral Runtime module interface.
- * Handles init/shutdown of the Astral inference library.
- */
-class ASTRALRT_API IAstralRT : public IModuleInterface
+if (!Session->Create(Model, SessionDesc))
 {
-public:
-    /**
-     * Singleton-like access to this module's interface.
-     * Beware: not thread-safe, use only from game thread.
-     */
-    static inline IAstralRT& Get()
-    {
-        return FModuleManager::LoadModuleChecked<IAstralRT>("AstralRT");
-    }
-
-    /**
-     * Checks if the module is loaded and ready.
-     */
-    static inline bool IsAvailable()
-    {
-        return FModuleManager::Get().IsModuleLoaded("AstralRT");
-    }
-
-    /**
-     * Called when module is loaded (PreDefault phase).
-     */
-    virtual void StartupModule() override = 0;
-
-    /**
-     * Called when module is unloaded (shutdown).
-     */
-    virtual void ShutdownModule() override = 0;
-
-    /**
-     * Check if Astral runtime is initialized.
-     */
-    virtual bool IsInitialized() const = 0;
-};
+    UE_LOG(LogAstralRT, Error, TEXT("AstralRT: session create failed"));
+    return;
+}
 ```
 
-## Types (`AstralTypes.h`)
+Text input paths:
+
+- `FeedPrompt` converts `FString` to UTF-8 before calling native code.
+- `FeedPromptRaw` takes caller-owned UTF-8 bytes and avoids the `FString`
+  conversion in C++ callers.
+
+Decode and cancellation:
+
+- `Decode` advances generation once.
+- `Cancel` requests cancellation.
+- `Wait` returns the native code: `0` for OK, `-7` for canceled, `-4` for
+  timeout, or another native error value.
+- `Reset` replaces native session state with new session settings.
+
+Stop sequences:
+
+- `StopClear` removes all stop sequences.
+- `StopAddUtf8Bytes` adds caller-owned UTF-8 bytes.
+- `StopAddString` converts `FString` to UTF-8 first.
+
+Streaming:
+
+- `StreamRead` writes UTF-8 bytes into a caller-sized buffer and returns a byte
+  count or a negative native error.
+- `StreamReadString` returns a decoded `FString`; empty string also represents
+  timeout or no data.
+- `OnStreamBytesNative` is the low-overhead C++ delegate.
+- `OnStreamTextNative` exposes decoded text as an `FStringView` for C++.
+- `OnBytesReceived` and `OnTokenReceived` are Blueprint delegates and may
+  allocate or marshal on each tick.
+
+## Bytes-First Streaming Example
 
 ```cpp
-#pragma once
-
-#include "CoreMinimal.h"
-#include "astral_rt.h" // C ABI header
-
-#include "AstralTypes.generated.h"
-
-/** Error codes returned by Astral C API */
-UENUM(BlueprintType)
-enum class EAstralError : int32
-{
-    OK = 0,
-    Invalid = -1,
-    NoMem = -2,
-    Busy = -3,
-    Timeout = -4,
-    State = -5,
-    Backend = -6,
-    Canceled = -7,
-    Unsupported = -8
-};
-
-/** Model configuration */
-USTRUCT(BlueprintType)
-struct ASTRALRT_API FAstralModelDesc
-{
-    GENERATED_BODY()
-
-    /** Path to GGUF model file */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    FString ModelPath;
-
-    /** Optional backend override (e.g., "cpu", "mock") */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    FString BackendName;
-
-    /** Number of layers to offload to GPU (0 = CPU only) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 GpuLayers = 0;
-
-    /** Context size (tokens) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 ContextSize = 2048;
-
-    /** Batch size for prompt processing */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 BatchSize = 512;
-
-    /** Number of threads (0 = auto) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 NumThreads = 0;
-
-    /** Embeddings-only mode */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    bool bEmbeddingsOnly = false;
-};
-
-/** Session configuration */
-USTRUCT(BlueprintType)
-struct ASTRALRT_API FAstralSessionDesc
-{
-    GENERATED_BODY()
-
-    /** Maximum tokens to generate */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 MaxTokens = 512;
-
-    /** Sampling temperature (0.0 = greedy, 1.0 = diverse) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    float Temperature = 0.7f;
-
-    /** Top-K sampling */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 TopK = 40;
-
-    /** Top-P (nucleus) sampling */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    float TopP = 0.95f;
-
-    /** Enable token streaming */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    bool bStreamEnabled = true;
-
-    /** RNG seed for deterministic sampling (0 = auto) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
-    uint32 Seed = 0;
-};
-
-/** Session statistics */
-USTRUCT(BlueprintType)
-struct ASTRALRT_API FAstralStats
-{
-    GENERATED_BODY()
-
-    UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    double InitTimeMs = 0.0;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    double FirstTokenTimeMs = 0.0;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    double TokensPerSecond = 0.0;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint64 BytesCommitted = 0;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Astral")
-    uint64 BytesReserved = 0;
-};
-```
-
-## Session API (`AstralSession.h`)
-
-```cpp
-#pragma once
-
-#include "CoreMinimal.h"
-#include "AstralTypes.h"
-#include "astral_rt.h"
-
-#include "AstralSession.generated.h"
-
-/**
- * High-level C++ wrapper for Astral inference session.
- * Manages native resources; safe to use from game thread or async tasks.
- */
-UCLASS(BlueprintType)
-class ASTRALRT_API UAstralSession : public UObject
-{
-    GENERATED_BODY()
-
-public:
-    UAstralSession();
-
-    /**
-     * Create a session from a loaded model handle.
-     * @param ModelHandle Opaque model handle (from FAstralRuntimeModule::LoadModel)
-     * @param Desc Session configuration
-     * @return true if creation succeeded
-     */
-    UFUNCTION(BlueprintCallable, Category = "Astral")
-    bool Create(AstralHandle ModelHandle, const FAstralSessionDesc& Desc);
-
-    /**
-     * Feed a prompt chunk (UTF-8). Call with bFinalize=true on last chunk.
-     * @param Prompt UTF-8 encoded text
-     * @param bFinalize True if this is the last chunk
-     * @return true if feed succeeded
-     */
-    UFUNCTION(BlueprintCallable, Category = "Astral")
-    bool FeedPrompt(const FString& Prompt, bool bFinalize = true);
-
-    /**
-     * Feed a prompt from raw UTF-8 bytes (zero-copy, no FString conversion).
-     * @param Utf8Data UTF-8 byte array
-     * @param bFinalize True if this is the last chunk
-     * @return true if feed succeeded
-     */
-    bool FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize = true);
-
-    /**
-     * Start decoding (non-blocking). Tokens will be emitted to OnTokenReceived.
-     * @return true if decode started
-     */
-    UFUNCTION(BlueprintCallable, Category = "Astral")
-    bool Decode();
-
-    /**
-     * Read tokens from stream into output buffer.
-     * @param OutBuffer Output buffer (must be pre-sized)
-     * @param TimeoutMs Timeout in milliseconds
-     * @return Number of bytes read (0 if none available)
-     */
-    int32 StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs = 100);
-
-    /**
-     * Read tokens as FString (allocates; prefer StreamRead for hot paths).
-     * @param TimeoutMs Timeout in milliseconds
-     * @return Decoded UTF-8 string
-     */
-    UFUNCTION(BlueprintCallable, Category = "Astral")
-    FString StreamReadString(uint32 TimeoutMs = 100);
-
-    /**
-     * Get session statistics.
-     */
-    UFUNCTION(BlueprintCallable, Category = "Astral")
-    FAstralStats GetStats() const;
-
-    /**
-     * Check if session is valid (handle != 0).
-     */
-    UFUNCTION(BlueprintPure, Category = "Astral")
-    bool IsValid() const { return SessionHandle != 0; }
-
-    // UObject overrides
-    virtual void BeginDestroy() override;
-
-    /**
-     * Blueprint event: called when a token is received.
-     * WARNING: This allocates FString; prefer C++ StreamRead for performance.
-     */
-    UPROPERTY(BlueprintAssignable, Category = "Astral")
-    FOnTokenReceived OnTokenReceived;
-
-    DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTokenReceived, const FString&, Token);
-
-private:
-    AstralHandle SessionHandle = 0;
-    TArray<uint8> TokenBuffer; // Pre-allocated, reused per-frame
-
-    // Ticker handle for polling stream
-    FTSTicker::FDelegateHandle TickerHandle;
-    bool TickStream(float DeltaTime);
-};
-```
-
-## Implementation (`AstralSession.cpp`)
-
-```cpp
+#include "AstralLog.h"
+#include "AstralModel.h"
 #include "AstralSession.h"
-#include "Containers/UnrealString.h"
-#include "HAL/PlatformFileManager.h"
-
-UAstralSession::UAstralSession()
-{
-    // Pre-allocate token buffer (4KB; no per-frame allocations)
-    TokenBuffer.SetNumUninitialized(4096);
-}
-
-bool UAstralSession::Create(AstralHandle ModelHandle, const FAstralSessionDesc& Desc)
-{
-    if (SessionHandle != 0)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("Session already created"));
-        return false;
-    }
-
-    AstralSessionDesc NativeDesc = {};
-    NativeDesc.model = ModelHandle;
-    NativeDesc.max_tokens = Desc.MaxTokens;
-    NativeDesc.temperature = Desc.Temperature;
-    NativeDesc.top_k = Desc.TopK;
-    NativeDesc.top_p = Desc.TopP;
-    NativeDesc.stream_enabled = Desc.bStreamEnabled ? 1 : 0;
-    NativeDesc.seed = Desc.Seed;
-
-    AstralErr Err = astral_session_create(&NativeDesc, &SessionHandle);
-    if (Err != ASTRAL_OK)
-    {
-        UE_LOG(LogTemp, Error, TEXT("astral_session_create failed: %d"), static_cast<int32>(Err));
-        return false;
-    }
-
-    // Start ticker for stream polling
-    if (Desc.bStreamEnabled)
-    {
-        TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-            FTickerDelegate::CreateUObject(this, &UAstralSession::TickStream),
-            0.0f // Poll every frame
-        );
-    }
-
-    return true;
-}
-
-bool UAstralSession::FeedPrompt(const FString& Prompt, bool bFinalize)
-{
-    // Convert FString to UTF-8 (allocates; prefer FeedPromptRaw)
-    FTCHARToUTF8 Utf8(*Prompt);
-    return FeedPromptRaw(TConstArrayView<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()), bFinalize);
-}
-
-bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize)
-{
-    if (SessionHandle == 0)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("Session not created"));
-        return false;
-    }
-
-    AstralSpanU8 Span = {};
-    Span.data = Utf8Data.GetData();
-    Span.len = static_cast<uint32>(Utf8Data.Num());
-
-    AstralErr Err = astral_session_feed(SessionHandle, Span, bFinalize ? 1 : 0);
-    if (Err != ASTRAL_OK)
-    {
-        UE_LOG(LogTemp, Error, TEXT("astral_session_feed failed: %d"), static_cast<int32>(Err));
-        return false;
-    }
-
-    return true;
-}
-
-bool UAstralSession::Decode()
-{
-    if (SessionHandle == 0)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("Session not created"));
-        return false;
-    }
-
-    AstralErr Err = astral_session_decode(SessionHandle);
-    if (Err != ASTRAL_OK)
-    {
-        UE_LOG(LogTemp, Error, TEXT("astral_session_decode failed: %d"), static_cast<int32>(Err));
-        return false;
-    }
-
-    return true;
-}
-
-int32 UAstralSession::StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs)
-{
-    if (SessionHandle == 0 || OutBuffer.Num() == 0)
-    {
-        return 0;
-    }
-
-    AstralMutSpanU8 Span = {};
-    Span.data = OutBuffer.GetData();
-    Span.len = static_cast<uint32>(OutBuffer.Num());
-
-    int32 BytesRead = astral_stream_read(SessionHandle, Span, TimeoutMs);
-    if (BytesRead < 0)
-    {
-        AstralErr Err = static_cast<AstralErr>(BytesRead);
-        if (Err == ASTRAL_E_TIMEOUT)
-        {
-            return 0; // No data yet
-        }
-        UE_LOG(LogTemp, Error, TEXT("astral_stream_read failed: %d"), BytesRead);
-        return 0;
-    }
-
-    return BytesRead;
-}
-
-FString UAstralSession::StreamReadString(uint32 TimeoutMs)
-{
-    int32 BytesRead = StreamRead(TokenBuffer, TimeoutMs);
-    if (BytesRead == 0)
-    {
-        return FString();
-    }
-
-    // Convert UTF-8 to FString (allocates)
-    FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(TokenBuffer.GetData()), BytesRead);
-    return FString(Converter.Length(), Converter.Get());
-}
-
-FAstralStats UAstralSession::GetStats() const
-{
-    FAstralStats Result;
-    if (SessionHandle == 0)
-    {
-        return Result;
-    }
-
-    AstralStats NativeStats = {};
-    AstralErr Err = astral_session_stats(SessionHandle, &NativeStats);
-    if (Err != ASTRAL_OK)
-    {
-        UE_LOG(LogTemp, Error, TEXT("astral_session_stats failed: %d"), static_cast<int32>(Err));
-        return Result;
-    }
-
-    Result.InitTimeMs = NativeStats.t_init_ms;
-    Result.FirstTokenTimeMs = NativeStats.t_first_token_ms;
-    Result.TokensPerSecond = NativeStats.tok_per_s;
-    Result.BytesCommitted = NativeStats.bytes_committed;
-    Result.BytesReserved = NativeStats.bytes_reserved;
-
-    return Result;
-}
-
-bool UAstralSession::TickStream(float DeltaTime)
-{
-    if (SessionHandle == 0)
-    {
-        return false; // Stop ticker
-    }
-
-    // Poll for tokens (no GC allocation)
-    int32 BytesRead = StreamRead(TokenBuffer, 10 /*ms*/);
-    if (BytesRead > 0)
-    {
-        // Fire Blueprint event (allocates FString; prefer C++ callback for perf)
-        if (OnTokenReceived.IsBound())
-        {
-            FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(TokenBuffer.GetData()), BytesRead);
-            FString Token(Converter.Length(), Converter.Get());
-            OnTokenReceived.Broadcast(Token);
-        }
-    }
-
-    return true; // Continue ticking
-}
-
-void UAstralSession::BeginDestroy()
-{
-    if (SessionHandle != 0)
-    {
-        // Stop ticker
-        if (TickerHandle.IsValid())
-        {
-            FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
-        }
-
-        astral_session_destroy(SessionHandle);
-        SessionHandle = 0;
-    }
-
-    Super::BeginDestroy();
-}
-```
-
-## Module Lifecycle (`AstralRuntimeModule.cpp`)
-
-```cpp
-#include "IAstralRT.h"
-#include "Modules/ModuleManager.h"
-#include "HAL/PlatformProcess.h"
-#include "astral_rt.h"
-
-class FAstralRuntimeModule : public IAstralRT
-{
-public:
-    virtual void StartupModule() override
-    {
-        UE_LOG(LogTemp, Log, TEXT("AstralRT: Module startup"));
-
-        // Create FMemory-backed allocator
-        AstralAllocator Allocator = {};
-        Allocator.alloc = &UEAlloc;
-        Allocator.free = &UEFree;
-        Allocator.user = nullptr;
-
-        // Initialize Astral runtime
-        AstralInit InitCfg = {};
-        InitCfg.sys_alloc = Allocator;
-        InitCfg.log_cb = &UELog; // Forwards Astral UTF-8 logs to UE_LOG
-        InitCfg.log_user = nullptr;
-        InitCfg.reserve_bytes = 2ULL << 30; // 2 GB
-        InitCfg.thread_count = 0; // Auto
-        InitCfg.numa_node = 0xFFFFFFFF; // Any
-        InitCfg.enable_hugepages = 0;
-
-        AstralErr Err = astral_init(&InitCfg);
-        if (Err != ASTRAL_OK)
-        {
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: Init failed: %d"), static_cast<int32>(Err));
-            bInitialized = false;
-            return;
-        }
-
-        bInitialized = true;
-        UE_LOG(LogTemp, Log, TEXT("AstralRT: Initialized"));
-    }
-
-    virtual void ShutdownModule() override
-    {
-        if (bInitialized)
-        {
-            astral_shutdown();
-            bInitialized = false;
-            UE_LOG(LogTemp, Log, TEXT("AstralRT: Shutdown"));
-        }
-    }
-
-    virtual bool IsInitialized() const override
-    {
-        return bInitialized;
-    }
-
-private:
-    bool bInitialized = false;
-
-    // FMemory allocator bridge
-    static void* UEAlloc(void* User, size_t Size, size_t Align)
-    {
-        return FMemory::Malloc(Size, static_cast<uint32>(Align));
-    }
-
-    static void UEFree(void* User, void* Ptr, size_t Size, size_t Align)
-    {
-        FMemory::Free(Ptr);
-    }
-};
-
-IMPLEMENT_MODULE(FAstralRuntimeModule, AstralRT)
-```
-
-## Blueprint Usage Example
-
-```cpp
-// In a Blueprint or C++ Actor:
 
 UCLASS()
 class AMyAIActor : public AActor
@@ -733,101 +292,191 @@ class AMyAIActor : public AActor
     GENERATED_BODY()
 
 public:
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
-    UAstralSession* Session;
+    UPROPERTY()
+    UAstralModel* Model = nullptr;
 
     UPROPERTY()
-    UAstralModel* Model;
+    UAstralSession* Session = nullptr;
 
     virtual void BeginPlay() override
     {
         Super::BeginPlay();
 
-        // Load model (mock backend example; real GGUF uses ModelPath instead).
         Model = NewObject<UAstralModel>(this);
+
         FAstralModelDesc ModelDesc;
         ModelDesc.BackendName = TEXT("mock");
         if (!Model->Load(ModelDesc))
         {
-            UE_LOG(LogTemp, Error, TEXT("Failed to load model"));
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: model load failed"));
             return;
         }
 
-        // Create session
         Session = NewObject<UAstralSession>(this);
-        FAstralSessionDesc Desc;
-        Desc.MaxTokens = 512;
-        Desc.Temperature = 0.7f;
-        if (!Session->Create(Model, Desc))
+
+        FAstralSessionDesc SessionDesc;
+        SessionDesc.MaxTokens = 64;
+        SessionDesc.Temperature = 0.0f;
+        SessionDesc.Seed = 1;
+        if (!Session->Create(Model, SessionDesc))
         {
-            UE_LOG(LogTemp, Error, TEXT("Failed to create session"));
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: session create failed"));
             return;
         }
 
-        // Bind bytes-first stream handler (no per-chunk FString allocation).
         Session->OnStreamBytesNative().AddUObject(this, &AMyAIActor::OnStreamBytes);
-
-        // Feed prompt
-        Session->FeedPrompt(TEXT("Once upon a time"), true);
-
-        // Start decode
+        Session->FeedPrompt(TEXT("hi"), true);
         Session->Decode();
     }
 
     void OnStreamBytes(TConstArrayView<uint8> Bytes)
     {
-        // Consume bytes directly (UTF-8). This sample just logs decoded text.
         FUTF8ToTCHAR Text(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), Bytes.Num());
-        UE_LOG(LogTemp, Log, TEXT("Chunk: %.*s"), Text.Length(), Text.Get());
+        UE_LOG(LogAstralRT, Log, TEXT("%.*s"), Text.Length(), Text.Get());
     }
 };
 ```
 
-## Platform-Specific Notes
+## Media
 
-### Android
+Media support requires a media projector or encoder GGUF and a native build with
+`ASTRAL_ENABLE_MTMD=ON`. Initialize media on the model before feeding image or
+audio payloads into sessions or embedders.
 
-- **Build**: Use NDK r21+ for arm64/armv7
-- **Threading**: Use `pthread`; avoid JNI from native threads
-- **Memory**: Reduce reserve size to 512MB for low-end devices
+```cpp
+FAstralModelMediaDesc MediaDesc;
+MediaDesc.SourceKind = EAstralModelSourceKind::Path;
+MediaDesc.MediaPath = TEXT("/path/to/media.gguf");
+MediaDesc.MediaPathRoot = EAstralUnrealPathRoot::Raw;
 
-### iOS
+if (!Model->InitMedia(MediaDesc))
+{
+    UE_LOG(LogAstralRT, Error, TEXT("AstralRT: media init failed"));
+    return;
+}
+```
 
-- **Bitcode**: Disable or provide bitcode lib
-- **Memory**: Use `mmap` (POSIX); avoid `vm_allocate`
+`MediaPathRoot` follows the same relative-path policy as `FAstralModelDesc`:
+absolute projector paths pass through unchanged, `Raw` relative paths become
+full process-relative paths, and packaged projects can resolve projector files
+under `ProjectContent`, `ProjectSaved`, or `ProjectPersistentDownload`.
 
-### Consoles
+`FAstralImageDesc::Pixels` and `FAstralAudioDesc::Samples` are passed to native
+code for the duration of the call. `FAstralAudioDesc::FrameCount` may be set to
+0 so the wrapper infers frame count from format, channel count, and sample
+bytes.
 
-Consoles are intentionally out of scope for this iteration of Astral’s Unreal integration docs.
+`UAstralMediaLibrary` provides boundary helpers for common engine payloads:
 
-## Performance Best Practices
+- `MakeRGBA8ImageFromBytes` copies tightly packed RGBA8 bytes into an image
+  descriptor.
+- `MakeRGBA8ImageFromTexture` copies the first mip of a CPU-readable
+  `PF_B8G8R8A8` `UTexture2D` into an RGBA8 descriptor. It returns `false` for
+  compressed, GPU-only, stripped, or non-readable texture data.
+- `MakePCM16AudioFromBytes` copies interleaved signed 16-bit PCM into an audio
+  descriptor and computes frame count.
 
-1. **Use `FeedPromptRaw()`**: Avoid FString→UTF-8 conversion in hot paths
-2. **Pre-size `TArray<uint8>`**: No per-frame allocations
-3. **Async Tasks**: Optionally move `StreamRead()` to `UE::Tasks::Launch`
-4. **Prefer bytes/text views**: Use `OnStreamBytesNative()` / `OnStreamTextNative()` and keep `OnTokenReceived` for convenience only
-5. **Shipping Builds**: Link statically, strip symbols (`-s` flag)
+```cpp
+FAstralImageDesc Image;
+TArray<uint8> RgbaBytes;
+RgbaBytes.SetNumZeroed(224 * 224 * 4);
+UAstralMediaLibrary::MakeRGBA8ImageFromBytes(RgbaBytes, 224, 224, Image);
+Session->FeedImage(Image, true);
 
-## Troubleshooting
+FAstralAudioDesc Audio;
+TArray<uint8> Pcm16Bytes;
+Pcm16Bytes.SetNumZeroed(16000 * sizeof(int16));
+UAstralMediaLibrary::MakePCM16AudioFromBytes(Pcm16Bytes, 1, 16000, Audio);
+Session->FeedAudio(Audio, true);
+```
 
-### Link Errors
+## Embeddings
 
-- Ensure `.lib`/`.a` files are in correct platform directories
-- Check `AstralRT.Build.cs` paths
+Load the model with `FAstralModelDesc::bEmbeddingsOnly = true` when the model is
+used only for embeddings. Create a `UAstralEmbedder` from the loaded model.
 
-### Crashes on Startup
+```cpp
+UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>(this);
+if (!Embedder->Create(Model))
+{
+    UE_LOG(LogAstralRT, Error, TEXT("AstralRT: embedder create failed"));
+    return;
+}
 
-- Verify `astral_init()` succeeds; check logs
-- Ensure FMemory allocator is set correctly
+TArray<uint8> Utf8Bytes;
+Utf8Bytes.Append(reinterpret_cast<const uint8*>("hello"), 5);
 
-### Slow Inference
+int64 Ticket = 0;
+if (Embedder->EnqueueUtf8Bytes(Utf8Bytes, Ticket))
+{
+    TArray<float> Vector;
+    Embedder->Collect(Ticket, Vector);
+}
+```
 
-- Increase `BatchSize` (512 → 2048)
-- Profile with Unreal Insights → CPU profiler
+`EmbedText` is the `FString` convenience path. `EmbedUtf8Bytes` keeps callers on
+the UTF-8 byte path. Image, audio, and multimodal embedding calls require media
+initialization when the backend needs a projector.
 
-## Future Enhancements
+## Diagnostics And Profiling
 
-- **UE Task Graph Integration**: Move decode to async tasks
-- **Niagara Plugin**: Emit tokens as Niagara events for VFX
-- **MetaHuman Integration**: Drive lip-sync from token stream
-- **Replicated Sessions**: Network-replicated inference for multiplayer
+Use `LogAstralRT` for plugin diagnostics. Runtime code also contains Unreal CPU
+profiler scopes around the session tick path, stream pump, and embedder enqueue
+and collect paths. Native embedding paths use Astral's Tracy wrapper macros.
+
+Release and CI checks currently gate:
+
+- plugin diagnostics use `LogAstralRT` instead of Unreal's temporary log category
+- Unreal docs keep examples on the same plugin log category
+- Unreal stream-pump and embedder profiler scopes
+- ThirdParty header/library provenance
+- Automation result artifact parsing
+- UE 5.7 container runner preflight
+
+## Automation
+
+Editor-only Automation tests live under
+`plugins/unreal/AstralRT/Source/AstralRT/Private/Tests/`:
+
+- `AstralRT.Module.Init`
+- `AstralRT.Mock.E2E`
+- `AstralRT.Mock.Embeddings`
+- `AstralRT.Mock.MediaFeed`
+- `AstralRT.Mock.MultimodalEmbed`
+
+Run the local editor lane with:
+
+```bash
+UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh
+```
+
+Run the UE 5.7 container lanes with:
+
+```bash
+./scripts/run_unreal_container_ci.sh --variant slim
+./scripts/run_unreal_container_ci.sh --variant full
+```
+
+Run the UE 5.4+ compatibility matrix with:
+
+```bash
+UNREAL_54_EDITOR=/path/to/5.4/UnrealEditor-Cmd \
+UNREAL_55_EDITOR=/path/to/5.5/UnrealEditor-Cmd \
+UNREAL_56_EDITOR=/path/to/5.6/UnrealEditor-Cmd \
+UNREAL_57_EDITOR=/path/to/5.7/UnrealEditor-Cmd \
+./scripts/run_unreal_compatibility_matrix.sh
+```
+
+The local CMake gates validate runner behavior and result parsing, but they do
+not replace real editor or container execution.
+
+## Current Limits
+
+- Real UE 5.7 container runs require authenticated access to Epic's GHCR
+  Unreal images.
+- UE 5.4, 5.5, 5.6, and 5.7 editor compatibility must be run on hosts with the
+  matching editors installed.
+- CUDA and MTMD support need real GPU/projector fixture evidence before release
+  sign-off.
+- Android and iOS are build-smoked through native artifacts; runtime device
+  validation is still required.

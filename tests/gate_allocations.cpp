@@ -12,13 +12,13 @@
  * Tracking implementation:
  * - On platforms that support linker symbol wrapping, wrap malloc/calloc/realloc/free
  *   (and aligned_alloc/posix_memalign when available).
- * - Otherwise, fall back to tracking C++ operator new/new[] calls (best-effort).
+ * - On platforms without linker wrapping, track C++ operator new/new[] calls only.
  *
  * Notes:
  * - Provider-agnostic: always runs against the mock backend; runs CPU backend only
  *   when explicitly enabled (env ASTRAL_GATE_CPU_ALLOC=1) and a GGUF model is available.
- * - Embeddings: always gated on mock; CPU embeddings gating is optional (some providers may
- *   allocate internally in their embedding paths even after warmup).
+ * - Embeddings: always gated on mock; CPU embeddings gating is opt-in because provider
+ *   embedding paths can allocate internally after warmup.
  */
 
 #include "test_framework.hpp"
@@ -371,7 +371,7 @@ static void run_no_alloc_gate_for_embeddings(const char* backend_name, const cha
 
 } // namespace
 
-// Best-effort global new tracking (also useful when malloc wrapping isn't available).
+// Global new tracking covers builds where malloc wrapping is not available.
 void* operator new(std::size_t size) {
     if (g_tracking_enabled.load(std::memory_order_relaxed)) {
         g_new_calls.fetch_add(1, std::memory_order_relaxed);

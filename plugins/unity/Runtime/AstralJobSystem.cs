@@ -1,9 +1,9 @@
-// Astral Unity Jobs System Integration
-// Burst-compatible jobs for polling token streams on worker threads
+// Astral Unity Jobs System integration.
+// Jobs poll token streams on worker threads with caller-owned NativeArray buffers.
 //
-// Design: Uses Unity Jobs System for async token streaming
-// Performance: Burst-compiled, zero GC allocations
-// Thread-safety: NativeArray ensures safe data transfer
+// Design: Use Unity Jobs System for async token streaming.
+// Allocation model: callers own NativeArray buffers before scheduling.
+// Thread-safety: NativeArray owns the cross-thread byte buffers.
 
 using System;
 using Unity.Burst;
@@ -22,14 +22,14 @@ namespace Astral.Runtime
     /// - No exceptions (returns error codes)
     ///
     /// THREAD-SAFETY:
-    /// - NativeArray provides thread-safe data transfer
+    /// - NativeArray owns the cross-thread byte buffers
     /// - Session handle is thread-safe (Astral runtime handles locking)
     /// - No shared state between jobs
     ///
     /// PERFORMANCE:
-    /// - Burst-compiled for maximum throughput
-    /// - Zero GC allocations
-    /// - Lock-free reads from SPSC ring buffer
+    /// - Burst compiles the job wrapper.
+    /// - Caller-owned buffers avoid per-token managed string conversion.
+    /// - Native stream reads come from the runtime SPSC queue.
     /// </summary>
     [BurstCompile(CompileSynchronously = true)]
     public struct AstralStreamReadJob : IJob
@@ -124,7 +124,7 @@ namespace Astral.Runtime
     /// DESIGN PATTERNS:
     /// - All methods return JobHandle for dependency chaining
     /// - All NativeArrays must be disposed by caller after job completes
-    /// - Burst compilation enabled for maximum performance
+    /// - Job data stays blittable for Burst-compatible scheduling.
     ///
     /// USAGE PATTERN:
     ///   // Schedule decode job
@@ -332,18 +332,17 @@ namespace Astral.Runtime
             NativeArray<int> bytesRead,
             uint timeout_ms = 5000)
         {
-            // Create temporary arrays for intermediate results
+            // Job-owned scratch slots carry native error codes across the chain.
             var feedErrorCode = new NativeArray<int>(1, Allocator.TempJob);
             var decodeErrorCode = new NativeArray<int>(1, Allocator.TempJob);
 
-            // Chain jobs: Feed -> Decode -> StreamRead
+            // Feed, decode, and stream read share one dependency chain.
             var feedHandle = ScheduleFeed(session, prompt, finalize: 1, feedErrorCode);
             var decodeHandle = ScheduleDecode(session, decodeErrorCode, feedHandle);
             var readHandle = ScheduleStreamRead(session, outputBuffer, bytesRead, timeout_ms, decodeHandle);
 
-            // Dispose temporary arrays when jobs complete
-            // NOTE: This is safe because Unity Jobs System guarantees completion before disposal
-            readHandle.Complete(); // Wait for all jobs
+            // This synchronous helper owns the TempJob scratch lifetime.
+            readHandle.Complete();
             feedErrorCode.Dispose();
             decodeErrorCode.Dispose();
 

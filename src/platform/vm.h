@@ -23,11 +23,11 @@ namespace astral::platform {
 /// Memory: Does not consume physical memory; only address space
 void* vm_reserve(size_t size);
 
-/// Reserve virtual address space with a requested alignment (best-effort).
+/// Reserve virtual address space with a requested base alignment.
 ///
 /// Notes:
 /// - On Linux/macOS, this over-reserves and trims with munmap to return an aligned base.
-/// - On Windows, this attempts to reserve at an aligned address via retry; may fall back.
+/// - On Windows, this retries aligned reservations and returns a normal page-aligned reservation if no aligned slot is available.
 /// - `alignment` should be a power of two and typically a multiple of the OS page size.
 ///
 /// @param size Size in bytes to reserve
@@ -90,10 +90,12 @@ void vm_decommit(void* addr, size_t size);
 /// Memory: Releases all physical memory and address space
 void vm_release(void* addr, size_t size);
 
-/// Attempt to use huge pages (2MB/1GB) for better TLB performance.
+/// Request huge pages (2MB/1GB) for better TLB performance.
 ///
-/// Tries to map the region using huge pages (also called "large pages" on Windows).
-/// This is a best-effort operation that may silently fail if:
+/// Linux asks the kernel to promote an existing committed region through
+/// MADV_HUGEPAGE. Windows cannot promote existing normal pages, so the call
+/// returns false there; use vm_reserve_large() for Windows large pages.
+/// The function returns false without changing the mapping when:
 /// - System doesn't support huge pages
 /// - Insufficient contiguous physical memory
 /// - Insufficient huge page quota (Linux: vm.nr_hugepages)
@@ -113,5 +115,34 @@ void vm_release(void* addr, size_t size);
 /// Thread-safety: Safe if different threads operate on non-overlapping regions
 /// Memory: Does not change memory consumption; may improve TLB performance
 bool vm_try_hugepages(void* addr, size_t size);
+
+/// Return the platform large-page size in bytes, or 0 when explicit large pages
+/// are unavailable.
+///
+/// On Windows this wraps GetLargePageMinimum(). On Linux this is the standard
+/// 2 MiB huge-page size used by the Linux THP request path. macOS returns 0.
+size_t vm_large_page_size();
+
+/// Reserve a large-page region.
+///
+/// This is an initialization-time primitive for platforms where large pages must
+/// be requested before a region exists. On Windows, VirtualAlloc requires
+/// MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES in one call, so a successful
+/// allocation is already committed and cannot be partially decommitted. The
+/// caller must release it with vm_release().
+///
+/// @param size Requested size in bytes
+/// @param out_size Optional output for the actual allocated size after platform
+///                 large-page rounding
+/// @return Large-page region base, or nullptr when unsupported, unprivileged, or
+///         out of memory
+void* vm_reserve_large(size_t size, size_t* out_size);
+
+/// Commit a reserved region using the platform large-page policy where possible.
+///
+/// This exists for platforms that can apply a huge-page policy after reserving
+/// normal VM. Windows returns false because large pages cannot be committed
+/// retroactively there.
+bool vm_commit_large(void* addr, size_t size);
 
 } // namespace astral::platform

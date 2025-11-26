@@ -25,6 +25,25 @@ struct TestData {
 };
 
 static constexpr uint64_t kStopValue = UINT64_MAX;
+static constexpr size_t kSpscBackpressureCapacity = 4;
+static constexpr uint32_t kSpscBackpressureTotal = 512;
+
+struct SpscBackpressureProducerContext {
+    SpscRing<TestData, kSpscBackpressureCapacity>* ring;
+    std::atomic<uint32_t>* blocked_pushes;
+};
+
+static void run_spsc_backpressure_producer(SpscBackpressureProducerContext* ctx) {
+    for (uint32_t i = static_cast<uint32_t>(kSpscBackpressureCapacity);
+         i < kSpscBackpressureTotal;
+         ++i) {
+        TestData data = {i, 0, i};
+        while (!ctx->ring->push(data)) {
+            ctx->blocked_pushes->fetch_add(1, std::memory_order_relaxed);
+            std::this_thread::yield();
+        }
+    }
+}
 
 //
 // MPMC Queue Tests
@@ -346,6 +365,39 @@ TEST(spsc_ring_full) {
     TestData data = {99, 0, 0};
     bool ok = ring.push(data);
     ASSERT_FALSE(ok);
+}
+
+TEST(spsc_backpressure_wraparound) {
+    SpscRing<TestData, kSpscBackpressureCapacity> ring;
+
+    for (uint32_t i = 0; i < kSpscBackpressureCapacity; ++i) {
+        TestData data = {i, 0, i};
+        ASSERT_TRUE(ring.push(data));
+    }
+
+    std::atomic<uint32_t> blocked_pushes{0};
+    SpscBackpressureProducerContext ctx{&ring, &blocked_pushes};
+    std::thread producer(run_spsc_backpressure_producer, &ctx);
+
+    for (uint32_t attempt = 0; attempt < 1000; ++attempt) {
+        if (blocked_pushes.load(std::memory_order_relaxed) > 0) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
+    ASSERT_TRUE(blocked_pushes.load(std::memory_order_relaxed) > 0);
+
+    TestData out{};
+    for (uint32_t expected = 0; expected < kSpscBackpressureTotal; ++expected) {
+        while (!ring.pop(&out)) {
+            std::this_thread::yield();
+        }
+        ASSERT_EQ(out.value, expected);
+        ASSERT_EQ(out.sequence, expected);
+    }
+
+    producer.join();
+    ASSERT_TRUE(ring.empty());
 }
 
 TEST(spsc_ring_empty) {

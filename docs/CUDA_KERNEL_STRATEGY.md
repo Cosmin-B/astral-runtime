@@ -42,5 +42,5 @@ We keep the same “support both” stance, but expand it from *parity* to *perf
 - Add perf benchmarks per mode (auto/cublas/mmq) for representative model tiers and quant types.
 - Document mode recommendations (e.g. “prefer cuBLAS for FP16/FP8-heavy models on high-end GPUs” vs “prefer MMQ for
   int4/int5 quants when it wins”).
-- Add best-effort CUDA bench runs to CI when a CUDA runner is available (non-blocking until v0.2).
-
+- Keep CUDA parity/e2e release gates required on a real GPU runner, then add
+  benchmark thresholds per mode once enough release-candidate data exists.

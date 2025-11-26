@@ -1,25 +1,64 @@
 #include "IAstralRT.h"
+#include "AstralLog.h"
 
+#include "Misc/CoreDelegates.h"
 #include "Modules/ModuleManager.h"
 #include "HAL/UnrealMemory.h"
 #include "Containers/StringConv.h"
 
+#if WITH_EDITOR
+#include "Editor.h"
+#endif
+
 #include "astral_rt.h"
+
+#include <atomic>
+
+DEFINE_LOG_CATEGORY(LogAstralRT);
 
 namespace {
 
-DEFINE_LOG_CATEGORY_STATIC(LogAstralRT, Log, All);
+struct FAllocatorCounters
+{
+    std::atomic<uint64> AllocCalls{0};
+    std::atomic<uint64> FreeCalls{0};
+    std::atomic<uint64> AllocBytes{0};
+    std::atomic<uint64> FreeBytes{0};
+
+    void Reset()
+    {
+        AllocCalls.store(0, std::memory_order_relaxed);
+        FreeCalls.store(0, std::memory_order_relaxed);
+        AllocBytes.store(0, std::memory_order_relaxed);
+        FreeBytes.store(0, std::memory_order_relaxed);
+    }
+
+    FAstralRTAllocatorStats Snapshot() const
+    {
+        FAstralRTAllocatorStats Stats{};
+        Stats.AllocCalls = AllocCalls.load(std::memory_order_relaxed);
+        Stats.FreeCalls = FreeCalls.load(std::memory_order_relaxed);
+        Stats.AllocBytes = AllocBytes.load(std::memory_order_relaxed);
+        Stats.FreeBytes = FreeBytes.load(std::memory_order_relaxed);
+        return Stats;
+    }
+};
+
+static FAllocatorCounters GAllocatorCounters;
 
 static void* UEAlloc(void* user, size_t size, size_t align) {
     (void)user;
     const uint32 alignment = align > 0 ? static_cast<uint32>(align) : 0u;
+    GAllocatorCounters.AllocCalls.fetch_add(1, std::memory_order_relaxed);
+    GAllocatorCounters.AllocBytes.fetch_add(static_cast<uint64>(size), std::memory_order_relaxed);
     return FMemory::Malloc(size, alignment);
 }
 
 static void UEFree(void* user, void* ptr, size_t size, size_t align) {
     (void)user;
-    (void)size;
     (void)align;
+    GAllocatorCounters.FreeCalls.fetch_add(1, std::memory_order_relaxed);
+    GAllocatorCounters.FreeBytes.fetch_add(static_cast<uint64>(size), std::memory_order_relaxed);
     FMemory::Free(ptr);
 }
 
@@ -63,6 +102,81 @@ class FAstralRuntimeModule : public IAstralRT
 public:
     virtual void StartupModule() override
     {
+        if (!InitializeRuntime())
+        {
+            return;
+        }
+
+        if (!PreExitHandle.IsValid())
+        {
+            PreExitHandle = FCoreDelegates::OnPreExit.AddRaw(this, &FAstralRuntimeModule::HandleEnginePreExit);
+        }
+#if WITH_EDITOR
+        if (!EndPIEHandle.IsValid())
+        {
+            EndPIEHandle = FEditorDelegates::EndPIE.AddRaw(this, &FAstralRuntimeModule::HandleEditorEndPIE);
+        }
+#endif
+    }
+
+    virtual void ShutdownModule() override
+    {
+#if WITH_EDITOR
+        if (EndPIEHandle.IsValid())
+        {
+            FEditorDelegates::EndPIE.Remove(EndPIEHandle);
+            EndPIEHandle.Reset();
+        }
+#endif
+        if (PreExitHandle.IsValid())
+        {
+            FCoreDelegates::OnPreExit.Remove(PreExitHandle);
+            PreExitHandle.Reset();
+        }
+        ShutdownRuntime(TEXT("ModuleUnload"));
+    }
+
+    virtual bool IsInitialized() const override
+    {
+        return bInitialized;
+    }
+
+    virtual uint64 GetRuntimeGeneration() const override
+    {
+        return RuntimeGeneration;
+    }
+
+    virtual void ResetAllocatorStats() override
+    {
+        GAllocatorCounters.Reset();
+    }
+
+    virtual FAstralRTAllocatorStats GetAllocatorStats() const override
+    {
+        return GAllocatorCounters.Snapshot();
+    }
+
+#if WITH_DEV_AUTOMATION_TESTS
+    virtual void SimulateEnginePreExitForAutomation() override
+    {
+        HandleEnginePreExit();
+    }
+#if WITH_EDITOR
+    virtual void SimulateEditorEndPIEForAutomation() override
+    {
+        HandleEditorEndPIE(false);
+    }
+#endif
+#endif
+
+private:
+    bool InitializeRuntime()
+    {
+        if (bInitialized)
+        {
+            return true;
+        }
+
         AstralAllocator Allocator{};
         Allocator.alloc = &UEAlloc;
         Allocator.free = &UEFree;
@@ -81,31 +195,56 @@ public:
         if (Err != ASTRAL_OK)
         {
             bInitialized = false;
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_init failed (%d)"), static_cast<int32>(Err));
-            return;
+            GAllocatorCounters.Reset();
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_init failed (%d)"), static_cast<int32>(Err));
+            return false;
         }
 
         bInitialized = true;
-        UE_LOG(LogTemp, Log, TEXT("AstralRT: Initialized"));
+        ++RuntimeGeneration;
+        UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Initialized"));
+        return true;
     }
 
-    virtual void ShutdownModule() override
+    void HandleEnginePreExit()
     {
-        if (bInitialized)
+        ShutdownRuntime(TEXT("EnginePreExit"));
+    }
+
+#if WITH_EDITOR
+    void HandleEditorEndPIE(bool bIsSimulating)
+    {
+        (void)bIsSimulating;
+        if (!bInitialized)
         {
-            astral_shutdown();
-            bInitialized = false;
-            UE_LOG(LogTemp, Log, TEXT("AstralRT: Shutdown"));
+            return;
         }
-    }
 
-    virtual bool IsInitialized() const override
+        ShutdownRuntime(TEXT("EndPIE"));
+        InitializeRuntime();
+    }
+#endif
+
+    void ShutdownRuntime(const TCHAR* Reason)
     {
-        return bInitialized;
+        if (!bInitialized)
+        {
+            return;
+        }
+
+        astral_shutdown();
+        bInitialized = false;
+        ++RuntimeGeneration;
+        GAllocatorCounters.Reset();
+        UE_LOG(LogAstralRT, Log, TEXT("AstralRT: Shutdown (%s)"), Reason);
     }
 
-private:
     bool bInitialized = false;
+    uint64 RuntimeGeneration = 0;
+    FDelegateHandle PreExitHandle;
+#if WITH_EDITOR
+    FDelegateHandle EndPIEHandle;
+#endif
 };
 
 IMPLEMENT_MODULE(FAstralRuntimeModule, AstralRT)

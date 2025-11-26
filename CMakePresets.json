@@ -183,6 +183,64 @@
       }
     },
     {
+      "name": "release-with-tests-cuda",
+      "displayName": "Release Build with Tests (CUDA)",
+      "description": "Optimized release build with tests and CUDA backend enabled",
+      "inherits": "release-with-tests",
+      "binaryDir": "${sourceDir}/build/release-test-cuda",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_CUDA": "ON",
+        "ASTRAL_CUDA_ARCHITECTURES": "75;80;86;89;90",
+        "ASTRAL_CUDA_FORCE_CUBLAS": "OFF",
+        "ASTRAL_CUDA_FORCE_MMQ": "OFF"
+      }
+    },
+    {
+      "name": "release-with-tests-cuda-cublas",
+      "displayName": "Release Build with Tests (CUDA, cuBLAS)",
+      "description": "Optimized release build with CUDA enabled and GGML_CUDA_FORCE_CUBLAS=ON",
+      "inherits": "release-with-tests-cuda",
+      "binaryDir": "${sourceDir}/build/release-test-cuda-cublas",
+      "cacheVariables": {
+        "ASTRAL_CUDA_FORCE_CUBLAS": "ON",
+        "ASTRAL_CUDA_FORCE_MMQ": "OFF"
+      }
+    },
+    {
+      "name": "release-with-tests-cuda-mmq",
+      "displayName": "Release Build with Tests (CUDA, MMQ)",
+      "description": "Optimized release build with CUDA enabled and GGML_CUDA_FORCE_MMQ=ON",
+      "inherits": "release-with-tests-cuda",
+      "binaryDir": "${sourceDir}/build/release-test-cuda-mmq",
+      "cacheVariables": {
+        "ASTRAL_CUDA_FORCE_CUBLAS": "OFF",
+        "ASTRAL_CUDA_FORCE_MMQ": "ON"
+      }
+    },
+    {
+      "name": "release-with-tests-mtmd",
+      "displayName": "Release Build with Tests (MTMD)",
+      "description": "Optimized release build with tests and libmtmd enabled",
+      "inherits": "release-with-tests",
+      "binaryDir": "${sourceDir}/build/release-test-mtmd",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_MTMD": "ON"
+      }
+    },
+    {
+      "name": "release-with-tests-mtmd-cuda",
+      "displayName": "Release Build with Tests (MTMD, CUDA)",
+      "description": "Optimized release build with tests, libmtmd, and CUDA backend enabled",
+      "inherits": "release-with-tests-mtmd",
+      "binaryDir": "${sourceDir}/build/release-test-mtmd-cuda",
+      "cacheVariables": {
+        "ASTRAL_ENABLE_CUDA": "ON",
+        "ASTRAL_CUDA_ARCHITECTURES": "75;80;86;89;90",
+        "ASTRAL_CUDA_FORCE_CUBLAS": "OFF",
+        "ASTRAL_CUDA_FORCE_MMQ": "OFF"
+      }
+    },
+    {
       "name": "unity-plugin",
       "displayName": "Unity Plugin Build",
       "description": "Build Unity native plugin",
@@ -262,6 +320,8 @@
       "binaryDir": "${sourceDir}/build/unreal",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
         "LLAMA_CPP_DIR": "${sourceDir}/external/llama.cpp",
         "ASTRAL_BUILD_TESTS": "OFF",
         "ASTRAL_BUILD_BENCHMARKS": "OFF",
@@ -543,6 +603,26 @@
       "configurePreset": "release-with-tests"
     },
     {
+      "name": "release-with-tests-cuda",
+      "configurePreset": "release-with-tests-cuda"
+    },
+    {
+      "name": "release-with-tests-cuda-cublas",
+      "configurePreset": "release-with-tests-cuda-cublas"
+    },
+    {
+      "name": "release-with-tests-cuda-mmq",
+      "configurePreset": "release-with-tests-cuda-mmq"
+    },
+    {
+      "name": "release-with-tests-mtmd",
+      "configurePreset": "release-with-tests-mtmd"
+    },
+    {
+      "name": "release-with-tests-mtmd-cuda",
+      "configurePreset": "release-with-tests-mtmd-cuda"
+    },
+    {
       "name": "unity-plugin",
       "configurePreset": "unity-plugin"
     },
@@ -665,6 +745,41 @@
     {
       "name": "release-with-tests",
       "configurePreset": "release-with-tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-with-tests-cuda",
+      "configurePreset": "release-with-tests-cuda",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-with-tests-cuda-cublas",
+      "configurePreset": "release-with-tests-cuda-cublas",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-with-tests-cuda-mmq",
+      "configurePreset": "release-with-tests-cuda-mmq",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-with-tests-mtmd",
+      "configurePreset": "release-with-tests-mtmd",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-with-tests-mtmd-cuda",
+      "configurePreset": "release-with-tests-mtmd-cuda",
       "output": {
         "outputOnFailure": true
       }

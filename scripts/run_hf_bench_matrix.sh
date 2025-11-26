@@ -32,6 +32,7 @@ Options:
   --gpu-layers <N>          Default GPU layers for CUDA runs (default: 48)
   --arch <list>             ASTRAL_CUDA_ARCHITECTURES override for CUDA configure (e.g. 120a-real)
   --only <cpu|cuda|all>     Which runs to execute (default: all)
+  --allow-failures          Write failed rows but exit successfully for local investigation
   --help                    Show help
 
 Behavior:
@@ -56,6 +57,7 @@ tokens="32"
 gpu_layers="48"
 arch_override=""
 only="all"
+allow_failures=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -70,10 +72,19 @@ while [[ $# -gt 0 ]]; do
     --gpu-layers) gpu_layers="${2:-}"; shift 2 ;;
     --arch) arch_override="${2:-}"; shift 2 ;;
     --only) only="${2:-}"; shift 2 ;;
+    --allow-failures) allow_failures=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+case "${only}" in
+  cpu|cuda|all) ;;
+  *)
+    echo "[hf-matrix] unsupported --only mode: ${only} (expected cpu, cuda, or all)" >&2
+    exit 2
+    ;;
+esac
 
 mkdir -p "${out_dir}"
 
@@ -226,7 +237,7 @@ is_aux_gguf_file() {
 mapfile -t ggufs < <(find "${models_dir}" -type f -name "*.gguf" | sort)
 if [[ ${#ggufs[@]} -eq 0 ]]; then
   echo "No .gguf files found under: ${models_dir}" >&2
-  exit 0
+  exit 2
 fi
 
 {
@@ -311,8 +322,19 @@ done
 
 echo "[hf-matrix] wrote:"
 echo "  ${cpu_log}"
+matrix_logs=("${cpu_log}")
 if [[ "${only}" == "cuda" || "${only}" == "all" ]]; then
   echo "  ${cuda_log}"
   echo "  ${cuda_cublas_log}"
   echo "  ${cuda_mmq_log}"
+  matrix_logs+=("${cuda_log}" "${cuda_cublas_log}" "${cuda_mmq_log}")
+fi
+
+if grep -H '^\[bench\] FAILED' "${matrix_logs[@]}"; then
+  if [[ "${allow_failures}" -eq 1 ]]; then
+    echo "[hf-matrix] failed rows recorded; continuing because --allow-failures was set" >&2
+  else
+    echo "[hf-matrix] failed rows recorded; rerun with --allow-failures only for local investigation" >&2
+    exit 1
+  fi
 fi

@@ -1,0 +1,202 @@
+{
+  "schema": "astral.release.evidence.v1",
+  "release": {
+    "version": "0.1.0",
+    "git_commit": "<release-candidate-commit>"
+  },
+  "evidence": {
+    "native_dev_ctest": {
+      "status": "pass",
+      "command": "cmake --preset dev && cmake --build --preset dev -j && ctest --preset dev -j --output-on-failure",
+      "artifacts": [
+        "logs/native-dev-ctest.log"
+      ]
+    },
+    "native_release_ctest": {
+      "status": "pass",
+      "command": "cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure",
+      "artifacts": [
+        "logs/native-release-ctest.log"
+      ]
+    },
+    "release_required_gates": {
+      "status": "pass",
+      "command": "ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNREAL_RUNUAT=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --cuda-arch <deployed-arch-list> --cuda-strict --mtmd-bench",
+      "artifacts": [
+        "logs/release-required-gates.log"
+      ]
+    },
+    "sanitizer_validation": {
+      "status": "pass",
+      "command": "./scripts/run_asan.sh && ./scripts/run_tsan.sh",
+      "artifacts": [
+        "logs/asan.log",
+        "logs/tsan.log"
+      ]
+    },
+    "comment_review": {
+      "status": "pass",
+      "command": "python3 ./scripts/inventory_comments.py --format review-tsv > logs/comment-review.tsv && python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers > logs/comment-inventory-summary.log",
+      "artifacts": [
+        "logs/comment-review.tsv",
+        "logs/comment-inventory-summary.log"
+      ]
+    },
+    "unreal_57_full_container": {
+      "status": "pass",
+      "command": "./scripts/run_unreal_container_ci.sh --variant full --image ghcr.io/epicgames/unreal-engine:dev-5.7.4 --digest sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce --filter AstralRT --install-cmake",
+      "artifacts": [
+        "logs/unreal-57-full-container.log"
+      ],
+      "required_log_tokens": [
+        "[unreal_container] Check image access",
+        "[unreal_container] Local image digests",
+        "clang version 20.1.8",
+        "v26",
+        "Unreal ThirdParty provenance OK",
+        "automation tests based on 'AstralRT'",
+        "AstralRT.Module.ShutdownRestart",
+        "AstralRT.Module.EnginePreExit",
+        "AstralRT.Module.EndPIE",
+        "AstralRT: Shutdown (EnginePreExit)",
+        "[unreal-results] OK"
+      ]
+    },
+    "unreal_57_slim_container": {
+      "status": "pass",
+      "command": "ASTRAL_UNREAL_TEST_MODEL=/workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1 ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE=1 ASTRAL_UNREAL_TEST_EMBED_MODEL=/workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1 ./scripts/run_unreal_container_ci.sh --variant slim --image ghcr.io/epicgames/unreal-engine:dev-slim-5.7.4 --digest sha256:5d8fa43dbbc07ea53e6474c0f3ac33af092cc264070b0985a2d3e8c4697940f6 --filter AstralRT --skip-native-build",
+      "artifacts": [
+        "logs/unreal-57-slim-container.log"
+      ],
+      "required_log_tokens": [
+        "[unreal_container] Check image access",
+        "[unreal_container] Local image digests",
+        "clang version 20.1.8",
+        "v26",
+        "Unreal ThirdParty provenance OK",
+        "automation tests based on 'AstralRT'",
+        "AstralRT.Module.ShutdownRestart",
+        "AstralRT.Module.EnginePreExit",
+        "AstralRT.Module.EndPIE",
+        "AstralRT.Real.GenerationSmoke",
+        "AstralRT.Real.SessionLifecycle",
+        "AstralRT.Real.EmbeddingProbe",
+        "[unreal_generation_smoke] backend=cpu",
+        "[unreal_session_lifecycle] backend=cpu",
+        "[unreal_embedding_probe] backend=cpu",
+        "AstralRT: Shutdown (EnginePreExit)",
+        "[unreal-results] OK"
+      ]
+    },
+    "unreal_compatibility_matrix": {
+      "status": "pass",
+      "command": "ASTRAL_UNREAL_TEST_MODEL=/workspace/astral/tests/models/gemma-3-270m-q4_k_m.gguf ASTRAL_UNREAL_REQUIRE_REAL_GENERATION=1 UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... ./scripts/run_unreal_compatibility_matrix.sh --versions '5.4 5.5 5.6 5.7' --filter AstralRT",
+      "artifacts": [
+        "logs/unreal-compatibility-matrix.log"
+      ],
+      "required_log_tokens": [
+        "[unreal_matrix] UE 5.4:",
+        "[unreal_matrix] UE 5.5:",
+        "[unreal_matrix] UE 5.6:",
+        "[unreal_matrix] UE 5.7:",
+        "[unreal_ci] Filter: AstralRT",
+        "AstralRT.Real.GenerationSmoke",
+        "[unreal_generation_smoke] backend=cpu",
+        "[unreal-results] OK"
+      ]
+    },
+    "unreal_sample_package": {
+      "status": "pass",
+      "command": "UNREAL_RUNUAT=/opt/UE_5.7/Engine/Build/BatchFiles/RunUAT.sh ./scripts/run_unreal_sample_package.sh --platform Linux --run-sample --runtime-log build/unreal-sample-package/runtime.log --sample-model /workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf --sample-embedding-model /workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf --sample-memory-backend mock --sample-media-backend mock",
+      "artifacts": [
+        "logs/unreal-sample-package.log",
+        "logs/unreal-sample-runtime.log"
+      ],
+      "required_log_tokens": [
+        "[unreal_sample] Project:",
+        "AstralSample.uproject",
+        "[unreal_sample] Platform: Linux",
+        "[unreal_sample] Plugin mode: copy",
+        "BuildCookRun",
+        "[unreal_sample] OK",
+        "AstralSampleAutoQuit",
+        "Mounted IoStore container",
+        "Mounted Pak file",
+        "texture image",
+        "Astral sample: packaged content memory model loaded",
+        "Astral sample: saved cache memory model loaded"
+      ]
+    },
+    "unity_editmode_abi": {
+      "status": "pass",
+      "command": "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh",
+      "artifacts": [
+        "logs/unity-editmode-abi.log"
+      ]
+    },
+    "cuda_parity_matrix": {
+      "status": "pass",
+      "command": "ASTRAL_TEST_CUDA_PARITY_INFER=1 ASTRAL_TEST_CUDA_E2E=1 ./scripts/run_cuda_parity_matrix.sh --preset-set release --arch <deployed-arch-list> --strict",
+      "artifacts": [
+        "logs/cuda-parity-matrix.log"
+      ]
+    },
+    "multimodal_validation": {
+      "status": "pass",
+      "command": "./scripts/run_multimodal_validation.sh --bench",
+      "artifacts": [
+        "logs/multimodal-validation.log",
+        "logs/mtmd-features.txt"
+      ]
+    },
+    "hf_model_matrix": {
+      "status": "pass",
+      "command": "./scripts/run_hf_full_suite.sh --arch <deployed-arch-list> --only all",
+      "artifacts": [
+        "logs/hf-model-matrix.log",
+        "logs/hf-model-matrix-summary.csv"
+      ]
+    },
+    "windows_large_pages": {
+      "status": "pass",
+      "command": "pwsh -File .\\scripts\\run_windows_large_page_validation.ps1 -ExpectFallback; pwsh -File .\\scripts\\run_windows_large_page_validation.ps1 -ExpectLargePages",
+      "artifacts": [
+        "logs/windows-large-pages.log"
+      ]
+    },
+    "release_artifacts": {
+      "status": "pass",
+      "command": "./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature",
+      "artifacts": [
+        "logs/release-artifacts.log",
+        "checksums.sha256",
+        "abi-layout.json",
+        "dependency-manifest.json",
+        "release-sbom.spdx.json"
+      ]
+    },
+    "release_signing": {
+      "status": "pass",
+      "command": "gh workflow run release-sign.yml ...",
+      "artifacts": [
+        "logs/release-signing.log",
+        "checksums.sha256.asc"
+      ],
+      "phase": "complete"
+    },
+    "dependency_pins": {
+      "status": "pass",
+      "command": "./scripts/validate_dependency_pins.sh",
+      "artifacts": [
+        "logs/dependency-pins.log"
+      ]
+    },
+    "release_notes": {
+      "status": "pass",
+      "command": "./scripts/validate_release_notes.sh <release-notes.md>",
+      "artifacts": [
+        "release-notes.md"
+      ]
+    }
+  }
+}

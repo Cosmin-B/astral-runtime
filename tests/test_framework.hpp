@@ -25,6 +25,26 @@ public:
         TestFn fn;
     };
 
+    struct TestSkipped {
+        const char* file;
+        int line;
+        char message[512];
+
+        TestSkipped(const char* f, int l, const char* msg) : file(f), line(l) {
+            snprintf(message, sizeof(message), "%s", msg);
+        }
+    };
+
+    struct TestFailure {
+        const char* file;
+        int line;
+        char message[512];
+
+        TestFailure(const char* f, int l, const char* msg) : file(f), line(l) {
+            snprintf(message, sizeof(message), "%s", msg);
+        }
+    };
+
     static TestRegistry& instance() {
         static TestRegistry registry;
         return registry;
@@ -37,6 +57,7 @@ public:
     int run_all() {
         int passed = 0;
         int failed = 0;
+        int skipped = 0;
 
         printf("\n=== Running %zu tests ===\n\n", tests_.size());
 
@@ -47,6 +68,10 @@ public:
                 test.fn();
                 printf("[       OK ] %s\n", test.name);
                 ++passed;
+            } catch (const TestSkipped& e) {
+                printf("[  SKIPPED ] %s\n", test.name);
+                printf("    %s:%d: %s\n", e.file, e.line, e.message);
+                ++skipped;
             } catch (const TestFailure& e) {
                 printf("[  FAILED  ] %s\n", test.name);
                 printf("    %s:%d: %s\n", e.file, e.line, e.message);
@@ -59,6 +84,9 @@ public:
 
         printf("\n=== Test Results ===\n");
         printf("[  PASSED  ] %d tests\n", passed);
+        if (skipped > 0) {
+            printf("[ SKIPPED  ] %d tests\n", skipped);
+        }
         if (failed > 0) {
             printf("[  FAILED  ] %d tests\n", failed);
         }
@@ -66,16 +94,6 @@ public:
 
         return failed;
     }
-
-    struct TestFailure {
-        const char* file;
-        int line;
-        char message[512];
-
-        TestFailure(const char* f, int l, const char* msg) : file(f), line(l) {
-            snprintf(message, sizeof(message), "%s", msg);
-        }
-    };
 
 private:
     std::vector<TestCase> tests_;
@@ -98,6 +116,11 @@ struct TestRegistrar {
     throw TestRegistry::TestFailure(file, line, msg);
 }
 
+// Explicitly report fixture/probe coverage that is not available in this run.
+[[noreturn]] inline void test_skip_msg(const char* file, int line, const char* msg) {
+    throw TestRegistry::TestSkipped(file, line, msg);
+}
+
 } // namespace astral::testing
 
 // Test macros
@@ -105,6 +128,11 @@ struct TestRegistrar {
     void test_##name(); \
     static ::astral::testing::TestRegistrar reg_##name(#name, test_##name); \
     void test_##name()
+
+#define SKIP_TEST(msg) \
+    do { \
+        ::astral::testing::test_skip_msg(__FILE__, __LINE__, (msg)); \
+    } while (0)
 
 #define ASSERT_EQ(a, b) \
     do { \

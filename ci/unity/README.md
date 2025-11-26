@@ -13,6 +13,7 @@
 ## Run tests (batch)
 
 This repo includes `scripts/run_unity_ci_tests.sh` which runs EditMode tests in batchmode. You must provide a Unity editor path.
+The script builds the native Unity plugin first and sets `ASTRAL_UNITY_REQUIRE_NATIVE=1`, so ABI tests fail instead of skipping when `libastral_rt` is missing or missing an entry point.
 
 Example:
 
@@ -20,4 +21,3 @@ Example:
 cd astral
 UNITY_EDITOR="/path/to/Unity" ./scripts/run_unity_ci_tests.sh
 ```
-

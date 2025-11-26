@@ -11,7 +11,11 @@ Tracy is integrated as an optional git submodule:
 ```
 
 Pinned revision:
-- `external/tracy` @ `a602127eddb60825ac91e726986c12955e9a0082` (`v0.13.1-55-ga602127e`)
+- `external/tracy` @ `05cceee0df3b8d7c6fa87e9638af311dbabc63cb` (`v0.13.1`)
+
+Astral tracks released Tracy tags for release builds. Move to a post-release
+commit only when a concrete profiling requirement needs it, and record that
+reason in the dependency pins before landing the submodule bump.
 
 If the submodule is not present yet, add it:
 

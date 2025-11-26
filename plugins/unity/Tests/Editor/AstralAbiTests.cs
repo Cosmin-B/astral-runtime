@@ -17,17 +17,32 @@ namespace Astral.Runtime.Tests
             }
             catch (DllNotFoundException e)
             {
+                if (RequireNativeLibrary)
+                {
+                    Assert.Fail($"Astral native library not found: {e.Message}");
+                }
                 Assert.Ignore($"Astral native library not found: {e.Message}");
             }
             catch (EntryPointNotFoundException e)
             {
+                if (RequireNativeLibrary)
+                {
+                    Assert.Fail($"Astral native entry point not found: {e.Message}");
+                }
                 Assert.Ignore($"Astral native entry point not found: {e.Message}");
             }
             catch (BadImageFormatException e)
             {
+                if (RequireNativeLibrary)
+                {
+                    Assert.Fail($"Astral native library is not loadable for this platform: {e.Message}");
+                }
                 Assert.Ignore($"Astral native library is not loadable for this platform: {e.Message}");
             }
         }
+
+        private static bool RequireNativeLibrary =>
+            Environment.GetEnvironmentVariable("ASTRAL_UNITY_REQUIRE_NATIVE") == "1";
 
         [Test]
         public void Abi_StructSizes_AreExpected()

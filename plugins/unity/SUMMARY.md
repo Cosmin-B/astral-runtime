@@ -1,6 +1,8 @@
 # Astral Unity Plugin - Summary
 
-This directory is a Unity Package Manager package that wraps Astral's C ABI for Unity (Mono + IL2CPP).
+This directory is a Unity Package Manager package that wraps Astral's C ABI for
+Unity (Mono + IL2CPP). It is not release-signed until a real Unity Editor runner
+imports the native binaries and produces passing test evidence.
 
 ## Layout
 
@@ -31,7 +33,7 @@ This directory is a Unity Package Manager package that wraps Astral's C ABI for 
 - `Samples~/BasicChat/BasicChatExample.cs`
 
 **Tests**
-- `Tests/Editor/AstralAbiTests.cs`: ABI layout + mock-backend smoke (skips if native lib missing)
+- `Tests/Editor/AstralAbiTests.cs`: ABI layout + mock-backend smoke; CI runs require the native `astral_rt` plugin to be present.
 
 ## ABI notes
 
@@ -41,4 +43,4 @@ This directory is a Unity Package Manager package that wraps Astral's C ABI for 
 ## Current status
 
 - Implemented: Unity allocator + logging wiring, model/session lifetimes, streaming read loop, cancel/wait/state, session reset, embeddings wrapper, Jobs helpers.
-- TODO: packaging native binaries for each platform (UPM-ready), samples + docs polish, automated Unity CI (licensing permitting).
+- Remaining: real Unity Editor CI, import/player evidence for each target, final UPM artifact layout, samples, and release signing evidence.

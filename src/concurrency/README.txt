@@ -69,7 +69,7 @@ EpochManager:
 CRITICAL FIXES
 --------------
 
-Per MASTER_SPEC Task 3:
+Current queue requirements:
 - MPMC: Use per-slot sequence + acquire/release for ARM correctness
 - MPMC: Add backoff in wait loops (reduces cache thrashing)
 - Both: Cache-line align head/tail atomics to prevent false sharing
@@ -132,8 +132,8 @@ Run tests:
 REFERENCES
 ----------
 
-- MASTER_SPEC.md § Concurrency Primitives
-- CODING_STANDARDS.md § Concurrency Rules
+- docs/architecture/CONCURRENCY_MODEL.md
+- docs/rules/CODING_STANDARDS.md
 - Custom MPMC design optimized for game engines
 - Influenced by research on lock-free data structures:
   * "Simple, Fast, and Practical Non-Blocking..." (Michael & Scott, 1996)

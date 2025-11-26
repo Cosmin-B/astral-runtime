@@ -1,26 +1,32 @@
 # Astral Runtime - Unity Plugin
 
-High-performance LLM inference for Unity. Zero GC allocations, Burst-compatible, IL2CPP safe.
+Unity bindings and package layout for Astral Runtime. The package exposes native
+runtime initialization, model/session handles, streaming reads, embeddings, and
+mock media tests through the public C ABI.
+
+Current status: the package has native packaging and EditMode test tooling, but
+real Unity Editor runs with platform binaries are still required before release
+sign-off.
 
 ## Features
 
-- **Zero GC Allocations**: No garbage collection during token streaming (validated with Unity Profiler)
-- **Burst Compatible**: Hot paths use `NativeArray<byte>` and unsafe code for maximum performance
-- **IL2CPP Safe**: All P/Invoke declarations tested on iOS, Android, Windows, Linux, macOS
-- **Streaming Support**: Real-time token streaming with backpressure control
-- **RAII Pattern**: Automatic resource cleanup via `IDisposable`
-- **Thread-Safe**: Lock-free concurrency for multi-session inference
-- **Portable**: armv7, armv8, arm64, x86-64 support
+- **NativeArray streaming path**: `ReadStream(NativeArray<byte>)` reads UTF-8 bytes into caller-owned buffers.
+- **Burst-friendly job wrappers**: Job structs use blittable fields and `NativeArray` buffers.
+- **Explicit P/Invoke ABI**: Declarations use the public C ABI and EditMode tests check key struct layouts.
+- **Streaming support**: Frame-polled token reads with native backpressure control
+- **Deterministic ownership**: Native handles are released through `IDisposable`.
+- **Thread ownership**: Native buffers are owned by `NativeArray`; session concurrency still needs real Unity runner evidence.
+- **Platform package surface**: desktop and mobile plugin layouts exist; each target still needs real Unity import/player evidence.
 
 ## Requirements
 
 - Unity 2021.3 or later
-- Unity Collections package (1.2.4+)
+- Unity Collections package 1.4.0
 - Native plugin for target platform (see Runtime/Plugins/)
 
 ## Installation
 
-### Unity Package Manager (Recommended)
+### Unity Package Manager
 
 1. Open Unity Package Manager (Window > Package Manager)
 2. Click '+' > Add package from git URL
@@ -98,13 +104,13 @@ IEnumerator RunInference(AstralModel model, string prompt)
 }
 ```
 
-### 4. Zero-Allocation Streaming (Advanced)
+### 4. NativeArray Streaming
 
 ```csharp
 using Astral.Runtime;
 using Unity.Collections;
 
-IEnumerator RunInferenceZeroAlloc(AstralModel model, string prompt)
+IEnumerator RunInferenceNativeArray(AstralModel model, string prompt)
 {
     using var session = AstralSession.Create(model);
     using var buffer = new NativeArray<byte>(4096, Allocator.Persistent);
@@ -113,7 +119,7 @@ IEnumerator RunInferenceZeroAlloc(AstralModel model, string prompt)
     session.Feed(prompt, finalize: true);
     session.Decode();
 
-    // Stream tokens (zero GC allocation)
+    // Stream tokens into a caller-owned byte buffer.
     while (true)
     {
         int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
@@ -145,7 +151,7 @@ Global runtime initialization and shutdown.
 // Initialize runtime
 AstralRuntime.Initialize(AstralConfig.Default);
 
-// Or: no-throw init (recommended for embedded-style, exception-free gameplay loops)
+// Or: no-throw init for embedded-style, exception-free gameplay loops
 if (!AstralRuntime.TryInitialize(AstralConfig.Default, out int err))
 {
     Debug.LogError($"Astral init failed: {AstralRuntime.GetErrorString(err)}");
@@ -163,7 +169,7 @@ AstralRuntime.Shutdown();
 
 ### AstralModel
 
-GGUF model handle with RAII pattern.
+GGUF model handle with deterministic native ownership.
 
 ```csharp
 // Load model
@@ -206,14 +212,13 @@ Debug.Log($"Tokens/sec: {stats.tokensPerSecond:F2}");
 
 ### Vision / Audio (Media)
 
-Media support requires a model projector/encoder GGUF. Initialize it once per model:
+Media support requires a model projector/encoder GGUF and an Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:
 
 ```csharp
-// Initialize media projector (GGUF path)
 model.InitMediaFromPath("/path/to/media.gguf");
 ```
 
-Feed media into a session prompt:
+Feed media into a session prompt. The backing `NativeArray` must stay alive for the duration of the feed call; Astral copies or consumes the data before the method returns.
 
 ```csharp
 // Image (RGB8)
@@ -224,6 +229,8 @@ session.FeedAudio(audioF32, channels: 1, sampleRate: 16000);
 ```
 
 ### Multimodal Embeddings
+
+Load embedding models with `embeddingsOnly = true`, initialize media first when image/audio input is used, and size the output vector from `embedder.Dimension`.
 
 ```csharp
 using var embedder = AstralEmbedder.Create(model);
@@ -363,7 +370,7 @@ See `Runtime/AstralExample.cs` for comprehensive usage examples:
 
 - **Basic Inference**: Simple blocking inference
 - **Streaming Inference**: Real-time token streaming with coroutines
-- **Zero-Allocation Streaming**: Maximum performance with `NativeArray`
+- **NativeArray Streaming**: Read token bytes into caller-owned buffers.
 
 ## Building Native Plugins
 
@@ -376,7 +383,10 @@ The package includes small, focused Unity EditMode tests under `Tests/Editor/`:
 - Mock-backend smoke (init → model → session → decode → stream → reset → repeat).
 - Mock media feed + multimodal embedding smoke (mock backend; no GGUF required).
 
-These tests skip gracefully if the native `astral_rt` library is not present in the Editor.
+Release and CI runs must provide a native `astral_rt` library for the Editor.
+`scripts/run_unity_ci_tests.sh` fails before Unity starts when the platform
+binary is missing or empty, then validates the EditMode XML result after Unity
+exits.
 
 ## License
 

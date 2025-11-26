@@ -145,10 +145,22 @@ TEST(core_error_string_backend) {
     ASSERT_TRUE(strlen(str) > 0);
 }
 
+TEST(core_error_string_canceled) {
+    const char* str = astral_error_string(ASTRAL_E_CANCELED);
+    ASSERT_NOT_NULL(str);
+    ASSERT_TRUE(strlen(str) > 0);
+}
+
+TEST(core_error_string_unsupported) {
+    const char* str = astral_error_string(ASTRAL_E_UNSUPPORTED);
+    ASSERT_NOT_NULL(str);
+    ASSERT_TRUE(strlen(str) > 0);
+}
+
 TEST(core_error_string_unknown) {
-    // Unknown error code should return something (not crash)
     const char* str = astral_error_string(-9999);
     ASSERT_NOT_NULL(str);
+    ASSERT_TRUE(strlen(str) > 0);
 }
 
 //
@@ -189,7 +201,6 @@ static void test_log_callback(void* user, int level, AstralSpanU8 msg) {
     (void)user;
     (void)level;
     (void)msg;
-    // Just verify it doesn't crash
 }
 
 TEST(core_logging_callback) {
@@ -201,6 +212,5 @@ TEST(core_logging_callback) {
     AstralErr err = astral_init(&cfg);
     ASSERT_EQ(err, ASTRAL_OK);
 
-    // Logging should work
     astral_shutdown();
 }

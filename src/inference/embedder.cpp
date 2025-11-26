@@ -3,6 +3,7 @@
 #include "model.hpp"
 #include "../core/runtime_alloc.hpp"
 #include "../platform/atomics.h"
+#include "../utils/trace.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -113,6 +114,8 @@ static void slot_clear_buffers(Embedder::Slot& slot) {
 } // namespace
 
 AstralErr embedder_create(Model* model, AstralHandle* out_embedder) {
+    ASTRAL_ZONE_N("astral.embedder_create");
+
     if (model == nullptr || out_embedder == nullptr) {
         return ASTRAL_E_INVALID;
     }
@@ -213,6 +216,8 @@ AstralErr embedder_create(Model* model, AstralHandle* out_embedder) {
 }
 
 void embedder_destroy(Embedder* embedder) {
+    ASTRAL_ZONE_N("astral.embedder_destroy");
+
     auto* e = embedder;
     if (e == nullptr) {
         return;
@@ -220,7 +225,7 @@ void embedder_destroy(Embedder* embedder) {
 
     core::unregister_handle(e->handle, core::HandleKind::Embedder);
 
-    // Best-effort: wait for in-flight work to complete before freeing backend contexts.
+    // Slots marked Running still own backend contexts; wait before freeing them.
     for (uint32_t i = 0; i < kMaxInflight; ++i) {
         uint32_t spins = 0;
         while (e->slots[i].state.load(std::memory_order_acquire) == static_cast<uint32_t>(Embedder::SlotState::Running)) {
@@ -260,6 +265,8 @@ void embedder_destroy(Embedder* embedder) {
 }
 
 AstralErr embedder_enqueue(Embedder* embedder, AstralSpanU8 text, uint64_t* out_ticket) {
+    ASTRAL_ZONE_N("astral.embedder_enqueue_text");
+
     auto* e = embedder;
     if (e == nullptr || out_ticket == nullptr) {
         return ASTRAL_E_INVALID;
@@ -319,6 +326,8 @@ AstralErr embedder_enqueue(Embedder* embedder, AstralSpanU8 text, uint64_t* out_
 }
 
 AstralErr embedder_enqueue_image(Embedder* embedder, const AstralImageDesc* image, uint64_t* out_ticket) {
+    ASTRAL_ZONE_N("astral.embedder_enqueue_image");
+
     auto* e = embedder;
     if (e == nullptr || image == nullptr || out_ticket == nullptr) {
         return ASTRAL_E_INVALID;
@@ -376,6 +385,8 @@ AstralErr embedder_enqueue_image(Embedder* embedder, const AstralImageDesc* imag
 }
 
 AstralErr embedder_enqueue_audio(Embedder* embedder, const AstralAudioDesc* audio, uint64_t* out_ticket) {
+    ASTRAL_ZONE_N("astral.embedder_enqueue_audio");
+
     auto* e = embedder;
     if (e == nullptr || audio == nullptr || out_ticket == nullptr) {
         return ASTRAL_E_INVALID;
@@ -437,6 +448,8 @@ AstralErr embedder_enqueue_multimodal(Embedder* embedder,
                                       const AstralImageDesc* image,
                                       const AstralAudioDesc* audio,
                                       uint64_t* out_ticket) {
+    ASTRAL_ZONE_N("astral.embedder_enqueue_multimodal");
+
     auto* e = embedder;
     if (e == nullptr || out_ticket == nullptr) {
         return ASTRAL_E_INVALID;
@@ -544,6 +557,8 @@ AstralErr embedder_enqueue_multimodal(Embedder* embedder,
 }
 
 AstralErr embedder_collect(Embedder* embedder, uint64_t ticket, AstralMutSpanU8 out_vector) {
+    ASTRAL_ZONE_N("astral.embedder_collect");
+
     auto* e = embedder;
     if (e == nullptr || out_vector.data == nullptr) {
         return ASTRAL_E_INVALID;

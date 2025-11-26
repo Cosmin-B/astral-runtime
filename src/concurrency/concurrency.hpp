@@ -18,8 +18,8 @@
 /// - ARM weak memory model correctness (validated)
 ///
 /// References:
-/// - MASTER_SPEC.md § Concurrency Primitives
-/// - CODING_STANDARDS.md § Concurrency Rules
+/// - docs/architecture/CONCURRENCY_MODEL.md
+/// - docs/rules/CODING_STANDARDS.md
 /// - Custom MPMC design optimized for game engines
 /// - Influenced by research on lock-free data structures:
 ///   * "Simple, Fast, and Practical Non-Blocking..." (Michael & Scott, 1996)

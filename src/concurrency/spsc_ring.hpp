@@ -22,7 +22,7 @@ namespace astral::concurrency {
 ///
 /// Memory Ordering:
 /// - Producer (push): memory_order_release on head write (publishes data)
-/// - Consumer (pop): memory_order_acquire on tail read (synchronizes-with producer)
+/// - Consumer (pop): memory_order_acquire on head read (synchronizes-with producer)
 /// - No CAS needed (single producer + single consumer = zero contention)
 ///
 /// Performance:
@@ -180,8 +180,7 @@ private:
     static constexpr size_t kCacheLineSize = astral::platform::kCacheLineAlign;
     static constexpr size_t kIndexMask = Capacity - 1;
 
-    // Cache-line aligned atomics to prevent false sharing
-    //  64-byte alignment per MASTER_SPEC § Concurrency Primitives
+    // Cache-line aligned atomics keep the producer and consumer cursors apart.
     // Producer writes head, consumer writes tail - keep them on separate cache lines
     alignas(kCacheLineSize) std::atomic<uint64_t> head_; // Producer writes
     alignas(kCacheLineSize) std::atomic<uint64_t> tail_; // Consumer writes

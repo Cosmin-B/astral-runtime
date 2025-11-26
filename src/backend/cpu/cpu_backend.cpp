@@ -66,6 +66,23 @@
 
 namespace astral::backend {
 
+static constexpr uint32_t kCpuStateMagic = 0x41535443u; // 'ASTC'
+static constexpr uint16_t kCpuStateVersion = 1;
+
+struct CpuStateHeaderV1 {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t header_bytes;
+    uint64_t llama_bytes;
+    uint32_t active_slot;
+    uint32_t n_slots;
+    int32_t slot_last_token[32];
+    uint8_t slot_last_token_valid[32];
+};
+
+static_assert(sizeof(CpuStateHeaderV1) == 184, "CpuStateHeaderV1 size changed");
+static_assert((sizeof(CpuStateHeaderV1) % 8) == 0, "CpuStateHeaderV1 must be 8-byte aligned");
+
 namespace {
 
 constexpr uint32_t kCpuMaxSlots = 32;
@@ -613,6 +630,7 @@ struct MemReader {
     uint64_t size = 0;
 };
 
+#if ASTRAL_CPU_MEMORY_SOURCE_MMAP
 static uint32_t ASTRAL_CALL astral_io_read_at_noexcept(const AstralModelIO* io, uint64_t offset, void* dst, uint32_t dst_len) {
     if (io == nullptr || io->read_at == nullptr) {
         return 0;
@@ -725,7 +743,6 @@ static bool write_all_fd(int fd, const uint8_t* data, uint64_t size) {
 }
 #endif
 
-#if ASTRAL_CPU_MEMORY_SOURCE_MMAP
 static llama_model* try_load_memory_source_with_mmap(const uint8_t* data, uint64_t size, llama_model_params model_params) {
     if (data == nullptr || size == 0) {
         return nullptr;
@@ -877,7 +894,7 @@ void* cpu_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
         return nullptr;
     }
 
-    // Initialize llama.cpp backend (reference-counted; best-effort, not a hot path).
+    // Reference-counted llama.cpp backend init sits outside decode hot paths.
     llama_backend_ref();
 
     llama_model_params model_params = llama_model_default_params();
@@ -1204,7 +1221,7 @@ AstralErr cpu_model_media_init(void* model_ctx, const AstralModelMediaDesc* desc
     model->media_initialized = 1;
     model->supports_vision = mtmd_support_vision(ctx) ? 1 : 0;
     model->supports_audio = mtmd_support_audio(ctx) ? 1 : 0;
-    model->audio_sample_rate = mtmd_get_audio_bitrate(ctx);
+    model->audio_sample_rate = mtmd_get_audio_sample_rate(ctx);
     model->image_min_tokens = desc->image_min_tokens;
     model->image_max_tokens = desc->image_max_tokens;
     return ASTRAL_OK;
@@ -1305,7 +1322,9 @@ void* cpu_session_create_ex(void* model_ctx, const AstralSessionDesc* desc, uint
 
     for (uint32_t i = 0; i < kCpuMaxSlots; ++i) {
         session->slot_pos[i] = 0;
+        session->slot_last_token[i] = 0;
         session->slot_has_logits[i] = false;
+        session->slot_last_token_valid[i] = false;
         session->grammar[i] = nullptr;
     }
 
@@ -1450,7 +1469,9 @@ AstralErr cpu_session_feed(void* session_ctx, const int32_t* tokens, uint32_t co
 
     if (count > 0) {
         session->slot_pos[session->active_slot] = slot_pos;
+        session->slot_last_token[session->active_slot] = static_cast<int32_t>(tokens[count - 1u]);
         session->slot_has_logits[session->active_slot] = true;
+        session->slot_last_token_valid[session->active_slot] = true;
     }
 
     return ASTRAL_OK;
@@ -1679,7 +1700,9 @@ AstralErr cpu_session_accept(void* session_ctx, int32_t token) {
     }
 
     session->slot_pos[session->active_slot] += 1;
+    session->slot_last_token[session->active_slot] = static_cast<int32_t>(t);
     session->slot_has_logits[session->active_slot] = true;
+    session->slot_last_token_valid[session->active_slot] = true;
     return ASTRAL_OK;
 }
 
@@ -1728,10 +1751,12 @@ AstralErr cpu_session_batch_eval(void* session_ctx,
 
         if (t.want_logits != 0) {
             session->batch_output_token_index[outputs] = static_cast<int32_t>(i);
+            session->slot_last_token[t.slot_id] = t.token;
+            session->slot_last_token_valid[t.slot_id] = true;
             outputs += 1u;
         }
 
-        // Best-effort slot position tracking (used by state save/load callers).
+        // Track the highest consumed slot position used by state save/load callers.
         const uint32_t next = t.pos + 1u;
         if (next > static_cast<uint32_t>(session->slot_pos[t.slot_id])) {
             session->slot_pos[t.slot_id] = static_cast<int32_t>(next);
@@ -2170,7 +2195,8 @@ AstralErr cpu_session_state_size(void* session_ctx, uint64_t* out_bytes) {
     if (session->ctx == nullptr) {
         return ASTRAL_E_BACKEND;
     }
-    *out_bytes = static_cast<uint64_t>(llama_state_get_size(session->ctx));
+    *out_bytes = static_cast<uint64_t>(sizeof(CpuStateHeaderV1)) +
+                 static_cast<uint64_t>(llama_state_get_size(session->ctx));
     return ASTRAL_OK;
 }
 
@@ -2182,15 +2208,30 @@ AstralErr cpu_session_state_save(void* session_ctx, uint8_t* out_bytes, uint64_t
     if (session->ctx == nullptr) {
         return ASTRAL_E_BACKEND;
     }
-    const size_t need = llama_state_get_size(session->ctx);
+    const size_t llama_bytes = llama_state_get_size(session->ctx);
+    const size_t need = sizeof(CpuStateHeaderV1) + llama_bytes;
     if (capacity < need) {
         return ASTRAL_E_NOMEM;
     }
-    const size_t wrote = llama_state_get_data(session->ctx, out_bytes, static_cast<size_t>(capacity));
+
+    CpuStateHeaderV1 h{};
+    h.magic = kCpuStateMagic;
+    h.version = kCpuStateVersion;
+    h.header_bytes = static_cast<uint16_t>(sizeof(CpuStateHeaderV1));
+    h.llama_bytes = static_cast<uint64_t>(llama_bytes);
+    h.active_slot = session->active_slot;
+    h.n_slots = session->n_slots;
+    for (uint32_t i = 0; i < kCpuMaxSlots; ++i) {
+        h.slot_last_token[i] = session->slot_last_token[i];
+        h.slot_last_token_valid[i] = session->slot_last_token_valid[i] ? 1u : 0u;
+    }
+    std::memcpy(out_bytes, &h, sizeof(h));
+
+    const size_t wrote = llama_state_get_data(session->ctx, out_bytes + sizeof(CpuStateHeaderV1), llama_bytes);
     if (wrote == 0) {
         return ASTRAL_E_BACKEND;
     }
-    *out_written = static_cast<uint64_t>(wrote);
+    *out_written = static_cast<uint64_t>(sizeof(CpuStateHeaderV1) + wrote);
     return ASTRAL_OK;
 }
 
@@ -2202,9 +2243,43 @@ AstralErr cpu_session_state_load(void* session_ctx, const uint8_t* bytes, uint64
     if (session->ctx == nullptr) {
         return ASTRAL_E_BACKEND;
     }
-    const size_t read = llama_state_set_data(session->ctx, bytes, static_cast<size_t>(size));
-    if (read != static_cast<size_t>(size)) {
+
+    CpuStateHeaderV1 h{};
+    const uint8_t* llama_bytes = bytes;
+    uint64_t llama_size = size;
+    bool has_cpu_header = false;
+    if (size >= sizeof(CpuStateHeaderV1)) {
+        std::memcpy(&h, bytes, sizeof(h));
+        if (h.magic == kCpuStateMagic && h.version == kCpuStateVersion &&
+            h.header_bytes == sizeof(CpuStateHeaderV1) &&
+            h.llama_bytes <= size - static_cast<uint64_t>(sizeof(CpuStateHeaderV1))) {
+            has_cpu_header = true;
+            llama_bytes = bytes + sizeof(CpuStateHeaderV1);
+            llama_size = h.llama_bytes;
+        }
+    }
+
+    const size_t read = llama_state_set_data(session->ctx, llama_bytes, static_cast<size_t>(llama_size));
+    if (read != static_cast<size_t>(llama_size)) {
         return ASTRAL_E_INVALID;
+    }
+
+    if (has_cpu_header) {
+        session->active_slot = h.active_slot < session->n_slots ? h.active_slot : 0u;
+        const uint32_t n = h.n_slots < kCpuMaxSlots ? h.n_slots : kCpuMaxSlots;
+        for (uint32_t i = 0; i < n; ++i) {
+            session->slot_last_token[i] = h.slot_last_token[i];
+            session->slot_last_token_valid[i] = h.slot_last_token_valid[i] != 0;
+        }
+        for (uint32_t i = n; i < kCpuMaxSlots; ++i) {
+            session->slot_last_token[i] = 0;
+            session->slot_last_token_valid[i] = false;
+        }
+    } else {
+        for (uint32_t i = 0; i < kCpuMaxSlots; ++i) {
+            session->slot_last_token[i] = 0;
+            session->slot_last_token_valid[i] = false;
+        }
     }
 
     // Reconstruct per-slot token positions from the KV cache.
@@ -2217,10 +2292,37 @@ AstralErr cpu_session_state_load(void* session_ctx, const uint8_t* bytes, uint64
         }
     }
 
-    // Logits are only defined for the last decoded sequence. Keep the previous active slot
-    // and mark it "logits available" best-effort.
-    if (session->active_slot < session->n_slots) {
-        session->slot_has_logits[session->active_slot] = session->slot_pos[session->active_slot] > 0;
+    if (has_cpu_header && session->active_slot < session->n_slots &&
+        session->slot_last_token_valid[session->active_slot] &&
+        session->slot_pos[session->active_slot] > 0) {
+        const uint32_t slot = session->active_slot;
+        const int32_t pos = session->slot_pos[slot] - 1;
+        if (mem == nullptr || !llama_memory_seq_rm(mem, static_cast<llama_seq_id>(slot), pos, pos + 1)) {
+            return ASTRAL_E_BACKEND;
+        }
+
+        llama_token t = static_cast<llama_token>(session->slot_last_token[slot]);
+        llama_batch batch{};
+        batch.n_tokens = 1;
+        batch.token = &t;
+        batch.embd = nullptr;
+        batch.pos = reinterpret_cast<llama_pos*>(session->batch_pos);
+        batch.n_seq_id = session->batch_n_seq_id;
+        batch.seq_id = reinterpret_cast<llama_seq_id**>(session->batch_seq_id_ptrs);
+        batch.logits = session->batch_logits;
+
+        session->batch_pos[0] = pos;
+        session->batch_n_seq_id[0] = 1;
+        session->batch_seq_id_storage[0] = static_cast<int32_t>(slot);
+        session->batch_logits[0] = 1;
+
+        ASTRAL_ZONE_N("astral.cpu.rebuild_logits_after_state_load");
+        const int32_t rc = llama_decode(session->ctx, batch);
+        if (rc != 0) {
+            return ASTRAL_E_BACKEND;
+        }
+        session->slot_pos[slot] = pos + 1;
+        session->slot_has_logits[slot] = true;
     }
 
     // Grammar state is not serialized in llama_state_*; reset samplers.
@@ -2278,8 +2380,8 @@ AstralErr cpu_session_adapter_clear(void* session_ctx) {
     if (session->ctx == nullptr) {
         return ASTRAL_E_BACKEND;
     }
-    llama_clear_adapter_lora(session->ctx);
-    return ASTRAL_OK;
+    const int32_t rc = llama_set_adapters_lora(session->ctx, nullptr, 0, nullptr);
+    return rc == 0 ? ASTRAL_OK : ASTRAL_E_BACKEND;
 }
 
 AstralErr cpu_session_adapter_add(void* session_ctx, void* adapter_ctx, float scale) {
@@ -2291,11 +2393,14 @@ AstralErr cpu_session_adapter_add(void* session_ctx, void* adapter_ctx, float sc
         return ASTRAL_E_BACKEND;
     }
 
-    const int32_t rc = llama_set_adapter_lora(session->ctx, static_cast<llama_adapter_lora*>(adapter_ctx), scale);
+    llama_adapter_lora* adapter = static_cast<llama_adapter_lora*>(adapter_ctx);
+    const int32_t rc = llama_set_adapters_lora(session->ctx, &adapter, 1, &scale);
     return rc == 0 ? ASTRAL_OK : ASTRAL_E_BACKEND;
 }
 
 void* cpu_embedder_create(void* model_ctx, AstralErr* out_err) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_create");
+
     if (out_err == nullptr) {
         return nullptr;
     }
@@ -2352,6 +2457,8 @@ void* cpu_embedder_create(void* model_ctx, AstralErr* out_err) {
 }
 
 void cpu_embedder_destroy(void* embedder_ctx) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_destroy");
+
     if (embedder_ctx == nullptr) {
         return;
     }
@@ -2364,6 +2471,8 @@ void cpu_embedder_destroy(void* embedder_ctx) {
 }
 
 AstralErr cpu_embedder_reset(void* embedder_ctx) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_reset");
+
     if (embedder_ctx == nullptr) {
         return ASTRAL_E_INVALID;
     }
@@ -2383,6 +2492,8 @@ AstralErr cpu_embedder_reset(void* embedder_ctx) {
 }
 
 AstralErr cpu_embedder_embed(void* embedder_ctx, const int32_t* tokens, uint32_t count, float* out_vec, uint32_t vec_dim) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_embed_text");
+
     if (embedder_ctx == nullptr || out_vec == nullptr) {
         return ASTRAL_E_INVALID;
     }
@@ -2467,6 +2578,8 @@ AstralErr cpu_embedder_embed_multimodal(void* embedder_ctx,
                                         uint32_t vec_dim);
 
 AstralErr cpu_embedder_embed_image(void* embedder_ctx, const AstralImageDesc* image, float* out_vec, uint32_t vec_dim) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_embed_image");
+
 #if !ASTRAL_ENABLE_MTMD
     (void)embedder_ctx;
     (void)image;
@@ -2479,6 +2592,8 @@ AstralErr cpu_embedder_embed_image(void* embedder_ctx, const AstralImageDesc* im
 }
 
 AstralErr cpu_embedder_embed_audio(void* embedder_ctx, const AstralAudioDesc* audio, float* out_vec, uint32_t vec_dim) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_embed_audio");
+
 #if !ASTRAL_ENABLE_MTMD
     (void)embedder_ctx;
     (void)audio;
@@ -2496,6 +2611,8 @@ AstralErr cpu_embedder_embed_multimodal(void* embedder_ctx,
                                         const AstralAudioDesc* audio,
                                         float* out_vec,
                                         uint32_t vec_dim) {
+    ASTRAL_ZONE_N("astral.cpu.embedder_embed_multimodal");
+
 #if !ASTRAL_ENABLE_MTMD
     (void)embedder_ctx;
     (void)text;

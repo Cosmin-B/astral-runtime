@@ -17,6 +17,7 @@ FEATURE_ALIASES = {
     "features.grammar set_gbnf": "grammar_mops",
     "features.logprobs meta_drain": "logprobs_mops",
 }
+REQUIRED_FEATURES = tuple(FEATURE_ALIASES.values())
 
 
 @dataclass
@@ -28,6 +29,7 @@ class Block:
     metrics: Dict[str, str] = field(default_factory=dict)
     kv_bytes: str = ""
     failed: bool = False
+    skipped: bool = False
 
 
 _RE_BLOCK = re.compile(r"^## preset=(?P<preset>\S+)\s+backend=(?P<backend>\S+)\s*$")
@@ -54,7 +56,7 @@ def parse_blocks(lines: Iterable[str]) -> List[Block]:
         nonlocal cur
         if cur is None:
             return
-        if cur.preset or cur.backend or cur.model or cur.embed_model or cur.metrics or cur.kv_bytes or cur.failed:
+        if cur.preset or cur.backend or cur.model or cur.embed_model or cur.metrics or cur.kv_bytes or cur.failed or cur.skipped:
             blocks.append(cur)
         cur = None
 
@@ -72,6 +74,10 @@ def parse_blocks(lines: Iterable[str]) -> List[Block]:
 
         if line.startswith("[bench] FAILED"):
             cur.failed = True
+            continue
+
+        if line.startswith("[bench] SKIPPED"):
+            cur.skipped = True
             continue
 
         m = _RE_MODEL.match(line)
@@ -124,7 +130,12 @@ def write_csv(blocks: List[Block], out_file: str) -> None:
             row["backend"] = b.backend
             row["model"] = _basename(b.model)
             row["embed_model"] = _basename(b.embed_model)
-            row["status"] = "FAIL" if b.failed else "OK"
+            if b.failed:
+                row["status"] = "FAIL"
+            elif b.skipped:
+                row["status"] = "SKIP"
+            else:
+                row["status"] = "OK"
             row["kv_bytes"] = b.kv_bytes
             for k, v in b.metrics.items():
                 row[k] = v
@@ -135,6 +146,7 @@ def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(description="Parse Astral HF bench-matrix logs into CSV.")
     ap.add_argument("--in", dest="in_path", required=True, help="Input log file produced by scripts/run_hf_bench_matrix.sh")
     ap.add_argument("--out", dest="out_path", required=True, help="Output CSV path")
+    ap.add_argument("--require-pass", action="store_true", help="Fail when the log has no blocks or any failed block")
     args = ap.parse_args(argv)
 
     with open(args.in_path, "r", encoding="utf-8", errors="replace") as f:
@@ -142,6 +154,39 @@ def main(argv: List[str]) -> int:
 
     if not blocks:
         print(f"[parse] no blocks found in {args.in_path}", file=sys.stderr)
+        if args.require_pass:
+            return 1
+
+    if args.require_pass:
+        failed = [b for b in blocks if b.failed]
+        if failed:
+            print(f"[parse] failed HF matrix block(s): {len(failed)}", file=sys.stderr)
+            for block in failed[:10]:
+                print(f"[parse] failed preset={block.preset} backend={block.backend} model={_basename(block.model)}", file=sys.stderr)
+            return 1
+
+        evidence_blocks = [b for b in blocks if not b.skipped]
+        if not evidence_blocks:
+            print("[parse] no non-skipped HF matrix evidence blocks found", file=sys.stderr)
+            return 1
+
+        incomplete = []
+        for block in evidence_blocks:
+            missing = [feature for feature in REQUIRED_FEATURES if feature not in block.metrics]
+            if not block.kv_bytes:
+                missing.append("kv_bytes")
+            if missing:
+                incomplete.append((block, missing))
+        if incomplete:
+            print(f"[parse] incomplete HF matrix block(s): {len(incomplete)}", file=sys.stderr)
+            for block, missing in incomplete[:10]:
+                missing_text = ",".join(missing)
+                print(
+                    f"[parse] incomplete preset={block.preset} backend={block.backend} "
+                    f"model={_basename(block.model)} missing={missing_text}",
+                    file=sys.stderr,
+                )
+            return 1
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out_path)), exist_ok=True)
     write_csv(blocks, args.out_path)
@@ -150,4 +195,3 @@ def main(argv: List[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-

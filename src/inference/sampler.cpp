@@ -1,5 +1,6 @@
 #include "sampler.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -49,6 +50,90 @@ inline float apply_presence_frequency_penalties(float logit, uint16_t count, flo
         return logit;
     }
     return logit - presence - (frequency * static_cast<float>(count));
+}
+
+struct PenaltyContext {
+    const uint16_t* recent_counts;
+    const uint16_t* base_counts;
+    float repeat_penalty;
+    float presence_penalty;
+    float frequency_penalty;
+    int32_t token_nl;
+    bool use_penalties;
+    bool penalize_nl;
+};
+
+inline float adjusted_logit_for_token(const PenaltyContext& penalties, size_t token_id, float base) {
+    if (!penalties.use_penalties) {
+        return base;
+    }
+    if (!penalties.penalize_nl && static_cast<int32_t>(token_id) == penalties.token_nl) {
+        return base;
+    }
+
+    uint16_t count = 0;
+    if (penalties.recent_counts != nullptr) {
+        count = static_cast<uint16_t>(count + penalties.recent_counts[token_id]);
+    }
+    if (penalties.base_counts != nullptr) {
+        count = static_cast<uint16_t>(count + penalties.base_counts[token_id]);
+    }
+
+    float v = base;
+    if (count > 0) {
+        if (penalties.repeat_penalty != 1.0f) {
+            v = apply_repeat_penalty(v, penalties.repeat_penalty);
+        }
+        if (penalties.presence_penalty != 0.0f || penalties.frequency_penalty != 0.0f) {
+            v = apply_presence_frequency_penalties(v, count, penalties.presence_penalty, penalties.frequency_penalty);
+        }
+    }
+    return v;
+}
+
+inline void top_logprobs_consider(uint32_t want_top_n,
+                                  uint32_t id,
+                                  float v,
+                                  uint32_t* top_ids,
+                                  float* top_vals,
+                                  uint32_t* top_count_in_out) {
+    if (want_top_n == 0) {
+        return;
+    }
+
+    uint32_t top_count = *top_count_in_out;
+    if (top_count == 0) {
+        top_ids[0] = id;
+        top_vals[0] = v;
+        *top_count_in_out = 1;
+        return;
+    }
+
+    if (top_count == want_top_n && v <= top_vals[top_count - 1]) {
+        return;
+    }
+
+    uint32_t pos = 0;
+    while (pos < top_count && v <= top_vals[pos]) {
+        ++pos;
+    }
+
+    const uint32_t new_count = top_count < want_top_n ? (top_count + 1) : top_count;
+    for (uint32_t j = new_count - 1; j > pos; --j) {
+        top_ids[j] = top_ids[j - 1];
+        top_vals[j] = top_vals[j - 1];
+    }
+    top_ids[pos] = id;
+    top_vals[pos] = v;
+    *top_count_in_out = new_count;
+}
+
+inline double weight_sum(const float* weights, size_t n) {
+    double sum = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        sum += static_cast<double>(weights[i]);
+    }
+    return sum;
 }
 
 inline uint32_t argmax(const float* logits, size_t n) {
@@ -165,9 +250,7 @@ inline uint32_t sample_from_weights_sorted_desc(const uint32_t* ids,
                                                 size_t count,
                                                 float top_p,
                                                 uint32_t* rng_state) {
-    // weights_in_out contains unnormalized weights; this function:
-    // - finds nucleus cutoff (by cumulative mass in sorted order)
-    // - samples from the truncated distribution
+    // weights_in_out is the sorted scratch buffer; truncate and sample in-place.
     double sum = 0.0;
     for (size_t i = 0; i < count; ++i) {
         sum += static_cast<double>(weights_in_out[i]);
@@ -268,35 +351,14 @@ uint32_t sample_token(const float* logits,
     const bool penalize_nl = (cfg.penalize_nl != 0) && (token_nl >= 0);
     const bool use_penalties = (token_counts_recent != nullptr || token_counts_base != nullptr) &&
                                ((repeat_penalty != 1.0f) || (presence_penalty != 0.0f) || (frequency_penalty != 0.0f));
-
-    auto adjusted_logit = [&](size_t token_id, float base) -> float {
-        if (!use_penalties) {
-            return base;
-        }
-        if (!penalize_nl && static_cast<int32_t>(token_id) == token_nl) {
-            // NL excluded from penalties unless explicitly enabled.
-            return base;
-        }
-        uint16_t count = 0;
-        if (token_id < vocab_size) {
-            if (token_counts_recent != nullptr) {
-                count = static_cast<uint16_t>(count + token_counts_recent[token_id]);
-            }
-            if (token_counts_base != nullptr) {
-                count = static_cast<uint16_t>(count + token_counts_base[token_id]);
-            }
-        }
-        float v = base;
-        if (count > 0) {
-            if (repeat_penalty != 1.0f) {
-                v = apply_repeat_penalty(v, repeat_penalty);
-            }
-            if (presence_penalty != 0.0f || frequency_penalty != 0.0f) {
-                v = apply_presence_frequency_penalties(v, count, presence_penalty, frequency_penalty);
-            }
-        }
-        return v;
-    };
+    const PenaltyContext penalties{token_counts_recent,
+                                   token_counts_base,
+                                   repeat_penalty,
+                                   presence_penalty,
+                                   frequency_penalty,
+                                   token_nl,
+                                   use_penalties,
+                                   penalize_nl};
 
     // Greedy path.
     if (cfg.temperature <= 0.0f) {
@@ -309,37 +371,6 @@ uint32_t sample_token(const float* logits,
         uint32_t top_ids[ASTRAL_LOGPROBS_MAX]{};
         float top_vals[ASTRAL_LOGPROBS_MAX]{};
         uint32_t top_count = 0;
-
-        auto top_consider = [&](uint32_t id, float v) {
-            if (want_top_n == 0) {
-                return;
-            }
-
-            if (top_count == 0) {
-                top_ids[0] = id;
-                top_vals[0] = v;
-                top_count = 1;
-                return;
-            }
-
-            if (top_count == want_top_n && v <= top_vals[top_count - 1]) {
-                return;
-            }
-
-            uint32_t pos = 0;
-            while (pos < top_count && v <= top_vals[pos]) {
-                ++pos;
-            }
-
-            const uint32_t new_count = top_count < want_top_n ? (top_count + 1) : top_count;
-            for (uint32_t j = new_count - 1; j > pos; --j) {
-                top_ids[j] = top_ids[j - 1];
-                top_vals[j] = top_vals[j - 1];
-            }
-            top_ids[pos] = id;
-            top_vals[pos] = v;
-            top_count = new_count;
-        };
 
         uint32_t best = 0;
         float best_val = -std::numeric_limits<float>::infinity();
@@ -354,7 +385,7 @@ uint32_t sample_token(const float* logits,
                 for (size_t i = 0; i < n; ++i) {
                     const size_t tid = base + i;
                     ids[i] = static_cast<uint32_t>(tid);
-                    vals[i] = adjusted_logit(tid, logits[tid]);
+                    vals[i] = adjusted_logit_for_token(penalties, tid, logits[tid]);
                 }
 
                 (void)grammar_apply(grammar_ctx, ids, vals, static_cast<uint32_t>(n));
@@ -365,20 +396,20 @@ uint32_t sample_token(const float* logits,
                         best_val = v;
                         best = ids[i];
                     }
-                    top_consider(ids[i], v);
+                    top_logprobs_consider(want_top_n, ids[i], v, top_ids, top_vals, &top_count);
                 }
             }
         } else {
             best = 0;
-            best_val = adjusted_logit(0, logits[0]);
-            top_consider(0, best_val);
+            best_val = adjusted_logit_for_token(penalties, 0, logits[0]);
+            top_logprobs_consider(want_top_n, 0, best_val, top_ids, top_vals, &top_count);
             for (size_t i = 1; i < vocab_size; ++i) {
-                const float v = adjusted_logit(i, logits[i]);
+                const float v = adjusted_logit_for_token(penalties, i, logits[i]);
                 if (v > best_val) {
                     best_val = v;
                     best = static_cast<uint32_t>(i);
                 }
-                top_consider(static_cast<uint32_t>(i), v);
+                top_logprobs_consider(want_top_n, static_cast<uint32_t>(i), v, top_ids, top_vals, &top_count);
             }
         }
 
@@ -420,7 +451,7 @@ uint32_t sample_token(const float* logits,
         const size_t k = scratch_capacity < vocab_size ? static_cast<size_t>(scratch_capacity) : vocab_size;
 
         for (size_t i = 0; i < vocab_size; ++i) {
-            const float v = adjusted_logit(i, logits[i]);
+            const float v = adjusted_logit_for_token(penalties, i, logits[i]);
 
             if (heap_size < k) {
                 scratch_ids[heap_size] = static_cast<uint32_t>(i);
@@ -443,7 +474,7 @@ uint32_t sample_token(const float* logits,
             heap_sift_down(scratch_ids, scratch_vals, 0, end - 1);
         }
 
-        // Apply grammar constraints at candidate level (best-effort).
+        // Let grammar filter the bounded candidate set before weighting.
         if (grammar_ctx != nullptr && grammar_apply != nullptr && heap_size > 0) {
             (void)grammar_apply(grammar_ctx, scratch_ids, scratch_vals, static_cast<uint32_t>(heap_size));
         }
@@ -478,7 +509,7 @@ uint32_t sample_token(const float* logits,
                     for (size_t i = 0; i < n; ++i) {
                         const size_t tid = base + i;
                         ids[i] = static_cast<uint32_t>(tid);
-                        vals[i] = adjusted_logit(tid, logits[tid]);
+                        vals[i] = adjusted_logit_for_token(penalties, tid, logits[tid]);
                     }
 
                     (void)grammar_apply(grammar_ctx, ids, vals, static_cast<uint32_t>(n));
@@ -505,15 +536,7 @@ uint32_t sample_token(const float* logits,
 
         size_t count = heap_size;
 
-        auto softmax_sum = [&](size_t n) -> double {
-            double sum = 0.0;
-            for (size_t i = 0; i < n; ++i) {
-                sum += static_cast<double>(scratch_vals[i]);
-            }
-            return sum;
-        };
-
-        double sum = softmax_sum(count);
+        double sum = weight_sum(scratch_vals, count);
         if (!(sum > 0.0)) {
             return scratch_ids[0];
         }
@@ -556,7 +579,7 @@ uint32_t sample_token(const float* logits,
             if (k_keep > count) {
                 k_keep = count;
             }
-            sum = softmax_sum(k_keep);
+            sum = weight_sum(scratch_vals, k_keep);
             if (!(sum > 0.0)) {
                 return scratch_ids[0];
             }
@@ -609,7 +632,7 @@ uint32_t sample_token(const float* logits,
             keep = 1;
         }
 
-        sum = softmax_sum(keep);
+        sum = weight_sum(scratch_vals, keep);
         if (!(sum > 0.0)) {
             return scratch_ids[0];
         }
@@ -677,7 +700,7 @@ uint32_t sample_token(const float* logits,
         // Compute max and full partition function (no storage).
         float max_scaled = -std::numeric_limits<float>::infinity();
         for (size_t i = 0; i < vocab_size; ++i) {
-            const float v = adjusted_logit(i, logits[i]) * inv_temp;
+            const float v = adjusted_logit_for_token(penalties, i, logits[i]) * inv_temp;
             if (v > max_scaled) {
                 max_scaled = v;
             }
@@ -685,7 +708,7 @@ uint32_t sample_token(const float* logits,
 
         double sum_all = 0.0;
         for (size_t i = 0; i < vocab_size; ++i) {
-            sum_all += static_cast<double>(std::exp(adjusted_logit(i, logits[i]) * inv_temp - max_scaled));
+            sum_all += static_cast<double>(std::exp(adjusted_logit_for_token(penalties, i, logits[i]) * inv_temp - max_scaled));
         }
 
         if (!(sum_all > 0.0)) {
@@ -706,7 +729,7 @@ uint32_t sample_token(const float* logits,
         size_t selected = 0;
         while (heap_size > 0) {
             const uint32_t id = heap_pop_max(indices_buffer, &heap_size, logits);
-            nucleus_sum += static_cast<double>(std::exp(adjusted_logit(id, logits[id]) * inv_temp - max_scaled));
+            nucleus_sum += static_cast<double>(std::exp(adjusted_logit_for_token(penalties, id, logits[id]) * inv_temp - max_scaled));
             ++selected;
             if (nucleus_sum >= threshold) {
                 break;
@@ -724,7 +747,7 @@ uint32_t sample_token(const float* logits,
         // indices_buffer[vocab_size - 1] is the first (largest) popped token.
         for (size_t i = 0; i < selected; ++i) {
             const uint32_t id = indices_buffer[vocab_size - 1 - i];
-            cum += static_cast<double>(std::exp(adjusted_logit(id, logits[id]) * inv_temp - max_scaled));
+            cum += static_cast<double>(std::exp(adjusted_logit_for_token(penalties, id, logits[id]) * inv_temp - max_scaled));
             if (cum >= target) {
                 return id;
             }
@@ -752,7 +775,7 @@ uint32_t sample_token(const float* logits,
                 for (size_t i = 0; i < n; ++i) {
                     const size_t tid = base + i;
                     ids[i] = static_cast<uint32_t>(tid);
-                    vals[i] = adjusted_logit(tid, logits[tid]);
+                    vals[i] = adjusted_logit_for_token(penalties, tid, logits[tid]);
                 }
                 (void)grammar_apply(grammar_ctx, ids, vals, static_cast<uint32_t>(n));
 
@@ -778,7 +801,7 @@ uint32_t sample_token(const float* logits,
             }
         } else {
             for (size_t i = 0; i < vocab_size; ++i) {
-                const float s = adjusted_logit(i, logits[i]) * inv_temp;
+                const float s = adjusted_logit_for_token(penalties, i, logits[i]) * inv_temp;
                 if (!any) {
                     max_scaled = s;
                     sumexp = 1.0;
@@ -814,7 +837,7 @@ uint32_t sample_token(const float* logits,
                 for (size_t i = 0; i < n; ++i) {
                     const size_t tid = base + i;
                     ids[i] = static_cast<uint32_t>(tid);
-                    vals[i] = adjusted_logit(tid, logits[tid]);
+                    vals[i] = adjusted_logit_for_token(penalties, tid, logits[tid]);
                 }
                 (void)grammar_apply(grammar_ctx, ids, vals, static_cast<uint32_t>(n));
 
@@ -833,7 +856,7 @@ uint32_t sample_token(const float* logits,
             }
         } else {
             for (size_t i = 0; i < vocab_size; ++i) {
-                const double w = std::exp(static_cast<double>(adjusted_logit(i, logits[i]) * inv_temp - max_scaled));
+                const double w = std::exp(static_cast<double>(adjusted_logit_for_token(penalties, i, logits[i]) * inv_temp - max_scaled));
                 cum += w;
                 if (cum >= target) {
                     return static_cast<uint32_t>(i);
@@ -857,7 +880,7 @@ uint32_t sample_token(const float* logits,
     const size_t k = static_cast<size_t>(top_k);
 
     for (size_t i = 0; i < vocab_size; ++i) {
-        const float v = adjusted_logit(i, logits[i]);
+        const float v = adjusted_logit_for_token(penalties, i, logits[i]);
 
         if (heap_size < k) {
             scratch_ids[heap_size] = static_cast<uint32_t>(i);
@@ -881,7 +904,7 @@ uint32_t sample_token(const float* logits,
         heap_sift_down(scratch_ids, scratch_vals, 0, end - 1);
     }
 
-    // Apply grammar constraints at candidate level (best-effort).
+    // Let grammar filter the bounded candidate set before weighting.
     if (grammar_ctx != nullptr && grammar_apply != nullptr && heap_size > 0) {
         (void)grammar_apply(grammar_ctx, scratch_ids, scratch_vals, static_cast<uint32_t>(heap_size));
     }

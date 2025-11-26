@@ -89,7 +89,7 @@ Span result = sb.freeze(); // "Token: 42 (score: 0.95)"
 **Design Principles**:
 - Never block on logging
 - No allocations per log call
-- Drop logs if callback is slow (per MASTER_SPEC)
+- Drop logs if callback dispatch exceeds the 10ms logging budget
 
 **API**:
 ```cpp
@@ -179,7 +179,7 @@ All strings in Astral are UTF-8. NO UTF-16, NO Latin-1.
 - No NUL termination assumed
 - Validation rejects non-canonical encodings
 
-### Zero Allocations in Hot Paths
+### Hot Path Allocation Boundaries
 
 - UTF-8 validation: No allocations (stack-based state machine)
 - String builder: Allocates from `FrameAllocator` only
@@ -216,5 +216,4 @@ Measured on Intel i7-12700K (3.6 GHz), single-threaded.
 - Unicode Standard 15.0, Chapter 3 (Conformance)
 - "Validating UTF-8 In Less Than One Instruction Per Byte" (Lemire et al., 2021)
   https://arxiv.org/abs/2010.03090
-- MASTER_SPEC.md § String & I/O Model
-- CODING_STANDARDS.md § UTF-8 and String Handling
+- `docs/rules/CODING_STANDARDS.md` - UTF-8 and string handling rules

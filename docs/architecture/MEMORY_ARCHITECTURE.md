@@ -6,7 +6,7 @@ Astral's memory system is designed around three core principles:
 
 1. **Virtual Reserve, Commit on Demand**: Reserve large address space up front, commit physical pages only when needed
 2. **Explicit Lifetime Management**: No hidden allocations; all memory tied to explicit scopes
-3. **Zero-Allocation Hot Paths**: All inference, tokenization, and streaming operations use pre-allocated pools
+3. **Allocation-Gated Hot Paths**: Steady-state inference and streaming paths must prove heap behavior with the maintained allocation gates before release claims.
 
 ## Memory Hierarchy
 

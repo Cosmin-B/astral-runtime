@@ -78,6 +78,109 @@ inline uint64_t get_ticks() {
     return platform::ticks_now();
 }
 
+inline bool session_stream_flush_one(Session* session, const concurrency::StreamToken& tok) {
+    bool pushed = false;
+    uint32_t spins = 0;
+    while (!pushed) {
+        if (session->token_ring.push(tok)) {
+            pushed = true;
+            break;
+        }
+
+        if (spins < 64) {
+            platform::cpu_pause();
+        } else {
+            platform::cpu_wait_for_event();
+        }
+        if (spins < 1024) {
+            ++spins;
+        }
+
+        if (session->cancel_requested.load(std::memory_order_acquire)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool session_hold_flush_all(Session* session,
+                                   concurrency::StreamToken* hold,
+                                   uint32_t* hold_head,
+                                   uint32_t* hold_count,
+                                   uint32_t hold_cap) {
+    while (*hold_count > 0) {
+        if (!session_stream_flush_one(session, hold[*hold_head])) {
+            return false;
+        }
+        *hold_head = (*hold_head + 1) % hold_cap;
+        --(*hold_count);
+    }
+    return true;
+}
+
+inline bool session_hold_push(Session* session,
+                              const concurrency::StreamToken& tok,
+                              concurrency::StreamToken* hold,
+                              uint32_t* hold_head,
+                              uint32_t* hold_count,
+                              uint32_t hold_cap,
+                              uint32_t stop_hold) {
+    if (stop_hold == 0) {
+        return session_stream_flush_one(session, tok);
+    }
+
+    const uint32_t tail = (*hold_head + *hold_count) % hold_cap;
+    hold[tail] = tok;
+    ++(*hold_count);
+
+    while (*hold_count > stop_hold) {
+        if (!session_stream_flush_one(session, hold[*hold_head])) {
+            return false;
+        }
+        *hold_head = (*hold_head + 1) % hold_cap;
+        --(*hold_count);
+    }
+    return true;
+}
+
+inline bool session_stop_check(Session* session,
+                               int32_t token,
+                               int32_t* stop_tail,
+                               uint32_t* stop_tail_len,
+                               uint32_t* out_match_len) {
+    if (session->stop_seq_count == 0 || token < 0) {
+        return false;
+    }
+
+    if (*stop_tail_len < 32) {
+        stop_tail[(*stop_tail_len)++] = token;
+    } else {
+        std::memmove(stop_tail, stop_tail + 1, (32 - 1) * sizeof(int32_t));
+        stop_tail[31] = token;
+    }
+
+    for (uint32_t i = 0; i < session->stop_seq_count; ++i) {
+        const uint32_t len = session->stop_seq_lens[i];
+        if (len == 0 || len > *stop_tail_len) {
+            continue;
+        }
+        bool match = true;
+        for (uint32_t j = 0; j < len; ++j) {
+            if (stop_tail[*stop_tail_len - len + j] != session->stop_seq_tokens[i][j]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            if (out_match_len != nullptr) {
+                *out_match_len = len;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Session state serialization wrapper
 //
@@ -226,7 +329,7 @@ AstralErr ensure_penalty_state(Session* session) {
 
     if (session->sampler_cfg.penalize_nl != 0 && session->token_nl < 0 && session->model != nullptr &&
         session->model->backend != nullptr && session->model->backend->ops != nullptr) {
-        // Best-effort: resolve a single-token "\\n".
+        // Resolve a single-token "\\n" when the backend tokenizer exposes one.
         int32_t tok = -1;
         uint32_t out_count = 0;
         const uint8_t nl = static_cast<uint8_t>('\n');
@@ -305,6 +408,16 @@ inline void session_prompt_chunks_clear(Session* session) {
     session->prompt_chunk_token_off = 0;
 }
 
+inline bool image_desc_valid(const AstralImageDesc* image) {
+    return image != nullptr && image->size == sizeof(AstralImageDesc) && image->pixels.data != nullptr &&
+           image->pixels.len != 0 && image->width != 0 && image->height != 0;
+}
+
+inline bool audio_desc_valid(const AstralAudioDesc* audio) {
+    return audio != nullptr && audio->size == sizeof(AstralAudioDesc) && audio->samples.data != nullptr &&
+           audio->samples.len != 0 && audio->channels != 0 && audio->sample_rate != 0 && audio->frame_count != 0;
+}
+
 inline AstralErr session_push_text_chunk(Session* session, uint32_t token_start, uint32_t token_count, uint8_t finalize) {
     if (session == nullptr) {
         return ASTRAL_E_INVALID;
@@ -345,11 +458,6 @@ inline AstralErr session_push_media_chunk(Session* session,
     chunk.finalize = finalize;
 
     if (image != nullptr) {
-        if (image->size != sizeof(AstralImageDesc) || image->pixels.data == nullptr || image->pixels.len == 0 ||
-            image->width == 0 || image->height == 0) {
-            return ASTRAL_E_INVALID;
-        }
-
         const size_t bytes = static_cast<size_t>(image->pixels.len);
         uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(bytes, 1));
         if (buf == nullptr) {
@@ -364,11 +472,6 @@ inline AstralErr session_push_media_chunk(Session* session,
         chunk.owned_bytes = image->pixels.len;
         chunk.owned_align = 1;
     } else if (audio != nullptr) {
-        if (audio->size != sizeof(AstralAudioDesc) || audio->samples.data == nullptr || audio->samples.len == 0 ||
-            audio->channels == 0 || audio->sample_rate == 0 || audio->frame_count == 0) {
-            return ASTRAL_E_INVALID;
-        }
-
         const size_t bytes = static_cast<size_t>(audio->samples.len);
         uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(bytes, 1));
         if (buf == nullptr) {
@@ -763,17 +866,13 @@ AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t fina
 }
 
 AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uint8_t finalize) {
-    if (session == nullptr || image == nullptr) {
+    if (session == nullptr || !image_desc_valid(image)) {
         return ASTRAL_E_INVALID;
     }
 
     SessionState state = session->state.load(std::memory_order_acquire);
     if (state != SessionState::Idle && state != SessionState::FeedingPrompt) {
         return ASTRAL_E_STATE;
-    }
-
-    if (state == SessionState::Idle) {
-        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
     }
 
     if (session->model == nullptr || session->model->backend == nullptr ||
@@ -781,11 +880,15 @@ AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uin
         return ASTRAL_E_UNSUPPORTED;
     }
 
+    if (state == SessionState::Idle) {
+        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
+    }
+
     return session_push_media_chunk(session, image, nullptr, finalize);
 }
 
 AstralErr session_feed_audio(Session* session, const AstralAudioDesc* audio, uint8_t finalize) {
-    if (session == nullptr || audio == nullptr) {
+    if (session == nullptr || !audio_desc_valid(audio)) {
         return ASTRAL_E_INVALID;
     }
 
@@ -794,13 +897,13 @@ AstralErr session_feed_audio(Session* session, const AstralAudioDesc* audio, uin
         return ASTRAL_E_STATE;
     }
 
-    if (state == SessionState::Idle) {
-        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
-    }
-
     if (session->model == nullptr || session->model->backend == nullptr ||
         session->model->backend->ops == nullptr || session->model->backend->ops->session_feed_audio == nullptr) {
         return ASTRAL_E_UNSUPPORTED;
+    }
+
+    if (state == SessionState::Idle) {
+        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
     }
 
     return session_push_media_chunk(session, nullptr, audio, finalize);
@@ -1622,251 +1725,135 @@ void decode_loop(Session* session) {
         const uint32_t stop_hold =
             (session->stop_max_len > 0 && session->stop_max_len <= 32) ? session->stop_max_len : 0;
 
-        auto flush_one = [&](const concurrency::StreamToken& tok) -> bool {
-            bool pushed = false;
-            uint32_t spins = 0;
-            while (!pushed) {
-                if (session->token_ring.push(tok)) {
-                    pushed = true;
-                    break;
-                }
-
-                if (spins < 64) {
-                    platform::cpu_pause();
-                } else {
-                    platform::cpu_wait_for_event();
-                }
-                if (spins < 1024) {
-                    ++spins;
-                }
-
+        {
+            ASTRAL_ZONE_N("astral.generation_loop");
+            for (uint32_t i = 0; i < max_tokens; ++i) {
                 if (session->cancel_requested.load(std::memory_order_acquire)) {
-                    return false;
-                }
-            }
-            return true;
-        };
-
-    auto hold_push = [&](const concurrency::StreamToken& tok) -> bool {
-        if (stop_hold == 0) {
-            return flush_one(tok);
-        }
-
-        // Append at tail.
-        const uint32_t tail = (hold_head + hold_count) % kHoldCap;
-        hold[tail] = tok;
-        if (hold_count < kHoldCap) {
-            ++hold_count;
-        } else {
-            // Should not happen given stop_hold <= 32, but keep safe behavior.
-            if (!flush_one(hold[hold_head])) {
-                return false;
-            }
-            hold_head = (hold_head + 1) % kHoldCap;
-        }
-
-        // Keep at most stop_hold tokens buffered (flush oldest).
-        while (hold_count > stop_hold) {
-            if (!flush_one(hold[hold_head])) {
-                return false;
-            }
-            hold_head = (hold_head + 1) % kHoldCap;
-            --hold_count;
-        }
-        return true;
-    };
-
-    auto hold_flush_all = [&]() -> bool {
-        while (hold_count > 0) {
-            if (!flush_one(hold[hold_head])) {
-                return false;
-            }
-            hold_head = (hold_head + 1) % kHoldCap;
-            --hold_count;
-        }
-        return true;
-    };
-
-    auto stop_check = [&](int32_t token, uint32_t* out_match_len) -> bool {
-        if (session->stop_seq_count == 0 || token < 0) {
-            return false;
-        }
-
-        if (stop_tail_len < 32) {
-            stop_tail[stop_tail_len++] = token;
-        } else {
-            std::memmove(stop_tail, stop_tail + 1, (32 - 1) * sizeof(int32_t));
-            stop_tail[31] = token;
-        }
-
-        for (uint32_t i = 0; i < session->stop_seq_count; ++i) {
-            const uint32_t len = session->stop_seq_lens[i];
-            if (len == 0 || len > stop_tail_len) {
-                continue;
-            }
-            bool match = true;
-            for (uint32_t j = 0; j < len; ++j) {
-                if (stop_tail[stop_tail_len - len + j] != session->stop_seq_tokens[i][j]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) {
-                if (out_match_len) {
-                    *out_match_len = len;
-                }
-                return true;
-            }
-        }
-        return false;
-    };
-
-	    // Generation loop (coarse zone; avoid per-token micro zones for now).
-	    {
-		    ASTRAL_ZONE_N("astral.generation_loop");
-		    for (uint32_t i = 0; i < max_tokens; ++i) {
-	        // Check for cancellation
-	        if (session->cancel_requested.load(std::memory_order_acquire)) {
-	            final_state = SessionState::Canceled;
-	            final_err = ASTRAL_E_CANCELED;
-            break;
-        }
-
-	        backend::BackendLogitsView logits_view{};
-	        ASTRAL_ZONE_MICRO_N("astral.backend.session_logits");
-	        err = ops->session_logits(backend_session_ctx, &logits_view);
-
-        if (err != ASTRAL_OK) {
-            final_state = SessionState::Failed;
-            final_err = err;
-            break;
-        }
-
-        SamplerMeta meta{};
-        SamplerMeta* meta_ptr = (session->logprobs_n > 0) ? &meta : nullptr;
-
-	        const int32_t next_token = static_cast<int32_t>(sample_token(
-            logits_view.logits,
-            logits_view.vocab_size,
-            session->sampler_cfg,
-            &session->rng_state,
-            session->token_counts,
-            session->token_counts_base,
-            session->token_nl,
-            &session->mirostat_mu,
-            session->logprobs_n,
-            meta_ptr,
-            session->sample_ids,
-            session->sample_logits,
-            session->sample_capacity,
-            backend_session_ctx,
-            ops->session_apply_grammar,
-            session->indices_buffer
-	        ));
-
-	        ASTRAL_ZONE_MICRO_N("astral.backend.session_accept");
-	        err = ops->session_accept(backend_session_ctx, next_token);
-	        if (err != ASTRAL_OK) {
-	            final_state = SessionState::Failed;
-	            final_err = err;
-            break;
-        }
-
-        if (next_token >= 0) {
-            penalty_state_push(session, static_cast<uint32_t>(next_token));
-        }
-
-        if (meta_ptr != nullptr) {
-            AstralTokenMeta ev{};
-            ev.token_id = meta_ptr->token_id;
-            ev.logprob = meta_ptr->logprob;
-            ev.top_n = meta_ptr->top_n;
-            for (uint32_t j = 0; j < meta_ptr->top_n && j < ASTRAL_LOGPROBS_MAX; ++j) {
-                ev.top_token_ids[j] = meta_ptr->top_ids[j];
-                ev.top_logprobs[j] = meta_ptr->top_logprobs[j];
-            }
-            (void)session->meta_ring.push(ev);
-        }
-
-        if (session->token_eos >= 0 && next_token == session->token_eos) {
-            break;
-        }
-
-        // Update statistics (for both streaming and non-streaming sessions).
-        session->total_tokens++;
-        if (session->total_tokens == 1) {
-            session->t_first_token_ticks = get_ticks();
-        }
-
-        uint32_t stop_len = 0;
-        const bool stop_hit = stop_check(next_token, &stop_len);
-
-	        if (session->desc.stream_enabled) {
-	            // Detokenize to UTF-8
-	            concurrency::StreamToken stream_token;
-	            stream_token.token_id = static_cast<uint32_t>(next_token);
-
-	            AstralMutSpanU8 out_buf;
-	            out_buf.data = stream_token.utf8_data;
-	            out_buf.len = sizeof(stream_token.utf8_data);
-
-	            uint32_t utf8_len = 0;
-	            ASTRAL_ZONE_MICRO_N("astral.backend.detokenize");
-	            err = ops->detokenize(
-	                model->backend_model_ctx,
-	                &next_token,
-	                1,
-                out_buf,
-                &utf8_len
-            );
-
-            if (err != ASTRAL_OK) {
-                // Detokenization failed
-                final_state = SessionState::Failed;
-                final_err = err;
-                break;
-            }
-
-            stream_token.utf8_len = static_cast<uint16_t>(utf8_len);
-
-            if (!hold_push(stream_token)) {
-                final_state = SessionState::Canceled;
-                final_err = ASTRAL_E_CANCELED;
-                break;
-            }
-        }
-
-	        if (stop_hit) {
-	            if (session->desc.stream_enabled && stop_hold > 0 && stop_len > 0) {
-                // Drop stop tokens from the end of the hold buffer.
-                if (stop_len >= hold_count) {
-                    hold_count = 0;
-                } else {
-                    hold_count -= stop_len;
-                }
-                if (!hold_flush_all()) {
                     final_state = SessionState::Canceled;
                     final_err = ASTRAL_E_CANCELED;
+                    break;
+                }
+
+                backend::BackendLogitsView logits_view{};
+                ASTRAL_ZONE_MICRO_N("astral.backend.session_logits");
+                err = ops->session_logits(backend_session_ctx, &logits_view);
+                if (err != ASTRAL_OK) {
+                    final_state = SessionState::Failed;
+                    final_err = err;
+                    break;
+                }
+
+                SamplerMeta meta{};
+                SamplerMeta* meta_ptr = (session->logprobs_n > 0) ? &meta : nullptr;
+                const int32_t next_token = static_cast<int32_t>(sample_token(
+                    logits_view.logits,
+                    logits_view.vocab_size,
+                    session->sampler_cfg,
+                    &session->rng_state,
+                    session->token_counts,
+                    session->token_counts_base,
+                    session->token_nl,
+                    &session->mirostat_mu,
+                    session->logprobs_n,
+                    meta_ptr,
+                    session->sample_ids,
+                    session->sample_logits,
+                    session->sample_capacity,
+                    backend_session_ctx,
+                    ops->session_apply_grammar,
+                    session->indices_buffer));
+
+                ASTRAL_ZONE_MICRO_N("astral.backend.session_accept");
+                err = ops->session_accept(backend_session_ctx, next_token);
+                if (err != ASTRAL_OK) {
+                    final_state = SessionState::Failed;
+                    final_err = err;
+                    break;
+                }
+
+                if (next_token >= 0) {
+                    penalty_state_push(session, static_cast<uint32_t>(next_token));
+                }
+
+                if (meta_ptr != nullptr) {
+                    AstralTokenMeta ev{};
+                    ev.token_id = meta_ptr->token_id;
+                    ev.logprob = meta_ptr->logprob;
+                    ev.top_n = meta_ptr->top_n;
+                    for (uint32_t j = 0; j < meta_ptr->top_n && j < ASTRAL_LOGPROBS_MAX; ++j) {
+                        ev.top_token_ids[j] = meta_ptr->top_ids[j];
+                        ev.top_logprobs[j] = meta_ptr->top_logprobs[j];
+                    }
+                    (void)session->meta_ring.push(ev);
+                }
+
+                if (session->token_eos >= 0 && next_token == session->token_eos) {
+                    break;
+                }
+
+                session->total_tokens++;
+                if (session->total_tokens == 1) {
+                    session->t_first_token_ticks = get_ticks();
+                }
+
+                uint32_t stop_len = 0;
+                const bool stop_hit = session_stop_check(session, next_token, stop_tail, &stop_tail_len, &stop_len);
+
+                if (session->desc.stream_enabled) {
+                    concurrency::StreamToken stream_token;
+                    stream_token.token_id = static_cast<uint32_t>(next_token);
+
+                    AstralMutSpanU8 out_buf;
+                    out_buf.data = stream_token.utf8_data;
+                    out_buf.len = sizeof(stream_token.utf8_data);
+
+                    uint32_t utf8_len = 0;
+                    ASTRAL_ZONE_MICRO_N("astral.backend.detokenize");
+                    err = ops->detokenize(model->backend_model_ctx, &next_token, 1, out_buf, &utf8_len);
+                    if (err != ASTRAL_OK) {
+                        final_state = SessionState::Failed;
+                        final_err = err;
+                        break;
+                    }
+
+                    stream_token.utf8_len = static_cast<uint16_t>(utf8_len);
+
+                    if (!session_hold_push(session, stream_token, hold, &hold_head, &hold_count, kHoldCap, stop_hold)) {
+                        final_state = SessionState::Canceled;
+                        final_err = ASTRAL_E_CANCELED;
+                        break;
+                    }
+                }
+
+                if (stop_hit) {
+                    if (session->desc.stream_enabled && stop_hold > 0 && stop_len > 0) {
+                        if (stop_len >= hold_count) {
+                            hold_count = 0;
+                        } else {
+                            hold_count -= stop_len;
+                        }
+                        if (!session_hold_flush_all(session, hold, &hold_head, &hold_count, kHoldCap)) {
+                            final_state = SessionState::Canceled;
+                            final_err = ASTRAL_E_CANCELED;
+                        }
+                    }
+                    break;
                 }
             }
-	            break;
-	        }
-	    }
-	    }
-
-    // Flush any remaining buffered tokens (normal completion/EOS/max_tokens).
-    if (final_state == SessionState::Completed && session->desc.stream_enabled && hold_count > 0) {
-        if (!hold_flush_all()) {
-            final_state = SessionState::Canceled;
-            final_err = ASTRAL_E_CANCELED;
         }
-    }
+
+        if (final_state == SessionState::Completed && session->desc.stream_enabled && hold_count > 0) {
+            if (!session_hold_flush_all(session, hold, &hold_head, &hold_count, kHoldCap)) {
+                final_state = SessionState::Canceled;
+                final_err = ASTRAL_E_CANCELED;
+            }
+        }
     } // feed_ok
 
     // Transition to terminal state.
     session->t_end_ticks = get_ticks();
 
-    // Coarse plots (best-effort).
+    // Emit terminal session timing plots when Tracy is enabled.
 #if ASTRAL_ENABLE_TRACY
     if (session->t_end_ticks > session->t_start_ticks) {
         const uint64_t dt_ticks = session->t_end_ticks - session->t_start_ticks;

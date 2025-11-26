@@ -19,7 +19,7 @@ Options:
 
 Notes:
   - Files are stored under <out>/<repo-with-__>/.
-  - Each repo can specify mode=all and max_gb_per_file.
+  - Each repo can specify mode=all, revision, max_gb_per_file, and include regexes.
 EOF
 }
 
@@ -49,7 +49,7 @@ if [[ -n "${token}" ]]; then
   common_args+=(--token "${token}")
 fi
 
-python3 - <<'PY' "${manifest}" | while IFS=$'\t' read -r repo mode maxgb; do
+python3 - <<'PY' "${manifest}" | while IFS=$'\t' read -r repo mode revision maxgb includes; do
 import json, sys
 path = sys.argv[1]
 with open(path, "r", encoding="utf-8") as f:
@@ -58,19 +58,29 @@ repos = data.get("repos", [])
 for r in repos:
     repo = r.get("repo", "")
     mode = r.get("mode", "all")
+    revision = r.get("revision", "main")
     maxgb = r.get("max_gb_per_file", 25)
+    includes = r.get("include", [])
+    if isinstance(includes, str):
+        includes = [includes]
     if not repo:
         continue
-    sys.stdout.write(f"{repo}\t{mode}\t{maxgb}\n")
+    sys.stdout.write(f"{repo}\t{mode}\t{revision}\t{maxgb}\t{json.dumps(includes, separators=(',', ':'))}\n")
 PY
   if [[ -z "${repo}" ]]; then
     continue
   fi
 
-  echo "[hf-manifest] repo=${repo} mode=${mode} max_gb_per_file=${maxgb}"
+  echo "[hf-manifest] repo=${repo} revision=${revision} mode=${mode} max_gb_per_file=${maxgb}"
+
+  include_args=()
+  while IFS= read -r include_re; do
+    [[ -n "${include_re}" ]] || continue
+    include_args+=(--include "${include_re}")
+  done < <(python3 -c 'import json,sys; [print(x) for x in json.loads(sys.argv[1])]' "${includes}")
 
   if [[ "${mode}" == "all" ]]; then
-    python3 scripts/hf_gguf_sync.py download "${repo}" "${common_args[@]}" --all --max-gb "${maxgb}"
+    python3 scripts/hf_gguf_sync.py download "${repo}" "${common_args[@]}" --revision "${revision}" --all --max-gb "${maxgb}" "${include_args[@]}"
   else
     echo "[hf-manifest] unsupported mode=${mode} (expected: all)" >&2
     exit 2
@@ -78,4 +88,3 @@ PY
 done
 
 echo "[hf-manifest] done out=${out_dir}"
-

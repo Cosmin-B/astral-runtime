@@ -56,7 +56,7 @@ Continuous batching uses optional backend ops from `include/astral_backend.h`:
 - `session_create_ex(..., max_slots, ...)`
 - `session_batch_eval(tokens[], token_count, out_output_count)`
 - `session_batch_logits(output_index, out_view)`
-- `session_slot_reset(slot_id)` (best-effort cleanup)
+- `session_slot_reset(slot_id)` clears provider-owned slot state; the scheduler also resets Astral-owned slot counters before reuse.
 
 Per-slot grammar binding uses additional optional ops:
 

@@ -435,10 +435,10 @@ static void run_backend_e2e(const char* backend, uint32_t gpu_layers, const char
 
 } // namespace
 
-TEST(cuda_e2e_features) {
+TEST(cuda_e2e_features_fixture_probe) {
     const char* model_path = find_test_model_path();
     if (model_path == nullptr) {
-        return;
+        SKIP_TEST("ASTRAL_TEST_MODEL or tests/models/gpt2.Q2_K.gguf is required for CPU/CUDA feature e2e coverage");
     }
 
     AstralInit cfg{};

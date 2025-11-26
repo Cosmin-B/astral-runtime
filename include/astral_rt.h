@@ -1,12 +1,12 @@
 /**
  * astral_rt.h - Astral Runtime C ABI
  *
- * Stable C interface for high-performance LLM inference.
+ * Stable C interface for the Astral native runtime.
  * All functions return error codes; no exceptions.
  * All strings are UTF-8 spans (pointer + length).
  *
  * Version: 0.1.0
- * License: [TBD]
+ * License: See LICENSE and NOTICE at the repository root.
  */
 
 #pragma once
@@ -138,8 +138,8 @@ enum {
 
 typedef uint32_t AstralMediaFlags;
 enum {
-    ASTRAL_MEDIA_FLAG_USE_GPU = 1u << 0,  /** Request GPU in media projector (best-effort). */
-    ASTRAL_MEDIA_FLAG_WARMUP  = 1u << 1   /** Warmup media encoder on init (best-effort). */
+    ASTRAL_MEDIA_FLAG_USE_GPU = 1u << 0,  /** Ask the media projector to use its GPU path during init. */
+    ASTRAL_MEDIA_FLAG_WARMUP  = 1u << 1   /** Run media encoder warmup during init. */
 };
 
 typedef uint32_t AstralGpuRouteFlags;
@@ -156,7 +156,7 @@ enum {
  * Notes:
  * - `size` must be set to sizeof(AstralImageDesc).
  * - `row_stride` is in bytes; 0 means tightly packed.
- * - GPU routing fields are best-effort and may be ignored by a backend.
+ * - GPU routing fields are advisory backend inputs; set gpu_route_flags for fields the caller wants consumed.
  */
 typedef struct AstralImageDesc {
     uint32_t size;        // sizeof(AstralImageDesc)
@@ -166,10 +166,10 @@ typedef struct AstralImageDesc {
     uint32_t row_stride;  // bytes; 0 = width * bytes_per_pixel
     uint32_t flags;
     AstralSpanU8 pixels;  // raw pixel bytes
-    int32_t gpu_device;         // backend device index (best-effort)
+    int32_t gpu_device;         // requested backend device index when ASTRAL_GPU_ROUTE_DEVICE is set
     uint32_t gpu_route_flags;   // AstralGpuRouteFlags
-    uint64_t gpu_device_mask;   // bitset of allowed devices (best-effort)
-    void* gpu_stream;           // backend-specific stream handle (e.g., cudaStream_t)
+    uint64_t gpu_device_mask;   // requested device bitset when ASTRAL_GPU_ROUTE_DEVICE_MASK is set
+    void* gpu_stream;           // backend-specific stream handle when ASTRAL_GPU_ROUTE_STREAM is set
 } AstralImageDesc;
 
 /**
@@ -178,7 +178,7 @@ typedef struct AstralImageDesc {
  * Notes:
  * - `size` must be set to sizeof(AstralAudioDesc).
  * - `frame_count` is per-channel frames.
- * - GPU routing fields are best-effort and may be ignored by a backend.
+ * - GPU routing fields are advisory backend inputs; set gpu_route_flags for fields the caller wants consumed.
  */
 typedef struct AstralAudioDesc {
     uint32_t size;         // sizeof(AstralAudioDesc)
@@ -189,10 +189,10 @@ typedef struct AstralAudioDesc {
     AstralSpanU8 samples;  // raw PCM bytes
     uint32_t flags;
     uint32_t _padding0;
-    int32_t gpu_device;         // backend device index (best-effort)
+    int32_t gpu_device;         // requested backend device index when ASTRAL_GPU_ROUTE_DEVICE is set
     uint32_t gpu_route_flags;   // AstralGpuRouteFlags
-    uint64_t gpu_device_mask;   // bitset of allowed devices (best-effort)
-    void* gpu_stream;           // backend-specific stream handle (e.g., cudaStream_t)
+    uint64_t gpu_device_mask;   // requested device bitset when ASTRAL_GPU_ROUTE_DEVICE_MASK is set
+    void* gpu_stream;           // backend-specific stream handle when ASTRAL_GPU_ROUTE_STREAM is set
 } AstralAudioDesc;
 
 // ---------------------------------------------------------------------------
@@ -398,7 +398,7 @@ ASTRAL_API void ASTRAL_CALL astral_shutdown(void);
  * Thread-safety: Safe to call from any thread.
  *
  * NOTE: A handle being "valid" only means it's non-null and the internal magic matches.
- * It does NOT guarantee the resource hasn't been freed (use-after-free detection is best-effort).
+ * It does not prove lifetime ownership; passing a freed handle is invalid API usage and can alias reused memory.
  *
  * @param handle Handle to validate
  * @return 1 if valid, 0 if invalid
@@ -444,7 +444,7 @@ ASTRAL_API void ASTRAL_CALL astral_clear_last_error(void);
  *
  * Thread-safety: Not thread-safe; call during startup (before concurrent model loads).
  *
- * @param path Path to a shared library (UTF-8; not NUL-terminated)
+ * @param path Absolute path to a shared library (UTF-8; no NUL bytes)
  * @return ASTRAL_OK on success; error code on failure
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_backend_load_plugin(AstralSpanU8 path);
@@ -590,7 +590,7 @@ typedef struct AstralModelLimits {
  * Notes:
  * - `size` must be set to sizeof(AstralModelMediaDesc).
  * - `source_kind` mirrors AstralModelDesc sources (PATH / MEMORY / IO).
- * - GPU routing fields are best-effort and may be ignored by a backend.
+ * - GPU routing fields are advisory backend inputs; set gpu_route_flags for fields the caller wants consumed.
  */
 typedef struct AstralModelMediaDesc {
     uint32_t size;              // sizeof(AstralModelMediaDesc)
@@ -604,11 +604,11 @@ typedef struct AstralModelMediaDesc {
     AstralSpanU8 media_bytes;   // MEMORY
     AstralModelIO media_io;     // IO
 
-    // Optional GPU routing overrides for media projector/encoder.
-    int32_t gpu_device;         // backend device index (best-effort)
+    // GPU routing requests for media projector/encoder.
+    int32_t gpu_device;         // requested backend device index when ASTRAL_GPU_ROUTE_DEVICE is set
     uint32_t gpu_route_flags;   // AstralGpuRouteFlags
-    uint64_t gpu_device_mask;   // bitset of allowed devices (best-effort)
-    void* gpu_stream;           // backend-specific stream handle (e.g., cudaStream_t)
+    uint64_t gpu_device_mask;   // requested device bitset when ASTRAL_GPU_ROUTE_DEVICE_MASK is set
+    void* gpu_stream;           // backend-specific stream handle when ASTRAL_GPU_ROUTE_STREAM is set
 } AstralModelMediaDesc;
 
 /**
@@ -641,7 +641,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_info(AstralHandle model, AstralMod
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_caps(AstralHandle model, AstralCaps* out_caps);
 
 /**
- * Query model limits (best-effort; fields may be 0 if unknown).
+ * Query model limits. Providers write 0 for limits they cannot report.
  *
  * Thread-safety: Safe to call from multiple threads.
  */
@@ -772,7 +772,7 @@ typedef struct AstralExecutorDesc {
  *
  * Notes:
  * - `size` must be set to sizeof(AstralExecutorTuning).
- * - This is best-effort: if the executor is not yet created, returns ASTRAL_E_STATE.
+ * - If the executor is not yet created, the runtime returns ASTRAL_E_STATE without changing tuning.
  */
 typedef struct AstralExecutorTuning {
     uint32_t size;                            // sizeof(AstralExecutorTuning)

@@ -17,7 +17,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAstralStreamBytesReceived, const TA
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAstralTokenReceived, const FString&, Token);
 
 /**
- * Session wrapper that owns an Astral session handle and provides pull-based streaming.
+ * UObject owner for a native Astral session handle.
+ *
+ * Streaming is pull-based. C++ callers can consume UTF-8 byte views through the
+ * native delegates, while Blueprint delegates trade convenience for per-tick
+ * marshaling. The session keeps the model handle value used at creation so
+ * Reset can rebuild native state with the same model.
  */
 UCLASS(BlueprintType)
 class ASTRALRT_API UAstralSession : public UObject
@@ -27,54 +32,70 @@ class ASTRALRT_API UAstralSession : public UObject
 public:
     UAstralSession();
 
+    /** Create a native session from a loaded model. Stream ticking follows Desc.bStreamEnabled. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Create(UAstralModel* Model, const FAstralSessionDesc& Desc);
 
+    /** Feed text after converting FString to UTF-8. Use FeedPromptRaw from C++ for byte-owned input. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool FeedPrompt(const FString& Prompt, bool bFinalize = true);
 
+    /** Feed caller-owned UTF-8 bytes. The native runtime copies or consumes them before return. */
     bool FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize = true);
 
+    /** Feed image bytes to a media-enabled model. Pixel data must be valid for the call duration. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool FeedImage(const FAstralImageDesc& Image, bool bFinalize = true);
 
+    /** Feed audio bytes to a media-enabled model. FrameCount may be inferred from sample data. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize = true);
 
+    /** Advance generation once. Streaming output is read through StreamRead or the tick delegates. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Decode();
 
+    /** Request cancellation for the current decode. Wait returns the native cancellation code. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Cancel();
 
-    /** Returns: 0 (OK), -7 (canceled), -4 (timeout), or other error code. */
+    /** Returns 0 for OK, -7 for canceled, -4 for timeout, or another native error code. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
-    int32 Wait(uint32 TimeoutMs = 0);
+    int32 Wait(int32 TimeoutMs = 0);
 
+    /** Reset native session state with new sampling and token limits for the same model. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Reset(const FAstralSessionDesc& Desc);
 
+    /** Replace sampler settings used by later decode steps. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool SetSampler(const FAstralSamplerDesc& Desc);
 
+    /** Clear all native stop sequences for this session. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool StopClear();
 
+    /** Add a stop sequence as caller-owned UTF-8 bytes. */
     bool StopAddUtf8Bytes(TConstArrayView<uint8> Utf8Data);
 
+    /** Add a stop sequence after converting FString to UTF-8. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool StopAddString(const FString& Utf8Text);
 
+    /** Read streamed UTF-8 bytes into OutBuffer; negative values are native error codes. */
     int32 StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs = 0);
 
+    /** Read one streamed chunk as FString. Empty string also represents timeout or no data. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
-    FString StreamReadString(uint32 TimeoutMs = 0);
+    FString StreamReadString(int32 TimeoutMs = 0);
 
+    /** Snapshot native timing and memory counters. Zeroed fields mean stats were unavailable. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     FAstralStats GetStats() const;
 
+    /** True while this object owns a native session from the current runtime generation. */
     UFUNCTION(BlueprintPure, Category = "Astral")
-    bool IsValid() const { return SessionHandle != 0; }
+    bool IsValid() const;
 
     /** Raw bytes streaming (UTF-8). Recommended for low-overhead C++ consumers. */
     FAstralStreamBytesNative& OnStreamBytesNative() { return StreamBytesNative; }
@@ -93,8 +114,11 @@ public:
     virtual void BeginDestroy() override;
 
 private:
+    bool IsCurrentRuntimeGeneration() const;
+
     uint64 SessionHandle = 0;
     uint64 ModelHandle = 0;
+    uint64 RuntimeGeneration = 0;
 
     TArray<uint8> TokenBuffer;
     TArray<uint8> TickUtf8Buffer;

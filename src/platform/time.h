@@ -96,48 +96,56 @@ inline uint64_t ticks_now() {
 #endif
 }
 
+#if defined(__APPLE__)
+inline TickClock make_mach_tick_clock() {
+    mach_timebase_info_data_t tb{};
+    mach_timebase_info(&tb);
+    const double tick_to_ns = (tb.denom != 0) ? (static_cast<double>(tb.numer) / static_cast<double>(tb.denom)) : 1.0;
+    return TickClock{TickClock::Kind::MachAbsolute, tick_to_ns};
+}
+#endif
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+inline TickClock make_tsc_tick_clock() {
+    const uint64_t start_ns = monotonic_time_ns();
+    const uint64_t start_t = ticks_now();
+    uint64_t now_ns = start_ns;
+    while (now_ns - start_ns < 25'000'000ull) {
+        now_ns = monotonic_time_ns();
+    }
+    const uint64_t end_ns = now_ns;
+    const uint64_t end_t = ticks_now();
+
+    const uint64_t dt_t = end_t - start_t;
+    const uint64_t dt_ns = end_ns - start_ns;
+    const double tick_to_ns = (dt_t != 0 && dt_ns != 0) ? (static_cast<double>(dt_ns) / static_cast<double>(dt_t))
+                                                        : 1.0;
+    return TickClock{TickClock::Kind::Tsc, tick_to_ns};
+}
+#endif
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+inline TickClock make_arm_tick_clock() {
+  #if defined(__GNUC__) || defined(__clang__)
+    uint64_t freq = 0;
+    __asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(freq));
+    const double tick_to_ns = (freq > 0) ? (1000000000.0 / static_cast<double>(freq)) : 1.0;
+    return TickClock{TickClock::Kind::ArmVct, tick_to_ns};
+  #else
+    return TickClock{TickClock::Kind::MonotonicNs, 1.0};
+  #endif
+}
+#endif
+
 inline TickClock tick_clock() {
 #if defined(__APPLE__)
-    static TickClock c = []() {
-        mach_timebase_info_data_t tb{};
-        mach_timebase_info(&tb);
-        const double tick_to_ns =
-            (tb.denom != 0) ? (static_cast<double>(tb.numer) / static_cast<double>(tb.denom)) : 1.0;
-        return TickClock{TickClock::Kind::MachAbsolute, tick_to_ns};
-    }();
+    static TickClock c = make_mach_tick_clock();
     return c;
 #elif defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    static TickClock c = []() {
-        // Calibrate TSC -> ns using the monotonic clock at init time.
-        // This avoids clock syscalls in hot/wait paths while keeping timeouts meaningful.
-        const uint64_t start_ns = monotonic_time_ns();
-        const uint64_t start_t = ticks_now();
-        uint64_t now_ns = start_ns;
-        // Busy-wait until we have a reasonable interval.
-        while (now_ns - start_ns < 25'000'000ull) { // 25ms
-            now_ns = monotonic_time_ns();
-        }
-        const uint64_t end_ns = now_ns;
-        const uint64_t end_t = ticks_now();
-
-        const uint64_t dt_t = end_t - start_t;
-        const uint64_t dt_ns = end_ns - start_ns;
-        const double tick_to_ns = (dt_t != 0 && dt_ns != 0) ? (static_cast<double>(dt_ns) / static_cast<double>(dt_t))
-                                                            : 1.0;
-        return TickClock{TickClock::Kind::Tsc, tick_to_ns};
-    }();
+    static TickClock c = make_tsc_tick_clock();
     return c;
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    static TickClock c = []() {
-  #if defined(__GNUC__) || defined(__clang__)
-        uint64_t freq = 0;
-        __asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(freq));
-        const double tick_to_ns = (freq > 0) ? (1000000000.0 / static_cast<double>(freq)) : 1.0;
-        return TickClock{TickClock::Kind::ArmVct, tick_to_ns};
-  #else
-        return TickClock{TickClock::Kind::MonotonicNs, 1.0};
-  #endif
-    }();
+    static TickClock c = make_arm_tick_clock();
     return c;
 #else
     return TickClock{TickClock::Kind::MonotonicNs, 1.0};

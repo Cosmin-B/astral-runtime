@@ -67,6 +67,18 @@ Presets:
     - Embeddings model (Nomic v1.5; larger than MiniLM/BGE)
   liquid-lfm2-350m-q4km
     - Small LiquidAI generative model (still hundreds of MB)
+  gemma3-270m-q4km
+    - Tiny Gemma 3 generative GGUF, useful for fast local and Unreal smoke runs
+  gemma3-1b-it-q4km
+    - Small Gemma 3 instruct GGUF, useful when the 270M fixture is too weak
+  smollm3-3b-q4km
+    - Small Hugging Face TB SmolLM3 GGUF, heavier than Gemma/Qwen 0.6B
+  qwen3-0.6b-q8
+    - Small Qwen3 generative GGUF from the official Qwen repo
+  qwen3-1.7b-q8
+    - Mid-small Qwen3 generative GGUF for stronger real-model smoke runs
+  qwen3-embed-0.6b-q8
+    - Small Qwen3 embeddings GGUF from the official Qwen repo
 
 You can override any preset with --url/--hf-repo/--hf-file/--min-bytes.
 EOF
@@ -113,6 +125,54 @@ apply_preset() {
             HF_REVISION="main"
             MODEL_URL=""
             MODEL_MIN_BYTES=200000000
+            ;;
+        gemma3-270m-q4km)
+            MODEL_FILE_NAME="gemma-3-270m-q4_k_m.gguf"
+            HF_REPO="gguf-org/gemma-3-270m-gguf"
+            HF_FILE="gemma-3-270m-q4_k_m.gguf"
+            HF_REVISION="main"
+            MODEL_URL=""
+            MODEL_MIN_BYTES=230000000
+            ;;
+        gemma3-1b-it-q4km)
+            MODEL_FILE_NAME="gemma-3-1b-it-Q4_K_M.gguf"
+            HF_REPO="ggml-org/gemma-3-1b-it-GGUF"
+            HF_FILE="gemma-3-1b-it-Q4_K_M.gguf"
+            HF_REVISION="main"
+            MODEL_URL=""
+            MODEL_MIN_BYTES=700000000
+            ;;
+        smollm3-3b-q4km)
+            MODEL_FILE_NAME="SmolLM3-Q4_K_M.gguf"
+            HF_REPO="ggml-org/SmolLM3-3B-GGUF"
+            HF_FILE="SmolLM3-Q4_K_M.gguf"
+            HF_REVISION="main"
+            MODEL_URL=""
+            MODEL_MIN_BYTES=1700000000
+            ;;
+        qwen3-0.6b-q8)
+            MODEL_FILE_NAME="Qwen3-0.6B-Q8_0.gguf"
+            HF_REPO="Qwen/Qwen3-0.6B-GGUF"
+            HF_FILE="Qwen3-0.6B-Q8_0.gguf"
+            HF_REVISION="main"
+            MODEL_URL=""
+            MODEL_MIN_BYTES=550000000
+            ;;
+        qwen3-1.7b-q8)
+            MODEL_FILE_NAME="Qwen3-1.7B-Q8_0.gguf"
+            HF_REPO="Qwen/Qwen3-1.7B-GGUF"
+            HF_FILE="Qwen3-1.7B-Q8_0.gguf"
+            HF_REVISION="main"
+            MODEL_URL=""
+            MODEL_MIN_BYTES=1600000000
+            ;;
+        qwen3-embed-0.6b-q8)
+            MODEL_FILE_NAME="Qwen3-Embedding-0.6B-Q8_0.gguf"
+            HF_REPO="Qwen/Qwen3-Embedding-0.6B-GGUF"
+            HF_FILE="Qwen3-Embedding-0.6B-Q8_0.gguf"
+            HF_REVISION="main"
+            MODEL_URL=""
+            MODEL_MIN_BYTES=550000000
             ;;
         *)
             echo "Unknown preset: $1"

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines cross-platform low-level atomic operations, memory management primitives, and synchronization abstractions with **minimal to zero dependencies**. These patterns enable building high-performance infrastructure without relying on C++ standard library atomics or OS-specific APIs.
+This document outlines cross-platform low-level atomic operations, memory management primitives, and synchronization abstractions with **minimal to zero dependencies**. These patterns keep hot primitives explicit and measurable without relying on C++ standard library atomics or OS-specific APIs.
 
 ## Architecture Overview
 

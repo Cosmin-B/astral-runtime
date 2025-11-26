@@ -12,31 +12,28 @@
 
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 
 using namespace astral::platform;
 
 #if ASTRAL_ENABLE_VIRTUAL_MEMORY
-// Test basic VM reserve/commit/decommit/release cycle
+// VM reserve/commit/decommit/release contract.
 TEST(vm_reserve_commit_release) {
     constexpr size_t kSize = 4 * 1024 * 1024; // 4MB
 
-    // Reserve address space
     void* addr = vm_reserve(kSize);
     ASSERT_NOT_NULL(addr);
 
-    // Commit first 1MB
     constexpr size_t kCommitSize = 1 * 1024 * 1024;
     vm_commit(addr, kCommitSize);
 
-    // Write to committed region (should not crash)
+    // Touch committed pages.
     memset(addr, 0xAB, kCommitSize);
 
-    // Verify write
     auto* bytes = static_cast<unsigned char*>(addr);
     ASSERT_EQ(bytes[0], 0xAB);
     ASSERT_EQ(bytes[kCommitSize - 1], 0xAB);
 
-    // Decommit
     vm_decommit(addr, kCommitSize);
 
     // Release entire region
@@ -69,7 +66,7 @@ TEST(vm_commit_incremental) {
     vm_release(addr, kSize);
 }
 
-// Test huge pages (best-effort, may fail)
+// Huge-page commit may fall back to regular pages; the committed region must still be usable.
 TEST(vm_hugepages_fallback) {
     constexpr size_t kHugePageSize = 2 * 1024 * 1024; // 2MB
     constexpr size_t kSize = 4 * kHugePageSize;       // 8MB
@@ -80,9 +77,9 @@ TEST(vm_hugepages_fallback) {
     // Commit entire region
     vm_commit(addr, kSize);
 
-    // Try to use huge pages (may fail, which is acceptable)
-    bool huge_pages = vm_try_hugepages(addr, kSize);
-    // No assertion here - this is best-effort
+    // Transparent huge-page promotion is advisory; byte access is the contract.
+    const bool huge_pages = vm_try_hugepages(addr, kSize);
+    (void)huge_pages;
 
     // Write to region (should work regardless of huge page status)
     memset(addr, 0xCD, kSize);
@@ -91,6 +88,36 @@ TEST(vm_hugepages_fallback) {
     ASSERT_EQ(bytes[kSize - 1], 0xCD);
 
     vm_release(addr, kSize);
+}
+
+TEST(vm_large_page_reserve_fallback) {
+    const size_t large_page_size = vm_large_page_size();
+    const bool expect_large_pages = std::getenv("ASTRAL_TEST_EXPECT_LARGE_PAGES") != nullptr;
+    const bool expect_large_page_fallback = std::getenv("ASTRAL_TEST_EXPECT_LARGE_PAGE_FALLBACK") != nullptr;
+    ASSERT_FALSE(expect_large_pages && expect_large_page_fallback);
+
+    if (large_page_size == 0) {
+        ASSERT_FALSE(expect_large_pages);
+        ASSERT_NULL(vm_reserve_large(2 * 1024 * 1024, nullptr));
+        return;
+    }
+
+    size_t actual_size = 0;
+    void* addr = vm_reserve_large(large_page_size, &actual_size);
+    if (addr == nullptr) {
+        ASSERT_FALSE(expect_large_pages);
+        ASSERT_EQ(actual_size, 0u);
+        return;
+    }
+
+    ASSERT_FALSE(expect_large_page_fallback);
+    ASSERT_GE(actual_size, large_page_size);
+    memset(addr, 0xEF, large_page_size);
+    auto* bytes = static_cast<unsigned char*>(addr);
+    ASSERT_EQ(bytes[0], 0xEF);
+    ASSERT_EQ(bytes[large_page_size - 1], 0xEF);
+
+    vm_release(addr, actual_size);
 }
 #endif // ASTRAL_ENABLE_VIRTUAL_MEMORY
 
@@ -115,8 +142,6 @@ TEST(cpu_pause_no_crash) {
     for (int i = 0; i < 1000; ++i) {
         cpu_pause();
     }
-    // If we get here, no crash occurred
-    ASSERT_TRUE(true);
 }
 
 // Test compiler fence (no crashes, ordering preserved)
@@ -142,13 +167,12 @@ TEST(vm_reserve_huge_allocation_fails) {
     constexpr size_t kHugeSize = 1ULL << 50; // 1 PB
     void* addr = vm_reserve(kHugeSize);
 
-    // On some systems this might succeed (address space is cheap)
-    // but on most it should fail
+    // Overcommitting hosts can hand out address space for this request.
     if (addr != nullptr) {
         vm_release(addr, kHugeSize);
+        return;
     }
-    // No assertion - behavior is platform-dependent
-    // Just verify no crash
+    ASSERT_NULL(addr);
 }
 
 // Test decommit without prior commit (should be safe no-op)

@@ -1,14 +1,14 @@
-# Astral: High-Performance LLM Inference for Game Engines
+# Astral: Native LLM Runtime for Game Engines
 
-Astral is a C++20 high-performance inference layer on top of LLaMA-class backends, designed specifically for real-time game engines (Unity, Unreal Engine 5). Built with zero-allocation hot paths, lock-free concurrency, and explicit memory control.
+Astral is a C++20 native inference layer on top of LLaMA-class backends, designed for real-time game engines (Unity, Unreal Engine 5). The runtime emphasizes allocation-gated hot paths, explicit concurrency primitives, and predictable memory ownership.
 
 ## Key Features
 
-- **Zero-Allocation Hot Paths**: No dynamic allocations during token streaming, decoding, or sampling
+- **Allocation-Gated Hot Paths**: Release gates track steady-state heap behavior for token streaming, decoding, and sampling
 - **CAS-Free Concurrency Primitives**: Bounded MPMC queue (ticket + per-slot sequence) and SPSC token rings; ARM-friendly WFE/SEV waiting
 - **C ABI Surface**: Clean separation between C ABI and C++ implementation; v0.1 (ABI may still evolve until v1.0)
-- **Engine-Native Integration**: Direct use of Unity `NativeArray` and Unreal `FMemory` allocators
-- **Cross-Platform**: Core supports Linux/Windows/macOS (x86_64/arm64) today; Android/iOS packaging is planned for v0.1.1
+- **Engine Integration**: Unity `NativeArray` adapters and Unreal wrapper code; real editor evidence remains a release blocker
+- **Cross-Platform**: Desktop native gates cover the core runtime; mobile artifacts still need device/runtime validation
 - **Embeddings**: End-to-end embeddings API (`astral_embed_*`) for embeddings-only models
 
 ## Project Structure
@@ -16,21 +16,24 @@ Astral is a C++20 high-performance inference layer on top of LLaMA-class backend
 ```
 astral/
 ├── docs/                       # Documentation
-│   ├── MASTER_SPEC.md          # Overall architecture and specifications
 │   ├── architecture/           # Detailed architecture documents
+│   │   ├── BACKEND_ARCHITECTURE.md
+│   │   ├── CONCURRENCY_MODEL.md
 │   │   ├── MEMORY_ARCHITECTURE.md
-│   │   └── CONCURRENCY_MODEL.md
+│   │   └── WORK_STEALING_SCHEDULER.md
+│   ├── api/                    # Public API behavior notes
 │   ├── integration/            # Engine integration guides
 │   │   ├── UNITY_INTEGRATION.md
+│   │   ├── UNREAL_57_QUICKSTART.md
 │   │   └── UNREAL_INTEGRATION.md
+│   ├── release/                # Release evidence, ABI, and dependency manifests
 │   ├── rules/                  # Coding standards and rules
-│   │   └── CODING_STANDARDS.md
-│   └── workstreams/            # Developer sub-agent prompts
-│       ├── CORE_RUNTIME_AGENT.md
-│       ├── MEMORY_SPECIALIST_AGENT.md
-│       └── CONCURRENCY_SPECIALIST_AGENT.md
+│   ├── embedded/               # Embedded profile notes
+│   └── PRODUCTION_READINESS_AUDIT.md
+├── backend_plugins/            # Dynamic backend provider examples
 ├── include/                    # Public headers
-│   ├── astral_rt.h             # C ABI (stable)
+│   ├── astral_rt.h             # Public C ABI
+│   └── astral_backend.h        # Backend provider ABI
 ├── src/                        # Core implementation
 │   ├── core/                   # Runtime init, shutdown, handles
 │   ├── memory/                 # Allocators, arenas, pools
@@ -43,6 +46,7 @@ astral/
 │   └── unreal/                 # Unreal UE5 module + FMemory bridge
 ├── tests/                      # Unit + integration tests
 ├── benchmarks/                 # Performance benchmarks
+├── scripts/                    # Release, validation, and engine-runner tooling
 └── cmake/                      # CMake modules and presets
 ```
 
@@ -52,13 +56,13 @@ astral/
 
 - C++20 compiler (GCC 11+, Clang 13+, MSVC 2022+)
 - CMake 3.20+
-- (Optional) Unity 2021.3+ or Unreal Engine 5.1+
+- (Optional) Unity 2021.3+ or Unreal Engine 5.4+; UE 5.7 is the primary validation target
 
 ### Building
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/astral.git
+git clone https://github.com/Cosmin-B/astral.git
 cd astral
 
 # Required submodules (llama.cpp; Tracy is optional unless you use *-prof presets)
@@ -85,7 +89,7 @@ ctest --preset dev -j8
 - `release-prof-cuda`: Release build with Tracy + CUDA backend enabled
 - `unity-plugin`: Build Unity plugin (outputs to `plugins/unity/Runtime/Plugins/`)
 - `unity-plugin-prof`: Unity plugin build with Tracy enabled (requires `external/tracy` submodule)
-- `unreal-plugin`: Build Unreal plugin (outputs to `plugins/unreal/Binaries/`)
+- `unreal-plugin`: Stage the native C ABI header and static library into the Unreal plugin `ThirdParty` layout
 - `unreal-plugin-prof`: Unreal plugin build with Tracy enabled (requires `external/tracy` submodule)
 - `embedded-*`: Embedded/robotics profiles and cross-compilation presets (see `docs/EMBEDDED_PROFILE.md`)
 
@@ -208,99 +212,14 @@ Notes:
 
 ## Usage Example (C API)
 
-```c
-#include "astral_rt.h"
+The maintained native quickstart is [examples/astral_c_quickstart.c](examples/astral_c_quickstart.c).
+It initializes the runtime, sets required ABI struct fields, loads a model,
+streams output, reports errors, resets the session, and releases native handles.
 
-int main() {
-  // Initialize runtime
-  AstralInit cfg = {
-    .sys_alloc = {NULL, NULL, NULL}, // Use default allocator
-    .log_cb = NULL,
-    .log_user = NULL,
-    .reserve_bytes = 2ULL << 30, // 2 GB
-    .thread_count = 0, // Auto-detect
-    .numa_node = 0xFFFFFFFF,
-    .enable_hugepages = 0
-  };
-  astral_init(&cfg);
-
-  // Optional: load a backend provider plugin at startup.
-  // (The plugin registers a provider name used by AstralModelDesc.backend_name.)
-  //
-  // const char* plugin_path = "/abs/path/to/libastral_backend_provider.so";
-  // AstralSpanU8 plugin_span = {(const uint8_t*)plugin_path, (uint32_t)strlen(plugin_path)};
-  // astral_backend_load_plugin(plugin_span);
-
-  // Load model
-  const char* model_path = "models/llama-7b-q4.gguf";
-  AstralModelDesc model_desc = {
-    .model_path = {(const uint8_t*)model_path, strlen(model_path)},
-    .backend_name = {NULL, 0}, // Optional override (e.g., "cpu", "mock")
-    .gpu_layers = 0,
-    .n_ctx = 2048,
-    .n_batch = 512,
-    .n_threads = 0,
-    .embeddings_only = 0
-  };
-  AstralHandle model;
-  AstralErr err = astral_model_load(&model_desc, &model);
-  if (err != ASTRAL_OK) {
-    fprintf(stderr, "model_load failed: %s (%s)\n", astral_error_string(err), astral_last_error());
-    return 1;
-  }
-
-  // Create session
-  AstralSessionDesc sess_desc = {
-    .model = model,
-    .max_tokens = 512,
-    .temperature = 0.7f,
-    .top_k = 40,
-    .top_p = 0.95f,
-    .stream_enabled = 1,
-    .seed = 0 // 0 = auto
-  };
-  AstralHandle session;
-  err = astral_session_create(&sess_desc, &session);
-  if (err != ASTRAL_OK) {
-    fprintf(stderr, "session_create failed: %s (%s)\n", astral_error_string(err), astral_last_error());
-    astral_model_release(model);
-    return 1;
-  }
-
-  // Feed prompt
-  const char* prompt = "Once upon a time";
-  AstralSpanU8 prompt_span = {(const uint8_t*)prompt, strlen(prompt)};
-  astral_session_feed(session, prompt_span, 1);
-
-  // Start decode
-  astral_session_decode(session);
-
-  // Read tokens
-  uint8_t buffer[4096];
-  AstralMutSpanU8 out_buf = {buffer, sizeof(buffer)};
-  for (;;) {
-    int bytes_read = astral_stream_read(session, out_buf, 100 /*ms*/);
-    if (bytes_read == ASTRAL_E_TIMEOUT) continue;
-    if (bytes_read < 0) break;
-    if (bytes_read == 0) break; // end-of-stream
-    fwrite(buffer, 1, bytes_read, stdout);
-  }
-
-  // Wait + stats
-  astral_session_wait(session, 60000);
-  AstralStats stats = {0};
-  astral_session_stats(session, &stats);
-
-  // Optional: reuse the same session with a new seed / sampling params.
-  // (Only valid when the session is idle.)
-  sess_desc.seed = 1234;
-  astral_session_reset(session, &sess_desc);
-
-  // Cleanup
-  astral_session_destroy(session);
-  astral_model_release(model);
-  astral_shutdown();
-}
+```bash
+cmake -S . -B build/examples -DASTRAL_BUILD_EXAMPLES=ON -DASTRAL_BUILD_TESTS=OFF -DASTRAL_BUILD_BENCHMARKS=OFF
+cmake --build build/examples --target astral_c_quickstart -j
+./build/examples/examples/astral_c_quickstart --backend mock --prompt "Once upon a time"
 ```
 
 ## Unity Integration
@@ -337,6 +256,7 @@ See [Unreal Integration Guide](docs/integration/UNREAL_INTEGRATION.md) for detai
 
 ```cpp
 #include "AstralSession.h"
+#include "AstralLog.h"
 
 // Create session
 UAstralSession* Session = NewObject<UAstralSession>(this);
@@ -352,7 +272,7 @@ Session->Decode();
 Session->OnTokenReceived.AddDynamic(this, &AMyActor::OnToken);
 
 void AMyActor::OnToken(const FString& Token) {
-    UE_LOG(LogTemp, Log, TEXT("%s"), *Token);
+    UE_LOG(LogAstralRT, Log, TEXT("%s"), *Token);
 }
 ```
 
@@ -363,7 +283,7 @@ void AMyActor::OnToken(const FString& Token) {
 - **Virtual Reserve**: Reserve 2GB address space, commit pages on demand
 - **Frame Allocators**: Bump allocators per session; reset after each decode frame
 - **Object Pools**: Lock-free pools for tokens, callbacks (16-64 byte objects)
-- **Zero Hot Path Allocations**: All inference operations use pre-allocated memory
+- **Allocation-Gated Hot Paths**: Maintained tests track steady-state heap calls in decode, sampling, and streaming paths
 
 See [Memory Architecture](docs/architecture/MEMORY_ARCHITECTURE.md) for details.
 
@@ -378,15 +298,20 @@ See [Concurrency Model](docs/architecture/CONCURRENCY_MODEL.md) for details.
 
 ### C ABI Design
 
-- **Stable Interface**: No breaking changes within major version
+- **Versioned Surface**: v0.1 ABI changes require release notes and migration guidance
 - **POD Structs**: All config/output via plain-old-data structs
 - **UTF-8 Spans**: Strings as `{const uint8_t* data, uint32_t len}`
 - **Error Codes**: All functions return `AstralErr`; out params for results
 - **No Exceptions Across ABI**: C ABI functions return error codes; `ASTRAL_NO_THROW_ABI=ON` catches/translates unexpected C++ exceptions at the ABI boundary
 
-See [Master Specification](docs/MASTER_SPEC.md) for details.
+See [ABI Versioning](docs/ABI_VERSIONING.md),
+[Error Handling](docs/api/ERROR_HANDLING.md), and the public header in
+[include/astral_rt.h](include/astral_rt.h) for the current contract.
 
 ## Performance Targets
+
+These are engineering targets, not release guarantees. The current release
+evidence and blockers are tracked in `docs/PRODUCTION_READINESS_AUDIT.md`.
 
 | Metric | Target | Notes |
 |--------|--------|-------|
@@ -397,20 +322,11 @@ See [Master Specification](docs/MASTER_SPEC.md) for details.
 | SPSC Push | <50ns | Per token, single producer/consumer |
 | Memory Overhead | <530MB | Per session (8K ctx, 32 layers) |
 
-## Developer Workstreams
-
-Specialized sub-agent prompts for focused development:
-
-- [Core Runtime Agent](docs/workstreams/CORE_RUNTIME_AGENT.md): Init, shutdown, handle management, C ABI
-- [Memory Specialist Agent](docs/workstreams/MEMORY_SPECIALIST_AGENT.md): Allocators, arenas, pools, VM
-- [Concurrency Specialist Agent](docs/workstreams/CONCURRENCY_SPECIALIST_AGENT.md): MPMC, SPSC, epoch reclaim
-- More workstreams coming: Inference, Platform, Unity, Unreal specialists
-
 ## Coding Standards
 
 - **C++20**: No modules, no RTTI across ABI, no STL containers
 - **Explicit Memory Ordering**: Always specify `memory_order_*`
-- **Zero Allocations**: Profile and validate with Valgrind/ASAN
+- **Allocation Gates**: Profile and validate tracked heap behavior with the allocation, ASAN, and Valgrind gates
 - **Cache-Line Alignment**: 64 bytes for hot atomics
 - **Platform Support**: Test on x86-64 and ARM (strong/weak memory models)
 
@@ -419,49 +335,49 @@ See [Coding Standards](docs/rules/CODING_STANDARDS.md) for full details.
 ## Testing
 
 ```bash
+# Fast native presubmit
+./scripts/run_fast_presubmit.sh
+
 # Debug tests
+cmake --preset dev
+cmake --build --preset dev -j
 ctest --preset dev -j8
 
-# Release validation (tests + benchmarks)
+# Release validation
+cmake --preset release-with-tests
+cmake --build --preset release-with-tests -j
 ctest --preset release-with-tests -j8
+
+# Benchmark smoke
 ./build/release-test/benchmarks/astral_benchmarks
 
-# Memory validation
-valgrind --leak-check=full ./tests/test_core
-clang++ -fsanitize=address ./tests/test_memory.cpp
+# Memory and sanitizer helpers
+./scripts/run_asan.sh
+./scripts/run_tsan.sh
+./scripts/run_valgrind.sh
 
-# Thread safety
-clang++ -fsanitize=thread ./tests/test_concurrency.cpp
+# Comment and documentation inventory
+python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers
 ```
 
 ## Roadmap
 
-### v0.1 (Current)
+### Current Local Gates
 
-- [x] Core C ABI design
-- [x] Memory subsystem (virtual reserve, frame allocators, pools)
-- [x] Concurrency primitives (MPMC, SPSC, epoch reclaim)
-- [x] CPU backend integration (llama.cpp)
-- [x] Unity plugin (C# P/Invoke)
-- [x] Unreal plugin (UE5 module)
+- Core C ABI, mock provider, CPU provider, memory, concurrency, embeddings, and media mock tests pass in `release-with-tests`.
+- Release metadata, SBOM, dependency pins, release notes, source scans, ABI layout, shared exports, Unreal header mirror, and package artifact checks are gated locally.
+- Unreal and Unity runner scripts fail hard on missing native/runtime evidence instead of silently skipping release lanes.
 
-### v0.2
+### Required Before Production Release
 
-- [ ] Embeddings fast path (SIMD, batching)
-- [ ] Streaming backpressure tuning
-- [ ] NUMA-aware allocation
-- [ ] Mobile optimizations (ARM big.LITTLE)
-
-### v1.0
-
-- [ ] Production-ready (1M+ tokens, zero leaks)
-- [ ] Full test coverage (unit, integration, stress)
-- [ ] Benchmark suite (vs. llama.cpp, LLMUnity)
-- [ ] Documentation (API reference, examples, tutorials)
+- Run UE 5.7 container Automation and the UE 5.4/5.5/5.6/5.7 compatibility matrix with real Epic editor access.
+- Run real Unity EditMode tests with the packaged native runtime.
+- Promote CUDA, multimodal, HF GGUF matrix, Windows large-page, mobile, and protected signing lanes from local tooling to release-candidate evidence.
+- Publish release notes with checksums, signatures, SBOM, dependency manifest, ABI layout, and rollback instructions.
 
 ## Contributing
 
-Contributions welcome! Please read [CODING_STANDARDS.md](docs/rules/CODING_STANDARDS.md) before submitting PRs.
+Read [CODING_STANDARDS.md](docs/rules/CODING_STANDARDS.md) and keep changes tied to a issue tracker issue before submitting PRs.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
@@ -472,7 +388,9 @@ Contributions welcome! Please read [CODING_STANDARDS.md](docs/rules/CODING_STAND
 
 ## License
 
-[License TBD - to be determined by project lead]
+This source tree is not licensed for redistribution except under a separate
+written agreement with the copyright holders. See [LICENSE](LICENSE), [NOTICE](NOTICE),
+and [third-party notices](docs/release/THIRD_PARTY_NOTICES.md).
 
 ## References
 
@@ -484,10 +402,7 @@ Contributions welcome! Please read [CODING_STANDARDS.md](docs/rules/CODING_STAND
 
 ## Support
 
-- GitHub Issues: https://github.com/your-org/astral/issues
-- Discord: [Link TBD]
-- Email: [Email TBD]
+- GitHub Issues: https://github.com/Cosmin-B/astral/issues
 
 ---
-
-Built with performance in mind. Every cycle counts.
+Keep support claims tied to the validation gates above and the production readiness audit.

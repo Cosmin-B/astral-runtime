@@ -1,9 +1,15 @@
 {
   "FileVersion": 3,
-  "EngineAssociation": "5.0",
+  "EngineAssociation": "5.4",
   "Category": "Tests",
   "Description": "Minimal project scaffold for AstralRT Automation tests",
-  "Modules": [],
+  "Modules": [
+    {
+      "Name": "AstralCiUnrealProject",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ],
   "Plugins": [
     {
       "Name": "AstralRT",
@@ -11,4 +17,3 @@
     }
   ]
 }
-

@@ -1,6 +1,6 @@
 # Astral Memory Subsystem
 
-High-performance memory allocators for zero-allocation hot paths in game engine LLM inference.
+Memory allocators used by Astral's frame, pool, and tracking gates.
 
 ## Overview
 
@@ -12,7 +12,7 @@ This subsystem provides three core components:
 
 ## Design Principles
 
-- **Zero Hot Path Allocations**: No malloc/new in decode, sampling, or token streaming loops
+- **Allocation-Gated Hot Paths**: Maintained gates track malloc/new calls in decode, sampling, and token streaming loops
 - **Pre-commit Strategy**: All memory pre-committed at initialization; no vm_commit syscalls in hot paths
 - **Explicit Memory Ordering**: All atomics use explicit memory_order (acquire/release/relaxed)
 - **Cache-Line Aware**: Hot structures padded to prevent false sharing
@@ -174,8 +174,8 @@ See `src/platform/vm.h` for full VM API documentation.
 ## References
 
 - Unity allocator: `/home/user/docs/unity-runtime/src/memory/`
-- MASTER_SPEC.md § Memory Allocators
-- CODING_STANDARDS.md § Memory Management Rules
+- `docs/architecture/MEMORY_ARCHITECTURE.md` - allocator model and VM-backed arenas
+- `docs/rules/CODING_STANDARDS.md` - memory management rules
 
 ## Design Rationale
 
@@ -185,7 +185,7 @@ Page faults in hot paths cause microsecond stalls (unacceptable for real-time in
 - Linux `mmap`: First access triggers page fault (~1-3μs)
 - Windows `VirtualAlloc(MEM_COMMIT)`: Pre-commits pages (~10-50ns)
 
-Pre-commit strategy (MASTER_SPEC § Task 2):
+Pre-commit strategy:
 - Initial commit: 2MB
 - Growth: Double on capacity exhaustion (amortize syscall overhead)
 - Hot path: Zero syscalls

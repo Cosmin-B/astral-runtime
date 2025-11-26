@@ -3,6 +3,46 @@
   "description": "Pinned Hugging Face GGUF sources for Astral benchmarking (CPU + CUDA).",
   "repos": [
     {
+      "repo": "Qwen/Qwen3-0.6B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 2,
+      "include": [
+        "^Qwen3-0\\.6B-Q8_0\\.gguf$"
+      ]
+    },
+    {
+      "repo": "gguf-org/gemma-3-270m-gguf",
+      "mode": "all",
+      "max_gb_per_file": 1,
+      "include": [
+        "^gemma-3-270m-q4_k_m\\.gguf$"
+      ]
+    },
+    {
+      "repo": "ggml-org/gemma-3-1b-it-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 2,
+      "include": [
+        "^gemma-3-1b-it-Q4_K_M\\.gguf$"
+      ]
+    },
+    {
+      "repo": "ggml-org/SmolLM3-3B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 2,
+      "include": [
+        "^SmolLM3-Q4_K_M\\.gguf$"
+      ]
+    },
+    {
+      "repo": "Qwen/Qwen3-1.7B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 2,
+      "include": [
+        "^Qwen3-1\\.7B-Q8_0\\.gguf$"
+      ]
+    },
+    {
       "repo": "Qwen/Qwen3-8B-GGUF",
       "mode": "all",
       "max_gb_per_file": 200
@@ -16,6 +56,14 @@
       "repo": "bartowski/Qwen_Qwen3-32B-GGUF",
       "mode": "all",
       "max_gb_per_file": 200
+    },
+    {
+      "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+      "mode": "all",
+      "max_gb_per_file": 2,
+      "include": [
+        "^Qwen3-Embedding-0\\.6B-Q8_0\\.gguf$"
+      ]
     },
     {
       "repo": "Qwen/Qwen3-Embedding-8B-GGUF",
@@ -49,4 +97,3 @@
     }
   ]
 }
-

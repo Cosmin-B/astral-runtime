@@ -46,7 +46,8 @@ inline AstralErr model_load_impl(const AstralModelDesc* desc, AstralHandle* out_
     AstralModelDesc local = *desc;
 
     if (desc->source_kind == ASTRAL_MODEL_SOURCE_PATH) {
-        if (desc->model_path.data == nullptr || desc->model_path.len == 0) {
+        const bool has_backend_override = desc->backend_name.data != nullptr && desc->backend_name.len != 0;
+        if (!has_backend_override && (desc->model_path.data == nullptr || desc->model_path.len == 0)) {
             set_err_invalid("desc.model_path");
             return ASTRAL_E_INVALID;
         }

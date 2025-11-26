@@ -6,6 +6,7 @@
 #include "astral_rt.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <sys/stat.h>
@@ -28,6 +29,30 @@ static bool file_exists_min_size(const char* path, uint64_t min_bytes) {
         return false;
     }
     return static_cast<uint64_t>(st.st_size) >= min_bytes;
+}
+
+static bool env_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+static bool media_fixture_ready(const char* label,
+                                const char* model_path,
+                                const char* media_path) {
+    const bool model_ok = file_exists_min_size(model_path, 100ULL * 1024ULL * 1024ULL);
+    const bool media_ok = file_exists_min_size(media_path, 1ULL * 1024ULL * 1024ULL);
+    if (model_ok && media_ok) {
+        return true;
+    }
+
+    if (env_enabled("ASTRAL_TEST_REQUIRE_MEDIA")) {
+        char msg[256];
+        std::snprintf(msg, sizeof(msg),
+                      "%s media fixture missing or too small (model >=100MiB, media >=1MiB)",
+                      label);
+        astral::testing::test_fail_msg(__FILE__, __LINE__, msg);
+    }
+    return false;
 }
 
 static AstralHandle load_mock_model(const char* model_path, uint8_t embeddings_only) {
@@ -74,6 +99,63 @@ static AstralAudioDesc make_tiny_audio() {
     audio.flags = 0;
     return audio;
 }
+
+#if ASTRAL_ENABLE_MTMD
+static void run_cpu_media_init_smoke(const char* label,
+                                     const char* model_env,
+                                     const char* media_env,
+                                     bool expect_image,
+                                     bool expect_audio) {
+    const char* model_path = std::getenv(model_env);
+    const char* media_path = std::getenv(media_env);
+    if (!media_fixture_ready(label, model_path, media_path)) {
+        char msg[256];
+        std::snprintf(msg, sizeof(msg),
+                      "%s media fixture coverage needs %s and %s",
+                      label, model_env, media_env);
+        SKIP_TEST(msg);
+    }
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = 2ULL << 30;
+    cfg.thread_count = 4;
+    cfg.numa_node = 0xFFFFFFFFu;
+    cfg.enable_hugepages = 0;
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralModelDesc desc{};
+    desc.size = sizeof(AstralModelDesc);
+    desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    desc.backend_name = span_from_cstr("cpu");
+    desc.model_path = span_from_cstr(model_path);
+    desc.n_ctx = 0;
+    desc.n_batch = 0;
+    desc.n_threads = 0;
+    desc.embeddings_only = 0;
+
+    AstralHandle model = 0;
+    ASSERT_EQ(astral_model_load(&desc, &model), ASTRAL_OK);
+
+    AstralModelMediaDesc media{};
+    media.size = sizeof(AstralModelMediaDesc);
+    media.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    media.media_path = span_from_cstr(media_path);
+    ASSERT_EQ(astral_model_media_init(model, &media), ASTRAL_OK);
+
+    AstralMediaInfo info{};
+    info.size = sizeof(AstralMediaInfo);
+    ASSERT_EQ(astral_model_media_info(model, &info), ASTRAL_OK);
+    if (expect_image) {
+        ASSERT_TRUE(info.supports_image != 0);
+    }
+    if (expect_audio) {
+        ASSERT_TRUE(info.supports_audio != 0);
+    }
+
+    astral_model_release(model);
+    astral_shutdown();
+}
+#endif
 
 } // namespace
 
@@ -191,47 +273,26 @@ TEST(media_mock_embeddings) {
     astral_shutdown();
 }
 
-TEST(media_cpu_init_smoke) {
+TEST(media_cpu_vision_init_fixture_probe) {
 #if ASTRAL_ENABLE_MTMD
-    const char* model_path = std::getenv("ASTRAL_TEST_VISION_MODEL");
-    const char* media_path = std::getenv("ASTRAL_TEST_VISION_MEDIA");
-    if (!file_exists_min_size(model_path, 100ULL * 1024ULL * 1024ULL) ||
-        !file_exists_min_size(media_path, 1ULL * 1024ULL * 1024ULL)) {
-        return;
-    }
-
-    AstralInit cfg{};
-    cfg.reserve_bytes = 2ULL << 30;
-    cfg.thread_count = 4;
-    cfg.numa_node = 0xFFFFFFFFu;
-    cfg.enable_hugepages = 0;
-    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
-
-    AstralModelDesc desc{};
-    desc.backend_name = span_from_cstr("cpu");
-    desc.model_path = span_from_cstr(model_path);
-    desc.n_ctx = 0;
-    desc.n_batch = 0;
-    desc.n_threads = 0;
-    desc.embeddings_only = 0;
-
-    AstralHandle model = 0;
-    ASSERT_EQ(astral_model_load(&desc, &model), ASTRAL_OK);
-
-    AstralModelMediaDesc media{};
-    media.size = sizeof(AstralModelMediaDesc);
-    media.source_kind = ASTRAL_MODEL_SOURCE_PATH;
-    media.media_path = span_from_cstr(media_path);
-    ASSERT_EQ(astral_model_media_init(model, &media), ASTRAL_OK);
-
-    AstralMediaInfo info{};
-    info.size = sizeof(AstralMediaInfo);
-    ASSERT_EQ(astral_model_media_info(model, &info), ASTRAL_OK);
-    ASSERT_TRUE(info.supports_image != 0 || info.supports_audio != 0);
-
-    astral_model_release(model);
-    astral_shutdown();
+    run_cpu_media_init_smoke("vision", "ASTRAL_TEST_VISION_MODEL", "ASTRAL_TEST_VISION_MEDIA",
+                             /*expect_image=*/true, /*expect_audio=*/false);
 #else
-    (void)file_exists_min_size;
+    if (env_enabled("ASTRAL_TEST_REQUIRE_MEDIA")) {
+        astral::testing::test_fail_msg(__FILE__, __LINE__, "ASTRAL_TEST_REQUIRE_MEDIA needs ASTRAL_ENABLE_MTMD=ON");
+    }
+    SKIP_TEST("ASTRAL_ENABLE_MTMD=ON is required for CPU vision media fixture coverage");
+#endif
+}
+
+TEST(media_cpu_audio_init_fixture_probe) {
+#if ASTRAL_ENABLE_MTMD
+    run_cpu_media_init_smoke("audio", "ASTRAL_TEST_AUDIO_MODEL", "ASTRAL_TEST_AUDIO_MEDIA",
+                             /*expect_image=*/false, /*expect_audio=*/true);
+#else
+    if (env_enabled("ASTRAL_TEST_REQUIRE_MEDIA")) {
+        astral::testing::test_fail_msg(__FILE__, __LINE__, "ASTRAL_TEST_REQUIRE_MEDIA needs ASTRAL_ENABLE_MTMD=ON");
+    }
+    SKIP_TEST("ASTRAL_ENABLE_MTMD=ON is required for CPU audio media fixture coverage");
 #endif
 }

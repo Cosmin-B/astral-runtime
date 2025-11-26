@@ -18,7 +18,7 @@ namespace Astral.Runtime
     ///
     /// 
     /// - Callback must be non-blocking (Astral drops logs if callback is slow >10ms)
-    /// - Must never throw exceptions (catch all, log to Unity on best-effort)
+    /// - Must catch managed exceptions before returning through the C ABI callback
     /// - Must be thread-safe (Unity Debug.Log is thread-safe)
     /// </summary>
     internal static class AstralLogging
@@ -247,15 +247,14 @@ namespace Astral.Runtime
             }
             catch (Exception ex)
             {
-                //  Never throw across C ABI boundary
-                // Log to Unity on best-effort basis
+                // Managed exceptions cannot cross the C ABI callback.
                 try
                 {
                     Debug.LogError($"[Astral] Logging callback exception: {ex.Message}");
                 }
                 catch
                 {
-                    // Even Unity logging failed, give up
+                    // Unity logging threw while reporting a callback failure.
                 }
             }
         }

@@ -755,7 +755,7 @@ static inline void bind_worker_tls(uint32_t idx) {
 	            return;
 	        }
 #if ASTRAL_ENABLE_TRACY
-        // Best-effort queue depth tracking for profiling/visualization.
+        // Profiling counter mirrors successful dequeue operations.
         const uint32_t depth = g_runtime.work_queue_depth.fetch_sub(1, std::memory_order_relaxed) - 1;
         ASTRAL_PLOT("astral.work_queue_depth", static_cast<double>(depth));
 #endif
@@ -975,22 +975,26 @@ void* runtime_session_scratch_acquire(size_t min_size, size_t alignment, size_t*
 #if ASTRAL_ENABLE_VIRTUAL_MEMORY
     using namespace astral::platform;
     void* mem = nullptr;
+    bool huge_pages = false;
+    size_t alloc_size = min_size;
     if (g_runtime.enable_hugepages) {
-        mem = vm_reserve_aligned(min_size, 2 * 1024 * 1024);
-    } else {
+        mem = vm_reserve_large(min_size, &alloc_size);
+        huge_pages = (mem != nullptr);
+    }
+    if (mem == nullptr) {
+        alloc_size = min_size;
         mem = vm_reserve(min_size);
     }
     if (mem == nullptr) {
         return nullptr;
     }
 
-    vm_commit(mem, min_size);
-    if (g_runtime.enable_hugepages) {
-        (void)vm_try_hugepages(mem, min_size);
+    if (!huge_pages) {
+        vm_commit(mem, min_size);
     }
 
     if (out_size) {
-        *out_size = min_size;
+        *out_size = alloc_size;
     }
     (void)alignment;
     return mem;
@@ -1017,6 +1021,59 @@ void runtime_session_scratch_release(void* ptr, size_t size) {
 #else
     (void)size;
 #endif
+}
+
+static AstralErr runtime_init_fail_cleanup(AstralErr err) {
+#if ASTRAL_ENABLE_THREADS
+    const uint32_t n_alloc = g_runtime.worker_alloc_count;
+
+    if (g_runtime.workers != nullptr) {
+        for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {
+            if (g_runtime.work_queues) {
+                g_runtime.work_queues[i].enqueue_wait(WorkItem{nullptr, nullptr});
+            }
+        }
+        for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {
+            astral::platform::thread_join(&g_runtime.workers[i]);
+        }
+        astral::core::free_array(g_runtime.sys_alloc, g_runtime.workers, n_alloc);
+        g_runtime.workers = nullptr;
+    }
+    if (g_runtime.work_queues != nullptr) {
+        astral::core::free_array(g_runtime.sys_alloc, g_runtime.work_queues, n_alloc);
+        g_runtime.work_queues = nullptr;
+    }
+    g_runtime.worker_alloc_count = 0;
+#endif
+
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
+    if (g_runtime.memory_mode == ASTRAL_MEMMODE_VM && g_runtime.vm_base != nullptr) {
+        astral::platform::vm_release(g_runtime.vm_base, g_runtime.vm_size);
+    }
+#endif
+
+    if ((g_runtime.memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) && g_runtime.arena_owned && g_runtime.arena_base != nullptr) {
+        AstralAllocator a = g_runtime.arena_alloc;
+        if (a.free) {
+            a.free(a.user, g_runtime.arena_base, g_runtime.arena_size, 16);
+        } else {
+            ::free(g_runtime.arena_base);
+        }
+    }
+
+    g_runtime.vm_base = nullptr;
+    g_runtime.vm_size = 0;
+    g_runtime.vm_committed = 0;
+    g_runtime.arena_base = nullptr;
+    g_runtime.arena_size = 0;
+    g_runtime.arena_owned = false;
+    g_runtime.arena_heap.reset();
+    g_runtime.worker_scratch_base = nullptr;
+    g_runtime.worker_scratch_bytes = 0;
+    session_pool_reset();
+
+    g_runtime.initialized.store(false, std::memory_order_release);
+    return err;
 }
 
 } // namespace astral::core
@@ -1077,59 +1134,6 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
     g_runtime.arena_owned = false;
     session_pool_reset();
 
-    auto fail_init = [&](AstralErr err) -> AstralErr {
-#if ASTRAL_ENABLE_THREADS
-        const uint32_t n_alloc = g_runtime.worker_alloc_count;
-
-        if (g_runtime.workers != nullptr) {
-            for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {
-                if (g_runtime.work_queues) {
-                    g_runtime.work_queues[i].enqueue_wait(WorkItem{nullptr, nullptr});
-                }
-            }
-            for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {
-                astral::platform::thread_join(&g_runtime.workers[i]);
-            }
-            astral::core::free_array(g_runtime.sys_alloc, g_runtime.workers, n_alloc);
-            g_runtime.workers = nullptr;
-        }
-        if (g_runtime.work_queues != nullptr) {
-            astral::core::free_array(g_runtime.sys_alloc, g_runtime.work_queues, n_alloc);
-            g_runtime.work_queues = nullptr;
-        }
-        g_runtime.worker_alloc_count = 0;
-#endif
-
-#if ASTRAL_ENABLE_VIRTUAL_MEMORY
-        if (g_runtime.memory_mode == ASTRAL_MEMMODE_VM && g_runtime.vm_base != nullptr) {
-            astral::platform::vm_release(g_runtime.vm_base, g_runtime.vm_size);
-        }
-#endif
-
-        if ((g_runtime.memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) && g_runtime.arena_owned && g_runtime.arena_base != nullptr) {
-            AstralAllocator a = g_runtime.arena_alloc;
-            if (a.free) {
-                a.free(a.user, g_runtime.arena_base, g_runtime.arena_size, 16);
-            } else {
-                ::free(g_runtime.arena_base);
-            }
-        }
-
-        g_runtime.vm_base = nullptr;
-        g_runtime.vm_size = 0;
-        g_runtime.vm_committed = 0;
-        g_runtime.arena_base = nullptr;
-        g_runtime.arena_size = 0;
-        g_runtime.arena_owned = false;
-        g_runtime.arena_heap.reset();
-        g_runtime.worker_scratch_base = nullptr;
-        g_runtime.worker_scratch_bytes = 0;
-        session_pool_reset();
-
-        g_runtime.initialized.store(false, std::memory_order_release);
-        return err;
-    };
-
     // Determine thread count early (used by arena partitioning).
     // In arena modes, default to a single worker for determinism unless the user explicitly requests otherwise.
     g_runtime.thread_count = cfg->thread_count;
@@ -1145,7 +1149,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
     // Memory mode setup
     if (cfg2->memory_mode == ASTRAL_MEMMODE_VM) {
 #if !ASTRAL_ENABLE_VIRTUAL_MEMORY
-        return fail_init(ASTRAL_E_UNSUPPORTED);
+        return runtime_init_fail_cleanup(ASTRAL_E_UNSUPPORTED);
 #else
         using namespace astral::platform;
 
@@ -1160,31 +1164,45 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
             reserve_size = align_up_size(reserve_size, kHugeAlign);
         }
 
-        void* vm_base = cfg->enable_hugepages ? vm_reserve_aligned(reserve_size, 2 * 1024 * 1024) : vm_reserve(reserve_size);
+        bool huge_pages_enabled = false;
+        size_t allocated_size = reserve_size;
+        void* vm_base = nullptr;
+        if (cfg->enable_hugepages) {
+            vm_base = vm_reserve_large(reserve_size, &allocated_size);
+            huge_pages_enabled = (vm_base != nullptr);
+        }
         if (!vm_base) {
-            return fail_init(ASTRAL_E_NOMEM);
+            allocated_size = reserve_size;
+            vm_base = cfg->enable_hugepages ? vm_reserve_aligned(reserve_size, 2 * 1024 * 1024) : vm_reserve(reserve_size);
+        }
+        if (!vm_base) {
+            return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
         }
 
         size_t initial_commit = 2 * 1024 * 1024;
-        if (initial_commit > reserve_size) {
-            initial_commit = reserve_size;
+        if (initial_commit > allocated_size) {
+            initial_commit = allocated_size;
         }
-        vm_commit(vm_base, initial_commit);
+        if (huge_pages_enabled) {
+            initial_commit = allocated_size;
+        } else {
+            vm_commit(vm_base, initial_commit);
+        }
 
-        if (cfg->enable_hugepages) {
-            (void)vm_try_hugepages(vm_base, reserve_size);
+        if (cfg->enable_hugepages && !huge_pages_enabled) {
+            huge_pages_enabled = vm_commit_large(vm_base, initial_commit);
         }
 
         g_runtime.vm_base = vm_base;
-        g_runtime.vm_size = reserve_size;
+        g_runtime.vm_size = allocated_size;
         g_runtime.vm_committed = initial_commit;
-        g_runtime.enable_hugepages = (cfg->enable_hugepages != 0);
+        g_runtime.enable_hugepages = huge_pages_enabled;
 
 #endif
     } else if (cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_BORROWED || cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {
         const uint64_t arena_size_u64 = cfg2->arena.size;
         if (arena_size_u64 == 0) {
-            return fail_init(ASTRAL_E_INVALID);
+            return runtime_init_fail_cleanup(ASTRAL_E_INVALID);
         }
 
         void* arena_base = cfg2->arena.base;
@@ -1201,14 +1219,14 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
                     arena_base = ::malloc(static_cast<size_t>(arena_size_u64));
                 }
                 if (arena_base == nullptr) {
-                    return fail_init(ASTRAL_E_NOMEM);
+                    return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
                 }
             }
             g_runtime.arena_owned = true;
             g_runtime.arena_alloc = arena_alloc;
         } else {
             if (arena_base == nullptr) {
-                return fail_init(ASTRAL_E_INVALID);
+                return runtime_init_fail_cleanup(ASTRAL_E_INVALID);
             }
             g_runtime.arena_owned = false;
             g_runtime.arena_alloc = {nullptr, nullptr, nullptr};
@@ -1241,7 +1259,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
         if (scratch_total != 0) {
             cursor = static_cast<uint8_t*>(align_up_ptr(cursor, 64));
             if (static_cast<size_t>(end - cursor) < scratch_total) {
-                return fail_init(ASTRAL_E_NOMEM);
+                return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
             }
             g_runtime.worker_scratch_base = cursor;
             cursor += scratch_total;
@@ -1253,7 +1271,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
         if (heap_bytes != 0) {
             cursor = static_cast<uint8_t*>(align_up_ptr(cursor, 64));
             if (static_cast<size_t>(end - cursor) < static_cast<size_t>(heap_bytes)) {
-                return fail_init(ASTRAL_E_NOMEM);
+                return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
             }
             g_runtime.arena_heap.init(cursor, static_cast<size_t>(heap_bytes));
             cursor += static_cast<size_t>(heap_bytes);
@@ -1264,10 +1282,10 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
         const uint32_t block_size = cfg2->arena.session_block_size != 0 ? cfg2->arena.session_block_size : kDefaultSessionBlockSize;
         const uint32_t block_count = cfg2->arena.session_block_count;
         if (!session_pool_init_from_arena(cursor, static_cast<size_t>(end - cursor), block_size, block_count)) {
-            return fail_init(ASTRAL_E_NOMEM);
+            return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
         }
     } else {
-        return fail_init(ASTRAL_E_INVALID);
+        return runtime_init_fail_cleanup(ASTRAL_E_INVALID);
     }
 
     // Reset work queue state (tests may init/shutdown multiple times in one process).
@@ -1281,7 +1299,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
     {
         astral::core::ScopedArray<WorkQueue> queues(g_runtime.sys_alloc, g_runtime.thread_count);
         if (queues.get() == nullptr) {
-            return fail_init(ASTRAL_E_NOMEM);
+            return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
         }
         g_runtime.work_queues = queues.release();
     }
@@ -1289,7 +1307,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
     {
         astral::core::ScopedArray<astral::platform::Thread> workers(g_runtime.sys_alloc, g_runtime.thread_count);
         if (workers.get() == nullptr) {
-            return fail_init(ASTRAL_E_NOMEM);
+            return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
         }
         g_runtime.workers = workers.release();
     }
@@ -1307,7 +1325,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
             astral::core::free_array(g_runtime.sys_alloc, g_runtime.workers, g_runtime.worker_alloc_count);
             g_runtime.workers = nullptr;
             g_runtime.worker_alloc_count = 0;
-            return fail_init(ASTRAL_E_BACKEND);
+            return runtime_init_fail_cleanup(ASTRAL_E_BACKEND);
         }
     }
 #else

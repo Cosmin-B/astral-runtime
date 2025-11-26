@@ -57,9 +57,8 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
     return nullptr;
   }
 
-  // Best-effort: over-reserve and trim prefix/suffix with munmap so the remaining mapping is
-  // exactly `size` and starts at an `alignment` boundary. This preserves the vm_release contract
-  // (release with the same base+size).
+  // Over-reserve and trim prefix/suffix with munmap so the remaining mapping is exactly `size`
+  // and starts at an `alignment` boundary. This preserves the vm_release contract.
   const size_t total = size + alignment;
   void* base = vm_reserve(total);
   if (base == nullptr) {
@@ -95,7 +94,7 @@ void vm_commit(void* addr, size_t size) {
     // - EINVAL: addr not page-aligned, or invalid range
     // - ENOMEM: kernel cannot allocate internal structures
     // - EACCES: permission denied (shouldn't happen for our reserved pages)
-    return; // Silently fail; caller should check errno if needed
+    return; // The region remains inaccessible; callers prevalidate page ranges at setup boundaries.
   }
 
   // Step 2: Advise kernel to allocate physical pages
@@ -177,6 +176,44 @@ bool vm_try_hugepages(void* addr, size_t size) {
   // /proc/self/smaps and checking for "AnonHugePages" field
   // We optimistically assume success if madvise didn't fail
   return true;
+}
+
+size_t vm_large_page_size() {
+  return kHugePageSize;
+}
+
+void* vm_reserve_large(size_t size, size_t* out_size) {
+  if (out_size != nullptr) {
+    *out_size = 0;
+  }
+  if (size == 0) {
+    return nullptr;
+  }
+
+  void* addr = vm_reserve_aligned(size, kHugePageSize);
+  if (addr == nullptr) {
+    return nullptr;
+  }
+
+  vm_commit(addr, size);
+  if (!vm_try_hugepages(addr, size)) {
+    vm_release(addr, size);
+    return nullptr;
+  }
+
+  if (out_size != nullptr) {
+    *out_size = size;
+  }
+  return addr;
+}
+
+bool vm_commit_large(void* addr, size_t size) {
+  if (addr == nullptr || size == 0) {
+    return false;
+  }
+
+  vm_commit(addr, size);
+  return vm_try_hugepages(addr, size);
 }
 
 } // namespace astral::platform

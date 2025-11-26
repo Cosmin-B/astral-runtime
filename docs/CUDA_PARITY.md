@@ -80,8 +80,11 @@ ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity_m
 1) **Always-on smoke tests** (CPU machines, CI-friendly):
 - CUDA backend presence/absence surface behavior.
 
-2) **CUDA machine tests** (manual/CI best-effort):
-- Run `tests/test_cuda_parity.cpp` with `ASTRAL_TEST_CUDA_PARITY_INFER=1`.
+2) **CUDA machine tests** (release-candidate required):
+- Run `scripts/run_cuda_parity_matrix.sh --preset-set release --arch <deployed-arch-list> --strict`
+  with `ASTRAL_TEST_CUDA_PARITY_INFER=1` and `ASTRAL_TEST_CUDA_E2E=1`.
+- This lane is required by `scripts/run_release_required_gates.sh`; the
+  CPU-only CI smoke does not replace a real CUDA runner.
 - Strict mode (`ASTRAL_TEST_CUDA_PARITY_STRICT=1`) is opt-in and checks “near parity”:
   - Each backend’s chosen token must be within the other backend’s captured `top_n` (currently 8).
   - Each backend’s chosen token must be within the other backend’s top-8 ranks.
@@ -90,4 +93,10 @@ ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity_m
 
 ## Reference runner
 
-Use `scripts/run_cuda_parity.sh` to build + run the parity test on a CUDA machine.
+Use `scripts/run_cuda_parity.sh` for one CUDA preset and
+`scripts/run_cuda_parity_matrix.sh` for the release matrix across auto, forced
+cuBLAS, and forced MMQ presets.
+
+Use `scripts/run_cuda_parity_matrix.sh --preset-set release --arch <deployed-arch-list> --print-plan`
+to inspect the release presets and required real-CUDA flags without configuring
+or building.

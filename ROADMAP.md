@@ -1,58 +1,100 @@
-# Astral Roadmap (Productization)
+# Astral Roadmap
 
-This is the living checklist to turn Astral into a world-class, product-ready framework for game engines and embedded/robotics targets.
+This roadmap tracks the work needed to turn Astral's validated native runtime
+and engine packages into a production release candidate. Current readiness and
+external blockers are recorded in `docs/PRODUCTION_READINESS_AUDIT.md`; this
+file should not claim support that is not backed by gates or release evidence.
 
-## v0.1 (Desktop core + optional scaffold)
+## Current Native Baseline
 
-**Release targets**: Windows/macOS/Linux (x86_64 + arm64). GPU support is a build-time/runtime optional scaffold in v0.1 (best-effort); Android/iOS plugins follow in v0.1.1.
+Validated locally:
 
-- Embedded pillars (done):
-  - `astral_init2()` arena modes (`BORROWED` / `OWNED`) + deterministic per-session scratch blocks.
-  - Embedded presets disable VM, dynamic backends, and JSON schema grammar (`docs/EMBEDDED_PROFILE.md`).
-  - `astral_model_load2()` supports `PATH` / `MEMORY` / `IO` for the built-in CPU provider (single-file GGUF; PATH uses mmap; MEMORY/IO can optionally use a temp-file mmap path on desktop; embedded presets disable this).
-- Profiling (done):
-  - Tracy integration + profiling presets (+ optional micro-zones) across hot paths (`docs/PROFILING_TRACY.md`).
-- CUDA scaffold (done, non-blocking until v0.2):
-  - Optional provider registration + presets (`dev-cuda`, `release-cuda`) and a surface test for presence/absence.
-- Release hygiene (todo):
-  - Session affinity policy + callback-safe streaming/error surfaces (done):
-    - Decode work is submitted via `submit_work_affine()` to a fixed `session->worker_id`.
-    - `astral_stream_read()` / `astral_stream_read_meta()` fail fast on concurrent consumers (no UB/data races).
-  - Ship both static + shared artifacts on desktop (done): `astral_rt` (static) + `astral_rt_shared` (shared; outputs as `astral_rt`).
-    - Windows naming: static is `astral_rt_static.lib` when both are built (avoids clash with the shared import lib).
-  - CI matrix aligned with v0.1 scope and artifact story (done): release artifacts are built via `scripts/package_release.sh` and uploaded from CI as “v0.1 desktop” zips.
-  - Docs pass (done): keep `README.md`, `BUILD.md`, and `docs/*` consistent with the shipped presets/features.
+- `dev` and `release-with-tests` native CTest lanes.
+- Static and shared desktop runtime artifacts from `scripts/package_release.sh`.
+- ABI layout, shared-export, checksum, SBOM, dependency-pin, release-note,
+  source-prose, allocation, RSS, and syscall gates.
+- Mock/CPU native inference, embeddings, model-source, provider, and
+  continuous-batching tests.
+- Tracy profiling presets and coarse zones for maintained hot paths.
+- Embedded presets that disable VM, dynamic backends, and JSON schema grammar
+  as described in `docs/EMBEDDED_PROFILE.md`.
 
-## v0.1.1 (Mobile plugins)
+Release blockers:
 
-- Android/iOS Unity plugin packaging + validation (arm64; Unity 2022.3 LTS+).
-- iOS-specific constraints: page size, entitlements, and minimal-syscall guidance.
-- Unreal mobile plugin packaging/validation (Android/iOS) after Unity; ship prebuilt ThirdParty libs for UE 5.1–5.7.
+- Real Unreal Editor/container runs.
+- Real Unity Editor EditMode run.
+- Real CUDA runner parity/e2e matrix.
+- Real multimodal fixtures with MTMD enabled.
+- Real Windows large-page privilege variants.
+- Protected release signing run with evidence attached.
 
-## v0.2 (Core product: continuous batching + multi-model)
+## Unreal-First Engine Target
 
-- Continuous batching across slots (multi-conversation scheduling):
-  - Scheduling: fairness guarantees (no starvation), plus explicit throughput/latency knobs (batch cap, prompt ingest cap, etc.).
-  - Observability: KV/memory accounting surfaces (per-slot KV tokens and best-effort memory estimates) + clear executor/slot stats.
-  - Multi-model story: document + validate running multiple models concurrently (each model has its own executor; runtime worker sizing).
-  - Tests/benches: add continuous-batching benchmarks that measure throughput/TTFT under multi-slot load (CPU + CUDA where available).
+Primary target:
 
-## v0.2 (GPU backend real work)
+- UE 5.7 on Linux with Epic's clang 20.1.8 toolchain and the pinned
+  `dev-5.7.4` / `dev-slim-5.7.4` images documented in
+  `docs/integration/UNREAL_57_QUICKSTART.md`.
 
-- CUDA backend parity + perf (then Metal, then DirectML):
-  - Define a parity checklist per backend (model load, tokenize/detokenize, streaming, embeddings, grammar, logprobs, batching).
-  - Add backend parity tests and reproducible perf benches per target GPU tier.
-- Keep optional deps truly optional (CPU-only builds must not pull GPU toolchains).
+Compatibility target:
 
-See: `docs/CUDA_PARITY.md` (living checklist + parity runner notes).
-See: `docs/FEATURE_MATRIX.md` (what works where; presets + providers).
+- UE 5.4, 5.5, 5.6, and 5.7 compile/smoke matrix through
+  `scripts/run_unreal_compatibility_matrix.sh`.
 
-## Embedded / Robotics (Ongoing)
+Remaining Unreal work:
 
-- Minimal-footprint feature matrix with tested preset combinations (threads on/off, VM on/off, dynamic backends on/off, IO on/off).
-- Allocator policy hardening: sizing guidance + deterministic failure surfaces for third-party integrators.
+- Run Automation tests in real UE 5.7 full and slim containers.
+- Package a UE 5.7 sample project for Linux.
+- Validate load, stream, cancel, reset, media feed, embeddings, and shutdown in
+  editor and packaged-game lifecycles.
+- Keep native ThirdParty provenance, `LogAstralRT`, and UE profiler scopes
+  gated.
 
-## Packaging (Ongoing)
+## CUDA, Models, And Multimodal
 
-- Unity: deterministic init paths + allocation-minimized logging bridge (done).
-- Unreal: module packaging, logging bridge, allocator integration, and stable plugin binary naming/layout.
+CUDA remains a release blocker until it has real hardware evidence:
+
+- Required CPU-vs-CUDA parity and CUDA e2e flags are documented in
+  `docs/CUDA_PARITY.md`.
+- Release candidates must run auto, cuBLAS-forced, and MMQ-forced lanes on the
+  target GPU runner.
+- Multi-GPU routing and deployed architecture coverage need explicit evidence
+  before being listed as supported.
+
+Model and multimodal work:
+
+- Keep small text and embedding fixtures for fast native gates.
+- Run the HF GGUF matrix before release-candidate sign-off.
+- Run `ASTRAL_ENABLE_MTMD=ON` with real vision/audio projectors and fixtures.
+- Record fixture, projector, CUDA media-routing, and failure-case evidence in
+  the release manifest.
+
+## Mobile And Embedded
+
+Mobile work is not part of the current Unreal-first release sign-off:
+
+- Android and iOS artifacts still need build, packaging, and runtime smoke
+  validation.
+- Unity mobile support requires a tested Editor/package matrix and native
+  binary layout per architecture.
+- Unreal mobile support should follow the UE 5.4+ desktop compatibility matrix,
+  not introduce a separate version policy.
+
+Embedded work stays scoped to explicit profiles:
+
+- Preserve no-VM/no-dynamic-backend/no-JSON-schema embedded presets.
+- Document exactly when MEMORY/IO sources materialize temp files on desktop.
+- Add hardware or QEMU evidence before claiming a deployment profile.
+
+## Release Governance
+
+Before a release candidate:
+
+- Run native dev and release-with-tests gates.
+- Run sanitizer lanes through `scripts/run_asan.sh` and `scripts/run_tsan.sh`.
+- Package artifacts with checksums, SBOM, ABI layout, dependency manifest,
+  license notices, Unity package, and Unreal plugin zips.
+- Attach release evidence for Unreal, Unity, CUDA, multimodal, HF matrix,
+  Windows large pages, artifact verification, signing, dependency review, and
+  release notes.
+- Complete protected signing with a verified detached checksum signature.

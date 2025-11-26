@@ -1,18 +1,46 @@
 #include "AstralSession.h"
+#include "AstralLog.h"
+#include "AstralSessionStreamPump.h"
 #include "AstralModel.h"
 #include "IAstralRT.h"
 
 #include "Containers/Ticker.h"
-#include "Containers/StringBuilder.h"
 #include "Containers/UnrealString.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "astral_rt.h"
+
+namespace {
+
+struct FAstralSessionStreamReader
+{
+    UAstralSession* Session = nullptr;
+
+    int32 operator()(TArray<uint8>& OutBuffer, uint32 TimeoutMs) const
+    {
+        return Session->StreamRead(OutBuffer, TimeoutMs);
+    }
+};
+
+} // namespace
 
 UAstralSession::UAstralSession()
 {
     TokenBuffer.SetNumUninitialized(4096);
     TickUtf8Buffer.Reserve(4096);
     TickTextScratch.Reserve(4096);
+}
+
+bool UAstralSession::IsCurrentRuntimeGeneration() const
+{
+    return IAstralRT::IsAvailable() &&
+        IAstralRT::Get().IsInitialized() &&
+        IAstralRT::Get().GetRuntimeGeneration() == RuntimeGeneration;
+}
+
+bool UAstralSession::IsValid() const
+{
+    return SessionHandle != 0 && IsCurrentRuntimeGeneration();
 }
 
 void UAstralSession::BeginDestroy()
@@ -23,13 +51,14 @@ void UAstralSession::BeginDestroy()
         TickerHandle.Reset();
     }
 
-    if (SessionHandle != 0 && IAstralRT::IsAvailable() && IAstralRT::Get().IsInitialized())
+    if (SessionHandle != 0 && IsCurrentRuntimeGeneration())
     {
         astral_session_destroy(static_cast<AstralHandle>(SessionHandle));
     }
 
     SessionHandle = 0;
     ModelHandle = 0;
+    RuntimeGeneration = 0;
 
     Super::BeginDestroy();
 }
@@ -38,41 +67,51 @@ bool UAstralSession::Create(UAstralModel* Model, const FAstralSessionDesc& Desc)
 {
     if (SessionHandle != 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session already created"));
-        return false;
+        if (!IsCurrentRuntimeGeneration())
+        {
+            SessionHandle = 0;
+            ModelHandle = 0;
+            RuntimeGeneration = 0;
+        }
+        else
+        {
+            UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session already created"));
+            return false;
+        }
     }
 
     if (Model == nullptr || !Model->IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: invalid model"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: invalid model"));
         return false;
     }
 
     if (!IAstralRT::IsAvailable() || !IAstralRT::Get().IsInitialized())
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: runtime not initialized"));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: runtime not initialized"));
         return false;
     }
 
     AstralSessionDesc NativeDesc{};
     NativeDesc.model = static_cast<AstralHandle>(Model->GetHandle());
-    NativeDesc.max_tokens = Desc.MaxTokens;
+    NativeDesc.max_tokens = static_cast<uint32_t>(Desc.MaxTokens);
     NativeDesc.temperature = Desc.Temperature;
-    NativeDesc.top_k = Desc.TopK;
+    NativeDesc.top_k = static_cast<uint32_t>(Desc.TopK);
     NativeDesc.top_p = Desc.TopP;
     NativeDesc.stream_enabled = Desc.bStreamEnabled ? 1 : 0;
-    NativeDesc.seed = Desc.Seed;
+    NativeDesc.seed = static_cast<uint32_t>(Desc.Seed);
 
     AstralHandle Out = 0;
     const AstralErr Err = astral_session_create(&NativeDesc, &Out);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_create failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_create failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
     SessionHandle = static_cast<uint64>(Out);
     ModelHandle = Model->GetHandle();
+    RuntimeGeneration = IAstralRT::Get().GetRuntimeGeneration();
 
     UpdateTicker(Desc.bStreamEnabled);
     return true;
@@ -86,9 +125,9 @@ bool UAstralSession::FeedPrompt(const FString& Prompt, bool bFinalize)
 
 bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
     }
 
@@ -100,7 +139,7 @@ bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinali
         astral_session_feed(static_cast<AstralHandle>(SessionHandle), Span, bFinalize ? 1 : 0);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_feed failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_feed failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -109,37 +148,37 @@ bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinali
 
 bool UAstralSession::FeedImage(const FAstralImageDesc& Image, bool bFinalize)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
     }
 
     if (Image.Pixels.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: image pixels are empty"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: image pixels are empty"));
         return false;
     }
 
     AstralImageDesc Native{};
     Native.size = sizeof(AstralImageDesc);
     Native.format = static_cast<AstralImageFormat>(Image.Format);
-    Native.width = Image.Width;
-    Native.height = Image.Height;
-    Native.row_stride = Image.RowStride;
-    Native.flags = Image.Flags;
+    Native.width = static_cast<uint32_t>(Image.Width);
+    Native.height = static_cast<uint32_t>(Image.Height);
+    Native.row_stride = static_cast<uint32_t>(Image.RowStride);
+    Native.flags = static_cast<uint32_t>(Image.Flags);
     Native.pixels.data = Image.Pixels.GetData();
     Native.pixels.len = static_cast<uint32_t>(Image.Pixels.Num());
     Native.gpu_device = Image.GpuDevice;
-    Native.gpu_route_flags = Image.GpuRouteFlags;
-    Native.gpu_device_mask = Image.GpuDeviceMask;
+    Native.gpu_route_flags = static_cast<uint32_t>(Image.GpuRouteFlags);
+    Native.gpu_device_mask = static_cast<uint64_t>(Image.GpuDeviceMask);
     Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Image.GpuStream));
 
     const AstralErr Err =
         astral_session_feed_image(static_cast<AstralHandle>(SessionHandle), &Native, bFinalize ? 1 : 0);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_feed_image failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_feed_image failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -148,15 +187,15 @@ bool UAstralSession::FeedImage(const FAstralImageDesc& Image, bool bFinalize)
 
 bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
     }
 
     if (Audio.Samples.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: audio samples are empty"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: audio samples are empty"));
         return false;
     }
 
@@ -165,39 +204,39 @@ bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
     Native.format = static_cast<AstralAudioFormat>(Audio.Format);
     if (Audio.Channels == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: audio channels must be > 0"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: audio channels must be > 0"));
         return false;
     }
 
-    uint64 FrameCount = Audio.FrameCount;
+    uint64 FrameCount = static_cast<uint64>(Audio.FrameCount);
     if (FrameCount == 0)
     {
         const uint32 BytesPerSample = (Audio.Format == EAstralAudioFormat::F32) ? 4u : 2u;
         const uint64 TotalSamples = static_cast<uint64>(Audio.Samples.Num()) / BytesPerSample;
         if (TotalSamples % Audio.Channels != 0)
         {
-            UE_LOG(LogTemp, Warning, TEXT("AstralRT: audio samples not aligned to channels"));
+            UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: audio samples not aligned to channels"));
             return false;
         }
         FrameCount = TotalSamples / Audio.Channels;
     }
 
-    Native.channels = Audio.Channels;
-    Native.sample_rate = Audio.SampleRate;
+    Native.channels = static_cast<uint32_t>(Audio.Channels);
+    Native.sample_rate = static_cast<uint32_t>(Audio.SampleRate);
     Native.frame_count = FrameCount;
     Native.samples.data = Audio.Samples.GetData();
     Native.samples.len = static_cast<uint32_t>(Audio.Samples.Num());
-    Native.flags = Audio.Flags;
+    Native.flags = static_cast<uint32_t>(Audio.Flags);
     Native.gpu_device = Audio.GpuDevice;
-    Native.gpu_route_flags = Audio.GpuRouteFlags;
-    Native.gpu_device_mask = Audio.GpuDeviceMask;
+    Native.gpu_route_flags = static_cast<uint32_t>(Audio.GpuRouteFlags);
+    Native.gpu_device_mask = static_cast<uint64_t>(Audio.GpuDeviceMask);
     Native.gpu_stream = reinterpret_cast<void*>(static_cast<uintptr_t>(Audio.GpuStream));
 
     const AstralErr Err =
         astral_session_feed_audio(static_cast<AstralHandle>(SessionHandle), &Native, bFinalize ? 1 : 0);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_feed_audio failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_feed_audio failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -206,16 +245,16 @@ bool UAstralSession::FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize)
 
 bool UAstralSession::Decode()
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
-        UE_LOG(LogTemp, Warning, TEXT("AstralRT: session not created"));
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
         return false;
     }
 
     const AstralErr Err = astral_session_decode(static_cast<AstralHandle>(SessionHandle));
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_decode failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_decode failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -224,7 +263,7 @@ bool UAstralSession::Decode()
 
 bool UAstralSession::Cancel()
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -232,35 +271,36 @@ bool UAstralSession::Cancel()
     return Err == ASTRAL_OK;
 }
 
-int32 UAstralSession::Wait(uint32 TimeoutMs)
+int32 UAstralSession::Wait(int32 TimeoutMs)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return static_cast<int32>(ASTRAL_E_INVALID);
     }
-    return static_cast<int32>(astral_session_wait(static_cast<AstralHandle>(SessionHandle), TimeoutMs));
+    const uint32 NativeTimeoutMs = static_cast<uint32>(FMath::Max(TimeoutMs, 0));
+    return static_cast<int32>(astral_session_wait(static_cast<AstralHandle>(SessionHandle), NativeTimeoutMs));
 }
 
 bool UAstralSession::Reset(const FAstralSessionDesc& Desc)
 {
-    if (SessionHandle == 0 || ModelHandle == 0)
+    if (!IsValid() || ModelHandle == 0)
     {
         return false;
     }
 
     AstralSessionDesc NativeDesc{};
     NativeDesc.model = static_cast<AstralHandle>(ModelHandle);
-    NativeDesc.max_tokens = Desc.MaxTokens;
+    NativeDesc.max_tokens = static_cast<uint32_t>(Desc.MaxTokens);
     NativeDesc.temperature = Desc.Temperature;
-    NativeDesc.top_k = Desc.TopK;
+    NativeDesc.top_k = static_cast<uint32_t>(Desc.TopK);
     NativeDesc.top_p = Desc.TopP;
     NativeDesc.stream_enabled = Desc.bStreamEnabled ? 1 : 0;
-    NativeDesc.seed = Desc.Seed;
+    NativeDesc.seed = static_cast<uint32_t>(Desc.Seed);
 
     const AstralErr Err = astral_session_reset(static_cast<AstralHandle>(SessionHandle), &NativeDesc);
     if (Err != ASTRAL_OK)
     {
-        UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_session_reset failed (%d)"), static_cast<int32>(Err));
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_reset failed (%d)"), static_cast<int32>(Err));
         return false;
     }
 
@@ -270,7 +310,7 @@ bool UAstralSession::Reset(const FAstralSessionDesc& Desc)
 
 bool UAstralSession::SetSampler(const FAstralSamplerDesc& Desc)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -278,7 +318,7 @@ bool UAstralSession::SetSampler(const FAstralSamplerDesc& Desc)
     AstralSamplerDesc Native{};
     Native.size = sizeof(AstralSamplerDesc);
     Native.temperature = Desc.Temperature;
-    Native.top_k = Desc.TopK;
+    Native.top_k = static_cast<uint32_t>(Desc.TopK);
     Native.top_p = Desc.TopP;
     Native.min_p = Desc.MinP;
     Native.typical_p = Desc.TypicalP;
@@ -297,7 +337,7 @@ bool UAstralSession::SetSampler(const FAstralSamplerDesc& Desc)
 
 bool UAstralSession::StopClear()
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -307,7 +347,7 @@ bool UAstralSession::StopClear()
 
 bool UAstralSession::StopAddUtf8Bytes(TConstArrayView<uint8> Utf8Data)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return false;
     }
@@ -327,7 +367,7 @@ bool UAstralSession::StopAddString(const FString& Utf8Text)
 
 int32 UAstralSession::StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs)
 {
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return static_cast<int32>(ASTRAL_E_INVALID);
     }
@@ -344,9 +384,10 @@ int32 UAstralSession::StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs)
     return astral_stream_read(static_cast<AstralHandle>(SessionHandle), Span, TimeoutMs);
 }
 
-FString UAstralSession::StreamReadString(uint32 TimeoutMs)
+FString UAstralSession::StreamReadString(int32 TimeoutMs)
 {
-    const int32 BytesRead = StreamRead(TokenBuffer, TimeoutMs);
+    const uint32 NativeTimeoutMs = static_cast<uint32>(FMath::Max(TimeoutMs, 0));
+    const int32 BytesRead = StreamRead(TokenBuffer, NativeTimeoutMs);
     if (BytesRead <= 0)
     {
         return FString();
@@ -360,7 +401,7 @@ FAstralStats UAstralSession::GetStats() const
 {
     FAstralStats Result{};
 
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         return Result;
     }
@@ -375,104 +416,36 @@ FAstralStats UAstralSession::GetStats() const
     Result.InitTimeMs = Native.t_init_ms;
     Result.FirstTokenTimeMs = Native.t_first_token_ms;
     Result.TokensPerSecond = Native.tok_per_s;
-    Result.BytesCommitted = Native.bytes_committed;
-    Result.BytesReserved = Native.bytes_reserved;
+    Result.BytesCommitted = static_cast<int64>(Native.bytes_committed);
+    Result.BytesReserved = static_cast<int64>(Native.bytes_reserved);
 
     return Result;
 }
 
 bool UAstralSession::TickStream(float DeltaTime)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Session_TickStream);
+
     (void)DeltaTime;
 
-    if (SessionHandle == 0)
+    if (!IsValid())
     {
         TickerHandle.Reset();
         return false;
     }
 
-    const bool want_tick_utf8 =
-        StreamBytesNative.IsBound() || OnBytesReceived.IsBound() || OnTokenReceived.IsBound() || StreamTextNative.IsBound();
-
-    if (want_tick_utf8)
-    {
-        TickUtf8Buffer.Reset();
-    }
-
-    constexpr uint32 MaxReadsPerTick = 128;
-    constexpr uint32 MaxBytesPerTick = 64u * 1024u;
-
-    uint32 total_bytes = 0;
-    bool stop_ticker = false;
-
-    for (uint32 i = 0; i < MaxReadsPerTick; ++i)
-    {
-        const int32 BytesRead = StreamRead(TokenBuffer, 0);
-        if (BytesRead == ASTRAL_E_TIMEOUT)
-        {
-            break;
-        }
-
-        if (BytesRead < 0)
-        {
-            UE_LOG(LogTemp, Error, TEXT("AstralRT: astral_stream_read failed (%d)"), BytesRead);
-            stop_ticker = true;
-            break;
-        }
-
-        if (BytesRead == 0)
-        {
-            stop_ticker = true;
-            break;
-        }
-
-        total_bytes += static_cast<uint32>(BytesRead);
-
-        if (want_tick_utf8)
-        {
-            TickUtf8Buffer.Append(TokenBuffer.GetData(), BytesRead);
-        }
-
-        if (total_bytes >= MaxBytesPerTick)
-        {
-            break;
-        }
-    }
-
-    if (want_tick_utf8 && TickUtf8Buffer.Num() > 0)
-    {
-        if (StreamBytesNative.IsBound())
-        {
-            StreamBytesNative.Broadcast(TConstArrayView<uint8>(TickUtf8Buffer.GetData(), TickUtf8Buffer.Num()));
-        }
-
-        if (OnBytesReceived.IsBound())
-        {
-            OnBytesReceived.Broadcast(TickUtf8Buffer);
-        }
-
-        if (OnTokenReceived.IsBound() || StreamTextNative.IsBound())
-        {
-            FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(TickUtf8Buffer.GetData()), TickUtf8Buffer.Num());
-
-            if (StreamTextNative.IsBound())
-            {
-                TStringBuilder<4096> Text;
-                Text.Append(Converter.Get(), Converter.Length());
-                StreamTextNative.Broadcast(Text.ToView());
-            }
-
-            if (OnTokenReceived.IsBound())
-            {
-                TickTextScratch.Reset();
-                TickTextScratch.Reserve(Converter.Length());
-                TickTextScratch.AppendChars(Converter.Get(), Converter.Length());
-                OnTokenReceived.Broadcast(TickTextScratch);
-            }
-        }
-    }
-
-    if (stop_ticker)
+    const FAstralSessionStreamReader Reader{this};
+    const bool keep_running = AstralRT::Private::FAstralSessionStreamPump::Tick(
+        Reader,
+        TokenBuffer,
+        TickUtf8Buffer,
+        TickTextScratch,
+        StreamBytesNative,
+        StreamTextNative,
+        OnBytesReceived,
+        OnTokenReceived
+    );
+    if (!keep_running)
     {
         TickerHandle.Reset();
         return false;

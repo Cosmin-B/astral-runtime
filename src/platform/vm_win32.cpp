@@ -9,7 +9,7 @@ namespace astral::platform {
 
 namespace {
 
-// Query system page size (typically 4KB on x86/x64)
+// Cached after the first system query; Windows page size is process-stable.
 size_t get_page_size() {
   static size_t page_size = 0;
   if (page_size == 0) {
@@ -20,13 +20,17 @@ size_t get_page_size() {
   return page_size;
 }
 
-// Query large page minimum size (typically 2MB on x64)
+// Zero means the host does not expose explicit large-page allocation.
 size_t get_large_page_minimum() {
   static size_t large_page_size = 0;
   if (large_page_size == 0) {
     large_page_size = GetLargePageMinimum();
   }
   return large_page_size;
+}
+
+size_t align_up(size_t value, size_t alignment) {
+  return (value + alignment - 1) & ~(alignment - 1);
 }
 
 } // namespace
@@ -36,24 +40,15 @@ void* vm_reserve(size_t size) {
     return nullptr;
   }
 
-  // Reserve address space without committing physical memory
-  // MEM_RESERVE: reserve address space only
-  // PAGE_NOACCESS: pages are inaccessible until committed
-  //
-  // Note: VirtualAlloc automatically rounds size up to page granularity
-  // Allocation granularity is typically 64KB (not 4KB page size)
+  // Reserve inaccessible address space; Windows rounds to allocation granularity.
   void* addr = VirtualAlloc(
-    nullptr,        // kernel chooses address
-    size,           // size to reserve
-    MEM_RESERVE,    // reserve only, don't commit
+    nullptr,
+    size,
+    MEM_RESERVE,
     PAGE_NOACCESS   // no access until committed
   );
 
   if (addr == nullptr) {
-    // Common failure reasons:
-    // - ERROR_NOT_ENOUGH_MEMORY: insufficient address space
-    // - ERROR_INVALID_PARAMETER: size too large or invalid
-    // GetLastError() would provide specific error code
     return nullptr;
   }
 
@@ -68,7 +63,7 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
     return nullptr;
   }
 
-  // Best-effort strategy:
+  // Alignment strategy:
   // 1) Reserve a larger region anywhere.
   // 2) Release it.
   // 3) Try reserving exactly `size` at an aligned address inside the released range.
@@ -92,7 +87,7 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
     }
   }
 
-  // Fallback: reserve without alignment.
+  // The caller still gets a valid reservation when strict alignment cannot be placed.
   return vm_reserve(size);
 }
 
@@ -101,17 +96,12 @@ void vm_commit(void* addr, size_t size) {
     return;
   }
 
-  // Commit physical memory to reserved pages
-  // MEM_COMMIT: allocate physical memory
-  // PAGE_READWRITE: allow read/write access
-  //
-  // Safe to call on already-committed pages (no-op, returns same address)
-  // VirtualAlloc returns nullptr on failure
+  // MEM_COMMIT is idempotent for pages that are already committed.
   void* result = VirtualAlloc(
-    addr,            // specific address within reserved region
-    size,            // size to commit
-    MEM_COMMIT,      // commit physical memory
-    PAGE_READWRITE   // read/write access
+    addr,
+    size,
+    MEM_COMMIT,
+    PAGE_READWRITE
   );
 
   if (result == nullptr) {
@@ -119,7 +109,7 @@ void vm_commit(void* addr, size_t size) {
     // - ERROR_NOT_ENOUGH_MEMORY: system out of memory
     // - ERROR_INVALID_ADDRESS: addr not within reserved region
     // - ERROR_COMMITMENT_LIMIT: commit charge limit exceeded
-    // Silently fail; caller should check for access violations if needed
+    // The region remains inaccessible; callers prevalidate page ranges at setup boundaries.
   }
 }
 
@@ -128,16 +118,7 @@ void vm_decommit(void* addr, size_t size) {
     return;
   }
 
-  // Decommit physical memory but keep address space reserved
-  // MEM_DECOMMIT: release physical memory, keep reservation
-  //
-  // After decommit:
-  // - Physical memory is released back to system
-  // - Address space remains reserved
-  // - Pages become inaccessible (PAGE_NOACCESS)
-  // - Accessing pages causes access violation until re-committed
-  //
-  // Note: Unlike munmap, this does NOT free the address space
+  // MEM_DECOMMIT releases backing memory while keeping the address range reserved.
   if (!VirtualFree(addr, size, MEM_DECOMMIT)) {
     // Common failure reasons:
     // - ERROR_INVALID_ADDRESS: addr not page-aligned or not committed
@@ -151,15 +132,8 @@ void vm_release(void* addr, size_t size) {
     return;
   }
 
-  // Release entire virtual address space reservation
-  // MEM_RELEASE: free both physical memory and address space
-  //
-  //  When using MEM_RELEASE, size MUST be 0 and addr MUST be
-  // the base address returned by the original VirtualAlloc(MEM_RESERVE) call.
-  // VirtualFree releases the entire region in one shot.
-  //
-  // We ignore the size parameter because Windows requires it to be 0
-  (void)size; // Suppress unused parameter warning
+  // MEM_RELEASE requires the original reservation base and a zero size.
+  (void)size;
 
   if (!VirtualFree(addr, 0, MEM_RELEASE)) {
     // Common failure reasons:
@@ -174,46 +148,62 @@ bool vm_try_hugepages(void* addr, size_t size) {
     return false;
   }
 
-  // Query large page minimum size
   size_t large_page_min = get_large_page_minimum();
   if (large_page_min == 0) {
-    // Large pages not supported or not enabled
     return false;
   }
 
-  // Check alignment requirements
   const uintptr_t addr_int = reinterpret_cast<uintptr_t>(addr);
   if (addr_int % large_page_min != 0) {
-    return false; // Not aligned to large page boundary
+    return false;
   }
 
   if (size % large_page_min != 0) {
-    return false; // Size not multiple of large page size
+    return false;
   }
 
-  // Windows large page support requirements:
-  // 1. Process must have SE_LOCK_MEMORY_NAME privilege (SeLockMemoryPrivilege)
-  //    This is typically disabled by default and requires administrator access
-  //    to enable via Local Security Policy or Group Policy
-  //
-  // 2. Must allocate with MEM_LARGE_PAGES flag in VirtualAlloc
-  //    NOTE: Large pages must be committed and reserved in a SINGLE operation
-  //    Cannot reserve first, then commit later
-  //
-  // 3. Large pages cannot be decommitted (MEM_DECOMMIT not supported)
-  //    Must free entire region with MEM_RELEASE
-  //
-  // Since the pages are already reserved/committed at this point, we cannot
-  // retroactively apply MEM_LARGE_PAGES. The caller must use large pages
-  // from the start by calling VirtualAlloc with MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES.
-  //
-  // For now, this function returns false because large pages must be requested
-  // at allocation time on Windows, not after the fact.
-  //
-  // TODO: Add vm_reserve_large() and vm_commit_large() variants that use
-  // MEM_LARGE_PAGES from the start.
+  // Windows large pages must be requested at reservation time.
+  return false;
+}
 
-  return false; // Large pages cannot be applied retroactively on Windows
+size_t vm_large_page_size() {
+  return get_large_page_minimum();
+}
+
+void* vm_reserve_large(size_t size, size_t* out_size) {
+  if (out_size != nullptr) {
+    *out_size = 0;
+  }
+  if (size == 0) {
+    return nullptr;
+  }
+
+  const size_t large_page_min = get_large_page_minimum();
+  if (large_page_min == 0) {
+    return nullptr;
+  }
+
+  const size_t alloc_size = align_up(size, large_page_min);
+  void* addr = ::VirtualAlloc(
+    nullptr,
+    alloc_size,
+    MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES,
+    PAGE_READWRITE
+  );
+  if (addr == nullptr) {
+    return nullptr;
+  }
+
+  if (out_size != nullptr) {
+    *out_size = alloc_size;
+  }
+  return addr;
+}
+
+bool vm_commit_large(void* addr, size_t size) {
+  (void)addr;
+  (void)size;
+  return false;
 }
 
 } // namespace astral::platform

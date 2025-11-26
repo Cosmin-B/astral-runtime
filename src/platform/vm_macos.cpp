@@ -59,7 +59,7 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
     return nullptr;
   }
 
-  // Best-effort: over-reserve and trim with munmap to return an aligned base.
+  // Over-reserve and trim with munmap to return an aligned base.
   const size_t total = size + alignment;
   void* base = vm_reserve(total);
   if (base == nullptr) {
@@ -95,7 +95,7 @@ void vm_commit(void* addr, size_t size) {
     // - EINVAL: addr not page-aligned, or invalid range
     // - ENOMEM: kernel cannot allocate internal structures
     // - EACCES: permission denied (shouldn't happen for our reserved pages)
-    return; // Silently fail; caller should check errno if needed
+    return; // The region remains inaccessible; callers prevalidate page ranges at setup boundaries.
   }
 
   // Step 2: Advise kernel that we'll use these pages
@@ -190,6 +190,24 @@ bool vm_try_hugepages(void* addr, size_t size) {
   // - Used internally by IOKit for DMA buffers
 
   return false; // No explicit huge page control on macOS
+}
+
+size_t vm_large_page_size() {
+  return 0;
+}
+
+void* vm_reserve_large(size_t size, size_t* out_size) {
+  (void)size;
+  if (out_size != nullptr) {
+    *out_size = 0;
+  }
+  return nullptr;
+}
+
+bool vm_commit_large(void* addr, size_t size) {
+  (void)addr;
+  (void)size;
+  return false;
 }
 
 } // namespace astral::platform

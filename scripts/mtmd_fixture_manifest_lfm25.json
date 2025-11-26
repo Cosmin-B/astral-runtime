@@ -1,0 +1,43 @@
+{
+  "schema": "astral.mtmd-fixtures.v1",
+  "description": "Pinned LFM2.5 GGUF fixtures for Astral MTMD release validation.",
+  "license_id": "lfm1.0",
+  "license_name": "LFM Open License v1.0",
+  "license_url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Base-GGUF/blob/ff14effbc3d8eb8823f53a5c9b0ebf7419b57c68/LICENSE",
+  "repos": [
+    {
+      "role": "vision",
+      "repo": "LiquidAI/LFM2.5-VL-1.6B-GGUF",
+      "revision": "48c6a306939241d1ddc99b090df552cb47a066c6",
+      "mode": "all",
+      "max_gb_per_file": 3,
+      "include": [
+        "^LFM2\\.5-VL-1\\.6B-Q4_0\\.gguf$",
+        "^mmproj-LFM2\\.5-VL-1\\.6b-Q8_0\\.gguf$"
+      ],
+      "required_files": {
+        "model": "LFM2.5-VL-1.6B-Q4_0.gguf",
+        "projector": "mmproj-LFM2.5-VL-1.6b-Q8_0.gguf"
+      }
+    },
+    {
+      "role": "audio",
+      "repo": "LiquidAI/LFM2.5-Audio-1.5B-GGUF",
+      "revision": "7d525f883a077e20afb782f2ff618edcae0e39e4",
+      "mode": "all",
+      "max_gb_per_file": 3,
+      "include": [
+        "^LFM2\\.5-Audio-1\\.5B-Q4_0\\.gguf$",
+        "^mmproj-LFM2\\.5-Audio-1\\.5B-Q4_0\\.gguf$",
+        "^vocoder-LFM2\\.5-Audio-1\\.5B-Q4_0\\.gguf$",
+        "^tokenizer-LFM2\\.5-Audio-1\\.5B-Q4_0\\.gguf$"
+      ],
+      "required_files": {
+        "model": "LFM2.5-Audio-1.5B-Q4_0.gguf",
+        "projector": "mmproj-LFM2.5-Audio-1.5B-Q4_0.gguf",
+        "vocoder": "vocoder-LFM2.5-Audio-1.5B-Q4_0.gguf",
+        "tokenizer": "tokenizer-LFM2.5-Audio-1.5B-Q4_0.gguf"
+      }
+    }
+  ]
+}

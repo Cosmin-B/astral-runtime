@@ -1,8 +1,8 @@
-// AstralModel.cs - Model wrapper with RAII pattern
+// AstralModel.cs - GGUF model handle with explicit native ownership.
 //
-//  Always call Dispose() when done (use 'using' statement)
-//  No GC allocations in hot paths
-//  Thread-safety: Safe to load from multiple threads; must not be in use when releasing
+//  Dispose releases the native model handle; prefer a using scope.
+//  No GC allocations in hot paths.
+//  Thread-safety: Safe to load from multiple threads; must not be in use when releasing.
 
 using System;
 using System.Runtime.InteropServices;
@@ -13,7 +13,7 @@ namespace Astral.Runtime
 {
     /// <summary>
     /// GGUF model handle.
-    /// Implements IDisposable for RAII pattern.
+    /// Implements IDisposable to release the native model handle deterministically.
     /// Thread-safety: Safe to load from multiple threads; must not be in use when releasing.
     /// </summary>
     public class AstralModel : IDisposable
@@ -72,7 +72,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Query model limits (best-effort; fields may be 0 if unknown).
+        /// Query model limits. Providers write 0 for limits they cannot report.
         /// Thread-safety: Safe to call from multiple threads.
         /// </summary>
         public AstralNative.AstralModelLimits GetLimits()
@@ -261,7 +261,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Dispose model (RAII pattern).
+        /// Release the native model handle.
         /// Thread-safety: Not thread-safe; must not be in use by any session.
         /// </summary>
         public void Dispose()
@@ -284,7 +284,7 @@ namespace Astral.Runtime
         {
             if (!m_disposed)
             {
-                Debug.LogWarning("[Astral] Model was not disposed properly. Always use 'using' statement or call Dispose().");
+                Debug.LogWarning("[Astral] Model leaked; use a using block or call Dispose().");
                 Dispose();
             }
         }
@@ -355,7 +355,7 @@ namespace Astral.Runtime
         };
 
         /// <summary>
-        /// High-performance desktop configuration.
+        /// Desktop preset with a larger context and batch size.
         /// </summary>
         public static AstralModelConfig HighPerformance => new AstralModelConfig
         {

@@ -194,4 +194,4 @@ CONTACT
 -------
 
 Questions about memory ordering? See CODING_STANDARDS.md § Concurrency Rules
-Questions about design? See MASTER_SPEC.md § Concurrency Primitives
+Questions about design? See docs/architecture/CONCURRENCY_MODEL.md

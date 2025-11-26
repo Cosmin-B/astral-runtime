@@ -17,6 +17,11 @@ Options:
   --out-dir <path>         Output directory for zips (default: ./dist)
   --unity                  Also build+package Unity plugin and zip ./plugins/unity
   --unreal                 Also build+package Unreal plugin and zip ./plugins/unreal/AstralRT
+  --evidence <path>        Copy and validate release-evidence.json into the output directory
+  --evidence-phase <p>     Evidence validation phase: pre-sign or complete (default: complete)
+  --sign                   Sign dist/checksums.sha256 after metadata generation
+  --sign-tool <tool>       Signing backend for --sign: gpg or minisign
+  --sign-key <id-or-path>  GPG key id or minisign secret key path
   --help                   Show this help
 
 Notes:
@@ -31,6 +36,11 @@ install_prefix="${root_dir}/dist/stage"
 out_dir="${root_dir}/dist"
 do_unity=0
 do_unreal=0
+do_sign=0
+sign_tool=""
+sign_key=""
+evidence_path=""
+evidence_phase="complete"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,6 +50,11 @@ while [[ $# -gt 0 ]]; do
     --out-dir) out_dir="${2:-}"; shift 2 ;;
     --unity) do_unity=1; shift ;;
     --unreal) do_unreal=1; shift ;;
+    --evidence) evidence_path="${2:-}"; shift 2 ;;
+    --evidence-phase) evidence_phase="${2:-}"; shift 2 ;;
+    --sign) do_sign=1; shift ;;
+    --sign-tool) sign_tool="${2:-}"; shift 2 ;;
+    --sign-key) sign_key="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -59,6 +74,31 @@ if [[ -z "${version}" ]]; then
   echo "Failed to detect version from CMakeLists.txt/include/astral_rt.h" >&2
   exit 1
 fi
+
+case "${install_prefix}" in
+  /*) ;;
+  *) install_prefix="${root_dir}/${install_prefix}" ;;
+esac
+
+case "${out_dir}" in
+  /*) ;;
+  *) out_dir="${root_dir}/${out_dir}" ;;
+esac
+
+if [[ -n "${evidence_path}" ]]; then
+  case "${evidence_path}" in
+    /*) ;;
+    *) evidence_path="${root_dir}/${evidence_path}" ;;
+  esac
+  if [[ ! -s "${evidence_path}" ]]; then
+    echo "Release evidence manifest is missing or empty: ${evidence_path}" >&2
+    exit 2
+  fi
+fi
+case "${evidence_phase}" in
+  complete|pre-sign) ;;
+  *) echo "Unknown --evidence-phase '${evidence_phase}' (expected complete or pre-sign)" >&2; exit 2 ;;
+esac
 
 os="unknown"
 arch="unknown"
@@ -103,6 +143,9 @@ fi
 
 echo "[package_release] Install to staging: ${install_prefix}"
 cmake --install "${build_dir}" --prefix "${install_prefix}"
+cmake -E copy "${root_dir}/LICENSE" "${root_dir}/NOTICE" "${install_prefix}/"
+cmake -E make_directory "${install_prefix}/share/astral/release"
+cmake -E copy_directory "${root_dir}/docs/release" "${install_prefix}/share/astral/release"
 
 core_zip="${out_dir}/astral-${version}-${os}-${arch}.zip"
 echo "[package_release] Zip core: ${core_zip}"
@@ -117,7 +160,7 @@ if [[ "${do_unity}" -eq 1 ]]; then
   cmake --build --preset unity-plugin -j
   unity_zip="${out_dir}/astral-${version}-unity-plugin-${os}-${arch}.zip"
   echo "[package_release] Zip Unity plugin: ${unity_zip}"
-  cmake -E tar cf "${unity_zip}" --format=zip -- "plugins/unity"
+  cmake -E tar cf "${unity_zip}" --format=zip -- "plugins/unity" "LICENSE" "NOTICE" "docs/release"
 fi
 
 if [[ "${do_unreal}" -eq 1 ]]; then
@@ -126,7 +169,47 @@ if [[ "${do_unreal}" -eq 1 ]]; then
   cmake --build --preset unreal-plugin -j
   unreal_zip="${out_dir}/astral-${version}-unreal-plugin-${os}-${arch}.zip"
   echo "[package_release] Zip Unreal plugin: ${unreal_zip}"
-  cmake -E tar cf "${unreal_zip}" --format=zip -- "plugins/unreal/AstralRT"
+  cmake -E tar cf "${unreal_zip}" --format=zip -- "plugins/unreal/AstralRT" "LICENSE" "NOTICE" "docs/release"
+fi
+
+if [[ -n "${evidence_path}" ]]; then
+  echo "[package_release] Copy release evidence"
+  cmake -E copy "${evidence_path}" "${out_dir}/release-evidence.json"
+fi
+
+echo "[package_release] Generate release metadata"
+"${root_dir}/scripts/generate_abi_layout_report.sh" --out "${out_dir}/abi-layout.json"
+"${root_dir}/scripts/generate_release_metadata.sh" "${out_dir}"
+
+if [[ "${do_sign}" -eq 1 ]]; then
+  sign_args=(--out-dir "${out_dir}")
+  if [[ -n "${sign_tool}" ]]; then
+    sign_args+=(--tool "${sign_tool}")
+  fi
+  if [[ -n "${sign_key}" ]]; then
+    sign_args+=(--key "${sign_key}")
+  fi
+  echo "[package_release] Sign release checksums"
+  "${root_dir}/scripts/sign_release_artifacts.sh" "${sign_args[@]}"
+fi
+
+validate_args=(--dist "${out_dir}")
+if [[ "${do_unity}" -eq 1 ]]; then
+  validate_args+=(--expect-unity)
+fi
+if [[ "${do_unreal}" -eq 1 ]]; then
+  validate_args+=(--expect-unreal)
+fi
+if [[ "${do_sign}" -eq 1 ]]; then
+  validate_args+=(--require-signature)
+fi
+
+echo "[package_release] Validate release artifacts"
+"${root_dir}/scripts/validate_release_artifacts.sh" "${validate_args[@]}"
+
+if [[ -n "${evidence_path}" ]]; then
+  echo "[package_release] Validate release evidence"
+  "${root_dir}/scripts/validate_release_evidence.py" "${out_dir}/release-evidence.json" --base-dir "${out_dir}" --phase "${evidence_phase}"
 fi
 
 echo "[package_release] Done. Artifacts in: ${out_dir}"

@@ -177,12 +177,13 @@ def _http_download_resume(url: str, dst: Path, token: Optional[str], expected_si
         return
 
 
-def list_repo_files(repo: str, token: Optional[str]) -> List[FileInfo]:
+def list_repo_files(repo: str, token: Optional[str], revision: str = "main") -> List[FileInfo]:
     # Prefer the repo tree endpoint because it reliably includes sizes (including for LFS files),
     # while /api/models/<repo> often omits "size" for siblings.
     repo_q = urllib.parse.quote(repo, safe="/")
 
-    tree_url = f"{HF_API}/api/models/{repo_q}/tree/main?recursive=1"
+    revision_q = urllib.parse.quote(revision, safe="")
+    tree_url = f"{HF_API}/api/models/{repo_q}/tree/{revision_q}?recursive=1"
     data = _http_get_json(tree_url, token)
     if isinstance(data, list):
         out: List[FileInfo] = []
@@ -267,10 +268,12 @@ def main(argv: List[str]) -> int:
 
     ap_list = sub.add_parser("list", help="List GGUF files in a repo")
     ap_list.add_argument("repo", help="Repo id, e.g. Qwen/Qwen3-8B-GGUF")
+    ap_list.add_argument("--revision", default="main", help="Model revision to list (default: main)")
 
     ap_dl = sub.add_parser("download", help="Download GGUF files from a repo")
     ap_dl.add_argument("repo", help="Repo id, e.g. Qwen/Qwen3-8B-GGUF")
     ap_dl.add_argument("--out", required=True, help="Output root directory (models stored under <out>/<repo>/)")
+    ap_dl.add_argument("--revision", default="main", help="Model revision to download (default: main)")
     ap_dl.add_argument("--token", default=os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN"),
                        help="HF token (or set HF_TOKEN/HUGGINGFACE_HUB_TOKEN)")
     ap_dl.add_argument("--max-gb", type=float, default=25.0, help="Skip any single file larger than this (default: 25GB)")
@@ -284,8 +287,9 @@ def main(argv: List[str]) -> int:
     args = ap.parse_args(argv)
 
     token = getattr(args, "token", None)
+    revision = getattr(args, "revision", "main")
     try:
-        all_files = list_repo_files(args.repo, token)
+        all_files = list_repo_files(args.repo, token, revision)
     except Exception as e:
         sys.stderr.write(f"[hf] failed to query repo {args.repo}: {e}\n")
         return 2
@@ -333,7 +337,7 @@ def main(argv: List[str]) -> int:
     sys.stderr.write(f"[hf] repo={args.repo} gguf_files={len(ggufs)} download={len(chosen)} out={repo_dir}\n")
 
     for f in chosen:
-        url = f"{HF_API}/{args.repo}/resolve/main/{urllib.parse.quote(f.path, safe='/')}"
+        url = f"{HF_API}/{args.repo}/resolve/{urllib.parse.quote(revision, safe='')}/{urllib.parse.quote(f.path, safe='/')}"
         dst = repo_dir / Path(f.path).name
         if dst.exists() and dst.stat().st_size == f.size:
             sys.stderr.write(f"[hf] skip (exists): {dst.name}\n")

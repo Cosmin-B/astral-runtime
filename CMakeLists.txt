@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AstralRT VERSION 0.1.0 LANGUAGES CXX)
+project(AstralRT VERSION 0.1.0 LANGUAGES C CXX)
 
 # C++20 required, no extensions
 set(CMAKE_CXX_STANDARD 20)
@@ -18,7 +18,7 @@ option(ASTRAL_ENABLE_DYNAMIC_BACKENDS "Enable runtime-loadable backend providers
 option(ASTRAL_ENABLE_THREADS "Enable Astral internal worker threads" ON)
 option(ASTRAL_NO_THROW_ABI "Catch and translate exceptions at the C ABI boundary (recommended)" ON)
 option(ASTRAL_ENABLE_VIRTUAL_MEMORY "Enable platform virtual memory primitives (mmap/VirtualAlloc)" ON)
-option(ASTRAL_CPU_MEMORY_SOURCE_MMAP "CPU backend: enable mmap-backed model load for MEMORY/IO sources (best-effort; may use temp files)" ON)
+option(ASTRAL_CPU_MEMORY_SOURCE_MMAP "CPU backend: materialize MEMORY/IO sources to temp files so llama.cpp can use mmap" ON)
 option(ASTRAL_ENABLE_MTMD "Enable multimodal (vision/audio) support via llama.cpp libmtmd" OFF)
 option(ASTRAL_ENABLE_TRACY "Enable Tracy profiler integration (profiling presets only; requires external/tracy submodule)" OFF)
 option(ASTRAL_ENABLE_TRACY_MICRO "Enable Tracy micro-instrumentation (higher overhead; profiling builds only)" OFF)
@@ -58,12 +58,16 @@ endif()
 
 # Some shared-library consumers (Unity plugin, backend provider plugins) require
 # all static deps to be built as PIC.
-if(ASTRAL_BUILD_SHARED_LIB OR (ASTRAL_BUILD_UNITY_PLUGIN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS") OR ASTRAL_BUILD_TESTS)
+if(ASTRAL_BUILD_SHARED_LIB OR (ASTRAL_BUILD_UNITY_PLUGIN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS") OR ASTRAL_BUILD_UNREAL_PLUGIN OR ASTRAL_BUILD_TESTS)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 if(ASTRAL_BUILD_UNITY_PLUGIN AND ASTRAL_BUILD_UNREAL_PLUGIN)
     message(FATAL_ERROR "ASTRAL_BUILD_UNITY_PLUGIN and ASTRAL_BUILD_UNREAL_PLUGIN cannot both be ON in the same build")
+endif()
+
+if(ASTRAL_BUILD_UNREAL_PLUGIN)
+    add_compile_definitions(JSON_HAS_CPP_17)
 endif()
 
 # Include compiler flags module
@@ -96,14 +100,14 @@ if(NOT ASTRAL_ENABLE_VIRTUAL_MEMORY)
     list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/vm_.*\\.cpp$")
     if(ASTRAL_CPU_MEMORY_SOURCE_MMAP)
         message(WARNING "ASTRAL_ENABLE_VIRTUAL_MEMORY=OFF disables temp-file mmap model loading for MEMORY/IO sources; forcing ASTRAL_CPU_MEMORY_SOURCE_MMAP=OFF")
-        set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: enable mmap-backed model load for MEMORY/IO sources (best-effort; may use temp files)" FORCE)
+        set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: materialize MEMORY/IO sources to temp files so llama.cpp can use mmap" FORCE)
     endif()
 endif()
 
 # Mobile platforms: avoid temp-file-based mmap paths by default (sandboxed filesystems, non-standard temp locations).
 if((CMAKE_SYSTEM_NAME STREQUAL "iOS" OR ANDROID) AND ASTRAL_CPU_MEMORY_SOURCE_MMAP)
     message(WARNING "ASTRAL_CPU_MEMORY_SOURCE_MMAP=ON is not supported on ${CMAKE_SYSTEM_NAME}; forcing OFF")
-    set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: enable mmap-backed model load for MEMORY/IO sources (best-effort; may use temp files)" FORCE)
+    set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: materialize MEMORY/IO sources to temp files so llama.cpp can use mmap" FORCE)
 endif()
 
 # Tracy integration (optional; must remain zero-cost when OFF).
@@ -175,7 +179,7 @@ function(astral_configure_runtime_target tgt)
         $<$<BOOL:${ASTRAL_ENABLE_MTMD}>:${LLAMA_CPP_DIR}/tools/mtmd>
     )
 
-    target_link_libraries(${tgt} PRIVATE llama common)
+    target_link_libraries(${tgt} PRIVATE llama ${ASTRAL_LLAMA_COMMON_TARGET})
     if(ASTRAL_ENABLE_MTMD)
         target_link_libraries(${tgt} PRIVATE mtmd)
     endif()
@@ -269,6 +273,20 @@ if(ASTRAL_BUILD_SHARED_LIB)
     astral_configure_runtime_target(astral_rt_shared)
 
     set_target_properties(astral_rt_shared PROPERTIES OUTPUT_NAME "astral_rt")
+    set_target_properties(astral_rt_shared PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        C_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN YES
+    )
+
+    if(UNIX AND NOT APPLE)
+        set(_ASTRAL_EXPORTS_MAP "${CMAKE_CURRENT_BINARY_DIR}/astral_rt_exports.map")
+        file(WRITE "${_ASTRAL_EXPORTS_MAP}" "{\n  global:\n    astral_*;\n  local:\n    *;\n};\n")
+        target_link_options(astral_rt_shared PRIVATE
+            "LINKER:--version-script=${_ASTRAL_EXPORTS_MAP}"
+            "LINKER:--exclude-libs,ALL"
+        )
+    endif()
 
     if(WIN32)
         target_compile_definitions(astral_rt_shared PRIVATE ASTRAL_BUILD_DLL)

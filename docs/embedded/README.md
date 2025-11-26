@@ -41,6 +41,7 @@ cd astral
 ```
 
 This validation wrapper runs the following gates (release-with-tests) before the embedded smoke:
+- `gate_embedded_presets`: embedded CMake presets keep VM, temp-file mmap, dynamic loading, JSON-schema grammar, and Astral worker threads disabled
 - `gate_allocations`: no allocations during steady-state decode/stream (mock always; CPU when a GGUF is available)
 - `gate_io_syscalls`: no I/O-ish syscalls in steady-state (warmup/reset excluded)
 - `gate_rss_cap`: RSS cap check (Linux-only, configurable via `ASTRAL_RSS_MAX_MB`)
