@@ -28,8 +28,7 @@ astral/
 │   │   └── UNREAL_INTEGRATION.md
 │   ├── release/                # Release evidence, ABI, and dependency manifests
 │   ├── rules/                  # Coding standards and rules
-│   ├── embedded/               # Embedded profile notes
-│   └── PRODUCTION_READINESS_AUDIT.md
+│   └── embedded/               # Embedded profile notes
 ├── backend_plugins/            # Dynamic backend provider examples
 ├── include/                    # Public headers
 │   ├── astral_rt.h             # Public C ABI
@@ -310,8 +309,8 @@ See [ABI Versioning](docs/ABI_VERSIONING.md),
 
 ## Performance Targets
 
-These are engineering targets, not release guarantees. The current release
-evidence and blockers are tracked in `docs/PRODUCTION_READINESS_AUDIT.md`.
+These are engineering targets, not release guarantees. Release acceptance
+evidence is tracked under `docs/release/`.
 
 | Metric | Target | Notes |
 |--------|--------|-------|

@@ -1,9 +1,8 @@
 # Astral Roadmap
 
 This roadmap tracks the work needed to turn Astral's validated native runtime
-and engine packages into a production release candidate. Current readiness and
-external blockers are recorded in `docs/PRODUCTION_READINESS_AUDIT.md`; this
-file should not claim support that is not backed by gates or release evidence.
+and engine packages into a production release candidate. This file should not
+claim support that is not backed by gates or release evidence.
 
 ## Current Native Baseline
 

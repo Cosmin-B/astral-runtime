@@ -648,7 +648,7 @@ Note: This is an illustrative snippet. The repo’s actual CI is in `.github/wor
 
 **Astral Documentation**:
 - `tests/MEMORY_VALIDATION.md` - Current memory validation gates
-- `/home/user/workspace/astral/docs/PRODUCTION_READINESS_AUDIT.md` - Current readiness blockers and release gate evidence
+- `/home/user/workspace/astral/docs/release/RELEASE_ACCEPTANCE_MATRIX.md` - Release acceptance evidence
 - `/home/user/workspace/astral/docs/FEATURE_MATRIX.md` - Supported feature surface and required evidence
 - `/home/user/workspace/astral/docs/rules/CODING_STANDARDS.md` - Memory rules
 
