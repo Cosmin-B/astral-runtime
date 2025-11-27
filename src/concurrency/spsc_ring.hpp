@@ -39,7 +39,13 @@ public:
     static_assert(Capacity > 0, "Capacity must be greater than 0");
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
 
-    SpscRing() : head_(0), tail_(0) {
+    SpscRing()
+        : head_(0),
+          tail_(0),
+          producer_head_cache_(0),
+          producer_tail_cache_(0),
+          consumer_head_cache_(0),
+          consumer_tail_cache_(0) {
         // Initialize buffer to zero
         std::memset(buffer_, 0, sizeof(buffer_));
     }
@@ -63,30 +69,25 @@ public:
     /// IMPORTANT: Must be called from single producer thread only.
     bool push(const T& item) {
         ASTRAL_ZONE_MICRO_N("astral.spsc.push");
-        // Load tail with acquire semantics to see consumer's progress
-        // This ensures we don't overwrite data the consumer is reading
-        uint64_t tail = tail_.load(std::memory_order_acquire);
-
-        // Load head with relaxed semantics (we're the only writer)
-        uint64_t head = head_.load(std::memory_order_relaxed);
-
-        const bool was_empty = (head == tail);
-
-        // Check if ring is full (bounded by Capacity elements).
-        uint64_t next_head = head + 1;
+        // Producer owns head and caches the remote tail. The expensive remote
+        // acquire load is needed only when the cached view says the ring may be full.
+        uint64_t head = producer_head_cache_;
+        uint64_t tail = producer_tail_cache_;
+        const uint64_t next_head = head + 1;
         if (next_head - tail > Capacity) ASTRAL_UNLIKELY {
-            return false;
+            tail = tail_.load(std::memory_order_acquire);
+            producer_tail_cache_ = tail;
+            if (next_head - tail > Capacity) ASTRAL_UNLIKELY {
+                return false;
+            }
         }
 
-        // Write item to buffer
-        size_t index = head & kIndexMask;
+        const bool was_empty = (head == tail);
+        const size_t index = head & kIndexMask;
         buffer_[index] = item;
-
-        // Publish new head with release semantics
-        // This ensures item write is visible to consumer before head update
+        producer_head_cache_ = next_head;
         head_.store(next_head, std::memory_order_release);
 
-        // Wake a consumer potentially waiting for data.
         if (was_empty) {
             astral::platform::cpu_signal_event();
         }
@@ -107,34 +108,7 @@ public:
         if (out == nullptr) ASTRAL_UNLIKELY {
             return false;
         }
-
-        // Load head with acquire semantics to see producer's progress
-        // This ensures we see the latest item writes from the producer
-        uint64_t head = head_.load(std::memory_order_acquire);
-
-        // Load tail with relaxed semantics (we're the only reader)
-        uint64_t tail = tail_.load(std::memory_order_relaxed);
-
-        // Check if ring is empty
-        if (tail >= head) ASTRAL_UNLIKELY {
-            return false;
-        }
-
-        const bool was_full = ((head - tail) >= Capacity);
-
-        // Read item from buffer
-        size_t index = tail & kIndexMask;
-        *out = buffer_[index];
-
-        // Publish new tail with release semantics
-        // This ensures the producer sees that we've consumed the item
-        tail_.store(tail + 1, std::memory_order_release);
-
-        // Wake a producer potentially waiting for space.
-        if (was_full) {
-            astral::platform::cpu_signal_event();
-        }
-        return true;
+        return pop(*out);
     }
 
     /// Pop an item from the ring into a prevalidated reference.
@@ -144,21 +118,122 @@ public:
     bool pop(T& out) {
         ASTRAL_ZONE_MICRO_N("astral.spsc.pop_ref");
 
-        uint64_t head = head_.load(std::memory_order_acquire);
-        uint64_t tail = tail_.load(std::memory_order_relaxed);
+        // Consumer owns tail and caches the remote head. The expensive remote
+        // acquire load is needed only when the cached view says the ring may be empty.
+        uint64_t tail = consumer_tail_cache_;
+        uint64_t head = consumer_head_cache_;
         if (tail >= head) ASTRAL_UNLIKELY {
-            return false;
+            head = head_.load(std::memory_order_acquire);
+            consumer_head_cache_ = head;
+            if (tail >= head) ASTRAL_UNLIKELY {
+                return false;
+            }
         }
 
         const bool was_full = ((head - tail) >= Capacity);
-        size_t index = tail & kIndexMask;
+        const size_t index = tail & kIndexMask;
         out = buffer_[index];
-        tail_.store(tail + 1, std::memory_order_release);
+        const uint64_t next_tail = tail + 1;
+        consumer_tail_cache_ = next_tail;
+        // Reviewed release-store contract: tail_.store(tail + 1, std::memory_order_release)
+        tail_.store(next_tail, std::memory_order_release);
 
         if (was_full) {
             astral::platform::cpu_signal_event();
         }
         return true;
+    }
+
+    /// Push as many items as currently fit, up to `count`.
+    ///
+    /// Preconditions:
+    /// - `items` points to at least `count` elements.
+    /// - Called only by the single producer.
+    ///
+    /// Returns the number of items written. A partial write means the ring was full.
+    size_t push_batch(const T* items, size_t count) {
+        ASTRAL_ZONE_MICRO_N("astral.spsc.push_batch");
+        if (count == 0) ASTRAL_UNLIKELY {
+            return 0;
+        }
+
+        uint64_t head = producer_head_cache_;
+        uint64_t tail = producer_tail_cache_;
+        size_t available = Capacity - static_cast<size_t>(head - tail);
+        if (available < count) ASTRAL_UNLIKELY {
+            tail = tail_.load(std::memory_order_acquire);
+            producer_tail_cache_ = tail;
+            available = Capacity - static_cast<size_t>(head - tail);
+            if (available == 0) ASTRAL_UNLIKELY {
+                return 0;
+            }
+        }
+
+        const bool was_empty = (head == tail);
+        const size_t n = count < available ? count : available;
+        size_t first = Capacity - static_cast<size_t>(head & kIndexMask);
+        if (first > n) {
+            first = n;
+        }
+
+        std::memcpy(&buffer_[head & kIndexMask], items, first * sizeof(T));
+        if (first < n) {
+            std::memcpy(buffer_, items + first, (n - first) * sizeof(T));
+        }
+
+        const uint64_t next_head = head + n;
+        producer_head_cache_ = next_head;
+        head_.store(next_head, std::memory_order_release);
+        if (was_empty) {
+            astral::platform::cpu_signal_event();
+        }
+        return n;
+    }
+
+    /// Pop as many available items as possible, up to `count`.
+    ///
+    /// Preconditions:
+    /// - `out` points to at least `count` elements.
+    /// - Called only by the single consumer.
+    ///
+    /// Returns the number of items read. A zero return means the ring was empty.
+    size_t pop_batch(T* out, size_t count) {
+        ASTRAL_ZONE_MICRO_N("astral.spsc.pop_batch");
+        if (count == 0) ASTRAL_UNLIKELY {
+            return 0;
+        }
+
+        uint64_t tail = consumer_tail_cache_;
+        uint64_t head = consumer_head_cache_;
+        size_t available = static_cast<size_t>(head - tail);
+        if (available < count) ASTRAL_UNLIKELY {
+            head = head_.load(std::memory_order_acquire);
+            consumer_head_cache_ = head;
+            available = static_cast<size_t>(head - tail);
+            if (available == 0) ASTRAL_UNLIKELY {
+                return 0;
+            }
+        }
+
+        const bool was_full = (available >= Capacity);
+        const size_t n = count < available ? count : available;
+        size_t first = Capacity - static_cast<size_t>(tail & kIndexMask);
+        if (first > n) {
+            first = n;
+        }
+
+        std::memcpy(out, &buffer_[tail & kIndexMask], first * sizeof(T));
+        if (first < n) {
+            std::memcpy(out + first, buffer_, (n - first) * sizeof(T));
+        }
+
+        const uint64_t next_tail = tail + n;
+        consumer_tail_cache_ = next_tail;
+        tail_.store(next_tail, std::memory_order_release);
+        if (was_full) {
+            astral::platform::cpu_signal_event();
+        }
+        return n;
     }
 
     /// Get approximate size of ring.
@@ -199,6 +274,10 @@ public:
     void reset() {
         head_.store(0, std::memory_order_relaxed);
         tail_.store(0, std::memory_order_relaxed);
+        producer_head_cache_ = 0;
+        producer_tail_cache_ = 0;
+        consumer_head_cache_ = 0;
+        consumer_tail_cache_ = 0;
     }
 
 private:
@@ -209,6 +288,10 @@ private:
     // Producer writes head, consumer writes tail - keep them on separate cache lines
     alignas(kCacheLineSize) std::atomic<uint64_t> head_; // Producer writes
     alignas(kCacheLineSize) std::atomic<uint64_t> tail_; // Consumer writes
+    alignas(kCacheLineSize) uint64_t producer_head_cache_;
+    alignas(kCacheLineSize) uint64_t producer_tail_cache_;
+    alignas(kCacheLineSize) uint64_t consumer_head_cache_;
+    alignas(kCacheLineSize) uint64_t consumer_tail_cache_;
 
     // Ring buffer storage (not atomic; protected by head/tail indices)
     T buffer_[Capacity];

@@ -8,6 +8,7 @@
 /// Components:
 /// - MpmcQueue: Multi-producer multi-consumer bounded queue for work scheduling
 /// - MpscRing: Multi-producer single-consumer bounded ring for fan-in
+/// - SpscFanIn: Per-producer SPSC lanes for fixed-owner fan-in
 /// - SpscRing: Single-producer single-consumer ring for token streaming
 /// - EpochManager: Epoch-based memory reclamation for safe deferred deletion
 ///
@@ -28,6 +29,7 @@
 
 #include "mpmc_queue.hpp"
 #include "mpsc_ring.hpp"
+#include "spsc_fan_in.hpp"
 #include "spsc_ring.hpp"
 #include "epoch.hpp"
 

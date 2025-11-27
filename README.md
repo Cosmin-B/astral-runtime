@@ -103,6 +103,9 @@ cmake --build --preset release-with-tests -j
 
 # Concurrency microbenches (rdtsc/mach time where available)
 ./build/release-test/benchmarks/astral_benchmarks
+./build/release-test/benchmarks/astral_benchmarks --only spsc-latency
+./build/release-test/benchmarks/astral_benchmarks --only spsc-batch --spsc-batch-size 64
+ASTRAL_BENCH_PIN_THREADS=1 ./build/release-test/benchmarks/astral_benchmarks --only spsc-fan-in
 
 # End-to-end streamed inference (requires a GGUF under tests/models/ or ASTRAL_BENCH_MODEL)
 ./build/release-test/benchmarks/astral_benchmarks --only infer --infer-tokens 128
