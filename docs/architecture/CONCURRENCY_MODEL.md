@@ -5,14 +5,15 @@ This document describes the **current** (v0.1) concurrency primitives and the ru
 ## Status (v0.1)
 
 Implemented:
-- **MPMC queue**: bounded ring with **ticket + per-slot sequence**, blocking `enqueue_wait` / `dequeue_wait` (no atomic compare-and-swap usage).
 - **SPSC ring**: bounded token ring for streaming with backpressure and event signaling.
+- **MPSC ring**: bounded fan-in ring with non-blocking `try_push`; full queues map to `ASTRAL_E_BUSY` at public API boundaries.
+- **MPMC queue**: bounded ring with **ticket + per-slot sequence**, blocking `enqueue_wait` / `dequeue_wait` (no atomic compare-and-swap usage).
 - **ARM-friendly waiting**: `cpu_pause`, `cpu_wait_for_event`, `cpu_signal_event` primitives for low overhead spin/wait.
+- **CPU dispatch probe**: private runtime feature detection for x86_64 AVX2 and ARM NEON dispatch tiers.
 - **Worker pool**: fixed worker threads + internal work queue (`astral::core::submit_work`)
 
 Not implemented yet (planned):
 - Work stealing scheduler.
-- Epoch-based reclamation.
 
 ## Threading contract
 
@@ -33,6 +34,31 @@ Astral uses lightweight CPU hints instead of OS waits in hot paths:
 - `cpu_signal_event()` maps to ARM SEV (x86 fallback: no-op).
 
 See `astral/src/platform/atomics.h` for the exact mappings.
+
+## MPSC ring (fan-in)
+
+File: `astral/src/concurrency/mpsc_ring.hpp`
+
+### Design
+
+- Bounded ring with `Capacity` (power of 2).
+- Multiple producers reserve publish positions with one producer-arbitration CAS.
+- A single consumer owns dequeue order and does not need consumer-side CAS.
+- Each slot contains a `seq` number that controls when a slot may be written or read.
+- `try_push(const T&)` returns `false` when the ring is full.
+- `pop(T& out)` returns `false` when the ring is empty and avoids pointer validation in the hot path.
+
+### Memory-order contract
+
+- Producers load `slot.seq` with acquire before reusing a slot released by the consumer.
+- Producer reservation uses relaxed ordering; the slot sequence is the synchronization object.
+- Producers write `slot.data`, then publish with `slot.seq.store(release, pos + 1)`.
+- The consumer loads `slot.seq` with acquire before reading `slot.data`.
+- The consumer releases the slot with `slot.seq.store(release, pos + Capacity)`, then advances the consumer cursor.
+
+Use this primitive for many-producer, one-owner paths such as tool-call fan-in,
+embedding/RAG ingest results, and cold progress events. Prefer SPSC when the
+ownership model can be reduced to one producer and one consumer.
 
 ## MPMC queue (work dispatch)
 

@@ -193,7 +193,7 @@ int main() {
 }
 CPP
 
-"${compiler}" -std=c++20 -I"${root_dir}/include" "${src}" -o "${bin}"
+"${compiler}" -std=c++17 -I"${root_dir}/include" "${src}" -o "${bin}"
 "${bin}" > "${report}"
 
 if [[ "${check_only}" -eq 1 ]]; then

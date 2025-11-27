@@ -17,6 +17,7 @@
 
 #include "utf8.hpp"
 #include "../memory/frame_allocator.hpp"
+#include "../platform/compiler.hpp"
 #include <cstdint>
 #include <cstdio>
 
@@ -173,7 +174,7 @@ private:
      * Grows buffer if needed.
      */
     void ensure_space(uint32_t additional) {
-        if (len_ + additional <= capacity_) [[likely]] {
+        if (len_ + additional <= capacity_) ASTRAL_LIKELY {
             return;
         }
         grow(len_ + additional);

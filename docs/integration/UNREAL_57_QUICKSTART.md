@@ -12,7 +12,7 @@ not replace a real UnrealEditor run.
 ## Prerequisites
 
 - A checkout with submodules initialized.
-- CMake and a C++20 compiler for the native package build.
+- CMake and a C++17 compiler for the native package build.
 - Unreal Engine 5.7.4 for the production lane.
 - Access to Epic's GitHub Container Registry packages for the container lanes.
 - Unreal 5.4, 5.5, 5.6, and 5.7 editor paths for compatibility evidence.

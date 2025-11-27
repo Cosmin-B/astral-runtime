@@ -1,8 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(AstralRT VERSION 0.1.0 LANGUAGES C CXX)
 
-# C++20 required, no extensions
-set(CMAKE_CXX_STANDARD 20)
+# C++17 required, no extensions.
+#
+# Unreal 5.4 supports C++17 and C++20; Astral keeps the native core at C++17 so
+# engine integrations can consume the stable C ABI without pulling newer C++
+# requirements through private implementation headers.
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

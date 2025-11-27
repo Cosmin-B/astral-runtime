@@ -6,8 +6,8 @@
 /// 3. Type constraints (trivially copyable, power-of-2) are enforced
 ///
 /// Compile with:
-/// g++ -std=c++20 -Wall -Wextra -Werror -O2 -o test_concurrency test_concurrency.cpp
-/// clang++ -std=c++20 -Wall -Wextra -Werror -O2 -o test_concurrency test_concurrency.cpp
+/// g++ -std=c++17 -Wall -Wextra -Werror -O2 -o test_concurrency test_concurrency.cpp
+/// clang++ -std=c++17 -Wall -Wextra -Werror -O2 -o test_concurrency test_concurrency.cpp
 
 #include "concurrency.hpp"
 #include <cstdio>

@@ -6,6 +6,7 @@
 #include <type_traits>
 
 #include "../platform/atomics.h"
+#include "../platform/compiler.hpp"
 
 namespace astral::memory {
 
@@ -88,7 +89,7 @@ public:
     ///  obj must have been acquired from this pool
     /// Releasing foreign pointers causes undefined behavior
     void release(T* obj) {
-        if (obj == nullptr) [[unlikely]] {
+        if (obj == nullptr) ASTRAL_UNLIKELY {
             return; // Null release is no-op
         }
 

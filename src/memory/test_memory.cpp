@@ -1,5 +1,5 @@
 /// Simple validation tests for memory subsystem
-/// Compile: g++ -std=c++20 -Wall -Wextra -O2 test_memory.cpp -o test_memory
+/// Compile: g++ -std=c++17 -Wall -Wextra -O2 test_memory.cpp -o test_memory
 /// Run: ./test_memory
 
 #include "frame_allocator.hpp"

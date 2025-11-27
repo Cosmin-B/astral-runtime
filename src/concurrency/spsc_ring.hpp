@@ -7,6 +7,7 @@
 
 #include "../platform/atomics.h"
 #include "../platform/cacheline.hpp"
+#include "../platform/compiler.hpp"
 #include "../utils/trace.hpp"
 
 namespace astral::concurrency {
@@ -73,7 +74,7 @@ public:
 
         // Check if ring is full (bounded by Capacity elements).
         uint64_t next_head = head + 1;
-        if (next_head - tail > Capacity) [[unlikely]] {
+        if (next_head - tail > Capacity) ASTRAL_UNLIKELY {
             return false;
         }
 
@@ -103,7 +104,7 @@ public:
     /// IMPORTANT: Must be called from single consumer thread only.
     bool pop(T* out) {
         ASTRAL_ZONE_MICRO_N("astral.spsc.pop");
-        if (out == nullptr) [[unlikely]] {
+        if (out == nullptr) ASTRAL_UNLIKELY {
             return false;
         }
 
@@ -115,7 +116,7 @@ public:
         uint64_t tail = tail_.load(std::memory_order_relaxed);
 
         // Check if ring is empty
-        if (tail >= head) [[unlikely]] {
+        if (tail >= head) ASTRAL_UNLIKELY {
             return false;
         }
 
@@ -130,6 +131,30 @@ public:
         tail_.store(tail + 1, std::memory_order_release);
 
         // Wake a producer potentially waiting for space.
+        if (was_full) {
+            astral::platform::cpu_signal_event();
+        }
+        return true;
+    }
+
+    /// Pop an item from the ring into a prevalidated reference.
+    ///
+    /// This overload avoids a null check in callers that already own the output
+    /// storage and want the leanest hot path.
+    bool pop(T& out) {
+        ASTRAL_ZONE_MICRO_N("astral.spsc.pop_ref");
+
+        uint64_t head = head_.load(std::memory_order_acquire);
+        uint64_t tail = tail_.load(std::memory_order_relaxed);
+        if (tail >= head) ASTRAL_UNLIKELY {
+            return false;
+        }
+
+        const bool was_full = ((head - tail) >= Capacity);
+        size_t index = tail & kIndexMask;
+        out = buffer_[index];
+        tail_.store(tail + 1, std::memory_order_release);
+
         if (was_full) {
             astral::platform::cpu_signal_event();
         }

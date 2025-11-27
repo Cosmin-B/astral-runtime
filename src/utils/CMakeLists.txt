@@ -9,7 +9,7 @@ target_include_directories(astral_utf8 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_compile_features(astral_utf8 PRIVATE cxx_std_20)
+target_compile_features(astral_utf8 PRIVATE cxx_std_17)
 
 # Enable SIMD optimizations
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
@@ -27,7 +27,7 @@ target_include_directories(astral_logging PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_compile_features(astral_logging PRIVATE cxx_std_20)
+target_compile_features(astral_logging PRIVATE cxx_std_17)
 
 # Test executable (if testing enabled)
 if(ASTRAL_BUILD_TESTS OR CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -44,7 +44,7 @@ if(ASTRAL_BUILD_TESTS OR CMAKE_BUILD_TYPE STREQUAL "Debug")
         ${CMAKE_CURRENT_SOURCE_DIR}/..
     )
 
-    target_compile_features(test_utils PRIVATE cxx_std_20)
+    target_compile_features(test_utils PRIVATE cxx_std_17)
 
     # Enable warnings
     if(MSVC)

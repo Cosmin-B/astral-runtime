@@ -8,6 +8,7 @@
 #include "test_framework.hpp"
 #include "../include/astral_rt.h"
 
+#include <atomic>
 #include <cstring>
 #include <chrono>
 #include <thread>

@@ -9,6 +9,8 @@
 #include "test_framework.hpp"
 #include "../src/platform/vm.h"
 #include "../src/platform/atomics.h"
+#include "../src/platform/cpu_features.hpp"
+#include "../src/platform/time.h"
 
 #include <cstring>
 #include <cstdio>
@@ -158,6 +160,39 @@ TEST(compiler_fence_no_crash) {
     x = 3;
     compiler_fence();
     ASSERT_EQ(x, 3);
+}
+
+TEST(cpu_feature_detection_sanity) {
+    const CpuFeatures& features = cpu_features();
+    const char* arch_name = cpu_arch_name(features.arch);
+    const char* tier_name = cpu_dispatch_tier_name();
+
+    ASSERT_NOT_NULL(arch_name);
+    ASSERT_NOT_NULL(tier_name);
+
+#if defined(__x86_64__) || defined(_M_X64)
+    ASSERT_EQ(features.arch, CpuArch::X86_64);
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    ASSERT_EQ(features.arch, CpuArch::Arm64);
+    ASSERT_TRUE(features.arm_neon);
+#endif
+}
+
+TEST(tick_clock_sanity) {
+    const TickClock clock = tick_clock();
+    ASSERT_GT(clock.tick_to_ns, 0.0);
+
+    const uint64_t first = ticks_now();
+    uint64_t second = first;
+    for (uint32_t i = 0; i < 1000 && second == first; ++i) {
+        cpu_pause();
+        second = ticks_now();
+    }
+
+    ASSERT_GE(second, first);
+    const uint64_t one_us_ticks = ticks_from_ns(1000);
+    ASSERT_GT(one_us_ticks, 0u);
+    ASSERT_GT(ticks_to_ns(one_us_ticks), 0u);
 }
 
 #if ASTRAL_ENABLE_VIRTUAL_MEMORY

@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <type_traits>
 
+#include "../platform/compiler.hpp"
+
 namespace astral::memory {
 
 /// FrameAllocator - Linear/bump allocator for per-frame or per-session short-lived objects
@@ -71,7 +73,7 @@ public:
         size_t new_used = aligned_offset + size;
 
         // Check capacity
-        if (new_used > capacity_) [[unlikely]] {
+        if (new_used > capacity_) ASTRAL_UNLIKELY {
             return nullptr; // Out of memory
         }
 

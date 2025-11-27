@@ -1,11 +1,11 @@
 # Astral: Native LLM Runtime for Game Engines
 
-Astral is a C++20 native inference layer on top of LLaMA-class backends, designed for real-time game engines (Unity, Unreal Engine 5). The runtime emphasizes allocation-gated hot paths, explicit concurrency primitives, and predictable memory ownership.
+Astral is a C++17 native inference layer on top of LLaMA-class backends, designed for real-time game engines (Unity, Unreal Engine 5). The runtime emphasizes allocation-gated hot paths, explicit concurrency primitives, and predictable memory ownership.
 
 ## Key Features
 
 - **Allocation-Gated Hot Paths**: Release gates track steady-state heap behavior for token streaming, decoding, and sampling
-- **CAS-Free Concurrency Primitives**: Bounded MPMC queue (ticket + per-slot sequence) and SPSC token rings; ARM-friendly WFE/SEV waiting
+- **Ownership-Specific Concurrency Primitives**: Bounded SPSC, MPSC, and MPMC queues with explicit backpressure and ARM-friendly WFE/SEV waiting
 - **C ABI Surface**: Clean separation between C ABI and C++ implementation; v0.1 (ABI may still evolve until v1.0)
 - **Engine Integration**: Unity `NativeArray` adapters and Unreal wrapper code; real editor evidence remains a release blocker
 - **Cross-Platform**: Desktop native gates cover the core runtime; mobile artifacts still need device/runtime validation
@@ -36,7 +36,7 @@ astral/
 ├── src/                        # Core implementation
 │   ├── core/                   # Runtime init, shutdown, handles
 │   ├── memory/                 # Allocators, arenas, pools
-│   ├── concurrency/            # Lock-free MPMC/SPSC, epoch reclaim
+│   ├── concurrency/            # Bounded SPSC/MPSC/MPMC queues, epoch reclaim
 │   ├── inference/              # LLaMA backend integration
 │   ├── platform/               # OS-specific code (Linux/Windows/macOS)
 │   └── utils/                  # UTF-8, logging, intrinsics
@@ -53,7 +53,7 @@ astral/
 
 ### Prerequisites
 
-- C++20 compiler (GCC 11+, Clang 13+, MSVC 2022+)
+- C++17 compiler (GCC 11+, Clang 13+, MSVC 2022+)
 - CMake 3.20+
 - (Optional) Unity 2021.3+ or Unreal Engine 5.4+; UE 5.7 is the primary validation target
 
@@ -323,7 +323,7 @@ evidence is tracked under `docs/release/`.
 
 ## Coding Standards
 
-- **C++20**: No modules, no RTTI across ABI, no STL containers
+- **C++17**: No modules, no RTTI across ABI, no STL containers
 - **Explicit Memory Ordering**: Always specify `memory_order_*`
 - **Allocation Gates**: Profile and validate tracked heap behavior with the allocation, ASAN, and Valgrind gates
 - **Cache-Line Alignment**: 64 bytes for hot atomics
@@ -380,7 +380,7 @@ Read [CODING_STANDARDS.md](docs/rules/CODING_STANDARDS.md) and keep changes tied
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Follow coding standards (C++20, no STL containers, explicit memory order)
+3. Follow coding standards (C++17, no STL containers, explicit memory order)
 4. Add tests (unit + integration)
 5. Run benchmarks (no regressions)
 6. Submit PR with detailed description

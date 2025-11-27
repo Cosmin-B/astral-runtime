@@ -161,13 +161,13 @@ COMPILE FLAGS
 -------------
 
 Debug build:
-    g++ -std=c++20 -g -O0 -fsanitize=thread,address -Wall -Wextra -Werror
+    g++ -std=c++17 -g -O0 -fsanitize=thread,address -Wall -Wextra -Werror
 
 Release build:
-    g++ -std=c++20 -O3 -DNDEBUG -march=native -Wall -Wextra -Werror
+    g++ -std=c++17 -O3 -DNDEBUG -march=native -Wall -Wextra -Werror
 
 Cross-compile for ARM:
-    aarch64-linux-gnu-g++ -std=c++20 -O3 -march=armv8-a+fp+simd
+    aarch64-linux-gnu-g++ -std=c++17 -O3 -march=armv8-a+fp+simd
 
 COMMON MISTAKES
 ---------------

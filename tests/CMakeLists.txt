@@ -75,9 +75,9 @@ foreach(test_file ${TEST_FILES})
             astral_test_framework
         )
 
-        # Set C++20 standard
+        # Set C++17 standard
         set_target_properties(${test_file} PROPERTIES
-            CXX_STANDARD 20
+            CXX_STANDARD 17
             CXX_STANDARD_REQUIRED ON
         )
 
@@ -180,7 +180,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
             )
 
             set_target_properties(${test_file}_tsan PROPERTIES
-                CXX_STANDARD 20
+                CXX_STANDARD 17
                 CXX_STANDARD_REQUIRED ON
             )
 
@@ -838,7 +838,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_mode
         ${CMAKE_SOURCE_DIR}/src
     )
     set_target_properties(gate_model_churn_soak PROPERTIES
-        CXX_STANDARD 20
+        CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
     )
     if(UNIX AND NOT APPLE)

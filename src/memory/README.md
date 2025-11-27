@@ -129,7 +129,7 @@ Compile and run validation tests:
 
 ```bash
 cd src/memory
-g++ -std=c++20 -Wall -Wextra -O2 -pthread test_memory.cpp -o test_memory
+g++ -std=c++17 -Wall -Wextra -O2 -pthread test_memory.cpp -o test_memory
 ./test_memory
 ```
 

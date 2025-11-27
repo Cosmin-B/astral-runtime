@@ -2,6 +2,8 @@
 
 #include "vm.h"
 #include "atomics.h"
+#include "cpu_features.hpp"
+#include "time.h"
 
 #include <cstdio>
 #include <cstring>
@@ -112,6 +114,43 @@ void test_compiler_fence() {
   printf("  [PASS] Compiler fence (no crash)\n\n");
 }
 
+void test_cpu_features() {
+  printf("Testing cpu_features...\n");
+
+  const CpuFeatures& features = cpu_features();
+  printf("  CPU arch: %s dispatch tier: %s avx2=%u neon=%u\n",
+         cpu_arch_name(features.arch),
+         cpu_dispatch_tier_name(),
+         features.x86_avx2 ? 1u : 0u,
+         features.arm_neon ? 1u : 0u);
+
+  assert(cpu_arch_name(features.arch) != nullptr);
+  assert(cpu_dispatch_tier_name() != nullptr);
+
+  printf("  [PASS] CPU feature detection\n\n");
+}
+
+void test_tick_clock() {
+  printf("Testing tick_clock...\n");
+
+  const TickClock clock = tick_clock();
+  assert(clock.tick_to_ns > 0.0);
+
+  const uint64_t first = ticks_now();
+  uint64_t second = first;
+  for (int i = 0; i < 1000 && second == first; ++i) {
+    cpu_pause();
+    second = ticks_now();
+  }
+
+  assert(second >= first);
+  const uint64_t one_us_ticks = ticks_from_ns(1000);
+  assert(one_us_ticks > 0);
+  assert(ticks_to_ns(one_us_ticks) > 0);
+
+  printf("  [PASS] Tick clock\n\n");
+}
+
 int main() {
   printf("=== Astral Platform Abstraction Layer Tests ===\n\n");
 
@@ -120,6 +159,8 @@ int main() {
   test_cache_line_size();
   test_cpu_pause();
   test_compiler_fence();
+  test_cpu_features();
+  test_tick_clock();
 
   printf("=== All tests passed! ===\n");
   return 0;

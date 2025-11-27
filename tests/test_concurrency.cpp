@@ -7,7 +7,9 @@
 
 #include "test_framework.hpp"
 #include "../src/concurrency/mpmc_queue.hpp"
+#include "../src/concurrency/mpsc_ring.hpp"
 #include "../src/concurrency/spsc_ring.hpp"
+#include "../src/platform/atomics.h"
 
 #include <thread>
 #include <vector>
@@ -334,6 +336,102 @@ TEST(mpmc_stress_checksum) {
 }
 
 //
+// MPSC Ring Tests
+//
+
+TEST(mpsc_try_push_pop_basic) {
+    MpscRing<TestData, 8> ring;
+
+    TestData data = {42, 7, 1};
+    ASSERT_TRUE(ring.try_push(data));
+
+    TestData out{};
+    ASSERT_TRUE(ring.pop(out));
+    ASSERT_EQ(out.value, 42);
+    ASSERT_EQ(out.thread_id, 7u);
+    ASSERT_EQ(out.sequence, 1u);
+    ASSERT_TRUE(ring.empty());
+}
+
+TEST(mpsc_full_returns_busy_signal) {
+    MpscRing<TestData, 4> ring;
+
+    for (uint32_t i = 0; i < 4; ++i) {
+        TestData data = {i, 0, i};
+        ASSERT_TRUE(ring.try_push(data));
+    }
+
+    TestData overflow = {99, 0, 99};
+    ASSERT_FALSE(ring.try_push(overflow));
+
+    TestData out{};
+    ASSERT_TRUE(ring.pop(out));
+    ASSERT_EQ(out.value, 0u);
+    ASSERT_TRUE(ring.try_push(overflow));
+}
+
+TEST(mpsc_multi_producer_single_consumer_checksum) {
+    constexpr size_t kCapacity = 256;
+    constexpr uint32_t kProducers = 4;
+    constexpr uint64_t kItemsPerProducer = 4000;
+    constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
+
+    MpscRing<uint64_t, kCapacity> ring;
+
+    std::atomic<uint32_t> ready{0};
+    std::atomic<bool> start{false};
+    std::atomic<uint64_t> produced{0};
+    std::atomic<uint64_t> consumed{0};
+
+    uint64_t sum = 0;
+    std::vector<std::thread> producers;
+    producers.reserve(kProducers);
+
+    for (uint32_t p = 0; p < kProducers; ++p) {
+        producers.emplace_back([&, p]() {
+            ready.fetch_add(1, std::memory_order_release);
+            while (!start.load(std::memory_order_acquire)) {
+                astral::platform::cpu_pause();
+            }
+
+            const uint64_t base = static_cast<uint64_t>(p) * kItemsPerProducer;
+            for (uint64_t i = 0; i < kItemsPerProducer; ++i) {
+                const uint64_t value = base + i;
+                while (!ring.try_push(value)) {
+                    astral::platform::cpu_pause();
+                }
+                produced.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    while (ready.load(std::memory_order_acquire) != kProducers) {
+        astral::platform::cpu_pause();
+    }
+    start.store(true, std::memory_order_release);
+
+    while (consumed.load(std::memory_order_relaxed) < kTotalItems) {
+        uint64_t value = 0;
+        if (ring.pop(value)) {
+            sum += value;
+            consumed.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            astral::platform::cpu_pause();
+        }
+    }
+
+    for (auto& t : producers) {
+        t.join();
+    }
+
+    const uint64_t expected = (kTotalItems - 1) * kTotalItems / 2;
+    ASSERT_EQ(produced.load(), kTotalItems);
+    ASSERT_EQ(consumed.load(), kTotalItems);
+    ASSERT_EQ(sum, expected);
+    ASSERT_TRUE(ring.empty());
+}
+
+//
 // SPSC Ring Tests
 //
 
@@ -348,6 +446,18 @@ TEST(spsc_push_pop_basic) {
     ok = ring.pop(&out);
     ASSERT_TRUE(ok);
     ASSERT_EQ(out.value, 123);
+}
+
+TEST(spsc_pop_reference_basic) {
+    SpscRing<TestData, 16> ring;
+
+    TestData data = {777, 0, 1};
+    ASSERT_TRUE(ring.push(data));
+
+    TestData out{};
+    ASSERT_TRUE(ring.pop(out));
+    ASSERT_EQ(out.value, 777);
+    ASSERT_TRUE(ring.empty());
 }
 
 TEST(spsc_ring_full) {

@@ -256,7 +256,7 @@ Compiler barrier (prevents instruction reordering by compiler only).
 Run validation tests:
 
 ```bash
-g++ -std=c++20 -Wall -Wextra -Werror -g -Isrc \
+g++ -std=c++17 -Wall -Wextra -Werror -g -Isrc \
   src/platform/vm_linux.cpp \
   src/platform/atomics.cpp \
   src/platform/test_platform.cpp \
@@ -304,7 +304,7 @@ add_library(astral_platform
 )
 
 target_include_directories(astral_platform PUBLIC src)
-target_compile_features(astral_platform PUBLIC cxx_std_20)
+target_compile_features(astral_platform PUBLIC cxx_std_17)
 ```
 
 ## Performance Characteristics

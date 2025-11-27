@@ -6,6 +6,7 @@
  */
 
 #include "logging.hpp"
+#include "../platform/compiler.hpp"
 #include "../platform/time.h"
 #include <atomic>
 #include <cstdio>
@@ -108,7 +109,7 @@ void logv(Level level, const char* fmt, va_list args) {
     uint64_t elapsed = monotonic_now_ns() - start;
 
     // Warn if callback is slow (once per thread to avoid spam)
-    if (elapsed > kMaxCallbackNanos) [[unlikely]] {
+    if (elapsed > kMaxCallbackNanos) ASTRAL_UNLIKELY {
         static thread_local bool warned = false;
         if (!warned) {
             // Can't log via same system; use stderr
