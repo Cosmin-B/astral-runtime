@@ -856,11 +856,43 @@ bool FAstralRTRealEmbeddingProbeTest::RunTest(const FString& Parameters) {
     UE_LOG(LogAstralRT, Display, TEXT("%s"), *Evidence);
     TestTrue(TEXT("real embedding vector has signal"), SumAbs > 0.0);
 
+    constexpr int32 ThroughputIters = 4;
+    const char* ThroughputTexts[ThroughputIters] = {
+        "gameplay memory",
+        "quest state",
+        "dialogue recall",
+        "inventory note",
+    };
+    double ThroughputSumAbs = 0.0;
+    const double StartSeconds = FPlatformTime::Seconds();
+    for (int32 Index = 0; Index < ThroughputIters; ++Index) {
+        append_ascii(Bytes, ThroughputTexts[Index]);
+        ok = Embedder->EmbedUtf8Bytes(Bytes, Vec);
+        TestTrue(TEXT("real embedding throughput collect"), ok);
+        TestTrue(TEXT("real embedding throughput dim bounded"), Vec.Num() > 0 && Vec.Num() < 8192);
+        for (const float Value : Vec) {
+            ThroughputSumAbs += static_cast<double>(FMath::Abs(Value));
+        }
+    }
+    const double ElapsedSeconds = FPlatformTime::Seconds() - StartSeconds;
+    const double EmbedsPerSec = ElapsedSeconds > 0.0 ? static_cast<double>(ThroughputIters) / ElapsedSeconds : 0.0;
+    const FString ThroughputEvidence = FString::Printf(
+        TEXT("[unreal_embedding_throughput] backend=cpu model=%s iters=%d seconds=%.6f embeds_per_sec=%.3f sum_abs=%.6f"),
+        *ModelPath,
+        ThroughputIters,
+        ElapsedSeconds,
+        EmbedsPerSec,
+        ThroughputSumAbs);
+    AddInfo(ThroughputEvidence);
+    UE_LOG(LogAstralRT, Display, TEXT("%s"), *ThroughputEvidence);
+    TestTrue(TEXT("real embedding throughput positive"), EmbedsPerSec > 0.0);
+    TestTrue(TEXT("real embedding throughput vector signal"), ThroughputSumAbs > 0.0);
+
     Embedder->Destroy();
     Embedder->ConditionalBeginDestroy();
     Model->Release();
     Model->ConditionalBeginDestroy();
-    return ok && Vec.Num() > 0 && SumAbs > 0.0;
+    return ok && Vec.Num() > 0 && SumAbs > 0.0 && ThroughputSumAbs > 0.0 && EmbedsPerSec > 0.0;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

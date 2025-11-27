@@ -624,6 +624,7 @@ foreach(required_unreal_embedding_probe_text
     "ASTRAL_UNREAL_TEST_EMBED_MODEL"
     "ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING"
     "[unreal_embedding_probe] backend=cpu"
+    "[unreal_embedding_throughput] backend=cpu"
     "SumAbs > 0.0")
   string(FIND "${unreal_embedding_probe_content}" "${required_unreal_embedding_probe_text}" unreal_embedding_probe_pos)
   if(unreal_embedding_probe_pos EQUAL -1)

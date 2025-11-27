@@ -122,7 +122,8 @@ the default 16 iterations for a slower release-lane sample.
 
 Unreal real-model embedding evidence uses the same native CPU backend through
 `UAstralModel` and `UAstralEmbedder`. Run it inside a UE container with a model
-path that exists in the mounted workspace:
+path that exists in the mounted workspace to capture `[unreal_embedding_probe]`
+and `[unreal_embedding_throughput]` markers:
 
 ```bash
 ASTRAL_UNREAL_TEST_MODEL=/workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf \
