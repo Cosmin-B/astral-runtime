@@ -13,6 +13,7 @@ BenchResult bench_spsc_ring_local(uint64_t items);
 BenchResult bench_spsc_ring_batch(uint64_t items, uint32_t batch_size);
 BenchResult bench_spsc_fan_in(uint32_t producers, uint64_t items_per_producer);
 LatencyResult bench_spsc_latency(uint64_t samples);
+void bench_concurrency_matrix_print(uint64_t items_per_producer);
 BenchResult bench_mpsc_ring(uint32_t producers, uint64_t items_per_producer);
 BenchResult bench_mpmc_queue(uint32_t producers, uint32_t consumers, uint64_t items_per_producer);
 BenchResult bench_runtime_alloc_free(uint64_t iters, uint32_t size, bool arena_mode);
@@ -41,6 +42,7 @@ struct Options {
     bool run_spsc_batch = false;
     bool run_spsc_latency = false;
     bool run_spsc_fan_in = false;
+    bool run_concurrency_matrix = false;
     bool run_mpmc = true;
     bool run_alloc = false;
     uint64_t alloc_iters = 5'000'000ull;
@@ -84,7 +86,7 @@ bool parse_u32(const char* s, uint32_t* out) {
 void print_usage(const char* argv0) {
     std::printf("Usage: %s [options]\n", argv0 ? argv0 : "astral_benchmarks");
     std::printf("Options:\n");
-    std::printf("  --only <spsc|spsc-local|spsc-batch|spsc-latency|spsc-fan-in|mpsc|mpmc|alloc|lifecycle|infer|embed|features|platform> Run only one benchmark\n");
+    std::printf("  --only <spsc|spsc-local|spsc-batch|spsc-latency|spsc-fan-in|concurrency-matrix|mpsc|mpmc|alloc|lifecycle|infer|embed|features|platform> Run only one benchmark\n");
     std::printf("  --alloc                       Run runtime_alloc/free microbench (vm + arena)\n");
     std::printf("  --alloc-iters <N>             Iterations for alloc bench (default: 5000000)\n");
     std::printf("  --alloc-size <N>              Allocation size in bytes (default: 64)\n");
@@ -145,6 +147,7 @@ int main(int argc, char** argv) {
                 opt.run_spsc_batch = false;
                 opt.run_spsc_latency = false;
                 opt.run_spsc_fan_in = false;
+                opt.run_concurrency_matrix = false;
                 opt.run_mpsc = false;
                 opt.run_mpmc = false;
                 opt.run_alloc = false;
@@ -159,6 +162,7 @@ int main(int argc, char** argv) {
                 opt.run_spsc_batch = false;
                 opt.run_spsc_latency = false;
                 opt.run_spsc_fan_in = false;
+                opt.run_concurrency_matrix = false;
                 opt.run_mpsc = false;
                 opt.run_mpmc = false;
                 opt.run_alloc = false;
@@ -173,6 +177,7 @@ int main(int argc, char** argv) {
                 opt.run_spsc_batch = true;
                 opt.run_spsc_latency = false;
                 opt.run_spsc_fan_in = false;
+                opt.run_concurrency_matrix = false;
                 opt.run_mpsc = false;
                 opt.run_mpmc = false;
                 opt.run_alloc = false;
@@ -187,6 +192,7 @@ int main(int argc, char** argv) {
                 opt.run_spsc_batch = false;
                 opt.run_spsc_latency = true;
                 opt.run_spsc_fan_in = false;
+                opt.run_concurrency_matrix = false;
                 opt.run_mpsc = false;
                 opt.run_mpmc = false;
                 opt.run_alloc = false;
@@ -201,6 +207,22 @@ int main(int argc, char** argv) {
                 opt.run_spsc_batch = false;
                 opt.run_spsc_latency = false;
                 opt.run_spsc_fan_in = true;
+                opt.run_concurrency_matrix = false;
+                opt.run_mpsc = false;
+                opt.run_mpmc = false;
+                opt.run_alloc = false;
+                opt.run_lifecycle = false;
+                opt.run_infer = false;
+                opt.run_embed = false;
+                opt.run_features = false;
+                opt.run_platform = false;
+            } else if (std::strcmp(which, "concurrency-matrix") == 0) {
+                opt.run_spsc = false;
+                opt.run_spsc_local = false;
+                opt.run_spsc_batch = false;
+                opt.run_spsc_latency = false;
+                opt.run_spsc_fan_in = false;
+                opt.run_concurrency_matrix = true;
                 opt.run_mpsc = false;
                 opt.run_mpmc = false;
                 opt.run_alloc = false;
@@ -215,6 +237,7 @@ int main(int argc, char** argv) {
                 opt.run_spsc_batch = false;
                 opt.run_spsc_latency = false;
                 opt.run_spsc_fan_in = false;
+                opt.run_concurrency_matrix = false;
                 opt.run_mpsc = true;
                 opt.run_mpmc = false;
                 opt.run_alloc = false;
@@ -490,6 +513,10 @@ int main(int argc, char** argv) {
     if (opt.run_spsc_fan_in) {
         const auto r = astral::bench::bench_spsc_fan_in(opt.mpsc_producers, opt.mpsc_items_per_producer);
         astral::bench::print_result(r, clk.name);
+    }
+
+    if (opt.run_concurrency_matrix) {
+        astral::bench::bench_concurrency_matrix_print(opt.mpsc_items_per_producer);
     }
 
     if (opt.run_mpsc) {

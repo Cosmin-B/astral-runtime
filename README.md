@@ -103,6 +103,7 @@ cmake --build --preset release-with-tests -j
 
 # Concurrency microbenches (rdtsc/mach time where available)
 ./build/release-test/benchmarks/astral_benchmarks
+./build/release-test/benchmarks/astral_benchmarks --only concurrency-matrix --mpsc-items 1000000
 ./build/release-test/benchmarks/astral_benchmarks --only spsc-latency
 ./build/release-test/benchmarks/astral_benchmarks --only spsc-batch --spsc-batch-size 64
 ASTRAL_BENCH_PIN_THREADS=1 ./build/release-test/benchmarks/astral_benchmarks --only spsc-fan-in

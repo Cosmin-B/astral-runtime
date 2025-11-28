@@ -177,6 +177,7 @@ This ring intentionally does not add ownership checks to the hot path. Callers e
   - Batched SPSC cost: `--only spsc-batch --spsc-batch-size 64`
   - SPSC latency percentiles: `--only spsc-latency`
   - SPSC fan-in lanes: `--only spsc-fan-in`
+  - SPSC/MPSC/MPMC coverage through 8 producers/8 consumers: `--only concurrency-matrix --mpsc-items 1000000`
   - Topology pressure: set `ASTRAL_BENCH_PIN_THREADS=1` for affinity-mask based pinning on Linux.
 - Source contract gate: `gate_source_scans` checks the maintained MPMC/SPSC acquire/release prose against the source headers and this document.
 
