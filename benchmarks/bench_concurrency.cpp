@@ -3,6 +3,7 @@
 
 #include "concurrency/mpmc_queue.hpp"
 #include "concurrency/mpsc_ring.hpp"
+#include "concurrency/mpsc_ticket_ring.hpp"
 #include "concurrency/spsc_fan_in.hpp"
 #include "concurrency/spsc_ring.hpp"
 #include "platform/atomics.h"
@@ -268,7 +269,6 @@ BenchResult bench_spsc_fan_in(uint32_t producers, uint64_t items_per_producer) {
     const uint64_t total_items = static_cast<uint64_t>(producers) * items_per_producer;
     std::atomic<uint32_t> ready{0};
     std::atomic<bool> start{false};
-    std::atomic<uint64_t> consumed{0};
 
     std::vector<std::thread> prod_threads;
     prod_threads.reserve(producers);
@@ -300,10 +300,11 @@ BenchResult bench_spsc_fan_in(uint32_t producers, uint64_t items_per_producer) {
     start.store(true, std::memory_order_release);
 
     uint64_t v = 0;
-    while (consumed.load(std::memory_order_relaxed) < total_items) {
+    uint64_t consumed = 0;
+    while (consumed < total_items) {
         if (fan_in.pop(v)) {
             sum += v;
-            consumed.fetch_add(1, std::memory_order_relaxed);
+            ++consumed;
         } else {
             astral::platform::cpu_pause();
         }
@@ -375,7 +376,6 @@ BenchResult bench_mpsc_ring(uint32_t producers, uint64_t items_per_producer) {
     const uint64_t total_items = static_cast<uint64_t>(producers) * items_per_producer;
     std::atomic<uint32_t> ready{0};
     std::atomic<bool> start{false};
-    std::atomic<uint64_t> consumed{0};
 
     std::vector<std::thread> prod_threads;
     prod_threads.reserve(producers);
@@ -407,10 +407,11 @@ BenchResult bench_mpsc_ring(uint32_t producers, uint64_t items_per_producer) {
     start.store(true, std::memory_order_release);
 
     uint64_t v = 0;
-    while (consumed.load(std::memory_order_relaxed) < total_items) {
+    uint64_t consumed = 0;
+    while (consumed < total_items) {
         if (ring.pop(v)) {
             sum += v;
-            consumed.fetch_add(1, std::memory_order_relaxed);
+            ++consumed;
         } else {
             astral::platform::cpu_pause();
         }
@@ -431,6 +432,189 @@ BenchResult bench_mpsc_ring(uint32_t producers, uint64_t items_per_producer) {
         n1 - n0,
         total_items * 2, // push + pop
     };
+}
+
+BenchResult bench_mpsc_ticket_ring(uint32_t producers, uint64_t items_per_producer) {
+    constexpr size_t kCapacity = 4096;
+    astral::concurrency::MpscTicketRing<uint64_t, kCapacity> ring;
+
+    if (producers == 0) {
+        producers = 1;
+    }
+
+    const uint64_t total_items = static_cast<uint64_t>(producers) * items_per_producer;
+    std::atomic<uint32_t> ready{0};
+    std::atomic<bool> start{false};
+
+    std::vector<std::thread> prod_threads;
+    prod_threads.reserve(producers);
+
+    for (uint32_t p = 0; p < producers; ++p) {
+        prod_threads.emplace_back([&, p]() {
+            maybe_pin_current_thread(p);
+            ready.fetch_add(1, std::memory_order_release);
+            while (!start.load(std::memory_order_acquire)) {
+                astral::platform::cpu_pause();
+            }
+
+            const uint64_t base = static_cast<uint64_t>(p) * items_per_producer;
+            for (uint64_t i = 0; i < items_per_producer; ++i) {
+                ring.push_wait(base + i);
+            }
+        });
+    }
+
+    while (ready.load(std::memory_order_acquire) != producers) {
+        astral::platform::cpu_pause();
+    }
+
+    uint64_t sum = 0;
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    start.store(true, std::memory_order_release);
+
+    uint64_t v = 0;
+    uint64_t consumed = 0;
+    while (consumed < total_items) {
+        if (ring.pop(v)) {
+            sum += v;
+            ++consumed;
+        } else {
+            astral::platform::cpu_pause();
+        }
+    }
+
+    for (auto& t : prod_threads) {
+        t.join();
+    }
+
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    do_not_optimize(sum);
+
+    return BenchResult{
+        "MPSC ticket (4096)",
+        t1 - t0,
+        n1 - n0,
+        total_items * 2,
+    };
+}
+
+void bench_mpsc_split_print(const char* name, uint32_t producers, uint64_t items_per_producer) {
+    constexpr size_t kCapacity = 4096;
+    constexpr uint32_t kMaxProducers = 16;
+    astral::concurrency::MpscRing<uint64_t, kCapacity> ring;
+
+    if (producers == 0) {
+        producers = 1;
+    }
+    if (producers > kMaxProducers) {
+        producers = kMaxProducers;
+    }
+
+    const uint64_t total_items = static_cast<uint64_t>(producers) * items_per_producer;
+    std::atomic<uint32_t> ready{0};
+    std::atomic<bool> start{false};
+
+    uint64_t producer_ticks[kMaxProducers]{};
+    uint64_t producer_ns[kMaxProducers]{};
+    uint64_t producer_retries[kMaxProducers]{};
+    std::vector<std::thread> prod_threads;
+    prod_threads.reserve(producers);
+
+    for (uint32_t p = 0; p < producers; ++p) {
+        prod_threads.emplace_back([&, p]() {
+            maybe_pin_current_thread(p);
+            ready.fetch_add(1, std::memory_order_release);
+            while (!start.load(std::memory_order_acquire)) {
+                astral::platform::cpu_pause();
+            }
+
+            uint64_t retries = 0;
+            const uint64_t base = static_cast<uint64_t>(p) * items_per_producer;
+            const uint64_t t0 = ticks_now();
+            const uint64_t n0 = ns_now();
+            for (uint64_t i = 0; i < items_per_producer; ++i) {
+                while (!ring.try_push(base + i)) {
+                    ++retries;
+                    astral::platform::cpu_pause();
+                }
+            }
+            const uint64_t t1 = ticks_now();
+            const uint64_t n1 = ns_now();
+            producer_ticks[p] = t1 - t0;
+            producer_ns[p] = n1 - n0;
+            producer_retries[p] = retries;
+        });
+    }
+
+    while (ready.load(std::memory_order_acquire) != producers) {
+        astral::platform::cpu_pause();
+    }
+
+    uint64_t sum = 0;
+    uint64_t consumer_ticks = 0;
+    uint64_t consumer_ns = 0;
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    start.store(true, std::memory_order_release);
+
+    uint64_t v = 0;
+    uint64_t consumed = 0;
+    while (consumed < total_items) {
+        if (ring.pop(v)) {
+            sum += v;
+            ++consumed;
+        } else {
+            astral::platform::cpu_pause();
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+    consumer_ticks = t1 - t0;
+    consumer_ns = n1 - n0;
+
+    for (auto& t : prod_threads) {
+        t.join();
+    }
+
+    uint64_t producer_sum_ticks = 0;
+    uint64_t producer_sum_ns = 0;
+    uint64_t producer_max_ticks = 0;
+    uint64_t producer_max_ns = 0;
+    uint64_t retry_total = 0;
+    for (uint32_t p = 0; p < producers; ++p) {
+        producer_sum_ticks += producer_ticks[p];
+        producer_sum_ns += producer_ns[p];
+        if (producer_ticks[p] > producer_max_ticks) {
+            producer_max_ticks = producer_ticks[p];
+        }
+        if (producer_ns[p] > producer_max_ns) {
+            producer_max_ns = producer_ns[p];
+        }
+        retry_total += producer_retries[p];
+    }
+
+    do_not_optimize(sum);
+
+    const ClockInfo clk = clock_info();
+    const double total = static_cast<double>(total_items);
+    const double producer_thread_ns_per_op = total > 0.0 ? static_cast<double>(producer_sum_ns) / total : 0.0;
+    const double producer_wall_ns_per_op = total > 0.0 ? static_cast<double>(producer_max_ns) / total : 0.0;
+    const double consumer_ns_per_op = total > 0.0 ? static_cast<double>(consumer_ns) / total : 0.0;
+    const double retries_per_item = total > 0.0 ? static_cast<double>(retry_total) / total : 0.0;
+
+    std::printf("%-28s  prod-thread=%8.2f ns/op  prod-wall=%8.2f ns/op  cons=%8.2f ns/op  retries/item=%8.4f  (%s)\n",
+                name,
+                producer_thread_ns_per_op,
+                producer_wall_ns_per_op,
+                consumer_ns_per_op,
+                retries_per_item,
+                clk.name);
+    (void)producer_sum_ticks;
+    (void)producer_max_ticks;
+    (void)consumer_ticks;
 }
 
 BenchResult bench_mpmc_queue(uint32_t producers, uint32_t consumers, uint64_t items_per_producer) {
@@ -651,6 +835,14 @@ void bench_concurrency_matrix_print(uint64_t items_per_producer) {
     print_named_result("MPSC 2P/1C", bench_mpsc_ring(2, items_per_producer / 2), clk.name);
     print_named_result("MPSC 4P/1C", bench_mpsc_ring(4, items_per_producer / 4), clk.name);
     print_named_result("MPSC 8P/1C", bench_mpsc_ring(8, items_per_producer / 8), clk.name);
+    print_named_result("MPSC ticket 1P/1C", bench_mpsc_ticket_ring(1, items_per_producer), clk.name);
+    print_named_result("MPSC ticket 2P/1C", bench_mpsc_ticket_ring(2, items_per_producer / 2), clk.name);
+    print_named_result("MPSC ticket 4P/1C", bench_mpsc_ticket_ring(4, items_per_producer / 4), clk.name);
+    print_named_result("MPSC ticket 8P/1C", bench_mpsc_ticket_ring(8, items_per_producer / 8), clk.name);
+    bench_mpsc_split_print("MPSC split 1P", 1, items_per_producer);
+    bench_mpsc_split_print("MPSC split 2P", 2, items_per_producer / 2);
+    bench_mpsc_split_print("MPSC split 4P", 4, items_per_producer / 4);
+    bench_mpsc_split_print("MPSC split 8P", 8, items_per_producer / 8);
 
     std::printf("\nMPMC coverage\n");
     print_named_result("MPMC 1P/1C", bench_mpmc_queue(1, 1, items_per_producer), clk.name);

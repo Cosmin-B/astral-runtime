@@ -8,6 +8,7 @@ Implemented:
 - **SPSC ring**: bounded token ring for streaming with cached owner cursors, batch transfer, backpressure, and event signaling.
 - **SPSC fan-in lanes**: per-producer SPSC lanes for fixed-owner fan-in without producer contention.
 - **MPSC ring**: bounded fan-in ring with non-blocking `try_push`; full queues map to `ASTRAL_E_BUSY` at public API boundaries.
+- **MPSC ticket ring**: bounded fan-in ring for internal backpressured paths that reserve producer slots with one unconditional ticket.
 - **MPMC queue**: bounded ring with **ticket + per-slot sequence**, blocking `enqueue_wait` / `dequeue_wait` (no atomic compare-and-swap usage).
 - **ARM-friendly waiting**: `cpu_pause`, `cpu_wait_for_event`, `cpu_signal_event` primitives for low overhead spin/wait.
 - **CPU dispatch probe**: private runtime feature detection for x86_64 AVX2 and ARM NEON dispatch tiers.
@@ -60,6 +61,39 @@ File: `astral/src/concurrency/mpsc_ring.hpp`
 Use this primitive for many-producer, one-owner paths such as tool-call fan-in,
 embedding/RAG ingest results, and cold progress events. Prefer SPSC when the
 ownership model can be reduced to one producer and one consumer.
+
+## MPSC ticket ring (backpressured fan-in)
+
+File: `astral/src/concurrency/mpsc_ticket_ring.hpp`
+
+### Design
+
+- Bounded ring with `Capacity` (power of 2).
+- Producers reserve publish positions with `fetch_add(relaxed)`.
+- Each slot contains a `seq` number that controls when the reserved slot is reusable.
+- `push_wait(const T&)` waits until the reserved slot is writable, writes the
+  item, then publishes with a release store.
+- `pop(T& out)` is single-consumer and non-blocking.
+
+This primitive removes the CAS retry branch from producer reservation. On x86,
+that maps to one unconditional locked operation. On ARM, waiting uses the same
+`cpu_wait_for_event()` / `cpu_signal_event()` path as the other blocking
+primitives.
+
+Do not use this at public API boundaries where callers need immediate
+`ASTRAL_E_BUSY` feedback. Use it only when backpressure is an accepted part of
+the internal ownership contract.
+
+### Memory-order contract
+
+- Reservation tickets use `fetch_add(relaxed)`. The ticket only chooses a slot;
+  it does not publish data.
+- Producers wait for `slot.seq.load(acquire) == pos`, write `slot.data`, then
+  publish with `slot.seq.store(release, pos + 1)`.
+- The consumer loads `slot.seq` with acquire before reading `slot.data`.
+- The consumer releases the slot with `slot.seq.store(release, pos + Capacity)`,
+  then advances its owner-local dequeue cursor.
+- `slot.seq` is the synchronization object for data visibility.
 
 ### Performance bar
 
@@ -179,6 +213,9 @@ This ring intentionally does not add ownership checks to the hot path. Callers e
   - SPSC fan-in lanes: `--only spsc-fan-in`
   - SPSC/MPSC/MPMC coverage through 8 producers/8 consumers: `--only concurrency-matrix --mpsc-items 1000000`
   - Topology pressure: set `ASTRAL_BENCH_PIN_THREADS=1` for affinity-mask based pinning on Linux.
+- Perf counters: capture branch/cache counters outside the repository when
+  changing hot primitives; keep committed docs focused on contracts and
+  reproducible commands.
 - Source contract gate: `gate_source_scans` checks the maintained MPMC/SPSC acquire/release prose against the source headers and this document.
 
 Remaining release evidence:
