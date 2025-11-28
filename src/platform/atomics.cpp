@@ -65,15 +65,12 @@ size_t detect_cache_line_size() {
   uint64_t ctr;
   __asm__ __volatile__("mrs %0, ctr_el0" : "=r"(ctr));
 
-  // Extract DminLine field (bits 19:16)
   uint32_t dmin_line = (ctr >> 16) & 0xF;
 
-  // Cache line size = 4 * 2^DminLine
-  size_t cache_line = 4 << dmin_line;
+  size_t detected_cache_line = 4 << dmin_line;
 
-  // Sanity check: typical values are 64 or 128 bytes
-  if (cache_line >= 32 && cache_line <= 256) {
-    return cache_line;
+  if (detected_cache_line >= 32 && detected_cache_line <= 256) {
+    return detected_cache_line;
   }
 #endif
 
@@ -90,14 +87,12 @@ size_t detect_cache_line_size() {
   uint32_t ctr;
   __asm__ __volatile__("mrc p15, 0, %0, c0, c0, 1" : "=r"(ctr));
 
-  // Extract DminLine field (bits 19:16)
   uint32_t dmin_line = (ctr >> 16) & 0xF;
 
-  // Cache line size = 4 * 2^DminLine
-  size_t cache_line = 4 << dmin_line;
+  size_t detected_cache_line = 4 << dmin_line;
 
-  if (cache_line >= 32 && cache_line <= 256) {
-    return cache_line;
+  if (detected_cache_line >= 32 && detected_cache_line <= 256) {
+    return detected_cache_line;
   }
 #endif
 

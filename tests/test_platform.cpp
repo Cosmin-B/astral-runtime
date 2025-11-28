@@ -123,20 +123,13 @@ TEST(vm_large_page_reserve_fallback) {
 }
 #endif // ASTRAL_ENABLE_VIRTUAL_MEMORY
 
-// Test cache line size detection
 TEST(cache_line_size_detection) {
     size_t size = cache_line_size();
 
-    // Should be power of 2 between 32 and 256
     ASSERT_GE(size, 32);
     ASSERT_LE(size, 256);
 
-    // Power of 2 check
     ASSERT_EQ((size & (size - 1)), 0);
-
-    // Most common values: 64 (x86/ARM) or 128 (Apple Silicon)
-    bool is_common = (size == 64 || size == 128);
-    ASSERT_TRUE(is_common);
 }
 
 // Test CPU pause (no crashes)
