@@ -365,6 +365,162 @@ LatencyResult bench_spsc_latency(uint64_t samples) {
     };
 }
 
+LatencyResult bench_spsc_fan_in_latency(uint64_t samples) {
+    constexpr size_t kCapacity = 4096;
+    astral::concurrency::SpscFanIn<uint64_t, 1, kCapacity> fan_in;
+    std::vector<uint64_t> deltas;
+    deltas.resize(static_cast<size_t>(samples));
+
+    uint64_t timer_overhead = UINT64_MAX;
+    for (uint32_t i = 0; i < 1024; ++i) {
+        const uint64_t t0 = ticks_now();
+        const uint64_t t1 = ticks_now();
+        const uint64_t delta = t1 - t0;
+        if (delta < timer_overhead) {
+            timer_overhead = delta;
+        }
+    }
+
+    uint64_t out = 0;
+    for (uint64_t i = 0; i < samples; ++i) {
+        const uint64_t t0 = ticks_now();
+        (void)fan_in.try_push(0, i);
+        (void)fan_in.pop(out);
+        const uint64_t t1 = ticks_now();
+        const uint64_t measured = t1 - t0;
+        deltas[static_cast<size_t>(i)] = measured > timer_overhead ? measured - timer_overhead : 0;
+    }
+    do_not_optimize(out);
+
+    std::sort(deltas.begin(), deltas.end());
+    const ClockInfo clk = clock_info();
+    return LatencyResult{
+        "SPSC fan-in local pcts",
+        percentile(deltas, 50),
+        percentile(deltas, 95),
+        percentile(deltas, 99),
+        deltas.empty() ? 0 : deltas.back(),
+        clk.tick_to_ns,
+    };
+}
+
+LatencyResult bench_mpsc_latency(uint64_t samples) {
+    constexpr size_t kCapacity = 4096;
+    astral::concurrency::MpscRing<uint64_t, kCapacity> ring;
+    std::vector<uint64_t> deltas;
+    deltas.resize(static_cast<size_t>(samples));
+
+    uint64_t timer_overhead = UINT64_MAX;
+    for (uint32_t i = 0; i < 1024; ++i) {
+        const uint64_t t0 = ticks_now();
+        const uint64_t t1 = ticks_now();
+        const uint64_t delta = t1 - t0;
+        if (delta < timer_overhead) {
+            timer_overhead = delta;
+        }
+    }
+
+    uint64_t out = 0;
+    for (uint64_t i = 0; i < samples; ++i) {
+        const uint64_t t0 = ticks_now();
+        (void)ring.try_push(i);
+        (void)ring.pop(out);
+        const uint64_t t1 = ticks_now();
+        const uint64_t measured = t1 - t0;
+        deltas[static_cast<size_t>(i)] = measured > timer_overhead ? measured - timer_overhead : 0;
+    }
+    do_not_optimize(out);
+
+    std::sort(deltas.begin(), deltas.end());
+    const ClockInfo clk = clock_info();
+    return LatencyResult{
+        "MPSC local pcts",
+        percentile(deltas, 50),
+        percentile(deltas, 95),
+        percentile(deltas, 99),
+        deltas.empty() ? 0 : deltas.back(),
+        clk.tick_to_ns,
+    };
+}
+
+LatencyResult bench_mpsc_ticket_latency(uint64_t samples) {
+    constexpr size_t kCapacity = 4096;
+    astral::concurrency::MpscTicketRing<uint64_t, kCapacity> ring;
+    std::vector<uint64_t> deltas;
+    deltas.resize(static_cast<size_t>(samples));
+
+    uint64_t timer_overhead = UINT64_MAX;
+    for (uint32_t i = 0; i < 1024; ++i) {
+        const uint64_t t0 = ticks_now();
+        const uint64_t t1 = ticks_now();
+        const uint64_t delta = t1 - t0;
+        if (delta < timer_overhead) {
+            timer_overhead = delta;
+        }
+    }
+
+    uint64_t out = 0;
+    for (uint64_t i = 0; i < samples; ++i) {
+        const uint64_t t0 = ticks_now();
+        ring.push_wait(i);
+        (void)ring.pop(out);
+        const uint64_t t1 = ticks_now();
+        const uint64_t measured = t1 - t0;
+        deltas[static_cast<size_t>(i)] = measured > timer_overhead ? measured - timer_overhead : 0;
+    }
+    do_not_optimize(out);
+
+    std::sort(deltas.begin(), deltas.end());
+    const ClockInfo clk = clock_info();
+    return LatencyResult{
+        "MPSC ticket local pcts",
+        percentile(deltas, 50),
+        percentile(deltas, 95),
+        percentile(deltas, 99),
+        deltas.empty() ? 0 : deltas.back(),
+        clk.tick_to_ns,
+    };
+}
+
+LatencyResult bench_mpmc_latency(uint64_t samples) {
+    constexpr size_t kCapacity = 4096;
+    astral::concurrency::MpmcQueue<uint64_t, kCapacity> queue;
+    std::vector<uint64_t> deltas;
+    deltas.resize(static_cast<size_t>(samples));
+
+    uint64_t timer_overhead = UINT64_MAX;
+    for (uint32_t i = 0; i < 1024; ++i) {
+        const uint64_t t0 = ticks_now();
+        const uint64_t t1 = ticks_now();
+        const uint64_t delta = t1 - t0;
+        if (delta < timer_overhead) {
+            timer_overhead = delta;
+        }
+    }
+
+    uint64_t out = 0;
+    for (uint64_t i = 0; i < samples; ++i) {
+        const uint64_t t0 = ticks_now();
+        queue.enqueue_wait(i);
+        queue.dequeue_wait(&out);
+        const uint64_t t1 = ticks_now();
+        const uint64_t measured = t1 - t0;
+        deltas[static_cast<size_t>(i)] = measured > timer_overhead ? measured - timer_overhead : 0;
+    }
+    do_not_optimize(out);
+
+    std::sort(deltas.begin(), deltas.end());
+    const ClockInfo clk = clock_info();
+    return LatencyResult{
+        "MPMC local pcts",
+        percentile(deltas, 50),
+        percentile(deltas, 95),
+        percentile(deltas, 99),
+        deltas.empty() ? 0 : deltas.back(),
+        clk.tick_to_ns,
+    };
+}
+
 BenchResult bench_mpsc_ring(uint32_t producers, uint64_t items_per_producer) {
     constexpr size_t kCapacity = 4096;
     astral::concurrency::MpscRing<uint64_t, kCapacity> ring;
@@ -827,9 +983,12 @@ void bench_concurrency_matrix_print(uint64_t items_per_producer) {
     print_named_result("SPSC batch", bench_spsc_ring_batch(items_per_producer, 64), clk.name);
     print_named_result("SPSC cached local", bench_spsc_ring_local(items_per_producer), clk.name);
     print_named_latency_result("SPSC local pcts", bench_spsc_latency(100000), clk.name);
+    print_named_latency_result("SPSC fan-in local pcts", bench_spsc_fan_in_latency(100000), clk.name);
     print_named_result("SPSC 1P/1C transit", bench_spsc_ring(items_per_producer), clk.name);
 
     std::printf("\nMPSC coverage\n");
+    print_named_latency_result("MPSC local pcts", bench_mpsc_latency(100000), clk.name);
+    print_named_latency_result("MPSC ticket local pcts", bench_mpsc_ticket_latency(100000), clk.name);
     print_named_result("MPSC 1P/1C", bench_mpsc_ring(1, items_per_producer), clk.name);
     print_named_result("SPSC fan-in 4P/1C", bench_spsc_fan_in(4, items_per_producer / 4), clk.name);
     print_named_result("MPSC 2P/1C", bench_mpsc_ring(2, items_per_producer / 2), clk.name);
@@ -845,6 +1004,7 @@ void bench_concurrency_matrix_print(uint64_t items_per_producer) {
     bench_mpsc_split_print("MPSC split 8P", 8, items_per_producer / 8);
 
     std::printf("\nMPMC coverage\n");
+    print_named_latency_result("MPMC local pcts", bench_mpmc_latency(100000), clk.name);
     print_named_result("MPMC 1P/1C", bench_mpmc_queue(1, 1, items_per_producer), clk.name);
     print_named_result("MPMC 4P/4C spaced", bench_mpmc_queue(4, 4, items_per_producer / 4), clk.name);
     print_named_result("MPMC 4P/4C dense", bench_mpmc_queue_dense(4, 4, items_per_producer / 4), clk.name);
