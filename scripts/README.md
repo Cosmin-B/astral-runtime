@@ -150,6 +150,19 @@ Build a profiling preset and run a small workload so you can attach the Tracy UI
 ./scripts/run_tracy_capture.sh --preset dev-prof
 ```
 
+## Primitive Perf Capture
+
+Capture concurrency benchmark output, perf counters, symbols, and disassembly
+into an out-of-repo artifact directory:
+
+```bash
+./scripts/run_primitive_perf_capture.sh --pin --items 1000000
+```
+
+The script writes to `../astral-perf-runs/<timestamp>` by default. Use
+`--out <dir>` for a specific artifact path, `--require-perf` when perf counters
+must be present, and `--perf-events <csv>` to tune the counter set.
+
 ---
 
 ## Comment Inventory
@@ -637,7 +650,6 @@ Note: This is an illustrative snippet. The repo’s actual CI is in `.github/wor
 ## Future Enhancements
 
 - [ ] Add `strace` wrapper to count syscalls in hot path
-- [ ] Add `perf stat` wrapper for CPU metrics
 - [ ] Add automated regression testing
 - [ ] Add HTML report generation
 - [ ] Add benchmark comparison (before/after)
