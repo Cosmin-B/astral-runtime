@@ -163,6 +163,19 @@ The script writes to `../astral-perf-runs/<timestamp>` by default. Use
 `--out <dir>` for a specific artifact path, `--require-perf` when perf counters
 must be present, and `--perf-events <csv>` to tune the counter set.
 
+## ARM64 Hardware Validation
+
+On a native ARM64 Linux host, run the primitive, embedded, perf, and
+disassembly evidence batch into an out-of-repo directory:
+
+```bash
+./scripts/run_arm64_hardware_validation.sh --jobs 4 --items 1000000
+```
+
+This script exits on non-ARM64 hosts unless `--allow-non-arm64` is used for a
+script smoke. It intentionally does not power off the machine; remote automation
+should copy the evidence directory first, then shut down the cloud instance.
+
 ---
 
 ## Comment Inventory

@@ -217,6 +217,8 @@ This ring intentionally does not add ownership checks to the hot path. Callers e
 - Perf counters: capture branch/cache counters outside the repository when
   changing hot primitives:
   `./scripts/run_primitive_perf_capture.sh --pin --items 1000000`
+- Native ARM64 evidence:
+  `./scripts/run_arm64_hardware_validation.sh --jobs 4 --items 1000000`
 - Source contract gate: `gate_source_scans` checks the maintained MPMC/SPSC acquire/release prose against the source headers and this document.
 
 Remaining release evidence:
