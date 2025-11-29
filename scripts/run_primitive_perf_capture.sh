@@ -94,6 +94,61 @@ mkdir -p "${out_dir}"
 
 bench_cmd=("${bench_bin}" --only concurrency-matrix --mpsc-items "${items}")
 
+write_target_report() {
+  local bench_log="$1"
+  local report="$2"
+
+  awk '
+    function ns_for(label, line, fields, count, i) {
+      if (index(line, label) != 1) return ""
+      count = split(line, fields, " ")
+      for (i = 1; i <= count; ++i) {
+        if (fields[i] == "ns/op") return fields[i - 1]
+      }
+      return ""
+    }
+    function p50_for(label, line, start, value) {
+      if (index(line, label) != 1) return ""
+      start = index(line, "p50=")
+      if (start == 0) return ""
+      value = substr(line, start + 4)
+      sub(/^[[:space:]]*/, "", value)
+      sub(/[[:space:]].*/, "", value)
+      return value
+    }
+    function emit(name, actual, target, upper) {
+      if (actual == "") return
+      status = ((actual + 0.0) <= upper) ? "ok" : "review"
+      printf "%s\t%s\t%s\t%s\n", name, actual, target, status
+    }
+    BEGIN {
+      print "case\tactual_ns_per_op\ttarget_ns_per_op\tstatus"
+    }
+    {
+      emit("spsc_batch", ns_for("SPSC batch", $0), "<=0.50", 0.50)
+      emit("spsc_cached_local", ns_for("SPSC cached local", $0), "<=0.75", 0.75)
+      emit("spsc_local_p50", p50_for("SPSC local pcts", $0), "<=5.00", 5.00)
+      emit("spsc_transit", ns_for("SPSC 1P/1C transit", $0), "<=25.00", 25.00)
+      emit("spsc_fan_in_4p", ns_for("SPSC fan-in 4P/1C", $0), "<=60.00", 60.00)
+      emit("mpsc_local_p50", p50_for("MPSC local pcts", $0), "<=15.00", 15.00)
+      emit("mpsc_ticket_local_p50", p50_for("MPSC ticket local pcts", $0), "<=15.00", 15.00)
+      emit("mpsc_cas_1p", ns_for("MPSC 1P/1C", $0), "<=35.00", 35.00)
+      emit("mpsc_cas_2p", ns_for("MPSC 2P/1C", $0), "<=60.00", 60.00)
+      emit("mpsc_cas_4p", ns_for("MPSC 4P/1C", $0), "<=80.00", 80.00)
+      emit("mpsc_cas_8p", ns_for("MPSC 8P/1C", $0), "<=200.00", 200.00)
+      emit("mpsc_ticket_1p", ns_for("MPSC ticket 1P/1C", $0), "<=20.00", 20.00)
+      emit("mpsc_ticket_2p", ns_for("MPSC ticket 2P/1C", $0), "<=60.00", 60.00)
+      emit("mpsc_ticket_4p", ns_for("MPSC ticket 4P/1C", $0), "<=60.00", 60.00)
+      emit("mpsc_ticket_8p", ns_for("MPSC ticket 8P/1C", $0), "<=200.00", 200.00)
+      emit("mpmc_local_p50", p50_for("MPMC local pcts", $0), "<=25.00", 25.00)
+      emit("mpmc_1p1c", ns_for("MPMC 1P/1C", $0), "<=25.00", 25.00)
+      emit("mpmc_4p4c_spaced", ns_for("MPMC 4P/4C spaced", $0), "<=80.00", 80.00)
+      emit("mpmc_4p4c_dense", ns_for("MPMC 4P/4C dense", $0), "<=150.00", 150.00)
+      emit("mpmc_8p8c", ns_for("MPMC 8P/8C", $0), "<=300.00", 300.00)
+    }
+  ' "${bench_log}" > "${report}"
+}
+
 {
   echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "git_rev=$(git rev-parse HEAD)"
@@ -153,5 +208,7 @@ if [[ -n "${objdump_bin}" ]]; then
   rg -n "SpscRing|SpscFanIn|MpscRing|MpscTicketRing|MpmcQueue|bench_spsc|bench_mpsc|bench_mpmc|fetch_add|pause|wfe|sev" \
     "${out_dir}/disassembly.txt" > "${out_dir}/disassembly-hot-index.txt" 2>/dev/null || true
 fi
+
+write_target_report "${out_dir}/bench.log" "${out_dir}/target-report.tsv"
 
 echo "${out_dir}"

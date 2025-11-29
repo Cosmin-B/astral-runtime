@@ -152,8 +152,8 @@ Build a profiling preset and run a small workload so you can attach the Tracy UI
 
 ## Primitive Perf Capture
 
-Capture concurrency benchmark output, perf counters, symbols, and disassembly
-into an out-of-repo artifact directory:
+Capture concurrency benchmark output, perf counters, symbols, disassembly, and
+a target-range comparison into an out-of-repo artifact directory:
 
 ```bash
 ./scripts/run_primitive_perf_capture.sh --pin --items 1000000
