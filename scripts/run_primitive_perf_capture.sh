@@ -116,6 +116,15 @@ write_target_report() {
       sub(/[[:space:]].*/, "", value)
       return value
     }
+    function prod_wall_for(label, line, start, value) {
+      if (index(line, label) != 1) return ""
+      start = index(line, "prod-wall=")
+      if (start == 0) return ""
+      value = substr(line, start + 10)
+      sub(/^[[:space:]]*/, "", value)
+      sub(/[[:space:]].*/, "", value)
+      return value
+    }
     function emit(name, actual, target, upper) {
       if (actual == "") return
       status = ((actual + 0.0) <= upper) ? "ok" : "review"
@@ -140,6 +149,14 @@ write_target_report() {
       emit("mpsc_ticket_2p", ns_for("MPSC ticket 2P/1C", $0), "<=60.00", 60.00)
       emit("mpsc_ticket_4p", ns_for("MPSC ticket 4P/1C", $0), "<=60.00", 60.00)
       emit("mpsc_ticket_8p", ns_for("MPSC ticket 8P/1C", $0), "<=200.00", 200.00)
+      emit("mpsc_cas_split_1p_prod_wall", prod_wall_for("MPSC split 1P", $0), "<=35.00", 35.00)
+      emit("mpsc_cas_split_2p_prod_wall", prod_wall_for("MPSC split 2P", $0), "<=80.00", 80.00)
+      emit("mpsc_cas_split_4p_prod_wall", prod_wall_for("MPSC split 4P", $0), "<=120.00", 120.00)
+      emit("mpsc_cas_split_8p_prod_wall", prod_wall_for("MPSC split 8P", $0), "<=250.00", 250.00)
+      emit("mpsc_ticket_split_1p_prod_wall", prod_wall_for("MPSC ticket split 1P", $0), "<=25.00", 25.00)
+      emit("mpsc_ticket_split_2p_prod_wall", prod_wall_for("MPSC ticket split 2P", $0), "<=80.00", 80.00)
+      emit("mpsc_ticket_split_4p_prod_wall", prod_wall_for("MPSC ticket split 4P", $0), "<=80.00", 80.00)
+      emit("mpsc_ticket_split_8p_prod_wall", prod_wall_for("MPSC ticket split 8P", $0), "<=250.00", 250.00)
       emit("mpmc_local_p50", p50_for("MPMC local pcts", $0), "<=25.00", 25.00)
       emit("mpmc_1p1c", ns_for("MPMC 1P/1C", $0), "<=25.00", 25.00)
       emit("mpmc_4p4c_spaced", ns_for("MPMC 4P/4C spaced", $0), "<=80.00", 80.00)
