@@ -40,6 +40,19 @@ uint64_t percentile(const std::vector<uint64_t>& values, uint32_t pct) {
     return values[static_cast<size_t>(scaled)];
 }
 
+uint64_t timer_overhead_ticks() {
+    uint64_t overhead = UINT64_MAX;
+    for (uint32_t i = 0; i < 1024; ++i) {
+        const uint64_t t0 = ticks_now();
+        const uint64_t t1 = ticks_now();
+        const uint64_t delta = t1 - t0;
+        if (delta < overhead) {
+            overhead = delta;
+        }
+    }
+    return overhead;
+}
+
 bool pin_threads_enabled() {
     const char* v = std::getenv("ASTRAL_BENCH_PIN_THREADS");
     return v != nullptr && v[0] == '1' && v[1] == '\0';
@@ -404,6 +417,76 @@ LatencyResult bench_spsc_fan_in_latency(uint64_t samples) {
     };
 }
 
+LatencyResult bench_spsc_transit_latency(uint64_t samples) {
+    constexpr size_t kCapacity = 1024;
+    astral::concurrency::SpscRing<uint64_t, kCapacity> data;
+    astral::concurrency::SpscRing<uint64_t, kCapacity> ack;
+    std::vector<uint64_t> deltas;
+    deltas.resize(static_cast<size_t>(samples));
+
+    const uint64_t overhead = timer_overhead_ticks();
+    std::atomic<uint32_t> ready{0};
+    std::atomic<bool> start{false};
+
+    std::thread producer([&]() {
+        maybe_pin_current_thread(0);
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+            astral::platform::cpu_pause();
+        }
+
+        uint64_t ack_value = 0;
+        for (uint64_t i = 0; i < samples; ++i) {
+            const uint64_t sent = ticks_now();
+            while (!data.push(sent)) {
+                astral::platform::cpu_pause();
+            }
+            while (!ack.pop(ack_value)) {
+                astral::platform::cpu_pause();
+            }
+        }
+        do_not_optimize(ack_value);
+    });
+
+    std::thread consumer([&]() {
+        maybe_pin_current_thread(1);
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+            astral::platform::cpu_pause();
+        }
+
+        uint64_t sent = 0;
+        for (uint64_t i = 0; i < samples; ++i) {
+            while (!data.pop(sent)) {
+                astral::platform::cpu_pause();
+            }
+            const uint64_t measured = ticks_now() - sent;
+            deltas[static_cast<size_t>(i)] = measured > overhead ? measured - overhead : 0;
+            while (!ack.push(i)) {
+                astral::platform::cpu_pause();
+            }
+        }
+    });
+
+    while (ready.load(std::memory_order_acquire) != 2) {
+        astral::platform::cpu_pause();
+    }
+    start.store(true, std::memory_order_release);
+    producer.join();
+    consumer.join();
+
+    std::sort(deltas.begin(), deltas.end());
+    const ClockInfo clk = clock_info();
+    return LatencyResult{
+        "SPSC transit pcts",
+        percentile(deltas, 50),
+        percentile(deltas, 95),
+        percentile(deltas, 99),
+        deltas.empty() ? 0 : deltas.back(),
+        clk.tick_to_ns,
+    };
+}
+
 LatencyResult bench_mpsc_latency(uint64_t samples) {
     constexpr size_t kCapacity = 4096;
     astral::concurrency::MpscRing<uint64_t, kCapacity> ring;
@@ -443,6 +526,76 @@ LatencyResult bench_mpsc_latency(uint64_t samples) {
     };
 }
 
+LatencyResult bench_mpsc_transit_latency(uint64_t samples) {
+    constexpr size_t kCapacity = 1024;
+    astral::concurrency::MpscRing<uint64_t, kCapacity> data;
+    astral::concurrency::SpscRing<uint64_t, kCapacity> ack;
+    std::vector<uint64_t> deltas;
+    deltas.resize(static_cast<size_t>(samples));
+
+    const uint64_t overhead = timer_overhead_ticks();
+    std::atomic<uint32_t> ready{0};
+    std::atomic<bool> start{false};
+
+    std::thread producer([&]() {
+        maybe_pin_current_thread(0);
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+            astral::platform::cpu_pause();
+        }
+
+        uint64_t ack_value = 0;
+        for (uint64_t i = 0; i < samples; ++i) {
+            const uint64_t sent = ticks_now();
+            while (!data.try_push(sent)) {
+                astral::platform::cpu_pause();
+            }
+            while (!ack.pop(ack_value)) {
+                astral::platform::cpu_pause();
+            }
+        }
+        do_not_optimize(ack_value);
+    });
+
+    std::thread consumer([&]() {
+        maybe_pin_current_thread(1);
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+            astral::platform::cpu_pause();
+        }
+
+        uint64_t sent = 0;
+        for (uint64_t i = 0; i < samples; ++i) {
+            while (!data.pop(sent)) {
+                astral::platform::cpu_pause();
+            }
+            const uint64_t measured = ticks_now() - sent;
+            deltas[static_cast<size_t>(i)] = measured > overhead ? measured - overhead : 0;
+            while (!ack.push(i)) {
+                astral::platform::cpu_pause();
+            }
+        }
+    });
+
+    while (ready.load(std::memory_order_acquire) != 2) {
+        astral::platform::cpu_pause();
+    }
+    start.store(true, std::memory_order_release);
+    producer.join();
+    consumer.join();
+
+    std::sort(deltas.begin(), deltas.end());
+    const ClockInfo clk = clock_info();
+    return LatencyResult{
+        "MPSC transit pcts",
+        percentile(deltas, 50),
+        percentile(deltas, 95),
+        percentile(deltas, 99),
+        deltas.empty() ? 0 : deltas.back(),
+        clk.tick_to_ns,
+    };
+}
+
 LatencyResult bench_mpsc_ticket_latency(uint64_t samples) {
     constexpr size_t kCapacity = 4096;
     astral::concurrency::MpscTicketRing<uint64_t, kCapacity> ring;
@@ -474,6 +627,74 @@ LatencyResult bench_mpsc_ticket_latency(uint64_t samples) {
     const ClockInfo clk = clock_info();
     return LatencyResult{
         "MPSC ticket local pcts",
+        percentile(deltas, 50),
+        percentile(deltas, 95),
+        percentile(deltas, 99),
+        deltas.empty() ? 0 : deltas.back(),
+        clk.tick_to_ns,
+    };
+}
+
+LatencyResult bench_mpsc_ticket_transit_latency(uint64_t samples) {
+    constexpr size_t kCapacity = 1024;
+    astral::concurrency::MpscTicketRing<uint64_t, kCapacity> data;
+    astral::concurrency::SpscRing<uint64_t, kCapacity> ack;
+    std::vector<uint64_t> deltas;
+    deltas.resize(static_cast<size_t>(samples));
+
+    const uint64_t overhead = timer_overhead_ticks();
+    std::atomic<uint32_t> ready{0};
+    std::atomic<bool> start{false};
+
+    std::thread producer([&]() {
+        maybe_pin_current_thread(0);
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+            astral::platform::cpu_pause();
+        }
+
+        uint64_t ack_value = 0;
+        for (uint64_t i = 0; i < samples; ++i) {
+            const uint64_t sent = ticks_now();
+            data.push_wait(sent);
+            while (!ack.pop(ack_value)) {
+                astral::platform::cpu_pause();
+            }
+        }
+        do_not_optimize(ack_value);
+    });
+
+    std::thread consumer([&]() {
+        maybe_pin_current_thread(1);
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+            astral::platform::cpu_pause();
+        }
+
+        uint64_t sent = 0;
+        for (uint64_t i = 0; i < samples; ++i) {
+            while (!data.pop(sent)) {
+                astral::platform::cpu_pause();
+            }
+            const uint64_t measured = ticks_now() - sent;
+            deltas[static_cast<size_t>(i)] = measured > overhead ? measured - overhead : 0;
+            while (!ack.push(i)) {
+                astral::platform::cpu_pause();
+            }
+        }
+    });
+
+    while (ready.load(std::memory_order_acquire) != 2) {
+        astral::platform::cpu_pause();
+    }
+    start.store(true, std::memory_order_release);
+    producer.join();
+    consumer.join();
+
+    std::sort(deltas.begin(), deltas.end());
+    const ClockInfo clk = clock_info();
+    return LatencyResult{
+        "MPSC ticket transit pcts",
         percentile(deltas, 50),
         percentile(deltas, 95),
         percentile(deltas, 99),
@@ -1090,11 +1311,14 @@ void bench_concurrency_matrix_print(uint64_t items_per_producer) {
     print_named_result("SPSC cached local", bench_spsc_ring_local(items_per_producer), clk.name);
     print_named_latency_result("SPSC local pcts", bench_spsc_latency(100000), clk.name);
     print_named_latency_result("SPSC fan-in local pcts", bench_spsc_fan_in_latency(100000), clk.name);
+    print_named_latency_result("SPSC transit pcts", bench_spsc_transit_latency(100000), clk.name);
     print_named_result("SPSC 1P/1C transit", bench_spsc_ring(items_per_producer), clk.name);
 
     std::printf("\nMPSC coverage\n");
     print_named_latency_result("MPSC local pcts", bench_mpsc_latency(100000), clk.name);
     print_named_latency_result("MPSC ticket local pcts", bench_mpsc_ticket_latency(100000), clk.name);
+    print_named_latency_result("MPSC transit pcts", bench_mpsc_transit_latency(100000), clk.name);
+    print_named_latency_result("MPSC ticket transit pcts", bench_mpsc_ticket_transit_latency(100000), clk.name);
     print_named_result("MPSC 1P/1C", bench_mpsc_ring(1, items_per_producer), clk.name);
     print_named_result("SPSC fan-in 4P/1C", bench_spsc_fan_in(4, items_per_producer / 4), clk.name);
     print_named_result("MPSC 2P/1C", bench_mpsc_ring(2, items_per_producer / 2), clk.name);

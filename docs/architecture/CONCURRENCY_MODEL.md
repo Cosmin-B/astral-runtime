@@ -213,6 +213,7 @@ This ring intentionally does not add ownership checks to the hot path. Callers e
   - SPSC fan-in lanes: `--only spsc-fan-in`
   - SPSC/MPSC/MPMC coverage through 8 producers/8 consumers: `--only concurrency-matrix --mpsc-items 1000000`
   - Local p50/p95/p99 rows for SPSC, SPSC fan-in, MPSC, MPSC ticket, and MPMC are included in the concurrency matrix.
+  - Strict one-in-flight transit p50/p95/p99 rows cover SPSC, MPSC, and MPSC ticket handoff latency.
   - MPSC split rows report producer wall time for both CAS reservation and ticket reservation through 8 producers.
   - Topology pressure: set `ASTRAL_BENCH_PIN_THREADS=1` for affinity-mask based pinning on Linux.
 - Perf counters: capture branch/cache counters outside the repository when
