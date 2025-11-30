@@ -161,7 +161,9 @@ a target-range comparison into an out-of-repo artifact directory:
 
 The script writes to `../astral-perf-runs/<timestamp>` by default. Use
 `--out <dir>` for a specific artifact path, `--require-perf` when perf counters
-must be present, and `--perf-events <csv>` to tune the counter set.
+must be present, `--perf-bin <path>` for a kernel-specific perf binary,
+`--perf-events <csv>` to tune the counter set, and `--require-targets` to fail
+the batch when the target report contains review rows.
 
 ## ARM64 Hardware Validation
 

@@ -18,6 +18,8 @@ Options:
   --pin                Set ASTRAL_BENCH_PIN_THREADS=1
   --no-build           Skip configure/build
   --require-perf       Fail if perf is missing or blocked
+  --require-targets    Fail if target-report.tsv contains review rows
+  --perf-bin <path>    Perf executable to use (default: perf from PATH)
   --perf-events <csv>  Override perf stat events
   --help               Show help
 USAGE
@@ -30,6 +32,8 @@ out_dir=""
 pin="0"
 build="1"
 require_perf="0"
+require_targets="0"
+perf_bin=""
 perf_events="cycles,instructions,branches,branch-misses,cache-references,cache-misses,L1-dcache-loads,L1-dcache-load-misses,L1-dcache-stores,dTLB-loads,dTLB-load-misses"
 
 while [[ $# -gt 0 ]]; do
@@ -41,6 +45,8 @@ while [[ $# -gt 0 ]]; do
     --pin) pin="1"; shift ;;
     --no-build) build="0"; shift ;;
     --require-perf) require_perf="1"; shift ;;
+    --require-targets) require_targets="1"; shift ;;
+    --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -181,10 +187,14 @@ if command -v lscpu >/dev/null 2>&1; then
   lscpu > "${out_dir}/lscpu.txt" 2>&1 || true
 fi
 
-if command -v perf >/dev/null 2>&1; then
+if [[ -z "${perf_bin}" ]] && command -v perf >/dev/null 2>&1; then
+  perf_bin="$(command -v perf)"
+fi
+
+if [[ -n "${perf_bin}" && -x "${perf_bin}" ]]; then
   set +e
   ASTRAL_BENCH_PIN_THREADS="${pin}" \
-    perf stat -x, -e "${perf_events}" -o "${out_dir}/perf-stat.csv" -- "${bench_cmd[@]}" \
+    "${perf_bin}" stat -x, -e "${perf_events}" -o "${out_dir}/perf-stat.csv" -- "${bench_cmd[@]}" \
     > "${out_dir}/bench.log" 2> "${out_dir}/perf.stderr"
   perf_status=$?
   set -e
@@ -227,5 +237,10 @@ if [[ -n "${objdump_bin}" ]]; then
 fi
 
 write_target_report "${out_dir}/bench.log" "${out_dir}/target-report.tsv"
+
+if [[ "${require_targets}" == "1" ]] && awk -F '\t' 'NR > 1 && $4 != "ok" { found = 1 } END { exit found ? 0 : 1 }' "${out_dir}/target-report.tsv"; then
+  echo "target-report.tsv contains review rows" >&2
+  exit 1
+fi
 
 echo "${out_dir}"
