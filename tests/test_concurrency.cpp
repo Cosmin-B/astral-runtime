@@ -486,6 +486,64 @@ TEST(mpsc_ticket_multi_producer_single_consumer_checksum) {
     ASSERT_EQ(sum, expected);
 }
 
+TEST(mpsc_ticket_batch_multi_producer_single_consumer_checksum) {
+    constexpr size_t kCapacity = 256;
+    constexpr uint32_t kProducers = 4;
+    constexpr uint64_t kItemsPerProducer = 4096;
+    constexpr uint64_t kBatch = 16;
+    constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
+
+    MpscTicketRing<uint64_t, kCapacity> ring;
+
+    std::atomic<uint32_t> ready{0};
+    std::atomic<bool> start{false};
+    std::atomic<uint64_t> consumed{0};
+    std::vector<std::thread> producers;
+    producers.reserve(kProducers);
+
+    for (uint32_t p = 0; p < kProducers; ++p) {
+        producers.emplace_back([&, p]() {
+            uint64_t batch[kBatch];
+            ready.fetch_add(1, std::memory_order_release);
+            while (!start.load(std::memory_order_acquire)) {
+                astral::platform::cpu_pause();
+            }
+
+            const uint64_t base = static_cast<uint64_t>(p) * kItemsPerProducer;
+            for (uint64_t i = 0; i < kItemsPerProducer; i += kBatch) {
+                for (uint64_t j = 0; j < kBatch; ++j) {
+                    batch[j] = base + i + j;
+                }
+                ring.push_batch_wait(batch, kBatch);
+            }
+        });
+    }
+
+    while (ready.load(std::memory_order_acquire) != kProducers) {
+        astral::platform::cpu_pause();
+    }
+    start.store(true, std::memory_order_release);
+
+    uint64_t sum = 0;
+    while (consumed.load(std::memory_order_relaxed) < kTotalItems) {
+        uint64_t value = 0;
+        if (ring.pop(value)) {
+            sum += value;
+            consumed.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            astral::platform::cpu_pause();
+        }
+    }
+
+    for (auto& t : producers) {
+        t.join();
+    }
+
+    const uint64_t expected = (kTotalItems - 1) * kTotalItems / 2;
+    ASSERT_EQ(consumed.load(), kTotalItems);
+    ASSERT_EQ(sum, expected);
+}
+
 TEST(spsc_fan_in_multi_producer_single_consumer_checksum) {
     constexpr size_t kProducers = 4;
     constexpr size_t kCapacity = 64;

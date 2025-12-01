@@ -7,6 +7,7 @@
 
 #include "../platform/atomics.h"
 #include "../platform/cacheline.hpp"
+#include "../platform/compiler.hpp"
 #include "../utils/trace.hpp"
 
 namespace astral::concurrency {
@@ -51,6 +52,31 @@ public:
 
         slot.data = item;
         slot.seq.store(pos + 1, std::memory_order_release);
+        astral::platform::cpu_signal_event();
+    }
+
+    void push_batch_wait(const T* items, size_t count) {
+        ASTRAL_ZONE_MICRO_N("astral.mpsc_ticket.push_batch_wait");
+        if (count == 0) ASTRAL_UNLIKELY {
+            return;
+        }
+
+        const uint64_t first_pos = enqueue_pos_.fetch_add(count, std::memory_order_relaxed);
+        for (size_t i = 0; i < count; ++i) {
+            const uint64_t pos = first_pos + i;
+            Slot& slot = buffer_[pos & kIndexMask];
+
+            uint32_t spins = 0;
+            for (;;) {
+                if (slot.seq.load(std::memory_order_acquire) == pos) {
+                    break;
+                }
+                wait_hint(spins);
+            }
+
+            slot.data = items[i];
+            slot.seq.store(pos + 1, std::memory_order_release);
+        }
         astral::platform::cpu_signal_event();
     }
 

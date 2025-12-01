@@ -70,9 +70,13 @@ File: `astral/src/concurrency/mpsc_ticket_ring.hpp`
 
 - Bounded ring with `Capacity` (power of 2).
 - Producers reserve publish positions with `fetch_add(relaxed)`.
+- Batched producers can reserve several publish positions with one
+  `fetch_add(relaxed)` via `push_batch_wait`.
 - Each slot contains a `seq` number that controls when the reserved slot is reusable.
 - `push_wait(const T&)` waits until the reserved slot is writable, writes the
   item, then publishes with a release store.
+- `push_batch_wait(const T*, size_t)` reserves one contiguous ticket range,
+  waits for each slot, and publishes each slot in ticket order.
 - `pop(T& out)` is single-consumer and non-blocking.
 
 This primitive removes the CAS retry branch from producer reservation. On x86,
@@ -88,6 +92,7 @@ the internal ownership contract.
 
 - Reservation tickets use `fetch_add(relaxed)`. The ticket only chooses a slot;
   it does not publish data.
+- Batched reservation uses the first ticket plus the batch offset for each slot.
 - Producers wait for `slot.seq.load(acquire) == pos`, write `slot.data`, then
   publish with `slot.seq.store(release, pos + 1)`.
 - The consumer loads `slot.seq` with acquire before reading `slot.data`.

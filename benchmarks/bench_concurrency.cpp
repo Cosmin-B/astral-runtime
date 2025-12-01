@@ -878,6 +878,83 @@ BenchResult bench_mpsc_ticket_ring(uint32_t producers, uint64_t items_per_produc
     };
 }
 
+BenchResult bench_mpsc_ticket_batch_ring(uint32_t producers, uint64_t items_per_producer) {
+    constexpr size_t kCapacity = 4096;
+    constexpr size_t kBatch = 16;
+    astral::concurrency::MpscTicketRing<uint64_t, kCapacity> ring;
+
+    if (producers == 0) {
+        producers = 1;
+    }
+
+    const uint64_t total_items = static_cast<uint64_t>(producers) * items_per_producer;
+    std::atomic<uint32_t> ready{0};
+    std::atomic<bool> start{false};
+
+    std::vector<std::thread> prod_threads;
+    prod_threads.reserve(producers);
+
+    for (uint32_t p = 0; p < producers; ++p) {
+        prod_threads.emplace_back([&, p]() {
+            uint64_t batch[kBatch];
+            maybe_pin_current_thread(p);
+            ready.fetch_add(1, std::memory_order_release);
+            while (!start.load(std::memory_order_acquire)) {
+                astral::platform::cpu_pause();
+            }
+
+            const uint64_t base = static_cast<uint64_t>(p) * items_per_producer;
+            for (uint64_t i = 0; i < items_per_producer; i += kBatch) {
+                size_t n = kBatch;
+                const uint64_t remaining = items_per_producer - i;
+                if (remaining < n) {
+                    n = static_cast<size_t>(remaining);
+                }
+                for (size_t j = 0; j < n; ++j) {
+                    batch[j] = base + i + j;
+                }
+                ring.push_batch_wait(batch, n);
+            }
+        });
+    }
+
+    while (ready.load(std::memory_order_acquire) != producers) {
+        astral::platform::cpu_pause();
+    }
+
+    uint64_t sum = 0;
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    start.store(true, std::memory_order_release);
+
+    uint64_t v = 0;
+    uint64_t consumed = 0;
+    while (consumed < total_items) {
+        if (ring.pop(v)) {
+            sum += v;
+            ++consumed;
+        } else {
+            astral::platform::cpu_pause();
+        }
+    }
+
+    for (auto& t : prod_threads) {
+        t.join();
+    }
+
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    do_not_optimize(sum);
+
+    return BenchResult{
+        "MPSC ticket batch (4096)",
+        t1 - t0,
+        n1 - n0,
+        total_items * 2,
+    };
+}
+
 void bench_mpsc_split_print(const char* name, uint32_t producers, uint64_t items_per_producer) {
     constexpr size_t kCapacity = 4096;
     constexpr uint32_t kMaxProducers = 16;
@@ -1328,6 +1405,10 @@ void bench_concurrency_matrix_print(uint64_t items_per_producer) {
     print_named_result("MPSC ticket 2P/1C", bench_mpsc_ticket_ring(2, items_per_producer / 2), clk.name);
     print_named_result("MPSC ticket 4P/1C", bench_mpsc_ticket_ring(4, items_per_producer / 4), clk.name);
     print_named_result("MPSC ticket 8P/1C", bench_mpsc_ticket_ring(8, items_per_producer / 8), clk.name);
+    print_named_result("MPSC ticket batch 1P/1C", bench_mpsc_ticket_batch_ring(1, items_per_producer), clk.name);
+    print_named_result("MPSC ticket batch 2P/1C", bench_mpsc_ticket_batch_ring(2, items_per_producer / 2), clk.name);
+    print_named_result("MPSC ticket batch 4P/1C", bench_mpsc_ticket_batch_ring(4, items_per_producer / 4), clk.name);
+    print_named_result("MPSC ticket batch 8P/1C", bench_mpsc_ticket_batch_ring(8, items_per_producer / 8), clk.name);
     bench_mpsc_split_print("MPSC split 1P", 1, items_per_producer);
     bench_mpsc_split_print("MPSC split 2P", 2, items_per_producer / 2);
     bench_mpsc_split_print("MPSC split 4P", 4, items_per_producer / 4);
