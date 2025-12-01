@@ -112,6 +112,25 @@ TEST(frame_allocator_alignment) {
     free_backing(memory, kCapacity);
 }
 
+TEST(frame_allocator_alignment_unaligned_base) {
+    constexpr size_t kCapacity = 8192;
+    void* raw = std::malloc(kCapacity + 256);
+    ASSERT_NOT_NULL(raw);
+
+    void* memory = static_cast<void*>(static_cast<uint8_t*>(raw) + 1);
+    FrameAllocator alloc(memory, kCapacity);
+
+    void* p1 = alloc.alloc(1, 64);
+    ASSERT_NOT_NULL(p1);
+    ASSERT_EQ(reinterpret_cast<uintptr_t>(p1) % 64, 0);
+
+    void* p2 = alloc.alloc(1, 256);
+    ASSERT_NOT_NULL(p2);
+    ASSERT_EQ(reinterpret_cast<uintptr_t>(p2) % 256, 0);
+
+    std::free(raw);
+}
+
 TEST(frame_allocator_out_of_memory) {
     constexpr size_t kCapacity = 1024;
     void* memory = alloc_backing(kCapacity);

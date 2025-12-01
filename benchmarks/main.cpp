@@ -16,6 +16,9 @@ LatencyResult bench_spsc_latency(uint64_t samples);
 void bench_concurrency_matrix_print(uint64_t items_per_producer);
 BenchResult bench_mpsc_ring(uint32_t producers, uint64_t items_per_producer);
 BenchResult bench_mpmc_queue(uint32_t producers, uint32_t consumers, uint64_t items_per_producer);
+BenchResult bench_frame_allocator(uint64_t iters, uint32_t size);
+BenchResult bench_object_pool_single(uint64_t iters);
+BenchResult bench_object_pool_contended(uint64_t iters, uint32_t threads);
 BenchResult bench_runtime_alloc_free(uint64_t iters, uint32_t size, bool arena_mode);
 BenchResult bench_session_create_destroy(uint64_t iters, bool arena_mode);
 BenchResult bench_model_load_release(uint64_t iters, bool arena_mode);
@@ -531,6 +534,9 @@ int main(int argc, char** argv) {
     }
 
     if (opt.run_alloc) {
+        astral::bench::print_result(astral::bench::bench_frame_allocator(opt.alloc_iters, opt.alloc_size), clk.name);
+        astral::bench::print_result(astral::bench::bench_object_pool_single(opt.alloc_iters), clk.name);
+        astral::bench::print_result(astral::bench::bench_object_pool_contended(opt.alloc_iters, opt.mpsc_producers), clk.name);
         astral::bench::print_result(astral::bench::bench_runtime_alloc_free(opt.alloc_iters, opt.alloc_size, false), clk.name);
         astral::bench::print_result(astral::bench::bench_runtime_alloc_free(opt.alloc_iters, opt.alloc_size, true), clk.name);
     }
