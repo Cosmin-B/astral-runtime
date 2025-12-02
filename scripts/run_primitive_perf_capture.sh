@@ -97,6 +97,14 @@ if [[ -z "${out_dir}" ]]; then
   out_dir="../astral-perf-runs/$(date -u +%Y%m%dT%H%M%SZ)"
 fi
 mkdir -p "${out_dir}"
+root_abs="$(pwd -P)"
+out_abs="$(cd "${out_dir}" && pwd -P)"
+case "${out_abs}/" in
+  "${root_abs}/"*)
+    echo "artifact directory must be outside the repository: ${out_abs}" >&2
+    exit 2
+    ;;
+esac
 
 bench_cmd=("${bench_bin}" --only concurrency-matrix --mpsc-items "${items}")
 

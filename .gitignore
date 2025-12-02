@@ -51,6 +51,9 @@ perf.data.*
 
 # Local benchmark outputs (do not commit)
 benchmarks/results/
+astral-perf-runs/
+astral-alloc-runs/
+astral-arm64-runs/
 
 # Downloaded models (do not commit)
 tests/models/*.gguf

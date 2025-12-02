@@ -84,6 +84,14 @@ if [[ -z "${out_dir}" ]]; then
   out_dir="../astral-arm64-runs/$(date -u +%Y%m%dT%H%M%SZ)"
 fi
 mkdir -p "${out_dir}/logs"
+root_abs="$(pwd -P)"
+out_abs="$(cd "${out_dir}" && pwd -P)"
+case "${out_abs}/" in
+  "${root_abs}/"*)
+    echo "evidence directory must be outside the repository: ${out_abs}" >&2
+    exit 2
+    ;;
+esac
 
 {
   echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
