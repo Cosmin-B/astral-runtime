@@ -249,6 +249,65 @@ static BenchResult bench_embed_roundtrip(AstralHandle model, uint64_t iters) {
     return r;
 }
 
+static BenchResult bench_tokenize_count(AstralHandle model, uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.tokenize count";
+    r.ops = iters;
+
+    const AstralSpanU8 text = span_from_cstr("The quick brown fox jumps over the lazy dog.");
+    uint32_t count = 0;
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        const AstralErr err = astral_tokenize_count(model, text, 1, 0, &count);
+        if (err != ASTRAL_OK || count == 0) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    return r;
+}
+
+static BenchResult bench_tokenize_batch(AstralHandle model, uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.tokenize batch";
+    r.ops = iters;
+
+    AstralTokenizeRequest reqs[4]{};
+    reqs[0].text = span_from_cstr("alpha");
+    reqs[1].text = span_from_cstr("beta");
+    reqs[2].text = span_from_cstr("gamma");
+    reqs[3].text = span_from_cstr("delta");
+
+    uint32_t offsets[5]{};
+    uint32_t total = 0;
+    AstralErr err = astral_tokenize_batch(model, reqs, 4, offsets, nullptr, 0, &total);
+    if (err != ASTRAL_OK || total == 0) {
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<int32_t> tokens(total);
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        err = astral_tokenize_batch(model, reqs, 4, offsets, tokens.data(), total, &total);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    return r;
+}
+
 static AstralHandle create_session(AstralHandle model, uint32_t max_tokens, float temperature, uint32_t top_k, float top_p, uint32_t seed);
 
 static AstralErr init_media_for_model(AstralHandle model, const char* media_path) {
@@ -610,6 +669,16 @@ void bench_feature_surfaces_print(void) {
         const AstralHandle model = load_model(backend, embed_model_path, gpu_layers, /*embeddings_only=*/1);
         if (astral_handle_valid(model)) {
             print_result(bench_embed_roundtrip(model, iters), clock_info().name);
+            astral_model_release(model);
+        }
+    }
+
+    // Tokenization.
+    {
+        const AstralHandle model = load_model(backend, model_path, gpu_layers, /*embeddings_only=*/0);
+        if (astral_handle_valid(model)) {
+            print_result(bench_tokenize_count(model, iters), clock_info().name);
+            print_result(bench_tokenize_batch(model, iters), clock_info().name);
             astral_model_release(model);
         }
     }

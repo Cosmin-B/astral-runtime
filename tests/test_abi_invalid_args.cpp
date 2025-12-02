@@ -153,10 +153,15 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_tokenize(0, null_span(), nullptr, 2, 0, 0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_tokenize(0, null_span(), tokens, 0, 0, 0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_tokenize(0, null_span(), tokens, 2, 0, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_count(0, null_span(), 0, 0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_count(0, null_span(), 0, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_batch(0, nullptr, 0, nullptr, nullptr, 0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(0, tokens, 2, text_out, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(0, nullptr, 2, text_out, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(0, tokens, 2, null_mut_span(), &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(0, tokens, 2, text_out, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_detokenize_count(0, tokens, 2, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_detokenize_count(0, tokens, 2, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, &adapter_desc, &adapter), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, nullptr, &adapter), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, &adapter_desc, nullptr), ASTRAL_E_INVALID);
@@ -243,9 +248,13 @@ TEST(abi_invalid_args_valid_handle_buffer_surface) {
     AstralMutSpanU8 out{};
     out.data = bytes;
     out.len = static_cast<uint32_t>(sizeof(bytes));
+    uint32_t token_count = 0;
 
     ASSERT_EQ(astral_tokenize(model, null_span(), nullptr, 2, 0, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_count(model, null_span(), 0, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_batch(model, nullptr, 1, nullptr, nullptr, 0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(model, nullptr, 1, out, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_detokenize_count(model, nullptr, 1, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_penalty_prompt_set_tokens(session, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_stop_add_utf8(session, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_stop_set_utf8(session, nullptr, 1), ASTRAL_E_INVALID);

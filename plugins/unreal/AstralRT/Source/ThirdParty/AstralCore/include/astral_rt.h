@@ -94,6 +94,13 @@ typedef struct AstralMutSpanU8 {
 #endif
 } AstralMutSpanU8;
 
+typedef struct AstralTokenizeRequest {
+    AstralSpanU8 text;
+    uint8_t add_special;
+    uint8_t parse_special;
+    uint16_t _reserved;
+} AstralTokenizeRequest;
+
 // Compile-time validation: Ensure struct sizes are correct
 // Use static_assert for C++ and _Static_assert for C
 #ifdef __cplusplus
@@ -686,6 +693,39 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize(
 );
 
 /**
+ * Count tokens for UTF-8 text without writing token ids.
+ *
+ * Thread-safety: Safe to call from multiple threads on the same model.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_count(
+    AstralHandle model,
+    AstralSpanU8 text,
+    uint8_t add_special,
+    uint8_t parse_special,
+    uint32_t* out_count
+);
+
+/**
+ * Tokenize many UTF-8 spans into one caller-owned token buffer.
+ *
+ * `out_offsets` must have `request_count + 1` entries. On success,
+ * `out_offsets[i]` is the first token for request `i`, and the final entry is
+ * the total token count. If `out_tokens == NULL` and `max_tokens == 0`, this
+ * function only writes offsets and the required total token count.
+ *
+ * Thread-safety: Safe to call from multiple threads on the same model.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_batch(
+    AstralHandle model,
+    const AstralTokenizeRequest* requests,
+    uint32_t request_count,
+    uint32_t* out_offsets,
+    int32_t* out_tokens,
+    uint32_t max_tokens,
+    uint32_t* out_count
+);
+
+/**
  * Detokenize token ids to UTF-8.
  *
  * Thread-safety: Safe to call from multiple threads on the same model.
@@ -695,6 +735,18 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize(
     const int32_t* tokens,
     uint32_t count,
     AstralMutSpanU8 out_text,
+    uint32_t* out_len
+);
+
+/**
+ * Count UTF-8 bytes required to detokenize token ids.
+ *
+ * Thread-safety: Safe to call from multiple threads on the same model.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize_count(
+    AstralHandle model,
+    const int32_t* tokens,
+    uint32_t count,
     uint32_t* out_len
 );
 
