@@ -130,6 +130,7 @@ Compile and run validation tests:
 ```bash
 ctest --preset release-with-tests -R '^test_memory$' --output-on-failure
 ./build/release-test/benchmarks/astral_benchmarks --only alloc --alloc-iters 1000000 --alloc-size 64
+./scripts/run_allocator_perf_capture.sh --iters 1000000 --size 64 --threads 4
 ```
 
 Tests cover:
