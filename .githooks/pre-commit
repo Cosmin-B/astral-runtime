@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "${repo_root}"
+
+mapfile -t staged_files < <(
+  git diff --cached --name-only --diff-filter=ACMR |
+    grep -Ev '^(external|third_party|build|dist)/' || true
+)
+
+if [[ "${#staged_files[@]}" -eq 0 ]]; then
+  exit 0
+fi
+
+have_clang_format=0
+if command -v clang-format >/dev/null 2>&1; then
+  have_clang_format=1
+fi
+
+clang_files=()
+shell_files=()
+python_files=()
+
+for path in "${staged_files[@]}"; do
+  [[ -f "${path}" ]] || continue
+  case "${path}" in
+    *.c|*.cc|*.cpp|*.cxx|*.h|*.hpp)
+      clang_files+=("${path}")
+      ;;
+    *.sh)
+      shell_files+=("${path}")
+      ;;
+    *.py)
+      python_files+=("${path}")
+      ;;
+  esac
+done
+
+if [[ "${#clang_files[@]}" -gt 0 ]]; then
+  if [[ "${have_clang_format}" -eq 0 ]]; then
+    echo "[pre-commit] clang-format not found; install it or run with --no-verify" >&2
+    exit 1
+  fi
+  clang-format --dry-run --Werror "${clang_files[@]}"
+fi
+
+for path in "${shell_files[@]}"; do
+  bash -n "${path}"
+done
+
+if [[ "${#python_files[@]}" -gt 0 ]]; then
+  python3 -m py_compile "${python_files[@]}"
+fi
+
+exit 0

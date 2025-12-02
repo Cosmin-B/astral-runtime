@@ -42,4 +42,4 @@
 
 ## Known Gaps
 
-- <gap, owner, waiver, waiver expiration date, and follow-up issue tracker issue>
+- <gap, owner, waiver, waiver expiration date, and follow-up issue reference>

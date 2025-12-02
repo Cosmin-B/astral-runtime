@@ -483,9 +483,9 @@ AstralNative.astral_embed_destroy(embedder);
 
 ## References
 
-- `/home/user/workspace/astral/plugins/unity/Runtime/AstralAllocator.cs` - Implementation
-- `/home/user/workspace/astral/include/astral_rt.h` - C ABI reference
-- `/home/user/workspace/astral/docs/architecture/MEMORY_ARCHITECTURE.md` - Memory architecture
+- `plugins/unity/Runtime/AstralAllocator.cs` - Implementation
+- `include/astral_rt.h` - C ABI reference
+- `docs/architecture/MEMORY_ARCHITECTURE.md` - Memory architecture
 - Unity allocator documentation - Unity allocator internals
 
 ## License

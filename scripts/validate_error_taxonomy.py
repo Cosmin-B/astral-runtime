@@ -29,7 +29,6 @@ SCAN_SUFFIXES = {
     ".txt",
 }
 SKIP_DIRS = {
-    ".issue tracker",
     ".git",
     "__pycache__",
     "build",

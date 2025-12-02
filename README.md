@@ -363,6 +363,13 @@ ctest --preset release-with-tests -j8
 python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers
 ```
 
+Optional local Git hooks can catch formatting and script syntax issues before
+commit:
+
+```bash
+./scripts/install_git_hooks.sh
+```
+
 ## Roadmap
 
 ### Current Local Gates
@@ -380,7 +387,7 @@ python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers
 
 ## Contributing
 
-Read [CODING_STANDARDS.md](docs/rules/CODING_STANDARDS.md) and keep changes tied to a issue tracker issue before submitting PRs.
+Read [CODING_STANDARDS.md](docs/rules/CODING_STANDARDS.md) and keep changes tied to a clear issue or design note before submitting PRs.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)

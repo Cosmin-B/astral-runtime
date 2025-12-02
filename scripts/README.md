@@ -205,7 +205,8 @@ python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers
 
 Use `review-tsv` for the human pass from the moonshot plan. Fill `decision`
 with `keep`, `rewrite`, `delete`, or `issue`; use `issue` for comments that
-identify real follow-up work and record the issue tracker ID in the `issue` column.
+identify real follow-up work and record the public issue reference in the
+`issue` column.
 The inventory output is a local review artifact. Keep it out of git unless a
 specific excerpt is promoted into maintained documentation.
 
@@ -688,9 +689,9 @@ Note: This is an illustrative snippet. The repo’s actual CI is in `.github/wor
 
 **Astral Documentation**:
 - `tests/MEMORY_VALIDATION.md` - Current memory validation gates
-- `/home/user/workspace/astral/docs/release/RELEASE_ACCEPTANCE_MATRIX.md` - Release acceptance evidence
-- `/home/user/workspace/astral/docs/FEATURE_MATRIX.md` - Supported feature surface and required evidence
-- `/home/user/workspace/astral/docs/rules/CODING_STANDARDS.md` - Memory rules
+- `docs/release/RELEASE_ACCEPTANCE_MATRIX.md` - Release acceptance evidence
+- `docs/FEATURE_MATRIX.md` - Supported feature surface and required evidence
+- `docs/rules/CODING_STANDARDS.md` - Memory rules
 
 **Valgrind Documentation**:
 - https://valgrind.org/docs/manual/manual.html

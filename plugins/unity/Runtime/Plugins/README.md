@@ -22,7 +22,7 @@ Note: `cmake --preset unity-plugin` now also packages the built native library i
 
 ### Linux (x86_64)
 ```bash
-cd /home/user/workspace/astral
+cd <astral-repo>
 cmake --preset unity-plugin
 cmake --build build/unity
 # (optional) manual copy:

@@ -56,7 +56,7 @@ set(common_notes [=[
 
 ## Known Gaps
 
-- CUDA multi-GPU release breadth, owner release-manager, waiver expiration 2026-06-01, follow-up issue tracker issue workspace-9d5.8.3
+- CUDA multi-GPU release breadth, owner release-manager, waiver expiration 2026-06-01, follow-up issue reference ASTRAL-9d5.8.3
 ]=])
 
 set(good_notes "${notes_dir}/release-notes-good.md")

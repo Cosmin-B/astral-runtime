@@ -124,7 +124,7 @@ FORBIDDEN_COMMAND_TOKENS = {
     "unreal_compatibility_matrix": ("--allow-missing",),
 }
 
-COMMENT_REVIEW_HEADER = "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext"
+COMMENT_REVIEW_HEADER = "decision\tissue\tnotes\tpath\tline\tkind\tmarker\treference\ttext"
 
 REQUIRED_ARTIFACT_NAMES = {
     "sanitizer_validation": ("asan.log", "tsan.log"),
