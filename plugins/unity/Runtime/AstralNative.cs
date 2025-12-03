@@ -110,6 +110,66 @@ namespace Astral.Runtime
             public ushort _reserved;
         }
 
+        public enum AstralPromptSectionKind : uint
+        {
+            System = 1,
+            Tools = 2,
+            Memory = 3,
+            History = 4,
+            User = 5,
+            Raw = 6
+        }
+
+        public enum AstralPromptCacheEvictionPolicy : uint
+        {
+            Fifo = 0
+        }
+
+        [Flags]
+        public enum AstralPromptCacheFlags : uint
+        {
+            None = 0,
+            TrackStats = 1u << 0
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralPromptCacheDesc
+        {
+            public uint size;
+            public uint max_entries;
+            public uint max_tokens;
+            public uint max_bytes;
+            public AstralPromptCacheEvictionPolicy eviction_policy;
+            public AstralPromptCacheFlags flags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralPromptCacheKey
+        {
+            public uint size;
+            public uint section_kind;
+            public AstralHandle model;
+            public ulong key;
+            public uint generation;
+            public uint _reserved0;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralPromptCacheStats
+        {
+            public uint size;
+            public uint entries;
+            public uint max_entries;
+            public uint tokens;
+            public uint max_tokens;
+            public uint bytes;
+            public uint max_bytes;
+            public uint _reserved0;
+            public ulong hits;
+            public ulong misses;
+            public ulong evictions;
+        }
+
         /// <summary>
         /// Opaque handle (model, session, embedder).
         /// Never dereference; only pass to Astral functions.
@@ -203,6 +263,7 @@ namespace Astral.Runtime
         public const int ASTRAL_E_BACKEND = -6;  // Backend error
         public const int ASTRAL_E_CANCELED = -7; // Canceled
         public const int ASTRAL_E_UNSUPPORTED = -8; // Unsupported
+        public const int ASTRAL_E_NOT_FOUND = -9; // Not found
 
         // ====================================================================
         // Tunables / Limits
@@ -520,6 +581,44 @@ namespace Astral.Runtime
             uint count,
             out uint out_len);
 
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_create(
+            ref AstralPromptCacheDesc desc,
+            out AstralHandle out_cache);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_prompt_cache_destroy(AstralHandle cache);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_clear(AstralHandle cache);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_stats(
+            AstralHandle cache,
+            ref AstralPromptCacheStats out_stats);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_prompt_cache_put_tokens(
+            AstralHandle cache,
+            ref AstralPromptCacheKey key,
+            int* tokens,
+            uint token_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_prompt_cache_get_tokens(
+            AstralHandle cache,
+            ref AstralPromptCacheKey key,
+            int* out_tokens,
+            uint max_tokens,
+            out uint out_token_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_prompt_cache_get_token_view(
+            AstralHandle cache,
+            ref AstralPromptCacheKey key,
+            out IntPtr out_tokens,
+            out uint out_token_count);
+
         // ====================================================================
         // Session
         // ====================================================================
@@ -619,6 +718,9 @@ namespace Astral.Runtime
         /// </summary>
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_feed(AstralHandle session, AstralSpanU8 prompt_chunk, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_set_system_prompt(AstralHandle session, AstralSpanU8 system_prompt);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_feed_image(AstralHandle session, ref AstralImageDesc image, byte finalize);

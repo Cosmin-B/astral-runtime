@@ -101,6 +101,67 @@ typedef struct AstralTokenizeRequest {
     uint16_t _reserved;
 } AstralTokenizeRequest;
 
+/**
+ * Opaque handle (model, session, embedder).
+ *
+ * v0.1 ABI hardening:
+ * - Handles are 64-bit values encoding (type, slot index, generation).
+ * - 0 is always invalid.
+ */
+typedef uint64_t AstralHandle;
+
+typedef uint32_t AstralPromptSectionKind;
+enum {
+    ASTRAL_PROMPT_SECTION_SYSTEM = 1,
+    ASTRAL_PROMPT_SECTION_TOOLS = 2,
+    ASTRAL_PROMPT_SECTION_MEMORY = 3,
+    ASTRAL_PROMPT_SECTION_HISTORY = 4,
+    ASTRAL_PROMPT_SECTION_USER = 5,
+    ASTRAL_PROMPT_SECTION_RAW = 6,
+};
+
+typedef uint32_t AstralPromptCacheEvictionPolicy;
+enum {
+    ASTRAL_PROMPT_CACHE_EVICT_FIFO = 0,
+};
+
+typedef uint32_t AstralPromptCacheFlags;
+enum {
+    ASTRAL_PROMPT_CACHE_FLAG_TRACK_STATS = 1u << 0,
+};
+
+typedef struct AstralPromptCacheDesc {
+    uint32_t size;
+    uint32_t max_entries;
+    uint32_t max_tokens;
+    uint32_t max_bytes;
+    AstralPromptCacheEvictionPolicy eviction_policy;
+    AstralPromptCacheFlags flags;
+} AstralPromptCacheDesc;
+
+typedef struct AstralPromptCacheKey {
+    uint32_t size;
+    uint32_t section_kind;
+    AstralHandle model;
+    uint64_t key;
+    uint32_t generation;
+    uint32_t _reserved0;
+} AstralPromptCacheKey;
+
+typedef struct AstralPromptCacheStats {
+    uint32_t size;
+    uint32_t entries;
+    uint32_t max_entries;
+    uint32_t tokens;
+    uint32_t max_tokens;
+    uint32_t bytes;
+    uint32_t max_bytes;
+    uint32_t _reserved0;
+    uint64_t hits;
+    uint64_t misses;
+    uint64_t evictions;
+} AstralPromptCacheStats;
+
 // Compile-time validation: Ensure struct sizes are correct
 // Use static_assert for C++ and _Static_assert for C
 #ifdef __cplusplus
@@ -112,19 +173,12 @@ typedef struct AstralTokenizeRequest {
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 16, "AstralSpanU8 must be 16 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 16, "AstralMutSpanU8 must be 16 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralPromptCacheKey) == 32, "AstralPromptCacheKey must be 32 bytes on 64-bit");
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 8, "AstralSpanU8 must be 8 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 8, "AstralMutSpanU8 must be 8 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralPromptCacheKey) == 32, "AstralPromptCacheKey must be 32 bytes on 32-bit");
 #endif
-
-/**
- * Opaque handle (model, session, embedder).
- *
- * v0.1 ABI hardening:
- * - Handles are 64-bit values encoding (type, slot index, generation).
- * - 0 is always invalid.
- */
-typedef uint64_t AstralHandle;
 
 // ============================================================================
 // Media Types (Vision / Audio)
@@ -224,8 +278,9 @@ enum {
     ASTRAL_E_TIMEOUT = -4,  /** Operation timed out */
     ASTRAL_E_STATE = -5,    /** Invalid state (e.g., decode before feed) */
     ASTRAL_E_BACKEND = -6,  /** Backend error (llama.cpp failed) */
-    ASTRAL_E_CANCELED = -7, /** Operation canceled */
+    ASTRAL_E_CANCELED = -7,    /** Operation canceled */
     ASTRAL_E_UNSUPPORTED = -8, /** Operation unsupported */
+    ASTRAL_E_NOT_FOUND = -9,   /** Requested object or cache entry was not found */
 };
 
 // ============================================================================
@@ -1137,6 +1192,37 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_clear(AstralHandle sess
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_add(AstralHandle session, AstralHandle adapter, float scale);
 
 /**
+ * Create a bounded token prompt cache.
+ *
+ * Prompt cache entries are setup-time objects used to reuse tokenized prompt
+ * sections. Lookups do not allocate; callers provide the output token buffer
+ * or request a cache-owned token view.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_create(const AstralPromptCacheDesc* desc, AstralHandle* out_cache);
+ASTRAL_API void ASTRAL_CALL astral_prompt_cache_destroy(AstralHandle cache);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_clear(AstralHandle cache);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_stats(AstralHandle cache, AstralPromptCacheStats* out_stats);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_put_tokens(
+    AstralHandle cache,
+    const AstralPromptCacheKey* key,
+    const int32_t* tokens,
+    uint32_t token_count
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_get_tokens(
+    AstralHandle cache,
+    const AstralPromptCacheKey* key,
+    int32_t* out_tokens,
+    uint32_t max_tokens,
+    uint32_t* out_token_count
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_get_token_view(
+    AstralHandle cache,
+    const AstralPromptCacheKey* key,
+    const int32_t** out_tokens,
+    uint32_t* out_token_count
+);
+
+/**
  * Configure grammar-constrained decoding (GBNF).
  *
  * Notes:
@@ -1186,6 +1272,7 @@ ASTRAL_API void ASTRAL_CALL astral_session_destroy(AstralHandle session);
  * @return ASTRAL_OK on success; ASTRAL_E_INVALID if session is NULL; error code on failure
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed(AstralHandle session, AstralSpanU8 prompt_chunk, uint8_t finalize);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_system_prompt(AstralHandle session, AstralSpanU8 system_prompt);
 
 /**
  * Feed an image chunk into a session prompt.
@@ -1274,6 +1361,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_create(const AstralConvDesc* desc, 
 ASTRAL_API void ASTRAL_CALL astral_conv_destroy(AstralHandle conv);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed(AstralHandle conv, AstralSpanU8 prompt_chunk, uint8_t finalize);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_system_prompt(AstralHandle conv, AstralSpanU8 system_prompt);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed_image(
     AstralHandle conv,

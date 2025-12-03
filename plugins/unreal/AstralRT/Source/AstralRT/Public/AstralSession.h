@@ -40,6 +40,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool FeedPrompt(const FString& Prompt, bool bFinalize = true);
 
+    /** Set the system prompt before user prompt text is fed. */
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool SetSystemPrompt(const FString& Prompt);
+
+    /** Set the system prompt from caller-owned UTF-8 bytes. */
+    bool SetSystemPromptRaw(TConstArrayView<uint8> Utf8Data);
+
     /** Feed caller-owned UTF-8 bytes. The native runtime copies or consumes them before return. */
     bool FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize = true);
 

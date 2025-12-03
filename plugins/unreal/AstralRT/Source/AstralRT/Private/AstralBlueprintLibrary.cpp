@@ -65,6 +65,8 @@ FString UAstralBlueprintLibrary::ErrorCodeName(int32 ErrorCode)
         return TEXT("ASTRAL_E_CANCELED");
     case ASTRAL_E_UNSUPPORTED:
         return TEXT("ASTRAL_E_UNSUPPORTED");
+    case ASTRAL_E_NOT_FOUND:
+        return TEXT("ASTRAL_E_NOT_FOUND");
     default:
         return FString::Printf(TEXT("ASTRAL_E_%d"), ErrorCode);
     }
