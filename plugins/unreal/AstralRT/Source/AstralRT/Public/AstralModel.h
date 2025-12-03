@@ -42,6 +42,18 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool GetLimits(FAstralModelLimits& OutLimits) const;
 
+    /** Count tokens for a UTF-8 prompt without materializing the token buffer. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tokenization")
+    bool CountTokens(const FString& Text, bool bAddSpecial, bool bParseSpecial, int32& OutCount) const;
+
+    /** Tokenize a prompt into a Blueprint-safe token array. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tokenization")
+    bool Tokenize(const FString& Text, bool bAddSpecial, bool bParseSpecial, TArray<int32>& OutTokens) const;
+
+    /** Convert token ids back to UTF-8 text. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tokenization")
+    bool Detokenize(const TArray<int32>& Tokens, FString& OutText) const;
+
     /** Attach a media projector/encoder to the loaded model before feeding images or audio. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool InitMedia(const FAstralModelMediaDesc& Desc);

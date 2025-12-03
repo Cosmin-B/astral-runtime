@@ -259,11 +259,26 @@ namespace Astral
             out uint out_count);
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern AstralErr astral_tokenize_count(
+            AstralHandle model,
+            AstralSpanU8 text,
+            byte add_special,
+            byte parse_special,
+            out uint out_count);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern unsafe AstralErr astral_detokenize(
             AstralHandle model,
             int* tokens,
             uint count,
             AstralMutSpanU8 out_text,
+            out uint out_len);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe AstralErr astral_detokenize_count(
+            AstralHandle model,
+            int* tokens,
+            uint count,
             out uint out_len);
 
         // ====== Session ======

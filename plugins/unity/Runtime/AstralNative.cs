@@ -101,6 +101,15 @@ namespace Astral.Runtime
             }
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralTokenizeRequest
+        {
+            public AstralSpanU8 text;
+            public byte add_special;
+            public byte parse_special;
+            public ushort _reserved;
+        }
+
         /// <summary>
         /// Opaque handle (model, session, embedder).
         /// Never dereference; only pass to Astral functions.
@@ -479,11 +488,36 @@ namespace Astral.Runtime
             out uint out_count);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_tokenize_count(
+            AstralHandle model,
+            AstralSpanU8 text,
+            byte add_special,
+            byte parse_special,
+            out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_tokenize_batch(
+            AstralHandle model,
+            AstralTokenizeRequest* requests,
+            uint request_count,
+            uint* out_offsets,
+            int* out_tokens,
+            uint max_tokens,
+            out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern unsafe int astral_detokenize(
             AstralHandle model,
             int* tokens,
             uint count,
             AstralMutSpanU8 out_text,
+            out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_detokenize_count(
+            AstralHandle model,
+            int* tokens,
+            uint count,
             out uint out_len);
 
         // ====================================================================

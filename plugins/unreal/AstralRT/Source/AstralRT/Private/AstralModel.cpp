@@ -202,6 +202,119 @@ bool UAstralModel::GetLimits(FAstralModelLimits& OutLimits) const
     return true;
 }
 
+bool UAstralModel::CountTokens(const FString& Text, bool bAddSpecial, bool bParseSpecial, int32& OutCount) const
+{
+    OutCount = 0;
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    FTCHARToUTF8 TextUtf8(*Text);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(TextUtf8.Get());
+    Span.len = static_cast<uint32_t>(TextUtf8.Length());
+
+    uint32_t Count = 0;
+    const AstralErr Err = astral_tokenize_count(
+        static_cast<AstralHandle>(ModelHandle),
+        Span,
+        bAddSpecial ? 1 : 0,
+        bParseSpecial ? 1 : 0,
+        &Count);
+    if (Err != ASTRAL_OK)
+    {
+        return false;
+    }
+
+    OutCount = static_cast<int32>(Count);
+    return true;
+}
+
+bool UAstralModel::Tokenize(const FString& Text, bool bAddSpecial, bool bParseSpecial, TArray<int32>& OutTokens) const
+{
+    OutTokens.Reset();
+    int32 Count = 0;
+    if (!CountTokens(Text, bAddSpecial, bParseSpecial, Count))
+    {
+        return false;
+    }
+    if (Count == 0)
+    {
+        return true;
+    }
+
+    OutTokens.SetNumUninitialized(Count);
+    FTCHARToUTF8 TextUtf8(*Text);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(TextUtf8.Get());
+    Span.len = static_cast<uint32_t>(TextUtf8.Length());
+
+    uint32_t Written = 0;
+    const AstralErr Err = astral_tokenize(
+        static_cast<AstralHandle>(ModelHandle),
+        Span,
+        OutTokens.GetData(),
+        static_cast<uint32_t>(OutTokens.Num()),
+        bAddSpecial ? 1 : 0,
+        bParseSpecial ? 1 : 0,
+        &Written);
+    if (Err != ASTRAL_OK)
+    {
+        OutTokens.Reset();
+        return false;
+    }
+
+    OutTokens.SetNum(static_cast<int32>(Written), EAllowShrinking::No);
+    return true;
+}
+
+bool UAstralModel::Detokenize(const TArray<int32>& Tokens, FString& OutText) const
+{
+    OutText.Reset();
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    uint32_t ByteCount = 0;
+    const AstralErr CountErr = astral_detokenize_count(
+        static_cast<AstralHandle>(ModelHandle),
+        Tokens.GetData(),
+        static_cast<uint32_t>(Tokens.Num()),
+        &ByteCount);
+    if (CountErr != ASTRAL_OK)
+    {
+        return false;
+    }
+    if (ByteCount == 0)
+    {
+        return true;
+    }
+
+    TArray<uint8, TInlineAllocator<512>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = ByteCount;
+
+    uint32_t Written = 0;
+    const AstralErr Err = astral_detokenize(
+        static_cast<AstralHandle>(ModelHandle),
+        Tokens.GetData(),
+        static_cast<uint32_t>(Tokens.Num()),
+        Out,
+        &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return false;
+    }
+
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), static_cast<int32>(Written));
+    OutText = FString(Converted.Length(), Converted.Get());
+    return true;
+}
+
 bool UAstralModel::InitMedia(const FAstralModelMediaDesc& Desc)
 {
     if (!IsValid())

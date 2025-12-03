@@ -33,6 +33,28 @@ inline void set_err_code(AstralErr err) {
     astral::core::set_last_error_from_code(err);
 }
 
+inline astral::inference::Model* lookup_model(AstralHandle model) {
+    return static_cast<astral::inference::Model*>(
+        astral::core::lookup_handle(model, astral::core::HandleKind::Model)
+    );
+}
+
+inline AstralErr require_model_ops(AstralHandle model, astral::inference::Model** out_model) {
+    if (model == 0 || out_model == nullptr) {
+        set_err_invalid("model");
+        return ASTRAL_E_INVALID;
+    }
+
+    astral::inference::Model* m = lookup_model(model);
+    if (m == nullptr || m->backend == nullptr || m->backend->ops == nullptr) {
+        set_err_invalid("model (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    *out_model = m;
+    return ASTRAL_OK;
+}
+
 inline AstralErr model_load_impl(const AstralModelDesc* desc, AstralHandle* out_model) {
     if (desc == nullptr || out_model == nullptr) {
         set_err_invalid("desc/out_model");
@@ -543,13 +565,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize(
         return ASTRAL_E_INVALID;
     }
 
-    auto* m = static_cast<astral::inference::Model*>(astral::core::lookup_handle(model, astral::core::HandleKind::Model));
-    if (m == nullptr) {
-        set_err_invalid("model (invalid handle)");
-        return ASTRAL_E_INVALID;
+    astral::inference::Model* m = nullptr;
+    AstralErr err = require_model_ops(model, &m);
+    if (err != ASTRAL_OK) {
+        return err;
     }
 
-    const AstralErr err = m->backend->ops->tokenize(
+    err = m->backend->ops->tokenize(
         m->backend_model_ctx,
         text,
         out_tokens,
@@ -566,6 +588,132 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize(
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_count(
+    AstralHandle model,
+    AstralSpanU8 text,
+    uint8_t add_special,
+    uint8_t parse_special,
+    uint32_t* out_count
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (model == 0 || out_count == nullptr) {
+        set_err_invalid("model/out_count");
+        return ASTRAL_E_INVALID;
+    }
+
+    astral::inference::Model* m = nullptr;
+    AstralErr err = require_model_ops(model, &m);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    err = m->backend->ops->tokenize(
+        m->backend_model_ctx,
+        text,
+        nullptr,
+        0,
+        add_special != 0,
+        parse_special != 0,
+        out_count
+    );
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_batch(
+    AstralHandle model,
+    const AstralTokenizeRequest* requests,
+    uint32_t request_count,
+    uint32_t* out_offsets,
+    int32_t* out_tokens,
+    uint32_t max_tokens,
+    uint32_t* out_count
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (model == 0 || requests == nullptr || out_offsets == nullptr || out_count == nullptr) {
+        set_err_invalid("model/requests/out_offsets/out_count");
+        return ASTRAL_E_INVALID;
+    }
+    if (request_count == 0) {
+        *out_count = 0;
+        out_offsets[0] = 0;
+        return ASTRAL_OK;
+    }
+    if ((out_tokens == nullptr && max_tokens != 0) || (out_tokens != nullptr && max_tokens == 0)) {
+        set_err_invalid("out_tokens/max_tokens");
+        return ASTRAL_E_INVALID;
+    }
+
+    astral::inference::Model* m = nullptr;
+    AstralErr err = require_model_ops(model, &m);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    uint32_t total = 0;
+    out_offsets[0] = 0;
+    for (uint32_t i = 0; i < request_count; ++i) {
+        uint32_t count = 0;
+        err = m->backend->ops->tokenize(
+            m->backend_model_ctx,
+            requests[i].text,
+            nullptr,
+            0,
+            requests[i].add_special != 0,
+            requests[i].parse_special != 0,
+            &count
+        );
+        if (err != ASTRAL_OK) {
+            set_err_code(err);
+            return err;
+        }
+        if (UINT32_MAX - total < count) {
+            set_err_invalid("token count overflow");
+            return ASTRAL_E_INVALID;
+        }
+        total += count;
+        out_offsets[i + 1] = total;
+    }
+
+    *out_count = total;
+    if (out_tokens == nullptr) {
+        return ASTRAL_OK;
+    }
+    if (total > max_tokens) {
+        set_err_code(ASTRAL_E_NOMEM);
+        return ASTRAL_E_NOMEM;
+    }
+
+    for (uint32_t i = 0; i < request_count; ++i) {
+        uint32_t written = 0;
+        const uint32_t begin = out_offsets[i];
+        const uint32_t cap = max_tokens - begin;
+        err = m->backend->ops->tokenize(
+            m->backend_model_ctx,
+            requests[i].text,
+            out_tokens + begin,
+            cap,
+            requests[i].add_special != 0,
+            requests[i].parse_special != 0,
+            &written
+        );
+        if (err != ASTRAL_OK) {
+            set_err_code(err);
+            return err;
+        }
+        if (written != out_offsets[i + 1] - begin) {
+            set_err_code(ASTRAL_E_BACKEND);
+            return ASTRAL_E_BACKEND;
+        }
+    }
+
+    return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize(
     AstralHandle model,
     const int32_t* tokens,
@@ -574,18 +722,45 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize(
     uint32_t* out_len
 ) {
     ASTRAL_ABI_TRY_BEGIN
-    if (model == 0 || tokens == nullptr || out_text.data == nullptr || out_len == nullptr) {
+    if (model == 0 || (tokens == nullptr && count != 0) || out_text.data == nullptr || out_len == nullptr) {
         set_err_invalid("model/tokens/out_text/out_len");
         return ASTRAL_E_INVALID;
     }
 
-    auto* m = static_cast<astral::inference::Model*>(astral::core::lookup_handle(model, astral::core::HandleKind::Model));
-    if (m == nullptr) {
-        set_err_invalid("model (invalid handle)");
+    astral::inference::Model* m = nullptr;
+    AstralErr err = require_model_ops(model, &m);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    err = m->backend->ops->detokenize(m->backend_model_ctx, tokens, count, out_text, out_len);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize_count(
+    AstralHandle model,
+    const int32_t* tokens,
+    uint32_t count,
+    uint32_t* out_len
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (model == 0 || (tokens == nullptr && count != 0) || out_len == nullptr) {
+        set_err_invalid("model/tokens/out_len");
         return ASTRAL_E_INVALID;
     }
 
-    const AstralErr err = m->backend->ops->detokenize(m->backend_model_ctx, tokens, count, out_text, out_len);
+    astral::inference::Model* m = nullptr;
+    AstralErr err = require_model_ops(model, &m);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    AstralMutSpanU8 out{};
+    err = m->backend->ops->detokenize(m->backend_model_ctx, tokens, count, out, out_len);
     if (err != ASTRAL_OK) {
         set_err_code(err);
     }

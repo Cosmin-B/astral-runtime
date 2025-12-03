@@ -1060,7 +1060,7 @@ AstralErr cpu_tokenize(void* model_ctx, AstralSpanU8 text,
                        uint8_t add_special, uint8_t parse_special,
                        uint32_t* out_count) {
     ASTRAL_ZONE_MICRO_N("astral.cpu.tokenize");
-    if (model_ctx == nullptr || out_tokens == nullptr || out_count == nullptr) {
+    if (model_ctx == nullptr || out_count == nullptr) {
         return ASTRAL_E_INVALID;
     }
 
@@ -1084,8 +1084,8 @@ AstralErr cpu_tokenize(void* model_ctx, AstralSpanU8 text,
     );
 
     if (n_tokens < 0) {
-        // Buffer too small; llama.cpp returns negative required size.
-        return ASTRAL_E_BACKEND;
+        *out_count = static_cast<uint32_t>(-n_tokens);
+        return out_tokens == nullptr ? ASTRAL_OK : ASTRAL_E_NOMEM;
     }
 
     *out_count = static_cast<uint32_t>(n_tokens);
@@ -1095,7 +1095,7 @@ AstralErr cpu_tokenize(void* model_ctx, AstralSpanU8 text,
 AstralErr cpu_detokenize(void* model_ctx, const int32_t* tokens, uint32_t count,
                          AstralMutSpanU8 out_text, uint32_t* out_len) {
     ASTRAL_ZONE_MICRO_N("astral.cpu.detokenize");
-    if (model_ctx == nullptr || tokens == nullptr || out_text.data == nullptr || out_len == nullptr) {
+    if (model_ctx == nullptr || (tokens == nullptr && count != 0) || out_len == nullptr) {
         return ASTRAL_E_INVALID;
     }
 
@@ -1107,23 +1107,30 @@ AstralErr cpu_detokenize(void* model_ctx, const int32_t* tokens, uint32_t count,
 
     uint32_t offset = 0;
     for (uint32_t i = 0; i < count; ++i) {
-        const uint32_t space = out_text.len - offset;
-        if (space == 0) {
-            return ASTRAL_E_BACKEND;
+        const uint32_t space = out_text.data != nullptr ? out_text.len - offset : 0;
+        if (out_text.data != nullptr && space == 0) {
+            *out_len = offset;
+            return ASTRAL_E_NOMEM;
         }
 
+        char count_buf[1]{};
+        char* piece_out = out_text.data != nullptr ? reinterpret_cast<char*>(out_text.data + offset) : count_buf;
         const int32_t written = llama_token_to_piece(
             vocab,
             static_cast<llama_token>(tokens[i]),
-            reinterpret_cast<char*>(out_text.data + offset),
+            piece_out,
             static_cast<int32_t>(space),
             0,     // lstrip (don't strip leading space)
             false  // special (don't render special tokens)
         );
 
         if (written < 0) {
-            // Output buffer too small for this token piece.
-            return ASTRAL_E_BACKEND;
+            offset += static_cast<uint32_t>(-written);
+            if (out_text.data != nullptr) {
+                *out_len = offset;
+                return ASTRAL_E_NOMEM;
+            }
+            continue;
         }
 
         offset += static_cast<uint32_t>(written);
