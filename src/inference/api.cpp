@@ -172,6 +172,23 @@ inline constexpr uint32_t kPromptCacheHashShift0 = 32;
 inline constexpr uint32_t kPromptCacheHashShift1 = 16;
 inline constexpr uint8_t kPromptCacheSlotEmpty = 0;
 inline constexpr uint8_t kPromptCacheSlotOccupied = 1;
+inline constexpr uint32_t kPromptCacheSaveMagic = 0x41504348u;
+inline constexpr uint32_t kPromptCacheSaveVersion = 1;
+inline constexpr uint32_t kPromptCacheU32Max = 0xFFFFFFFFu;
+
+struct PromptCacheSaveHeader {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t entry_count;
+    uint32_t token_count;
+};
+
+struct PromptCacheSaveRecord {
+    AstralPromptCacheKey key;
+    uint64_t sequence;
+    uint32_t token_count;
+    uint32_t _reserved0;
+};
 
 struct PromptCacheEntry {
     AstralPromptCacheKey key{};
@@ -330,6 +347,23 @@ inline PromptCacheEntry* prompt_cache_oldest_entry(PromptCache* cache) {
         }
     }
     return oldest;
+}
+
+inline bool prompt_cache_saved_size_impl(PromptCache* cache, uint32_t* out_bytes) {
+    uint64_t bytes = sizeof(PromptCacheSaveHeader);
+    for (uint32_t i = 0; i < cache->table_capacity; ++i) {
+        const PromptCacheEntry& entry = cache->entries[i];
+        if (entry.state != kPromptCacheSlotOccupied) {
+            continue;
+        }
+        bytes += sizeof(PromptCacheSaveRecord);
+        bytes += static_cast<uint64_t>(entry.token_count) * sizeof(int32_t);
+        if (bytes > kPromptCacheU32Max) {
+            return false;
+        }
+    }
+    *out_bytes = static_cast<uint32_t>(bytes);
+    return true;
 }
 
 } // namespace
@@ -519,6 +553,153 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_stats(AstralHandle cache, A
     out_stats->hits = c->hits;
     out_stats->misses = c->misses;
     out_stats->evictions = c->evictions;
+    return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_save_size(AstralHandle cache, uint32_t* out_bytes) {
+    ASTRAL_ABI_TRY_BEGIN
+    PromptCache* c = lookup_prompt_cache(cache);
+    if (c == nullptr || out_bytes == nullptr) {
+        set_err_invalid("cache/out_bytes");
+        return ASTRAL_E_INVALID;
+    }
+    if (!prompt_cache_saved_size_impl(c, out_bytes)) {
+        set_err_code(ASTRAL_E_NOMEM);
+        return ASTRAL_E_NOMEM;
+    }
+    return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_save(AstralHandle cache, AstralMutSpanU8 out_bytes, uint32_t* out_len) {
+    ASTRAL_ABI_TRY_BEGIN
+    PromptCache* c = lookup_prompt_cache(cache);
+    if (c == nullptr || out_len == nullptr || out_bytes.data == nullptr) {
+        set_err_invalid("cache/out_bytes/out_len");
+        return ASTRAL_E_INVALID;
+    }
+
+    uint32_t needed = 0;
+    if (!prompt_cache_saved_size_impl(c, &needed)) {
+        set_err_code(ASTRAL_E_NOMEM);
+        return ASTRAL_E_NOMEM;
+    }
+    *out_len = needed;
+    if (out_bytes.len < needed) {
+        set_err_code(ASTRAL_E_NOMEM);
+        return ASTRAL_E_NOMEM;
+    }
+
+    PromptCacheSaveHeader header{};
+    header.magic = kPromptCacheSaveMagic;
+    header.version = kPromptCacheSaveVersion;
+    header.entry_count = c->entry_count;
+    header.token_count = c->token_count;
+
+    uint8_t* cursor = out_bytes.data;
+    std::memcpy(cursor, &header, sizeof(header));
+    cursor += sizeof(header);
+
+    for (uint32_t i = 0; i < c->table_capacity; ++i) {
+        const PromptCacheEntry& entry = c->entries[i];
+        if (entry.state != kPromptCacheSlotOccupied) {
+            continue;
+        }
+
+        PromptCacheSaveRecord record{};
+        record.key = entry.key;
+        record.sequence = entry.sequence;
+        record.token_count = entry.token_count;
+        std::memcpy(cursor, &record, sizeof(record));
+        cursor += sizeof(record);
+
+        const uint32_t token_bytes = entry.token_count * static_cast<uint32_t>(sizeof(int32_t));
+        if (token_bytes != 0) {
+            std::memcpy(cursor, entry.tokens, token_bytes);
+            cursor += token_bytes;
+        }
+    }
+
+    return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_load(
+    const AstralPromptCacheDesc* desc,
+    AstralSpanU8 bytes,
+    AstralHandle* out_cache
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (desc == nullptr || out_cache == nullptr || bytes.data == nullptr || bytes.len < sizeof(PromptCacheSaveHeader)) {
+        set_err_invalid("desc/bytes/out_cache");
+        return ASTRAL_E_INVALID;
+    }
+
+    PromptCacheSaveHeader header{};
+    const uint8_t* cursor = bytes.data;
+    const uint8_t* end = bytes.data + bytes.len;
+    std::memcpy(&header, cursor, sizeof(header));
+    cursor += sizeof(header);
+    if (header.magic != kPromptCacheSaveMagic || header.version != kPromptCacheSaveVersion) {
+        set_err_invalid("prompt cache bytes");
+        return ASTRAL_E_INVALID;
+    }
+
+    uint64_t record_tokens = 0;
+    AstralHandle cache = 0;
+    AstralErr err = astral_prompt_cache_create(desc, &cache);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    for (uint32_t i = 0; i < header.entry_count; ++i) {
+        if (static_cast<uint64_t>(end - cursor) < sizeof(PromptCacheSaveRecord)) {
+            astral_prompt_cache_destroy(cache);
+            set_err_invalid("prompt cache record");
+            return ASTRAL_E_INVALID;
+        }
+
+        PromptCacheSaveRecord record{};
+        std::memcpy(&record, cursor, sizeof(record));
+        cursor += sizeof(record);
+        if (!prompt_cache_key_valid(&record.key)) {
+            astral_prompt_cache_destroy(cache);
+            set_err_invalid("prompt cache key");
+            return ASTRAL_E_INVALID;
+        }
+
+        const uint64_t token_bytes = static_cast<uint64_t>(record.token_count) * sizeof(int32_t);
+        if (static_cast<uint64_t>(end - cursor) < token_bytes) {
+            astral_prompt_cache_destroy(cache);
+            set_err_invalid("prompt cache tokens");
+            return ASTRAL_E_INVALID;
+        }
+
+        err = astral_prompt_cache_put_tokens(cache, &record.key, reinterpret_cast<const int32_t*>(cursor), record.token_count);
+        if (err != ASTRAL_OK) {
+            astral_prompt_cache_destroy(cache);
+            return err;
+        }
+        PromptCache* c = lookup_prompt_cache(cache);
+        PromptCacheEntry* entry = c != nullptr ? prompt_cache_find(c, &record.key) : nullptr;
+        if (entry != nullptr) {
+            entry->sequence = record.sequence;
+            if (c->next_sequence <= record.sequence) {
+                c->next_sequence = record.sequence + 1u;
+            }
+        }
+        record_tokens += record.token_count;
+        cursor += token_bytes;
+    }
+
+    if (cursor != end || record_tokens != header.token_count) {
+        astral_prompt_cache_destroy(cache);
+        set_err_invalid("prompt cache size");
+        return ASTRAL_E_INVALID;
+    }
+
+    *out_cache = cache;
     return ASTRAL_OK;
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }

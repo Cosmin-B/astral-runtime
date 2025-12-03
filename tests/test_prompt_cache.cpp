@@ -138,8 +138,55 @@ TEST(prompt_cache_eviction_keeps_lookup_cluster_valid) {
     ASSERT_EQ(stats.entries, 2u);
     ASSERT_EQ(stats.evictions, 1ull);
 
-    astral_prompt_cache_destroy(cache);
-    astral_shutdown();
+  astral_prompt_cache_destroy(cache);
+  astral_shutdown();
+}
+
+TEST(prompt_cache_save_and_load_roundtrip) {
+  init_runtime();
+
+  AstralHandle cache = 0;
+  const AstralPromptCacheDesc desc = cache_desc();
+  ASSERT_EQ(astral_prompt_cache_create(&desc, &cache), ASTRAL_OK);
+
+  const int32_t first[] = {7, 8, 9};
+  const int32_t second[] = {10, 11};
+  const AstralPromptCacheKey key0 = cache_key(kSystemKey, 3);
+  const AstralPromptCacheKey key1 = cache_key(kUserKey, 4, ASTRAL_PROMPT_SECTION_USER);
+  ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key0, first, 3), ASTRAL_OK);
+  ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key1, second, 2), ASTRAL_OK);
+
+  uint32_t bytes = 0;
+  ASSERT_EQ(astral_prompt_cache_save_size(cache, &bytes), ASTRAL_OK);
+  ASSERT_TRUE(bytes > 0);
+
+  uint8_t storage[512]{};
+  AstralMutSpanU8 out{};
+  out.data = storage;
+  out.len = sizeof(storage);
+  uint32_t written = 0;
+  ASSERT_EQ(astral_prompt_cache_save(cache, out, &written), ASTRAL_OK);
+  ASSERT_EQ(written, bytes);
+  astral_prompt_cache_destroy(cache);
+
+  AstralSpanU8 in{};
+  in.data = storage;
+  in.len = written;
+  AstralHandle loaded = 0;
+  ASSERT_EQ(astral_prompt_cache_load(&desc, in, &loaded), ASTRAL_OK);
+
+  int32_t tokens[4]{};
+  uint32_t count = 0;
+  ASSERT_EQ(astral_prompt_cache_get_tokens(loaded, &key0, tokens, 4, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 3u);
+  ASSERT_EQ(tokens[0], first[0]);
+  ASSERT_EQ(tokens[2], first[2]);
+  ASSERT_EQ(astral_prompt_cache_get_tokens(loaded, &key1, tokens, 4, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 2u);
+  ASSERT_EQ(tokens[1], second[1]);
+
+  astral_prompt_cache_destroy(loaded);
+  astral_shutdown();
 }
 
 TEST(system_prompt_feeds_before_user_prompt) {

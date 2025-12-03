@@ -598,6 +598,23 @@ namespace Astral.Runtime
             ref AstralPromptCacheStats out_stats);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_save_size(
+            AstralHandle cache,
+            out uint out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_save(
+            AstralHandle cache,
+            AstralMutSpanU8 out_bytes,
+            out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_load(
+            ref AstralPromptCacheDesc desc,
+            AstralSpanU8 bytes,
+            out AstralHandle out_cache);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern unsafe int astral_prompt_cache_put_tokens(
             AstralHandle cache,
             ref AstralPromptCacheKey key,

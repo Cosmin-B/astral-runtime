@@ -1202,6 +1202,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_create(const AstralPromptCa
 ASTRAL_API void ASTRAL_CALL astral_prompt_cache_destroy(AstralHandle cache);
 ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_clear(AstralHandle cache);
 ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_stats(AstralHandle cache, AstralPromptCacheStats* out_stats);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_save_size(AstralHandle cache, uint32_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_save(AstralHandle cache, AstralMutSpanU8 out_bytes, uint32_t* out_len);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_load(
+    const AstralPromptCacheDesc* desc,
+    AstralSpanU8 bytes,
+    AstralHandle* out_cache
+);
 ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_put_tokens(
     AstralHandle cache,
     const AstralPromptCacheKey* key,

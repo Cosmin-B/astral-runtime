@@ -11,6 +11,12 @@ caller-defined sections.
 - `astral_prompt_cache_destroy(cache)` releases all cached token storage.
 - `astral_prompt_cache_clear(cache)` removes all entries without changing the
   cache budget.
+- `astral_prompt_cache_save_size(cache, out_bytes)` returns the byte count for
+  serializing the current token entries.
+- `astral_prompt_cache_save(cache, out_bytes, out_len)` writes a cache snapshot
+  into a caller-owned byte buffer.
+- `astral_prompt_cache_load(desc, bytes, out_cache)` restores a snapshot into a
+  newly created bounded cache.
 - `astral_prompt_cache_put_tokens(cache, key, tokens, token_count)` copies a
   caller-owned token span into the cache.
 - `astral_prompt_cache_get_tokens(cache, key, out_tokens, max_tokens,
@@ -29,6 +35,8 @@ caller-defined sections.
 Cache descriptors define `max_entries`, `max_tokens`, and optionally
 `max_bytes`. Token entries are copied into native runtime memory and stay valid
 until the entry is replaced, evicted, cleared, or the cache is destroyed.
+Save/load stores token entries and keys only; callers are responsible for using
+snapshots with compatible model identity and tokenizer behavior.
 
 `astral_prompt_cache_get_token_view()` is the fastest path because it avoids a
 token copy. The returned pointer is valid only until the next cache mutation or
