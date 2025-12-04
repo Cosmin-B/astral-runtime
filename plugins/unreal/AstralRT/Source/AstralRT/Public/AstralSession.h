@@ -78,6 +78,22 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool SetSampler(const FAstralSamplerDesc& Desc);
 
+    /** Remove every adapter attached to this session. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool ClearAdapters();
+
+    /** Attach a model-scoped adapter handle returned by UAstralModel::LoadAdapter. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool AddAdapter(int64 AdapterHandle, float Scale = 1.0f);
+
+    /** Return the number of adapters currently attached to this session. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool GetAdapterCount(int32& OutCount) const;
+
+    /** Return one attached adapter handle and scale by index. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool GetAdapter(int32 Index, int64& OutAdapterHandle, float& OutScale) const;
+
     /** Clear all native stop sequences for this session. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool StopClear();

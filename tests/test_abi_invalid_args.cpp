@@ -189,6 +189,9 @@ TEST(abi_invalid_args_session_surface) {
     uint64_t written = 0;
     AstralSamplerDesc sampler{};
     int32_t tokens[2] = {1, 2};
+    uint32_t adapter_count = 0;
+    AstralHandle adapter = 0;
+    float adapter_scale = 0.0f;
 
     ASSERT_EQ(astral_session_state(0, &state), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_state(0, nullptr), ASTRAL_E_INVALID);
@@ -209,6 +212,11 @@ TEST(abi_invalid_args_session_surface) {
     ASSERT_EQ(astral_session_adapters_clear(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_adapters_add(0, 1, 1.0f), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_adapters_add(1, 0, 1.0f), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_count(0, &adapter_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_count(1, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_get(0, 0, &adapter, &adapter_scale), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_get(1, 0, nullptr, &adapter_scale), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_get(1, 0, &adapter, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_grammar_gbnf(0, null_span(), null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_grammar_json_schema(0, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_clear_grammar(0), ASTRAL_E_INVALID);

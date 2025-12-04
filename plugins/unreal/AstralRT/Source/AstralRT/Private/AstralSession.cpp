@@ -365,6 +365,98 @@ bool UAstralSession::SetSampler(const FAstralSamplerDesc& Desc)
     return Err == ASTRAL_OK;
 }
 
+bool UAstralSession::ClearAdapters()
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_ClearAdapters);
+
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    const AstralErr Err = astral_session_adapters_clear(static_cast<AstralHandle>(SessionHandle));
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_adapters_clear failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
+bool UAstralSession::AddAdapter(int64 AdapterHandle, float Scale)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_AddAdapter);
+
+    if (!IsValid() || AdapterHandle == 0)
+    {
+        return false;
+    }
+
+    const AstralErr Err = astral_session_adapters_add(
+        static_cast<AstralHandle>(SessionHandle),
+        static_cast<AstralHandle>(AdapterHandle),
+        Scale
+    );
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_adapters_add failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
+bool UAstralSession::GetAdapterCount(int32& OutCount) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_GetAdapterCount);
+
+    OutCount = 0;
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    uint32 Count = 0;
+    const AstralErr Err = astral_session_adapters_count(static_cast<AstralHandle>(SessionHandle), &Count);
+    if (Err != ASTRAL_OK)
+    {
+        return false;
+    }
+
+    OutCount = static_cast<int32>(Count);
+    return true;
+}
+
+bool UAstralSession::GetAdapter(int32 Index, int64& OutAdapterHandle, float& OutScale) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_GetAdapter);
+
+    OutAdapterHandle = 0;
+    OutScale = 0.0f;
+    if (!IsValid() || Index < 0)
+    {
+        return false;
+    }
+
+    AstralHandle Adapter = 0;
+    float Scale = 0.0f;
+    const AstralErr Err = astral_session_adapters_get(
+        static_cast<AstralHandle>(SessionHandle),
+        static_cast<uint32>(Index),
+        &Adapter,
+        &Scale
+    );
+    if (Err != ASTRAL_OK)
+    {
+        return false;
+    }
+
+    OutAdapterHandle = static_cast<int64>(Adapter);
+    OutScale = Scale;
+    return true;
+}
+
 bool UAstralSession::StopClear()
 {
     if (!IsValid())

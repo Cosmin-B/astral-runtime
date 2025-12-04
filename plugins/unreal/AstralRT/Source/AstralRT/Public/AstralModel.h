@@ -42,6 +42,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool GetLimits(FAstralModelLimits& OutLimits) const;
 
+    /** Load a LoRA or adapter file for later session attachment. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool LoadAdapter(const FAstralAdapterDesc& Desc, int64& OutAdapterHandle) const;
+
+    /** Release an adapter handle returned by LoadAdapter. Sessions must clear it first. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    void ReleaseAdapter(int64 AdapterHandle) const;
+
     /** Count tokens for a UTF-8 prompt without materializing the token buffer. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Tokenization")
     bool CountTokens(const FString& Text, bool bAddSpecial, bool bParseSpecial, int32& OutCount) const;

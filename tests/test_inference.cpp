@@ -949,6 +949,10 @@ TEST(inference_grammar_gbnf_mock) {
 }
 
 TEST(inference_adapters_mock) {
+    constexpr float kPrimaryAdapterScale = 1.0f;
+    constexpr float kSecondaryAdapterScale = 0.5f;
+    constexpr uint32_t kAttachedPrimaryAdapterCount = 1u;
+
     AstralInit cfg = {};
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
@@ -956,6 +960,7 @@ TEST(inference_adapters_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     const AstralHandle model = load_mock_model(nullptr);
+    const AstralHandle other_model = load_mock_model("adapter-other-model");
 
     AstralSessionDesc sd{};
     sd.model = model;
@@ -983,14 +988,77 @@ TEST(inference_adapters_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_TRUE(astral_handle_valid(adapter));
 
-    err = astral_session_adapters_add(session, adapter, 1.0f);
+    const char* other_path = "adapter-other";
+    AstralSpanU8 other_path_span{};
+    other_path_span.data = reinterpret_cast<const uint8_t*>(other_path);
+    other_path_span.len = static_cast<uint32_t>(std::strlen(other_path));
+    AstralAdapterDesc other_ad{};
+    other_ad.size = sizeof(AstralAdapterDesc);
+    other_ad.path = other_path_span;
+
+    AstralHandle other_adapter = 0;
+    err = astral_model_adapter_load(other_model, &other_ad, &other_adapter);
     ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(other_adapter));
+
+    uint32_t adapter_count = ASTRAL_SESSION_ADAPTERS_MAX;
+    err = astral_session_adapters_count(session, &adapter_count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(adapter_count, 0u);
+
+    AstralHandle attached_adapter = 0;
+    float attached_scale = 0.0f;
+    err = astral_session_adapters_get(session, 0, &attached_adapter, &attached_scale);
+    ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
+
+    err = astral_session_adapters_add(session, other_adapter, kPrimaryAdapterScale);
+    ASSERT_EQ(err, ASTRAL_E_INVALID);
+
+    err = astral_session_adapters_add(session, adapter, kPrimaryAdapterScale);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_adapters_count(session, &adapter_count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(adapter_count, 1u);
+
+    err = astral_session_adapters_get(session, 0, &attached_adapter, &attached_scale);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(attached_adapter, adapter);
+    ASSERT_EQ(attached_scale, kPrimaryAdapterScale);
+
+    AstralHandle overflow_adapters[ASTRAL_SESSION_ADAPTERS_MAX]{};
+    for (uint32_t i = kAttachedPrimaryAdapterCount; i < ASTRAL_SESSION_ADAPTERS_MAX; ++i) {
+        err = astral_model_adapter_load(model, &ad, &overflow_adapters[i]);
+        ASSERT_EQ(err, ASTRAL_OK);
+        err = astral_session_adapters_add(session, overflow_adapters[i], kSecondaryAdapterScale);
+        ASSERT_EQ(err, ASTRAL_OK);
+    }
+
+    err = astral_session_adapters_count(session, &adapter_count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(adapter_count, ASTRAL_SESSION_ADAPTERS_MAX);
+
+    AstralHandle overflow_adapter = 0;
+    err = astral_model_adapter_load(model, &ad, &overflow_adapter);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_session_adapters_add(session, overflow_adapter, kSecondaryAdapterScale);
+    ASSERT_EQ(err, ASTRAL_E_NOMEM);
 
     err = astral_session_adapters_clear(session);
     ASSERT_EQ(err, ASTRAL_OK);
 
+    err = astral_session_adapters_count(session, &adapter_count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(adapter_count, 0u);
+
+    astral_model_adapter_release(overflow_adapter);
+    for (uint32_t i = kAttachedPrimaryAdapterCount; i < ASTRAL_SESSION_ADAPTERS_MAX; ++i) {
+        astral_model_adapter_release(overflow_adapters[i]);
+    }
+    astral_model_adapter_release(other_adapter);
     astral_model_adapter_release(adapter);
     astral_session_destroy(session);
+    astral_model_release(other_model);
     astral_model_release(model);
     astral_shutdown();
 }

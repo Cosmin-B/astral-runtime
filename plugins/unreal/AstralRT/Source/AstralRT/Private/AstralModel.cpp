@@ -5,6 +5,7 @@
 #include "Containers/UnrealString.h"
 #include "HAL/Platform.h"
 #include "Misc/Paths.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "astral_rt.h"
 
@@ -50,6 +51,11 @@ static FString resolve_model_path(const FAstralModelDesc& Desc)
 static FString resolve_media_path(const FAstralModelMediaDesc& Desc)
 {
     return resolve_unreal_path(Desc.MediaPath, Desc.MediaPathRoot);
+}
+
+static FString resolve_adapter_path(const FAstralAdapterDesc& Desc)
+{
+    return resolve_unreal_path(Desc.AdapterPath, Desc.PathRoot);
 }
 
 } // namespace
@@ -159,6 +165,48 @@ bool UAstralModel::GetEmbeddingDim(int32& OutDim) const
 
     OutDim = static_cast<int32>(Dim);
     return true;
+}
+
+bool UAstralModel::LoadAdapter(const FAstralAdapterDesc& Desc, int64& OutAdapterHandle) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_LoadAdapter);
+
+    OutAdapterHandle = 0;
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    const FString ResolvedAdapterPath = resolve_adapter_path(Desc);
+    FTCHARToUTF8 PathUtf8(*ResolvedAdapterPath);
+
+    AstralAdapterDesc Native{};
+    Native.size = sizeof(AstralAdapterDesc);
+    Native.path.data = reinterpret_cast<const uint8_t*>(PathUtf8.Get());
+    Native.path.len = static_cast<uint32_t>(PathUtf8.Length());
+
+    AstralHandle Out = 0;
+    const AstralErr Err = astral_model_adapter_load(static_cast<AstralHandle>(ModelHandle), &Native, &Out);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_model_adapter_load failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    OutAdapterHandle = static_cast<int64>(Out);
+    return true;
+}
+
+void UAstralModel::ReleaseAdapter(int64 AdapterHandle) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_ReleaseAdapter);
+
+    if (AdapterHandle == 0)
+    {
+        return;
+    }
+
+    astral_model_adapter_release(static_cast<AstralHandle>(AdapterHandle));
 }
 
 bool UAstralModel::GetCaps(int64& OutCaps) const
