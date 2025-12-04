@@ -145,6 +145,7 @@ int main() {
     EMIT_CONST(ASTRAL_E_BACKEND);
     EMIT_CONST(ASTRAL_E_CANCELED);
     EMIT_CONST(ASTRAL_E_UNSUPPORTED);
+    EMIT_CONST(ASTRAL_E_NOT_FOUND);
     EMIT_CONST(ASTRAL_LOG_ERROR);
     EMIT_CONST(ASTRAL_LOG_WARN);
     EMIT_CONST(ASTRAL_LOG_INFO);
@@ -203,6 +204,7 @@ if [[ "${check_only}" -eq 1 ]]; then
   grep -q '"name":"AstralSessionDesc"' "${report}"
   grep -q '"name":"AstralStats"' "${report}"
   grep -q '"name":"ASTRAL_E_UNSUPPORTED","value":-8' "${report}"
+  grep -q '"name":"ASTRAL_E_NOT_FOUND","value":-9' "${report}"
   grep -q '"name":"ASTRAL_MODEL_SOURCE_IO","value":2' "${report}"
   grep -q '"name":"ASTRAL_SESSION_FAILED","value":5' "${report}"
   grep -q '"name":"ASTRAL_CAP_MM_EMBEDDINGS","value":134217728' "${report}"
