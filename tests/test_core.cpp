@@ -157,6 +157,12 @@ TEST(core_error_string_unsupported) {
     ASSERT_TRUE(strlen(str) > 0);
 }
 
+TEST(core_error_string_not_found) {
+    const char* str = astral_error_string(ASTRAL_E_NOT_FOUND);
+    ASSERT_NOT_NULL(str);
+    ASSERT_TRUE(strlen(str) > 0);
+}
+
 TEST(core_error_string_unknown) {
     const char* str = astral_error_string(-9999);
     ASSERT_NOT_NULL(str);

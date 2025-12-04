@@ -15,6 +15,10 @@ namespace astral::bench {
 
 namespace {
 
+static constexpr uint64_t kPromptCacheOnlyReserveBytes = 64ULL << 20;
+static constexpr uint64_t kFeatureDefaultIters = 2000;
+static constexpr char kDisabledEnvValue[] = "0";
+
 static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
     const char* v = std::getenv(key);
     if (v == nullptr || v[0] == '\0') {
@@ -50,6 +54,11 @@ static bool file_is_large_enough(const char* path, uint64_t min_bytes) {
         return false;
     }
     return static_cast<uint64_t>(st.st_size) >= min_bytes;
+}
+
+static bool env_enabled(const char* key) {
+    const char* value = std::getenv(key);
+    return value != nullptr && value[0] != '\0' && std::strcmp(value, kDisabledEnvValue) != 0;
 }
 
 static const char* find_model_path() {
@@ -305,6 +314,136 @@ static BenchResult bench_tokenize_batch(AstralHandle model, uint64_t iters) {
     const uint64_t n1 = ns_now();
     r.ticks = t1 - t0;
     r.ns = n1 - n0;
+    return r;
+}
+
+static BenchResult bench_prompt_cache_get(uint64_t iters) {
+    static constexpr uint32_t kEntryCount = 1024;
+    static constexpr uint32_t kTokenBudget = 16 * 1024;
+    static constexpr uint32_t kTokenCount = 8;
+    static constexpr AstralHandle kModelHandle = 0x0100000100000001ull;
+    static constexpr uint64_t kKeyBase = 0xA57A1000ull;
+
+    BenchResult r{};
+    r.name = "features.prompt_cache get";
+    r.ops = iters;
+
+    AstralPromptCacheDesc desc{};
+    desc.size = sizeof(AstralPromptCacheDesc);
+    desc.max_entries = kEntryCount;
+    desc.max_tokens = kTokenBudget;
+    desc.eviction_policy = ASTRAL_PROMPT_CACHE_EVICT_FIFO;
+
+    AstralHandle cache = 0;
+    if (astral_prompt_cache_create(&desc, &cache) != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    int32_t tokens[kTokenCount]{};
+    for (uint32_t i = 0; i < kTokenCount; ++i) {
+        tokens[i] = static_cast<int32_t>(i + 1u);
+    }
+
+    AstralPromptCacheKey key{};
+    key.size = sizeof(AstralPromptCacheKey);
+    key.section_kind = ASTRAL_PROMPT_SECTION_SYSTEM;
+    key.model = kModelHandle;
+    key.generation = 1;
+
+    for (uint32_t i = 0; i < kEntryCount; ++i) {
+        key.key = kKeyBase + i;
+        if (astral_prompt_cache_put_tokens(cache, &key, tokens, kTokenCount) != ASTRAL_OK) {
+            astral_prompt_cache_destroy(cache);
+            r.ops = 0;
+            return r;
+        }
+    }
+
+    int32_t out[kTokenCount]{};
+    uint32_t count = 0;
+    const uint32_t mask = kEntryCount - 1u;
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        key.key = kKeyBase + (static_cast<uint32_t>(i) & mask);
+        const AstralErr err = astral_prompt_cache_get_tokens(cache, &key, out, kTokenCount, &count);
+        if (err != ASTRAL_OK || count != kTokenCount) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_prompt_cache_destroy(cache);
+    return r;
+}
+
+static BenchResult bench_prompt_cache_view(uint64_t iters) {
+    static constexpr uint32_t kEntryCount = 1024;
+    static constexpr uint32_t kTokenBudget = 16 * 1024;
+    static constexpr uint32_t kTokenCount = 8;
+    static constexpr AstralHandle kModelHandle = 0x0100000100000001ull;
+    static constexpr uint64_t kKeyBase = 0xA57A2000ull;
+
+    BenchResult r{};
+    r.name = "features.prompt_cache view";
+    r.ops = iters;
+
+    AstralPromptCacheDesc desc{};
+    desc.size = sizeof(AstralPromptCacheDesc);
+    desc.max_entries = kEntryCount;
+    desc.max_tokens = kTokenBudget;
+    desc.eviction_policy = ASTRAL_PROMPT_CACHE_EVICT_FIFO;
+
+    AstralHandle cache = 0;
+    if (astral_prompt_cache_create(&desc, &cache) != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    int32_t tokens[kTokenCount]{};
+    for (uint32_t i = 0; i < kTokenCount; ++i) {
+        tokens[i] = static_cast<int32_t>(i + 1u);
+    }
+
+    AstralPromptCacheKey key{};
+    key.size = sizeof(AstralPromptCacheKey);
+    key.section_kind = ASTRAL_PROMPT_SECTION_SYSTEM;
+    key.model = kModelHandle;
+    key.generation = 1;
+
+    for (uint32_t i = 0; i < kEntryCount; ++i) {
+        key.key = kKeyBase + i;
+        if (astral_prompt_cache_put_tokens(cache, &key, tokens, kTokenCount) != ASTRAL_OK) {
+            astral_prompt_cache_destroy(cache);
+            r.ops = 0;
+            return r;
+        }
+    }
+
+    const int32_t* out = nullptr;
+    uint32_t count = 0;
+    const uint32_t mask = kEntryCount - 1u;
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        key.key = kKeyBase + (static_cast<uint32_t>(i) & mask);
+        const AstralErr err = astral_prompt_cache_get_token_view(cache, &key, &out, &count);
+        if (err != ASTRAL_OK || count != kTokenCount || out == nullptr) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_prompt_cache_destroy(cache);
     return r;
 }
 
@@ -622,7 +761,7 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
     std::printf("env:\n");
     std::printf("  ASTRAL_BENCH_FEATURE_BACKEND=%s\n", backend ? backend : "");
     std::printf("  ASTRAL_BENCH_GPU_LAYERS=%u\n", gpu_layers);
-    std::printf("  ASTRAL_BENCH_FEATURE_ITERS=%llu\n", (unsigned long long)parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", 2000));
+    std::printf("  ASTRAL_BENCH_FEATURE_ITERS=%llu\n", (unsigned long long)parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", kFeatureDefaultIters));
     std::printf("  ASTRAL_BENCH_FEATURE_TOKENS=%u\n", parse_u32_env("ASTRAL_BENCH_FEATURE_TOKENS", 64));
     std::printf("  ASTRAL_BENCH_EMBED_MODEL=%s\n", std::getenv("ASTRAL_BENCH_EMBED_MODEL") ? std::getenv("ASTRAL_BENCH_EMBED_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MODEL=%s\n", std::getenv("ASTRAL_BENCH_VISION_MODEL") ? std::getenv("ASTRAL_BENCH_VISION_MODEL") : "");
@@ -634,6 +773,29 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
 } // namespace
 
 void bench_feature_surfaces_print(void) {
+    if (env_enabled("ASTRAL_BENCH_PROMPT_CACHE_ONLY")) {
+        const uint64_t iters = parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", kFeatureDefaultIters);
+
+        AstralInit cfg{};
+        cfg.reserve_bytes = kPromptCacheOnlyReserveBytes;
+        cfg.thread_count = parse_u32_env("ASTRAL_BENCH_RUNTIME_THREADS", 1);
+        cfg.numa_node = 0xFFFFFFFFu;
+        cfg.enable_hugepages = 0;
+
+        const AstralErr init_err = astral_init(&cfg);
+        if (init_err != ASTRAL_OK) {
+            std::fprintf(stderr, "[bench] astral_init failed: %s (%s)\n",
+                         astral_error_string(init_err), astral_last_error());
+            return;
+        }
+
+        std::printf("%-28s  %8s  %12s  %12s  %12s\n", "benchmark", "clock", "ops", "ns/op", "ticks/op");
+        print_result(bench_prompt_cache_get(iters), clock_info().name);
+        print_result(bench_prompt_cache_view(iters), clock_info().name);
+        astral_shutdown();
+        return;
+    }
+
     const char* model_path = find_model_path();
     if (model_path == nullptr) {
         std::fprintf(stderr, "[bench] no GGUF model found for feature benches (set ASTRAL_BENCH_MODEL)\n");
@@ -646,7 +808,7 @@ void bench_feature_surfaces_print(void) {
         backend = "cpu";
     }
     const uint32_t gpu_layers = parse_u32_env("ASTRAL_BENCH_GPU_LAYERS", std::strcmp(backend, "cuda") == 0 ? 8u : 0u);
-    const uint64_t iters = parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", 2000);
+    const uint64_t iters = parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", kFeatureDefaultIters);
     const uint32_t tokens = parse_u32_env("ASTRAL_BENCH_FEATURE_TOKENS", 64);
 
     AstralInit cfg{};
@@ -663,6 +825,8 @@ void bench_feature_surfaces_print(void) {
     }
 
     print_features_header(backend, gpu_layers, model_path, embed_model_path);
+    print_result(bench_prompt_cache_get(iters), clock_info().name);
+    print_result(bench_prompt_cache_view(iters), clock_info().name);
 
     // Embeddings.
     {

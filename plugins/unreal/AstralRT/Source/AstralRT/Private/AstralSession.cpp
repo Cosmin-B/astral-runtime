@@ -123,6 +123,36 @@ bool UAstralSession::FeedPrompt(const FString& Prompt, bool bFinalize)
     return FeedPromptRaw(TConstArrayView<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()), bFinalize);
 }
 
+bool UAstralSession::SetSystemPrompt(const FString& Prompt)
+{
+    FTCHARToUTF8 Utf8(*Prompt);
+    return SetSystemPromptRaw(TConstArrayView<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()));
+}
+
+bool UAstralSession::SetSystemPromptRaw(TConstArrayView<uint8> Utf8Data)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_SetSystemPrompt);
+
+    if (!IsValid())
+    {
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
+        return false;
+    }
+
+    AstralSpanU8 Span{};
+    Span.data = Utf8Data.GetData();
+    Span.len = static_cast<uint32_t>(Utf8Data.Num());
+
+    const AstralErr Err = astral_session_set_system_prompt(static_cast<AstralHandle>(SessionHandle), Span);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_set_system_prompt failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
 bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize)
 {
     if (!IsValid())
