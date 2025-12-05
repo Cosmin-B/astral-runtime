@@ -8,6 +8,7 @@
 #include "model.hpp"
 #include "sampler.hpp"
 #include "prompt_chunks.hpp"
+#include "tooling.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -143,6 +144,10 @@ struct Conversation {
     uint32_t grammar_root_len;
     uint8_t* grammar_json;
     uint32_t grammar_json_len;
+
+    // Structured output toolset (setup-time only; executor applies provider grammar separately).
+    Toolset* toolset;
+    AstralToolChoiceMode tool_choice_mode;
 
     // Cached token emission to avoid repeated detokenize when under backpressure.
     concurrency::StreamToken pending_emit_stream;

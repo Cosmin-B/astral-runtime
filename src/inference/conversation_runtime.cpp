@@ -470,6 +470,10 @@ void conv_destroy(Conversation* conv) {
         conv->grammar_json = nullptr;
         conv->grammar_json_len = 0;
     }
+    if (conv->toolset != nullptr) {
+        toolset_release(conv->toolset);
+        conv->toolset = nullptr;
+    }
 
     // Release model ref (conversation holds one ref).
     if (model) {
@@ -1114,6 +1118,47 @@ AstralErr conv_stats(Conversation* conv, AstralConvStats* out_stats) {
         }
     }
 
+    return ASTRAL_OK;
+}
+
+AstralErr conv_set_toolset(Conversation* conv, Toolset* toolset, AstralToolChoiceMode choice_mode) {
+    if (conv == nullptr || toolset == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (choice_mode != ASTRAL_TOOL_CHOICE_AUTO && choice_mode != ASTRAL_TOOL_CHOICE_REQUIRED &&
+        choice_mode != ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL) {
+        return ASTRAL_E_INVALID;
+    }
+    const ConvState st = conv->state.load(std::memory_order_acquire);
+    if (st == ConvState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    toolset_retain(toolset);
+    Toolset* old = conv->toolset;
+    conv->toolset = toolset;
+    conv->tool_choice_mode = choice_mode;
+    if (old != nullptr) {
+        toolset_release(old);
+    }
+    return ASTRAL_OK;
+}
+
+AstralErr conv_clear_toolset(Conversation* conv) {
+    if (conv == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const ConvState st = conv->state.load(std::memory_order_acquire);
+    if (st == ConvState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    Toolset* old = conv->toolset;
+    conv->toolset = nullptr;
+    conv->tool_choice_mode = ASTRAL_TOOL_CHOICE_AUTO;
+    if (old != nullptr) {
+        toolset_release(old);
+    }
     return ASTRAL_OK;
 }
 

@@ -120,6 +120,10 @@ int main() {
     EMIT_STRUCT(AstralSamplerDesc);
     EMIT_STRUCT(AstralTokenMeta);
     EMIT_STRUCT(AstralAdapterDesc);
+    EMIT_STRUCT(AstralToolDesc);
+    EMIT_STRUCT(AstralToolsetDesc);
+    EMIT_STRUCT(AstralToolInfo);
+    EMIT_STRUCT(AstralToolCallResult);
     EMIT_STRUCT(AstralStats);
 
     std::printf("\n  ],\n");
@@ -188,6 +192,9 @@ int main() {
     EMIT_CONST(ASTRAL_SESSION_CANCELED);
     EMIT_CONST(ASTRAL_SESSION_FAILED);
     EMIT_CONST(ASTRAL_SESSION_ADAPTERS_MAX);
+    EMIT_CONST(ASTRAL_TOOL_CHOICE_AUTO);
+    EMIT_CONST(ASTRAL_TOOL_CHOICE_REQUIRED);
+    EMIT_CONST(ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL);
 
     std::printf("\n  ]\n");
     std::printf("}\n");
@@ -204,11 +211,13 @@ if [[ "${check_only}" -eq 1 ]]; then
   grep -q '"name":"AstralModelDesc"' "${report}"
   grep -q '"name":"AstralSessionDesc"' "${report}"
   grep -q '"name":"AstralStats"' "${report}"
+  grep -q '"name":"AstralToolCallResult"' "${report}"
   grep -q '"name":"ASTRAL_E_UNSUPPORTED","value":-8' "${report}"
   grep -q '"name":"ASTRAL_E_NOT_FOUND","value":-9' "${report}"
   grep -q '"name":"ASTRAL_MODEL_SOURCE_IO","value":2' "${report}"
   grep -q '"name":"ASTRAL_SESSION_FAILED","value":5' "${report}"
   grep -q '"name":"ASTRAL_SESSION_ADAPTERS_MAX","value":8' "${report}"
+  grep -q '"name":"ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL","value":2' "${report}"
   grep -q '"name":"ASTRAL_CAP_MM_EMBEDDINGS","value":134217728' "${report}"
   grep -q '"name":"ASTRAL_GPU_ROUTE_STREAM","value":4' "${report}"
   exit 0

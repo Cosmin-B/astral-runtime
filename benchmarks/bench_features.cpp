@@ -18,6 +18,9 @@ namespace {
 static constexpr uint64_t kPromptCacheOnlyReserveBytes = 64ULL << 20;
 static constexpr uint64_t kFeatureDefaultIters = 2000;
 static constexpr char kDisabledEnvValue[] = "0";
+static constexpr uint32_t kBenchToolSearchId = 1;
+static constexpr uint32_t kBenchToolOpenId = 2;
+static constexpr uint32_t kBenchToolCount = 2;
 
 static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
     const char* v = std::getenv(key);
@@ -447,6 +450,57 @@ static BenchResult bench_prompt_cache_view(uint64_t iters) {
     return r;
 }
 
+static BenchResult bench_toolset_parse(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.toolset parse";
+    r.ops = iters;
+
+    AstralToolDesc tools[kBenchToolCount]{};
+    tools[0].size = sizeof(AstralToolDesc);
+    tools[0].tool_id = kBenchToolSearchId;
+    tools[0].name = span_from_cstr("search");
+    tools[0].description = span_from_cstr("Search indexed text");
+    tools[0].json_schema = span_from_cstr("{\"type\":\"object\"}");
+    tools[1].size = sizeof(AstralToolDesc);
+    tools[1].tool_id = kBenchToolOpenId;
+    tools[1].name = span_from_cstr("open");
+    tools[1].description = span_from_cstr("Open one result");
+    tools[1].json_schema = span_from_cstr("{\"type\":\"object\"}");
+
+    AstralToolsetDesc desc{};
+    desc.size = sizeof(AstralToolsetDesc);
+    desc.tool_count = kBenchToolCount;
+    desc.choice_mode = ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL;
+    desc.tools = tools;
+
+    AstralHandle toolset = 0;
+    if (astral_toolset_create(&desc, &toolset) != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    const AstralSpanU8 text = span_from_cstr("{\"name\":\"search\",\"arguments\":{\"query\":\"latency\",\"k\":4}}");
+    AstralToolCallResult call{};
+    call.size = sizeof(AstralToolCallResult);
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        const AstralErr err = astral_toolset_parse_call(toolset, text, &call);
+        if (err != ASTRAL_OK || call.tool_id != kBenchToolSearchId || call.parse_status != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_toolset_destroy(toolset);
+    return r;
+}
+
 static AstralHandle create_session(AstralHandle model, uint32_t max_tokens, float temperature, uint32_t top_k, float top_p, uint32_t seed);
 
 static AstralErr init_media_for_model(AstralHandle model, const char* media_path) {
@@ -792,6 +846,7 @@ void bench_feature_surfaces_print(void) {
         std::printf("%-28s  %8s  %12s  %12s  %12s\n", "benchmark", "clock", "ops", "ns/op", "ticks/op");
         print_result(bench_prompt_cache_get(iters), clock_info().name);
         print_result(bench_prompt_cache_view(iters), clock_info().name);
+        print_result(bench_toolset_parse(iters), clock_info().name);
         astral_shutdown();
         return;
     }
@@ -827,6 +882,7 @@ void bench_feature_surfaces_print(void) {
     print_features_header(backend, gpu_layers, model_path, embed_model_path);
     print_result(bench_prompt_cache_get(iters), clock_info().name);
     print_result(bench_prompt_cache_view(iters), clock_info().name);
+    print_result(bench_toolset_parse(iters), clock_info().name);
 
     // Embeddings.
     {

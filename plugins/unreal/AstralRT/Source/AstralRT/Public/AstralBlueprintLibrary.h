@@ -40,6 +40,18 @@ public:
     UFUNCTION(BlueprintPure, Category = "Astral|Adapters")
     static int32 MaxSessionAdapters();
 
+    /** Create a native structured-output toolset. Release it with DestroyToolset. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
+    static bool CreateToolset(const TArray<FAstralToolDesc>& Tools, EAstralToolChoiceMode ChoiceMode, int64& OutToolsetHandle);
+
+    /** Release a native structured-output toolset handle. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
+    static void DestroyToolset(int64 ToolsetHandle);
+
+    /** Parse a completed tool-call JSON payload against a native toolset. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
+    static bool ParseToolCall(int64 ToolsetHandle, const FString& GeneratedText, FAstralToolCallResult& OutResult);
+
     /** True when the capability bitmask contains embeddings support. */
     UFUNCTION(BlueprintPure, Category = "Astral|Capabilities")
     static bool HasEmbeddings(int64 Caps);

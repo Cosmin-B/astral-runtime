@@ -1,13 +1,17 @@
 #include "AstralBlueprintLibrary.h"
 
 #include "AstralEmbedder.h"
+#include "AstralLog.h"
 #include "AstralModel.h"
 #include "AstralSession.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "UObject/Package.h"
 
 #include "astral_rt.h"
 
 namespace {
+
+static constexpr int32 kInlineToolCapacity = 8;
 
 static UObject* resolve_outer(UObject* Outer)
 {
@@ -18,6 +22,30 @@ static bool has_cap(int64 Caps, AstralCaps Cap)
 {
     const AstralCaps NativeCaps = static_cast<AstralCaps>(Caps);
     return (NativeCaps & Cap) != 0;
+}
+
+static AstralToolChoiceMode to_native_tool_choice(EAstralToolChoiceMode Mode)
+{
+    switch (Mode)
+    {
+    case EAstralToolChoiceMode::Required:
+        return ASTRAL_TOOL_CHOICE_REQUIRED;
+    case EAstralToolChoiceMode::TextOrTool:
+        return ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL;
+    case EAstralToolChoiceMode::Auto:
+    default:
+        return ASTRAL_TOOL_CHOICE_AUTO;
+    }
+}
+
+static FString utf8_span_to_string(AstralSpanU8 Span)
+{
+    if (Span.data == nullptr || Span.len == 0)
+    {
+        return FString();
+    }
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Span.data), static_cast<int32>(Span.len));
+    return FString(Converted.Length(), Converted.Get());
 }
 
 } // namespace
@@ -75,6 +103,126 @@ FString UAstralBlueprintLibrary::ErrorCodeName(int32 ErrorCode)
 int32 UAstralBlueprintLibrary::MaxSessionAdapters()
 {
     return static_cast<int32>(ASTRAL_SESSION_ADAPTERS_MAX);
+}
+
+bool UAstralBlueprintLibrary::CreateToolset(
+    const TArray<FAstralToolDesc>& Tools,
+    EAstralToolChoiceMode ChoiceMode,
+    int64& OutToolsetHandle
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateToolset);
+
+    OutToolsetHandle = 0;
+    if (Tools.Num() == 0)
+    {
+        return false;
+    }
+
+    int32 Utf8Bytes = 0;
+    for (const FAstralToolDesc& Tool : Tools)
+    {
+        FTCHARToUTF8 NameUtf8(*Tool.Name);
+        FTCHARToUTF8 DescriptionUtf8(*Tool.Description);
+        FTCHARToUTF8 SchemaUtf8(*Tool.JsonSchema);
+        Utf8Bytes += NameUtf8.Length() + DescriptionUtf8.Length() + SchemaUtf8.Length();
+    }
+
+    TArray<uint8> Utf8Storage;
+    Utf8Storage.Reserve(Utf8Bytes);
+    TArray<AstralToolDesc, TInlineAllocator<kInlineToolCapacity>> NativeTools;
+    NativeTools.SetNumZeroed(Tools.Num());
+
+    for (int32 Index = 0; Index < Tools.Num(); ++Index)
+    {
+        const FAstralToolDesc& Tool = Tools[Index];
+        FTCHARToUTF8 NameUtf8(*Tool.Name);
+        FTCHARToUTF8 DescriptionUtf8(*Tool.Description);
+        FTCHARToUTF8 SchemaUtf8(*Tool.JsonSchema);
+
+        AstralToolDesc& Native = NativeTools[Index];
+        Native.size = sizeof(AstralToolDesc);
+        Native.tool_id = static_cast<uint32_t>(Tool.ToolId);
+
+        const int32 NameOffset = Utf8Storage.Num();
+        Utf8Storage.Append(reinterpret_cast<const uint8*>(NameUtf8.Get()), NameUtf8.Length());
+        Native.name.data = Utf8Storage.GetData() + NameOffset;
+        Native.name.len = static_cast<uint32_t>(NameUtf8.Length());
+
+        const int32 DescriptionOffset = Utf8Storage.Num();
+        Utf8Storage.Append(reinterpret_cast<const uint8*>(DescriptionUtf8.Get()), DescriptionUtf8.Length());
+        Native.description.data = Utf8Storage.GetData() + DescriptionOffset;
+        Native.description.len = static_cast<uint32_t>(DescriptionUtf8.Length());
+
+        const int32 SchemaOffset = Utf8Storage.Num();
+        Utf8Storage.Append(reinterpret_cast<const uint8*>(SchemaUtf8.Get()), SchemaUtf8.Length());
+        Native.json_schema.data = Utf8Storage.GetData() + SchemaOffset;
+        Native.json_schema.len = static_cast<uint32_t>(SchemaUtf8.Length());
+    }
+
+    AstralToolsetDesc Desc{};
+    Desc.size = sizeof(AstralToolsetDesc);
+    Desc.tool_count = static_cast<uint32_t>(NativeTools.Num());
+    Desc.choice_mode = to_native_tool_choice(ChoiceMode);
+    Desc.tools = NativeTools.GetData();
+
+    AstralHandle Toolset = 0;
+    const AstralErr Err = astral_toolset_create(&Desc, &Toolset);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_toolset_create failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    OutToolsetHandle = static_cast<int64>(Toolset);
+    return true;
+}
+
+void UAstralBlueprintLibrary::DestroyToolset(int64 ToolsetHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyToolset);
+
+    if (ToolsetHandle != 0)
+    {
+        astral_toolset_destroy(static_cast<AstralHandle>(ToolsetHandle));
+    }
+}
+
+bool UAstralBlueprintLibrary::ParseToolCall(
+    int64 ToolsetHandle,
+    const FString& GeneratedText,
+    FAstralToolCallResult& OutResult
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ParseToolCall);
+
+    OutResult = FAstralToolCallResult{};
+    if (ToolsetHandle == 0)
+    {
+        OutResult.ParseStatus = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    FTCHARToUTF8 GeneratedUtf8(*GeneratedText);
+    AstralSpanU8 Text{};
+    Text.data = reinterpret_cast<const uint8_t*>(GeneratedUtf8.Get());
+    Text.len = static_cast<uint32_t>(GeneratedUtf8.Length());
+
+    AstralToolCallResult Native{};
+    Native.size = sizeof(AstralToolCallResult);
+    const AstralErr Err = astral_toolset_parse_call(static_cast<AstralHandle>(ToolsetHandle), Text, &Native);
+    if (Err != ASTRAL_OK)
+    {
+        OutResult.ParseStatus = static_cast<int32>(Err);
+        return false;
+    }
+
+    OutResult.bFound = true;
+    OutResult.ParseStatus = Native.parse_status;
+    OutResult.ToolId = static_cast<int32>(Native.tool_id);
+    OutResult.Name = utf8_span_to_string(Native.name);
+    OutResult.ArgumentsJson = utf8_span_to_string(Native.arguments_json);
+    return true;
 }
 
 bool UAstralBlueprintLibrary::HasEmbeddings(int64 Caps)

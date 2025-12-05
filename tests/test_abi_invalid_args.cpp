@@ -14,6 +14,13 @@ AstralSpanU8 null_span() {
     return s;
 }
 
+AstralSpanU8 span_from_cstr(const char* text) {
+    AstralSpanU8 s{};
+    s.data = reinterpret_cast<const uint8_t*>(text);
+    s.len = static_cast<uint32_t>(std::strlen(text));
+    return s;
+}
+
 AstralMutSpanU8 null_mut_span() {
     AstralMutSpanU8 s{};
     return s;
@@ -130,6 +137,23 @@ TEST(abi_invalid_args_model_surface) {
     AstralMediaInfo media_info{};
     AstralAdapterDesc adapter_desc{};
     AstralHandle adapter = 0;
+    constexpr uint32_t kToolId = 1;
+    constexpr uint32_t kToolCount = 1;
+    AstralToolDesc tool_desc{};
+    tool_desc.size = sizeof(AstralToolDesc);
+    tool_desc.tool_id = kToolId;
+    tool_desc.name = span_from_cstr("search");
+    tool_desc.json_schema = span_from_cstr("{\"type\":\"object\"}");
+    AstralToolsetDesc toolset_desc{};
+    toolset_desc.size = sizeof(AstralToolsetDesc);
+    toolset_desc.tool_count = kToolCount;
+    toolset_desc.choice_mode = ASTRAL_TOOL_CHOICE_AUTO;
+    toolset_desc.tools = &tool_desc;
+    AstralHandle toolset = 0;
+    AstralToolInfo tool_info{};
+    tool_info.size = sizeof(AstralToolInfo);
+    AstralToolCallResult tool_call{};
+    tool_call.size = sizeof(AstralToolCallResult);
     int32_t tokens[2] = {1, 2};
     uint32_t token_count = 0;
     uint8_t text_buf[16] = {};
@@ -165,6 +189,14 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_model_adapter_load(0, &adapter_desc, &adapter), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, nullptr, &adapter), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, &adapter_desc, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_create(nullptr, &toolset), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_create(&toolset_desc, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_count(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_count(1, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_get(0, 0, &tool_info), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_get(1, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_parse_call(0, null_span(), &tool_call), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_parse_call(1, null_span(), nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_configure(0, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_tune(0, nullptr), ASTRAL_E_INVALID);
 
@@ -220,6 +252,9 @@ TEST(abi_invalid_args_session_surface) {
     ASSERT_EQ(astral_session_set_grammar_gbnf(0, null_span(), null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_grammar_json_schema(0, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_clear_grammar(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_set_toolset(0, 1, ASTRAL_TOOL_CHOICE_AUTO), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_set_toolset(1, 0, ASTRAL_TOOL_CHOICE_AUTO), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_clear_toolset(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_slot(0, 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_feed(0, null_span(), 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_feed_image(0, nullptr, 1), ASTRAL_E_INVALID);
@@ -341,6 +376,9 @@ TEST(abi_invalid_args_conversation_surface) {
     ASSERT_EQ(astral_conv_grammar_set_gbnf(0, null_span(), null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_grammar_set_json_schema(0, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_grammar_clear(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_set_toolset(0, 1, ASTRAL_TOOL_CHOICE_AUTO), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_set_toolset(1, 0, ASTRAL_TOOL_CHOICE_AUTO), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_clear_toolset(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_stream_read(0, null_mut_span(), 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_stream_read_meta(0, nullptr, 0, 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_stats(0, &stats), ASTRAL_E_INVALID);

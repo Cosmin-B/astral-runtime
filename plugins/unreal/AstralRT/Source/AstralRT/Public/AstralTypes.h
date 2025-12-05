@@ -63,6 +63,15 @@ enum class EAstralModelSourceKind : uint8
     IO = 2
 };
 
+/** Structured-output tool selection mode. */
+UENUM(BlueprintType)
+enum class EAstralToolChoiceMode : uint8
+{
+    Auto = 0,
+    Required = 1,
+    TextOrTool = 2
+};
+
 /** Root used to resolve relative filesystem paths before they cross the C ABI. */
 UENUM(BlueprintType)
 enum class EAstralUnrealPathRoot : uint8
@@ -278,6 +287,56 @@ struct ASTRALRT_API FAstralAdapterDesc
     /** Root for relative AdapterPath values. Absolute paths are passed through unchanged. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
     EAstralUnrealPathRoot PathRoot = EAstralUnrealPathRoot::Raw;
+};
+
+/** One tool/function definition for structured output. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralToolDesc
+{
+    GENERATED_BODY()
+
+    /** Stable native id returned with parsed tool calls. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Tools")
+    int32 ToolId = 0;
+
+    /** Tool name used in generated tool-call JSON. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Tools")
+    FString Name;
+
+    /** Human-readable tool description. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Tools")
+    FString Description;
+
+    /** JSON schema for the tool arguments object. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Tools")
+    FString JsonSchema;
+};
+
+/** Parsed structured-output tool call. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralToolCallResult
+{
+    GENERATED_BODY()
+
+    /** True when a known tool name was found. */
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Tools")
+    bool bFound = false;
+
+    /** Native parse status for the arguments payload. */
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Tools")
+    int32 ParseStatus = 0;
+
+    /** Stable tool id from the native toolset. */
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Tools")
+    int32 ToolId = 0;
+
+    /** Matched tool name. */
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Tools")
+    FString Name;
+
+    /** Raw JSON object for the tool arguments. */
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Tools")
+    FString ArgumentsJson;
 };
 
 /** Media capabilities reported after InitMedia succeeds. */

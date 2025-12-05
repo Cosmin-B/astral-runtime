@@ -271,6 +271,9 @@ namespace Astral.Runtime
 
         public const int ASTRAL_LOGPROBS_MAX = 16;
         public const int ASTRAL_SESSION_ADAPTERS_MAX = 8;
+        public const uint ASTRAL_TOOL_CHOICE_AUTO = 0;
+        public const uint ASTRAL_TOOL_CHOICE_REQUIRED = 1;
+        public const uint ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL = 2;
 
         // ====================================================================
         // Allocator
@@ -716,6 +719,47 @@ namespace Astral.Runtime
             public AstralSpanU8 path;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralToolDesc
+        {
+            public uint size;
+            public uint tool_id;
+            public AstralSpanU8 name;
+            public AstralSpanU8 description;
+            public AstralSpanU8 json_schema;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralToolsetDesc
+        {
+            public uint size;
+            public uint tool_count;
+            public uint choice_mode;
+            public uint _reserved0;
+            public IntPtr tools;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralToolInfo
+        {
+            public uint size;
+            public uint tool_id;
+            public AstralSpanU8 name;
+            public AstralSpanU8 description;
+            public AstralSpanU8 json_schema;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralToolCallResult
+        {
+            public uint size;
+            public uint tool_id;
+            public int parse_status;
+            public uint _reserved0;
+            public AstralSpanU8 name;
+            public AstralSpanU8 arguments_json;
+        }
+
         /// <summary>
         /// Create an inference session.
         /// Thread-safety: Safe to call from multiple threads.
@@ -821,6 +865,27 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_clear_grammar(AstralHandle session);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_toolset_create(ref AstralToolsetDesc desc, out AstralHandle out_toolset);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_toolset_destroy(AstralHandle toolset);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_toolset_count(AstralHandle toolset, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_toolset_get(AstralHandle toolset, uint index, ref AstralToolInfo out_info);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_toolset_parse_call(AstralHandle toolset, AstralSpanU8 generated_text, ref AstralToolCallResult out_result);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_set_toolset(AstralHandle session, AstralHandle toolset, uint choice_mode);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_clear_toolset(AstralHandle session);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_set_slot(AstralHandle session, uint slot_id);

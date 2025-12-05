@@ -40,6 +40,13 @@ AstralHandle load_mock_model(const char* model_path) {
     return model;
 }
 
+AstralSpanU8 span_from_cstr(const char* text) {
+    AstralSpanU8 span{};
+    span.data = reinterpret_cast<const uint8_t*>(text);
+    span.len = static_cast<uint32_t>(std::strlen(text));
+    return span;
+}
+
 uint32_t drain_stream(AstralHandle session, uint32_t max_reads) {
     uint8_t buf[256];
     uint32_t total = 0;
@@ -943,6 +950,141 @@ TEST(inference_grammar_gbnf_mock) {
     const std::string text = read_stream_all(session);
     ASSERT_EQ(text, std::string("aaaaaaaa"));
 
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(inference_toolset_parse_and_bind_mock) {
+    constexpr uint64_t kRuntimeReserveBytes = 64 * 1024 * 1024;
+    constexpr uint32_t kRuntimeThreads = 2;
+    constexpr uint32_t kToolCount = 2;
+    constexpr uint32_t kSearchToolId = 101;
+    constexpr uint32_t kOpenToolId = 202;
+    constexpr uint32_t kOpenToolIndex = 1;
+    constexpr uint32_t kSessionMaxTokens = 4;
+    constexpr uint32_t kExecutorMaxBatchTokens = 8;
+
+    AstralInit cfg = {};
+    cfg.reserve_bytes = kRuntimeReserveBytes;
+    cfg.thread_count = kRuntimeThreads;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const AstralHandle model = load_mock_model(nullptr);
+
+    AstralToolDesc tools[kToolCount]{};
+    tools[0].size = sizeof(AstralToolDesc);
+    tools[0].tool_id = kSearchToolId;
+    tools[0].name = span_from_cstr("search");
+    tools[0].description = span_from_cstr("Search indexed text");
+    tools[0].json_schema = span_from_cstr("{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}");
+    tools[1].size = sizeof(AstralToolDesc);
+    tools[1].tool_id = kOpenToolId;
+    tools[1].name = span_from_cstr("open");
+    tools[1].description = span_from_cstr("Open one result");
+    tools[1].json_schema = span_from_cstr("{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\"}},\"required\":[\"id\"]}");
+
+    AstralToolsetDesc td{};
+    td.size = sizeof(AstralToolsetDesc);
+    td.tool_count = kToolCount;
+    td.choice_mode = ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL;
+    td.tools = tools;
+
+    AstralHandle toolset = 0;
+    err = astral_toolset_create(&td, &toolset);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(toolset));
+
+    uint32_t tool_count = 0;
+    err = astral_toolset_count(toolset, &tool_count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(tool_count, kToolCount);
+
+    AstralToolInfo info{};
+    info.size = sizeof(AstralToolInfo);
+    err = astral_toolset_get(toolset, kOpenToolIndex, &info);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(info.tool_id, kOpenToolId);
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(info.name.data), info.name.len), std::string("open"));
+
+    AstralToolCallResult call{};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr("{\"name\":\"search\",\"arguments\":{\"query\":\"latency\"}}"), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSearchToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+    const std::string search_args(reinterpret_cast<const char*>(call.arguments_json.data), call.arguments_json.len);
+    ASSERT_EQ(search_args, std::string("{\"query\":\"latency\"}"));
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr("{\"tool\":\"open\",\"arguments\":{\"id\":7}}"), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kOpenToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr("{\"name\":\"search\",\"arguments\":\"bad\"}"), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSearchToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_E_INVALID);
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr("plain text"), &call);
+    ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
+
+    AstralSessionDesc sd{};
+    sd.model = model;
+    sd.max_tokens = kSessionMaxTokens;
+    sd.temperature = 0.0f;
+    sd.top_k = 0;
+    sd.top_p = 1.0f;
+    sd.stream_enabled = 1;
+    sd.seed = 1;
+
+    AstralHandle session = 0;
+    err = astral_session_create(&sd, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_session_set_toolset(session, toolset, ASTRAL_TOOL_CHOICE_REQUIRED);
+    ASSERT_EQ(err, ASTRAL_OK);
+    astral_toolset_destroy(toolset);
+    err = astral_session_clear_toolset(session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralHandle toolset2 = 0;
+    err = astral_toolset_create(&td, &toolset2);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = 1;
+    ex.max_batch_tokens = kExecutorMaxBatchTokens;
+    ex.worker_hint = 0;
+    ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
+
+    AstralConvDesc conv_desc{};
+    conv_desc.size = sizeof(AstralConvDesc);
+    conv_desc.model = model;
+    conv_desc.max_tokens = kSessionMaxTokens;
+    conv_desc.temperature = 0.0f;
+    conv_desc.top_k = 0;
+    conv_desc.top_p = 1.0f;
+    conv_desc.stream_enabled = 1;
+    conv_desc.seed = 1;
+
+    AstralHandle conv = 0;
+    err = astral_conv_create(&conv_desc, &conv);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_conv_set_toolset(conv, toolset2, ASTRAL_TOOL_CHOICE_AUTO);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_conv_clear_toolset(conv);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    astral_toolset_destroy(toolset2);
+    astral_conv_destroy(conv);
     astral_session_destroy(session);
     astral_model_release(model);
     astral_shutdown();

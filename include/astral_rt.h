@@ -162,6 +162,46 @@ typedef struct AstralPromptCacheStats {
     uint64_t evictions;
 } AstralPromptCacheStats;
 
+typedef uint32_t AstralToolChoiceMode;
+enum {
+    ASTRAL_TOOL_CHOICE_AUTO = 0,
+    ASTRAL_TOOL_CHOICE_REQUIRED = 1,
+    ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL = 2,
+};
+
+typedef struct AstralToolDesc {
+    uint32_t size;
+    uint32_t tool_id;
+    AstralSpanU8 name;
+    AstralSpanU8 description;
+    AstralSpanU8 json_schema;
+} AstralToolDesc;
+
+typedef struct AstralToolsetDesc {
+    uint32_t size;
+    uint32_t tool_count;
+    AstralToolChoiceMode choice_mode;
+    uint32_t _reserved0;
+    const AstralToolDesc* tools;
+} AstralToolsetDesc;
+
+typedef struct AstralToolInfo {
+    uint32_t size;
+    uint32_t tool_id;
+    AstralSpanU8 name;
+    AstralSpanU8 description;
+    AstralSpanU8 json_schema;
+} AstralToolInfo;
+
+typedef struct AstralToolCallResult {
+    uint32_t size;
+    uint32_t tool_id;
+    int32_t parse_status;
+    uint32_t _reserved0;
+    AstralSpanU8 name;
+    AstralSpanU8 arguments_json;
+} AstralToolCallResult;
+
 // Compile-time validation: Ensure struct sizes are correct
 // Use static_assert for C++ and _Static_assert for C
 #ifdef __cplusplus
@@ -174,10 +214,18 @@ typedef struct AstralPromptCacheStats {
   ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 16, "AstralSpanU8 must be 16 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 16, "AstralMutSpanU8 must be 16 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralPromptCacheKey) == 32, "AstralPromptCacheKey must be 32 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralToolDesc) == 56, "AstralToolDesc must be 56 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralToolsetDesc) == 24, "AstralToolsetDesc must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralToolInfo) == 56, "AstralToolInfo must be 56 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 48, "AstralToolCallResult must be 48 bytes on 64-bit");
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 8, "AstralSpanU8 must be 8 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 8, "AstralMutSpanU8 must be 8 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralPromptCacheKey) == 32, "AstralPromptCacheKey must be 32 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralToolDesc) == 32, "AstralToolDesc must be 32 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralToolsetDesc) == 20, "AstralToolsetDesc must be 20 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralToolInfo) == 32, "AstralToolInfo must be 32 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 32, "AstralToolCallResult must be 32 bytes on 32-bit");
 #endif
 
 // ============================================================================
@@ -1252,6 +1300,22 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_gbnf(AstralHandle se
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_json_schema(AstralHandle session, AstralSpanU8 json_schema);
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_grammar(AstralHandle session);
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_create(const AstralToolsetDesc* desc, AstralHandle* out_toolset);
+ASTRAL_API void ASTRAL_CALL astral_toolset_destroy(AstralHandle toolset);
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_count(AstralHandle toolset, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_get(AstralHandle toolset, uint32_t index, AstralToolInfo* out_info);
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_parse_call(
+    AstralHandle toolset,
+    AstralSpanU8 generated_text,
+    AstralToolCallResult* out_result
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_toolset(
+    AstralHandle session,
+    AstralHandle toolset,
+    AstralToolChoiceMode choice_mode
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_toolset(AstralHandle session);
+
 /**
  * Set the session slot/sequence id (for providers that support parallel slots).
  *
@@ -1414,6 +1478,12 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_set_gbnf(
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_set_json_schema(
     AstralHandle conv, AstralSpanU8 json_schema);
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_clear(AstralHandle conv);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_toolset(
+    AstralHandle conv,
+    AstralHandle toolset,
+    AstralToolChoiceMode choice_mode
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_clear_toolset(AstralHandle conv);
 
 ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read(AstralHandle conv, AstralMutSpanU8 out_buf, uint32_t timeout_ms);
 ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(

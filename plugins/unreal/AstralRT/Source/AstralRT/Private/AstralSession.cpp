@@ -457,6 +457,62 @@ bool UAstralSession::GetAdapter(int32 Index, int64& OutAdapterHandle, float& Out
     return true;
 }
 
+bool UAstralSession::SetToolset(int64 ToolsetHandle, EAstralToolChoiceMode ChoiceMode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_SetToolset);
+
+    if (!IsValid() || ToolsetHandle == 0)
+    {
+        return false;
+    }
+
+    AstralToolChoiceMode NativeChoice = ASTRAL_TOOL_CHOICE_AUTO;
+    switch (ChoiceMode)
+    {
+    case EAstralToolChoiceMode::Required:
+        NativeChoice = ASTRAL_TOOL_CHOICE_REQUIRED;
+        break;
+    case EAstralToolChoiceMode::TextOrTool:
+        NativeChoice = ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL;
+        break;
+    case EAstralToolChoiceMode::Auto:
+    default:
+        break;
+    }
+
+    const AstralErr Err = astral_session_set_toolset(
+        static_cast<AstralHandle>(SessionHandle),
+        static_cast<AstralHandle>(ToolsetHandle),
+        NativeChoice
+    );
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_set_toolset failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
+bool UAstralSession::ClearToolset()
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_ClearToolset);
+
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    const AstralErr Err = astral_session_clear_toolset(static_cast<AstralHandle>(SessionHandle));
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_clear_toolset failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
 bool UAstralSession::StopClear()
 {
     if (!IsValid())
