@@ -72,6 +72,11 @@ FString UAstralBlueprintLibrary::ErrorCodeName(int32 ErrorCode)
     }
 }
 
+int32 UAstralBlueprintLibrary::MaxSessionAdapters()
+{
+    return static_cast<int32>(ASTRAL_SESSION_ADAPTERS_MAX);
+}
+
 bool UAstralBlueprintLibrary::HasEmbeddings(int64 Caps)
 {
     return has_cap(Caps, ASTRAL_CAP_EMBEDDINGS);

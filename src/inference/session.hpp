@@ -137,8 +137,8 @@ struct Session {
 
     // Adapters (fixed-size list; session-scoped).
     uint32_t adapter_count;
-    AstralHandle adapter_handles[8];
-    float adapter_scales[8];
+    AstralHandle adapter_handles[ASTRAL_SESSION_ADAPTERS_MAX];
+    float adapter_scales[ASTRAL_SESSION_ADAPTERS_MAX];
 
     // Slot id (for providers that support parallel slots).
     uint32_t slot_id;
@@ -281,6 +281,8 @@ AstralErr session_state_load(Session* session, AstralSpanU8 state_bytes);
 /// Attach adapters to a session.
 AstralErr session_adapters_clear(Session* session);
 AstralErr session_adapters_add(Session* session, AstralHandle adapter, float scale);
+AstralErr session_adapters_count(Session* session, uint32_t* out_count);
+AstralErr session_adapters_get(Session* session, uint32_t index, AstralHandle* out_adapter, float* out_scale);
 
 /// Configure grammar-constrained decoding.
 AstralErr session_set_grammar_gbnf(Session* session, AstralSpanU8 gbnf, AstralSpanU8 root);

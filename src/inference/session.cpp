@@ -1504,7 +1504,7 @@ AstralErr session_adapters_add(Session* session, AstralHandle adapter, float sca
     if (state == SessionState::Decoding) {
         return ASTRAL_E_STATE;
     }
-    if (session->adapter_count >= 8) {
+    if (session->adapter_count >= ASTRAL_SESSION_ADAPTERS_MAX) {
         return ASTRAL_E_NOMEM;
     }
     if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
@@ -1531,6 +1531,26 @@ AstralErr session_adapters_add(Session* session, AstralHandle adapter, float sca
     const uint32_t idx = session->adapter_count++;
     session->adapter_handles[idx] = adapter;
     session->adapter_scales[idx] = scale;
+    return ASTRAL_OK;
+}
+
+AstralErr session_adapters_count(Session* session, uint32_t* out_count) {
+    if (session == nullptr || out_count == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    *out_count = session->adapter_count;
+    return ASTRAL_OK;
+}
+
+AstralErr session_adapters_get(Session* session, uint32_t index, AstralHandle* out_adapter, float* out_scale) {
+    if (session == nullptr || out_adapter == nullptr || out_scale == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (index >= session->adapter_count) {
+        return ASTRAL_E_NOT_FOUND;
+    }
+    *out_adapter = session->adapter_handles[index];
+    *out_scale = session->adapter_scales[index];
     return ASTRAL_OK;
 }
 

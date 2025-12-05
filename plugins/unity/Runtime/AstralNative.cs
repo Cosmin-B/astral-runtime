@@ -270,6 +270,7 @@ namespace Astral.Runtime
         // ====================================================================
 
         public const int ASTRAL_LOGPROBS_MAX = 16;
+        public const int ASTRAL_SESSION_ADAPTERS_MAX = 8;
 
         // ====================================================================
         // Allocator
@@ -805,6 +806,12 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_adapters_add(AstralHandle session, AstralHandle adapter, float scale);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_adapters_count(AstralHandle session, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_adapters_get(AstralHandle session, uint index, out AstralHandle out_adapter, out float out_scale);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_set_grammar_gbnf(AstralHandle session, AstralSpanU8 gbnf, AstralSpanU8 root);

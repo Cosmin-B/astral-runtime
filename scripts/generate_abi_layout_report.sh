@@ -187,6 +187,7 @@ int main() {
     EMIT_CONST(ASTRAL_SESSION_COMPLETED);
     EMIT_CONST(ASTRAL_SESSION_CANCELED);
     EMIT_CONST(ASTRAL_SESSION_FAILED);
+    EMIT_CONST(ASTRAL_SESSION_ADAPTERS_MAX);
 
     std::printf("\n  ]\n");
     std::printf("}\n");
@@ -207,6 +208,7 @@ if [[ "${check_only}" -eq 1 ]]; then
   grep -q '"name":"ASTRAL_E_NOT_FOUND","value":-9' "${report}"
   grep -q '"name":"ASTRAL_MODEL_SOURCE_IO","value":2' "${report}"
   grep -q '"name":"ASTRAL_SESSION_FAILED","value":5' "${report}"
+  grep -q '"name":"ASTRAL_SESSION_ADAPTERS_MAX","value":8' "${report}"
   grep -q '"name":"ASTRAL_CAP_MM_EMBEDDINGS","value":134217728' "${report}"
   grep -q '"name":"ASTRAL_GPU_ROUTE_STREAM","value":4' "${report}"
   exit 0

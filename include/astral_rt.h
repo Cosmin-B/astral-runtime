@@ -264,6 +264,9 @@ typedef struct AstralAudioDesc {
 // This keeps the meta side-channel fixed-size and allocation-free.
 #define ASTRAL_LOGPROBS_MAX 16u
 
+// Maximum number of LoRA/adapters attached to one session.
+#define ASTRAL_SESSION_ADAPTERS_MAX 8u
+
 /**
  * Error codes.
  * All functions return AstralErr (0 = success).
@@ -1190,6 +1193,13 @@ ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter);
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_clear(AstralHandle session);
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_add(AstralHandle session, AstralHandle adapter, float scale);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_count(AstralHandle session, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_get(
+    AstralHandle session,
+    uint32_t index,
+    AstralHandle* out_adapter,
+    float* out_scale
+);
 
 /**
  * Create a bounded token prompt cache.

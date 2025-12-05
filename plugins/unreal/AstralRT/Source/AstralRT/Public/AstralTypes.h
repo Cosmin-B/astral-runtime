@@ -14,7 +14,8 @@ enum class EAstralError : int32
     State = -5,
     Backend = -6,
     Canceled = -7,
-    Unsupported = -8
+    Unsupported = -8,
+    NotFound = -9
 };
 
 /** Pixel layouts accepted by Astral image media calls. */
@@ -262,6 +263,21 @@ struct ASTRALRT_API FAstralModelMediaDesc
     /** Backend-specific stream pointer encoded as an integer for Blueprint transport. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
     int64 GpuStream = 0;
+};
+
+/** LoRA or adapter payload loaded against a native model. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralAdapterDesc
+{
+    GENERATED_BODY()
+
+    /** Filesystem path to an adapter file. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    FString AdapterPath;
+
+    /** Root for relative AdapterPath values. Absolute paths are passed through unchanged. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    EAstralUnrealPathRoot PathRoot = EAstralUnrealPathRoot::Raw;
 };
 
 /** Media capabilities reported after InitMedia succeeds. */

@@ -36,6 +36,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "Astral|Diagnostics")
     static FString ErrorCodeName(int32 ErrorCode);
 
+    /** Maximum number of adapters that can be attached to one session. */
+    UFUNCTION(BlueprintPure, Category = "Astral|Adapters")
+    static int32 MaxSessionAdapters();
+
     /** True when the capability bitmask contains embeddings support. */
     UFUNCTION(BlueprintPure, Category = "Astral|Capabilities")
     static bool HasEmbeddings(int64 Caps);
