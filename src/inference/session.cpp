@@ -69,6 +69,8 @@ Session::Session(Model* model_,
     , adapter_count(0)
     , adapter_handles{}
     , adapter_scales{}
+    , toolset(nullptr)
+    , tool_choice_mode(ASTRAL_TOOL_CHOICE_AUTO)
     , slot_id(0)
     , worker_id(0) {}
 
@@ -774,6 +776,11 @@ void session_destroy(Session* session) {
     }
 
     session_prompt_chunks_clear(session);
+
+    if (session->toolset != nullptr) {
+        toolset_release(session->toolset);
+        session->toolset = nullptr;
+    }
 
     // Release allocator memory
     if (session->allocator_memory != nullptr) {
@@ -1614,6 +1621,46 @@ AstralErr session_clear_grammar(Session* session) {
         return ASTRAL_E_UNSUPPORTED;
     }
     return ops->session_grammar_clear(session->backend_session_ctx);
+}
+
+AstralErr session_set_toolset(Session* session, Toolset* toolset, AstralToolChoiceMode choice_mode) {
+    if (session == nullptr || toolset == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (choice_mode != ASTRAL_TOOL_CHOICE_AUTO && choice_mode != ASTRAL_TOOL_CHOICE_REQUIRED &&
+        choice_mode != ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    toolset_retain(toolset);
+    Toolset* old = session->toolset;
+    session->toolset = toolset;
+    session->tool_choice_mode = choice_mode;
+    if (old != nullptr) {
+        toolset_release(old);
+    }
+    return ASTRAL_OK;
+}
+
+AstralErr session_clear_toolset(Session* session) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    Toolset* old = session->toolset;
+    session->toolset = nullptr;
+    session->tool_choice_mode = ASTRAL_TOOL_CHOICE_AUTO;
+    if (old != nullptr) {
+        toolset_release(old);
+    }
+    return ASTRAL_OK;
 }
 
 AstralErr session_set_slot(Session* session, uint32_t slot_id) {

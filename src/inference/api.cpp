@@ -12,6 +12,7 @@
 #include "conversation_runtime.hpp"
 #include "embedder.hpp"
 #include "adapter.hpp"
+#include "tooling.hpp"
 #include "../core/error.hpp"
 #include "../core/abi_guard.hpp"
 #include "../core/handles.hpp"
@@ -39,6 +40,12 @@ inline void set_err_code(AstralErr err) {
 inline astral::inference::Model* lookup_model(AstralHandle model) {
     return static_cast<astral::inference::Model*>(
         astral::core::lookup_handle(model, astral::core::HandleKind::Model)
+    );
+}
+
+inline astral::inference::Toolset* lookup_toolset(AstralHandle toolset) {
+    return static_cast<astral::inference::Toolset*>(
+        astral::core::lookup_handle(toolset, astral::core::HandleKind::Toolset)
     );
 }
 
@@ -453,6 +460,107 @@ ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter) {
 
     astral::inference::adapter_release(a);
     ASTRAL_ABI_CATCH_END_VOID()
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_create(const AstralToolsetDesc* desc, AstralHandle* out_toolset) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (desc == nullptr || out_toolset == nullptr) {
+        set_err_invalid("desc/out_toolset");
+        return ASTRAL_E_INVALID;
+    }
+
+    astral::inference::Toolset* toolset = nullptr;
+    const AstralErr err = astral::inference::toolset_create(desc, &toolset);
+    if (err == ASTRAL_OK) {
+        *out_toolset = toolset->handle;
+    } else {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API void ASTRAL_CALL astral_toolset_destroy(AstralHandle toolset) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (toolset == 0) {
+        set_err_invalid("toolset");
+        return;
+    }
+
+    auto* ts = lookup_toolset(toolset);
+    if (ts == nullptr) {
+        set_err_invalid("toolset (invalid handle)");
+        return;
+    }
+    astral::inference::toolset_release(ts);
+    ASTRAL_ABI_CATCH_END_VOID()
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_count(AstralHandle toolset, uint32_t* out_count) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (toolset == 0 || out_count == nullptr) {
+        set_err_invalid("toolset/out_count");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* ts = lookup_toolset(toolset);
+    if (ts == nullptr) {
+        set_err_invalid("toolset (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::toolset_count(ts, out_count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_get(AstralHandle toolset, uint32_t index, AstralToolInfo* out_info) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (toolset == 0 || out_info == nullptr) {
+        set_err_invalid("toolset/out_info");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* ts = lookup_toolset(toolset);
+    if (ts == nullptr) {
+        set_err_invalid("toolset (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::toolset_get(ts, index, out_info);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_parse_call(
+    AstralHandle toolset,
+    AstralSpanU8 generated_text,
+    AstralToolCallResult* out_result
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (toolset == 0 || out_result == nullptr) {
+        set_err_invalid("toolset/out_result");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* ts = lookup_toolset(toolset);
+    if (ts == nullptr) {
+        set_err_invalid("toolset (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::toolset_parse_call(ts, generated_text, out_result);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_create(const AstralPromptCacheDesc* desc, AstralHandle* out_cache) {
@@ -1909,6 +2017,55 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_grammar(AstralHandle sessi
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_toolset(
+    AstralHandle session,
+    AstralHandle toolset,
+    AstralToolChoiceMode choice_mode
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (session == 0 || toolset == 0) {
+        set_err_invalid("session/toolset");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* s =
+        static_cast<astral::inference::Session*>(astral::core::lookup_handle(session, astral::core::HandleKind::Session));
+    auto* ts = lookup_toolset(toolset);
+    if (s == nullptr || ts == nullptr) {
+        set_err_invalid("session/toolset (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::session_set_toolset(s, ts, choice_mode);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_toolset(AstralHandle session) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (session == 0) {
+        set_err_invalid("session");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* s =
+        static_cast<astral::inference::Session*>(astral::core::lookup_handle(session, astral::core::HandleKind::Session));
+    if (s == nullptr) {
+        set_err_invalid("session (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::session_clear_toolset(s);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_slot(AstralHandle session, uint32_t slot_id) {
     ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
@@ -2545,6 +2702,55 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_clear(AstralHandle conv) {
     }
 
     const AstralErr err = astral::inference::conv_grammar_clear(c);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_toolset(
+    AstralHandle conv,
+    AstralHandle toolset,
+    AstralToolChoiceMode choice_mode
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0 || toolset == 0) {
+        set_err_invalid("conv/toolset");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    auto* ts = lookup_toolset(toolset);
+    if (c == nullptr || ts == nullptr) {
+        set_err_invalid("conv/toolset (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_set_toolset(c, ts, choice_mode);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_clear_toolset(AstralHandle conv) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_clear_toolset(c);
     if (err != ASTRAL_OK) {
         set_err_code(err);
     }

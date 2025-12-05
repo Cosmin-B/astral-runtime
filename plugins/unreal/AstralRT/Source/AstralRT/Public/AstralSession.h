@@ -94,6 +94,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
     bool GetAdapter(int32 Index, int64& OutAdapterHandle, float& OutScale) const;
 
+    /** Bind a native toolset handle for structured output. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
+    bool SetToolset(int64 ToolsetHandle, EAstralToolChoiceMode ChoiceMode = EAstralToolChoiceMode::Auto);
+
+    /** Clear any structured-output toolset binding. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
+    bool ClearToolset();
+
     /** Clear all native stop sequences for this session. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool StopClear();
