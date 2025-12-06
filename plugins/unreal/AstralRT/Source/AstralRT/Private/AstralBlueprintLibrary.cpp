@@ -12,6 +12,7 @@
 namespace {
 
 static constexpr int32 kInlineToolCapacity = 8;
+static constexpr int32 kInlineChunkRangeCapacity = 32;
 
 static UObject* resolve_outer(UObject* Outer)
 {
@@ -36,6 +37,56 @@ static AstralToolChoiceMode to_native_tool_choice(EAstralToolChoiceMode Mode)
     default:
         return ASTRAL_TOOL_CHOICE_AUTO;
     }
+}
+
+static AstralChunkMode to_native_chunk_mode(EAstralChunkMode Mode)
+{
+    switch (Mode)
+    {
+    case EAstralChunkMode::Char:
+        return ASTRAL_CHUNK_MODE_CHAR;
+    case EAstralChunkMode::Word:
+        return ASTRAL_CHUNK_MODE_WORD;
+    case EAstralChunkMode::Sentence:
+        return ASTRAL_CHUNK_MODE_SENTENCE;
+    case EAstralChunkMode::Token:
+        return ASTRAL_CHUNK_MODE_TOKEN;
+    case EAstralChunkMode::None:
+    default:
+        return ASTRAL_CHUNK_MODE_NONE;
+    }
+}
+
+static void fill_native_chunker(const FAstralChunkerDesc& Source, const FTCHARToUTF8& DelimitersUtf8, AstralChunkerDesc& Out)
+{
+    Out = AstralChunkerDesc{};
+    Out.size = sizeof(AstralChunkerDesc);
+    Out.mode = to_native_chunk_mode(Source.Mode);
+    Out.max_units = static_cast<uint32_t>(Source.MaxUnits);
+    Out.overlap_units = static_cast<uint32_t>(Source.OverlapUnits);
+    Out.document_id = static_cast<uint32_t>(Source.DocumentId);
+    Out.group_id = static_cast<uint32_t>(Source.GroupId);
+    Out.delimiters.data = reinterpret_cast<const uint8_t*>(DelimitersUtf8.Get());
+    Out.delimiters.len = static_cast<uint32_t>(DelimitersUtf8.Length());
+}
+
+static FAstralChunkRange from_native_chunk_range(const AstralChunkRange& Native)
+{
+    FAstralChunkRange Range;
+    Range.DocumentId = static_cast<int32>(Native.document_id);
+    Range.ChunkId = static_cast<int32>(Native.chunk_id);
+    Range.GroupId = static_cast<int32>(Native.group_id);
+    Range.ByteBegin = static_cast<int32>(Native.byte_begin);
+    Range.ByteEnd = static_cast<int32>(Native.byte_end);
+    Range.TokenBegin = static_cast<int32>(Native.token_begin);
+    Range.TokenEnd = static_cast<int32>(Native.token_end);
+    return Range;
+}
+
+static bool chunker_desc_valid_for_blueprint(const FAstralChunkerDesc& Desc)
+{
+    return Desc.MaxUnits > 0 && Desc.OverlapUnits >= 0 && Desc.OverlapUnits < Desc.MaxUnits &&
+           Desc.DocumentId >= 0 && Desc.GroupId >= 0;
 }
 
 static FString utf8_span_to_string(AstralSpanU8 Span)
@@ -222,6 +273,111 @@ bool UAstralBlueprintLibrary::ParseToolCall(
     OutResult.ToolId = static_cast<int32>(Native.tool_id);
     OutResult.Name = utf8_span_to_string(Native.name);
     OutResult.ArgumentsJson = utf8_span_to_string(Native.arguments_json);
+    return true;
+}
+
+bool UAstralBlueprintLibrary::ChunkText(
+    const FString& Text,
+    const FAstralChunkerDesc& Desc,
+    TArray<FAstralChunkRange>& OutRanges,
+    int32& OutErrorCode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ChunkText);
+
+    OutRanges.Reset();
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (!chunker_desc_valid_for_blueprint(Desc) || Desc.Mode == EAstralChunkMode::Token)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    FTCHARToUTF8 TextUtf8(*Text);
+    FTCHARToUTF8 DelimitersUtf8(*Desc.Delimiters);
+    AstralChunkerDesc NativeDesc{};
+    fill_native_chunker(Desc, DelimitersUtf8, NativeDesc);
+
+    AstralSpanU8 NativeText{};
+    NativeText.data = reinterpret_cast<const uint8_t*>(TextUtf8.Get());
+    NativeText.len = static_cast<uint32_t>(TextUtf8.Length());
+
+    uint32_t Required = 0;
+    AstralErr Err = astral_chunk_count(&NativeDesc, NativeText, &Required);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    if (Required == 0)
+    {
+        return true;
+    }
+
+    TArray<AstralChunkRange, TInlineAllocator<kInlineChunkRangeCapacity>> NativeRanges;
+    NativeRanges.SetNumZeroed(static_cast<int32>(Required));
+    Err = astral_chunk_ranges(&NativeDesc, NativeText, NativeRanges.GetData(), Required, &Required);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+
+    OutRanges.Reserve(static_cast<int32>(Required));
+    for (uint32_t Index = 0; Index < Required; ++Index)
+    {
+        OutRanges.Add(from_native_chunk_range(NativeRanges[static_cast<int32>(Index)]));
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::ChunkTokens(
+    int32 TokenCount,
+    const FAstralChunkerDesc& Desc,
+    TArray<FAstralChunkRange>& OutRanges,
+    int32& OutErrorCode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ChunkTokens);
+
+    OutRanges.Reset();
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (!chunker_desc_valid_for_blueprint(Desc) || Desc.Mode != EAstralChunkMode::Token || TokenCount < 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    FTCHARToUTF8 DelimitersUtf8(*Desc.Delimiters);
+    AstralChunkerDesc NativeDesc{};
+    fill_native_chunker(Desc, DelimitersUtf8, NativeDesc);
+
+    uint32_t Required = 0;
+    AstralErr Err = astral_token_chunk_count(&NativeDesc, static_cast<uint32_t>(TokenCount), &Required);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    if (Required == 0)
+    {
+        return true;
+    }
+
+    TArray<AstralChunkRange, TInlineAllocator<kInlineChunkRangeCapacity>> NativeRanges;
+    NativeRanges.SetNumZeroed(static_cast<int32>(Required));
+    Err = astral_token_chunk_ranges(&NativeDesc, static_cast<uint32_t>(TokenCount), NativeRanges.GetData(), Required, &Required);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+
+    OutRanges.Reserve(static_cast<int32>(Required));
+    for (uint32_t Index = 0; Index < Required; ++Index)
+    {
+        OutRanges.Add(from_native_chunk_range(NativeRanges[static_cast<int32>(Index)]));
+    }
     return true;
 }
 

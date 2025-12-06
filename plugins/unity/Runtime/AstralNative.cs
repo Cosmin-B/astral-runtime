@@ -760,6 +760,49 @@ namespace Astral.Runtime
             public AstralSpanU8 arguments_json;
         }
 
+        public enum AstralChunkMode : uint
+        {
+            None = 0,
+            Char = 1,
+            Word = 2,
+            Sentence = 3,
+            Token = 4
+        }
+
+        [Flags]
+        public enum AstralChunkFlags : uint
+        {
+            None = 0,
+            KeepEmpty = 1u << 0
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralChunkerDesc
+        {
+            public uint size;
+            public AstralChunkMode mode;
+            public uint max_units;
+            public uint overlap_units;
+            public uint document_id;
+            public uint group_id;
+            public AstralChunkFlags flags;
+            public uint _reserved0;
+            public AstralSpanU8 delimiters;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralChunkRange
+        {
+            public uint size;
+            public uint document_id;
+            public uint chunk_id;
+            public uint group_id;
+            public uint byte_begin;
+            public uint byte_end;
+            public uint token_begin;
+            public uint token_end;
+        }
+
         /// <summary>
         /// Create an inference session.
         /// Thread-safety: Safe to call from multiple threads.
@@ -886,6 +929,21 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_clear_toolset(AstralHandle session);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_chunk_count(ref AstralChunkerDesc desc, AstralSpanU8 text, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_chunk_ranges(ref AstralChunkerDesc desc, AstralSpanU8 text, AstralChunkRange* out_ranges, uint max_ranges, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_chunk_text_copy(AstralSpanU8 text, ref AstralChunkRange range, AstralMutSpanU8 out_text, out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_token_chunk_count(ref AstralChunkerDesc desc, uint token_count, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_token_chunk_ranges(ref AstralChunkerDesc desc, uint token_count, AstralChunkRange* out_ranges, uint max_ranges, out uint out_count);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_set_slot(AstralHandle session, uint slot_id);

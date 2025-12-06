@@ -124,6 +124,8 @@ int main() {
     EMIT_STRUCT(AstralToolsetDesc);
     EMIT_STRUCT(AstralToolInfo);
     EMIT_STRUCT(AstralToolCallResult);
+    EMIT_STRUCT(AstralChunkerDesc);
+    EMIT_STRUCT(AstralChunkRange);
     EMIT_STRUCT(AstralStats);
 
     std::printf("\n  ],\n");
@@ -195,6 +197,12 @@ int main() {
     EMIT_CONST(ASTRAL_TOOL_CHOICE_AUTO);
     EMIT_CONST(ASTRAL_TOOL_CHOICE_REQUIRED);
     EMIT_CONST(ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_NONE);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_CHAR);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_WORD);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_SENTENCE);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_TOKEN);
+    EMIT_CONST(ASTRAL_CHUNK_FLAG_KEEP_EMPTY);
 
     std::printf("\n  ]\n");
     std::printf("}\n");
@@ -218,6 +226,8 @@ if [[ "${check_only}" -eq 1 ]]; then
   grep -q '"name":"ASTRAL_SESSION_FAILED","value":5' "${report}"
   grep -q '"name":"ASTRAL_SESSION_ADAPTERS_MAX","value":8' "${report}"
   grep -q '"name":"ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL","value":2' "${report}"
+  grep -q '"name":"AstralChunkRange"' "${report}"
+  grep -q '"name":"ASTRAL_CHUNK_MODE_TOKEN","value":4' "${report}"
   grep -q '"name":"ASTRAL_CAP_MM_EMBEDDINGS","value":134217728' "${report}"
   grep -q '"name":"ASTRAL_GPU_ROUTE_STREAM","value":4' "${report}"
   exit 0
