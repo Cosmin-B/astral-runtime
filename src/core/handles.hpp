@@ -32,6 +32,7 @@ enum class HandleKind : uint32_t {
     Conversation = 5,
     PromptCache = 6,
     Toolset = 7,
+    MemoryIndex = 8,
 };
 
 inline constexpr uint32_t kMaxHandles = 8192;

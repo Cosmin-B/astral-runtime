@@ -239,6 +239,60 @@ typedef struct AstralChunkRange {
     uint32_t token_end;
 } AstralChunkRange;
 
+typedef uint32_t AstralMemoryMetric;
+enum {
+    ASTRAL_MEMORY_METRIC_DOT = 0,
+    ASTRAL_MEMORY_METRIC_COSINE = 1,
+    ASTRAL_MEMORY_METRIC_L2 = 2,
+};
+
+typedef uint32_t AstralMemoryIndexKind;
+enum {
+    ASTRAL_MEMORY_INDEX_FLAT = 0,
+};
+
+enum {
+    ASTRAL_MEMORY_GROUP_ANY = 0xFFFFFFFFu,
+};
+
+typedef struct AstralMemoryIndexDesc {
+    uint32_t size;
+    uint32_t dim;
+    uint32_t capacity;
+    AstralMemoryMetric metric;
+    AstralMemoryIndexKind index_kind;
+    uint32_t _reserved0;
+    uint32_t _reserved1;
+    uint32_t _reserved2;
+} AstralMemoryIndexDesc;
+
+typedef struct AstralMemoryRecord {
+    uint32_t size;
+    uint32_t group_id;
+    uint64_t key;
+    uint32_t document_id;
+    uint32_t chunk_id;
+    uint32_t flags;
+    uint32_t _reserved0;
+} AstralMemoryRecord;
+
+typedef struct AstralMemorySearchDesc {
+    uint32_t size;
+    uint32_t top_k;
+    uint32_t group_id;
+    uint32_t flags;
+} AstralMemorySearchDesc;
+
+typedef struct AstralMemorySearchResult {
+    uint32_t size;
+    uint32_t group_id;
+    uint64_t key;
+    uint32_t document_id;
+    uint32_t chunk_id;
+    float score;
+    uint32_t flags;
+} AstralMemorySearchResult;
+
 // Compile-time validation: Ensure struct sizes are correct
 // Use static_assert for C++ and _Static_assert for C
 #ifdef __cplusplus
@@ -257,6 +311,10 @@ typedef struct AstralChunkRange {
   ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 48, "AstralToolCallResult must be 48 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralChunkerDesc) == 48, "AstralChunkerDesc must be 48 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 32, "AstralMemoryIndexDesc must be 32 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryRecord) == 32, "AstralMemoryRecord must be 32 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 16, "AstralMemorySearchDesc must be 16 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32, "AstralMemorySearchResult must be 32 bytes on 64-bit");
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 8, "AstralSpanU8 must be 8 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 8, "AstralMutSpanU8 must be 8 bytes on 32-bit");
@@ -267,6 +325,10 @@ typedef struct AstralChunkRange {
   ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 32, "AstralToolCallResult must be 32 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralChunkerDesc) == 40, "AstralChunkerDesc must be 40 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 32, "AstralMemoryIndexDesc must be 32 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryRecord) == 32, "AstralMemoryRecord must be 32 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 16, "AstralMemorySearchDesc must be 16 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32, "AstralMemorySearchResult must be 32 bytes on 32-bit");
 #endif
 
 // ============================================================================
@@ -952,6 +1014,33 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_token_chunk_ranges(
     AstralChunkRange* out_ranges,
     uint32_t max_ranges,
     uint32_t* out_count
+);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_create(const AstralMemoryIndexDesc* desc, AstralHandle* out_index);
+ASTRAL_API void ASTRAL_CALL astral_memory_destroy(AstralHandle index);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_count(AstralHandle index, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_clear(AstralHandle index);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_add_batch(
+    AstralHandle index,
+    const AstralMemoryRecord* records,
+    const float* vectors,
+    uint32_t count
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_remove(AstralHandle index, uint64_t key);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search(
+    AstralHandle index,
+    const AstralMemorySearchDesc* desc,
+    const float* query,
+    AstralMemorySearchResult* out_results,
+    uint32_t max_results,
+    uint32_t* out_count
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save_size(AstralHandle index, uint64_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save(AstralHandle index, AstralMutSpanU8 out_bytes, uint64_t* out_written);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
+    const AstralMemoryIndexDesc* desc,
+    AstralSpanU8 bytes,
+    AstralHandle* out_index
 );
 
 /**

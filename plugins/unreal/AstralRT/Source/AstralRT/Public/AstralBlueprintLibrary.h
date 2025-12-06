@@ -60,6 +60,35 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
     static bool ChunkTokens(int32 TokenCount, const FAstralChunkerDesc& Desc, TArray<FAstralChunkRange>& OutRanges, int32& OutErrorCode);
 
+    /** Create a native flat vector memory index. Release it with DestroyMemoryIndex. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool CreateMemoryIndex(const FAstralMemoryIndexDesc& Desc, int64& OutMemoryHandle, int32& OutErrorCode);
+
+    /** Release a native memory index handle. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static void DestroyMemoryIndex(int64 MemoryHandle);
+
+    /** Add records and row-major vectors to a native memory index. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool AddMemoryBatch(
+        int64 MemoryHandle,
+        const TArray<FAstralMemoryRecord>& Records,
+        const TArray<float>& Vectors,
+        int32 Dimension,
+        int32& OutErrorCode
+    );
+
+    /** Search a native memory index with one query vector. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool SearchMemoryIndex(
+        int64 MemoryHandle,
+        const TArray<float>& Query,
+        int32 TopK,
+        int32 GroupId,
+        TArray<FAstralMemorySearchResult>& OutResults,
+        int32& OutErrorCode
+    );
+
     /** True when the capability bitmask contains embeddings support. */
     UFUNCTION(BlueprintPure, Category = "Astral|Capabilities")
     static bool HasEmbeddings(int64 Caps);

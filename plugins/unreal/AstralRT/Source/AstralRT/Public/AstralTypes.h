@@ -83,6 +83,15 @@ enum class EAstralChunkMode : uint8
     Token = 4
 };
 
+/** Similarity metric used by native memory search. */
+UENUM(BlueprintType)
+enum class EAstralMemoryMetric : uint8
+{
+    Dot = 0,
+    Cosine = 1,
+    L2 = 2
+};
+
 /** Root used to resolve relative filesystem paths before they cross the C ABI. */
 UENUM(BlueprintType)
 enum class EAstralUnrealPathRoot : uint8
@@ -409,6 +418,69 @@ struct ASTRALRT_API FAstralChunkRange
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Chunking")
     int32 TokenEnd = 0;
+};
+
+/** Fixed-size native vector memory index settings. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralMemoryIndexDesc
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int32 Dimension = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int32 Capacity = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    EAstralMemoryMetric Metric = EAstralMemoryMetric::Cosine;
+};
+
+/** Metadata associated with one vector in a native memory index. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralMemoryRecord
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int64 Key = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int32 GroupId = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int32 DocumentId = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int32 ChunkId = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int32 Flags = 0;
+};
+
+/** Result from a native memory search. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralMemorySearchResult
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int64 Key = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 GroupId = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 DocumentId = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 ChunkId = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    float Score = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 Flags = 0;
 };
 
 /** Media capabilities reported after InitMedia succeeds. */

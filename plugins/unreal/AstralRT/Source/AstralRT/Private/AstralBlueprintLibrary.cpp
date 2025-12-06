@@ -13,6 +13,8 @@ namespace {
 
 static constexpr int32 kInlineToolCapacity = 8;
 static constexpr int32 kInlineChunkRangeCapacity = 32;
+static constexpr int32 kInlineMemoryRecordCapacity = 32;
+static constexpr int32 kInlineMemoryResultCapacity = 16;
 
 static UObject* resolve_outer(UObject* Outer)
 {
@@ -57,6 +59,20 @@ static AstralChunkMode to_native_chunk_mode(EAstralChunkMode Mode)
     }
 }
 
+static AstralMemoryMetric to_native_memory_metric(EAstralMemoryMetric Metric)
+{
+    switch (Metric)
+    {
+    case EAstralMemoryMetric::Dot:
+        return ASTRAL_MEMORY_METRIC_DOT;
+    case EAstralMemoryMetric::L2:
+        return ASTRAL_MEMORY_METRIC_L2;
+    case EAstralMemoryMetric::Cosine:
+    default:
+        return ASTRAL_MEMORY_METRIC_COSINE;
+    }
+}
+
 static void fill_native_chunker(const FAstralChunkerDesc& Source, const FTCHARToUTF8& DelimitersUtf8, AstralChunkerDesc& Out)
 {
     Out = AstralChunkerDesc{};
@@ -81,6 +97,18 @@ static FAstralChunkRange from_native_chunk_range(const AstralChunkRange& Native)
     Range.TokenBegin = static_cast<int32>(Native.token_begin);
     Range.TokenEnd = static_cast<int32>(Native.token_end);
     return Range;
+}
+
+static FAstralMemorySearchResult from_native_memory_result(const AstralMemorySearchResult& Native)
+{
+    FAstralMemorySearchResult Result;
+    Result.Key = static_cast<int64>(Native.key);
+    Result.GroupId = static_cast<int32>(Native.group_id);
+    Result.DocumentId = static_cast<int32>(Native.document_id);
+    Result.ChunkId = static_cast<int32>(Native.chunk_id);
+    Result.Score = Native.score;
+    Result.Flags = static_cast<int32>(Native.flags);
+    return Result;
 }
 
 static bool chunker_desc_valid_for_blueprint(const FAstralChunkerDesc& Desc)
@@ -377,6 +405,144 @@ bool UAstralBlueprintLibrary::ChunkTokens(
     for (uint32_t Index = 0; Index < Required; ++Index)
     {
         OutRanges.Add(from_native_chunk_range(NativeRanges[static_cast<int32>(Index)]));
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::CreateMemoryIndex(
+    const FAstralMemoryIndexDesc& Desc,
+    int64& OutMemoryHandle,
+    int32& OutErrorCode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateMemoryIndex);
+
+    OutMemoryHandle = 0;
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (Desc.Dimension <= 0 || Desc.Capacity <= 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    AstralMemoryIndexDesc Native{};
+    Native.size = sizeof(AstralMemoryIndexDesc);
+    Native.dim = static_cast<uint32_t>(Desc.Dimension);
+    Native.capacity = static_cast<uint32_t>(Desc.Capacity);
+    Native.metric = to_native_memory_metric(Desc.Metric);
+    Native.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+
+    AstralHandle Handle = 0;
+    const AstralErr Err = astral_memory_create(&Native, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    OutMemoryHandle = static_cast<int64>(Handle);
+    return true;
+}
+
+void UAstralBlueprintLibrary::DestroyMemoryIndex(int64 MemoryHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyMemoryIndex);
+
+    if (MemoryHandle != 0)
+    {
+        astral_memory_destroy(static_cast<AstralHandle>(MemoryHandle));
+    }
+}
+
+bool UAstralBlueprintLibrary::AddMemoryBatch(
+    int64 MemoryHandle,
+    const TArray<FAstralMemoryRecord>& Records,
+    const TArray<float>& Vectors,
+    int32 Dimension,
+    int32& OutErrorCode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_AddMemoryBatch);
+
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (MemoryHandle == 0 || Dimension <= 0 || Records.Num() == 0 || Vectors.Num() != Records.Num() * Dimension)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    TArray<AstralMemoryRecord, TInlineAllocator<kInlineMemoryRecordCapacity>> NativeRecords;
+    NativeRecords.SetNumZeroed(Records.Num());
+    for (int32 Index = 0; Index < Records.Num(); ++Index)
+    {
+        const FAstralMemoryRecord& Source = Records[Index];
+        AstralMemoryRecord& Native = NativeRecords[Index];
+        Native.size = sizeof(AstralMemoryRecord);
+        Native.key = static_cast<uint64_t>(Source.Key);
+        Native.group_id = static_cast<uint32_t>(Source.GroupId);
+        Native.document_id = static_cast<uint32_t>(Source.DocumentId);
+        Native.chunk_id = static_cast<uint32_t>(Source.ChunkId);
+        Native.flags = static_cast<uint32_t>(Source.Flags);
+    }
+
+    const AstralErr Err = astral_memory_add_batch(
+        static_cast<AstralHandle>(MemoryHandle),
+        NativeRecords.GetData(),
+        Vectors.GetData(),
+        static_cast<uint32_t>(NativeRecords.Num())
+    );
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::SearchMemoryIndex(
+    int64 MemoryHandle,
+    const TArray<float>& Query,
+    int32 TopK,
+    int32 GroupId,
+    TArray<FAstralMemorySearchResult>& OutResults,
+    int32& OutErrorCode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SearchMemoryIndex);
+
+    OutResults.Reset();
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (MemoryHandle == 0 || Query.Num() == 0 || TopK <= 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    AstralMemorySearchDesc NativeSearch{};
+    NativeSearch.size = sizeof(AstralMemorySearchDesc);
+    NativeSearch.top_k = static_cast<uint32_t>(TopK);
+    NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
+
+    TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
+    NativeResults.SetNumZeroed(TopK);
+    uint32_t ResultCount = 0;
+    const AstralErr Err = astral_memory_search(
+        static_cast<AstralHandle>(MemoryHandle),
+        &NativeSearch,
+        Query.GetData(),
+        NativeResults.GetData(),
+        static_cast<uint32_t>(NativeResults.Num()),
+        &ResultCount
+    );
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+
+    OutResults.Reserve(static_cast<int32>(ResultCount));
+    for (uint32_t Index = 0; Index < ResultCount; ++Index)
+    {
+        OutResults.Add(from_native_memory_result(NativeResults[static_cast<int32>(Index)]));
     }
     return true;
 }

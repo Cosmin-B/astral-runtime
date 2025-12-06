@@ -24,6 +24,12 @@ static constexpr uint32_t kBenchToolCount = 2;
 static constexpr uint32_t kBenchChunkMaxWords = 32;
 static constexpr uint32_t kBenchChunkOverlapWords = 4;
 static constexpr uint32_t kBenchChunkRangeCapacity = 64;
+static constexpr uint32_t kBenchMemoryDim = 32;
+static constexpr uint32_t kBenchMemoryCapacity = 1024;
+static constexpr uint32_t kBenchMemoryTopK = 8;
+static constexpr uint32_t kBenchMemoryValueMask = 0xFu;
+static constexpr uint32_t kBenchMemoryColumnBias = 3;
+static constexpr uint32_t kBenchMemoryQueryMask = 7u;
 
 static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
     const char* v = std::getenv(key);
@@ -546,6 +552,74 @@ static BenchResult bench_chunk_word_ranges(uint64_t iters) {
     return r;
 }
 
+static BenchResult bench_memory_flat_search(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.memory flat_search";
+    r.ops = iters;
+
+    AstralMemoryIndexDesc desc{};
+    desc.size = sizeof(AstralMemoryIndexDesc);
+    desc.dim = kBenchMemoryDim;
+    desc.capacity = kBenchMemoryCapacity;
+    desc.metric = ASTRAL_MEMORY_METRIC_COSINE;
+    desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+
+    AstralHandle index = 0;
+    AstralErr err = astral_memory_create(&desc, &index);
+    if (err != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<AstralMemoryRecord> records(kBenchMemoryCapacity);
+    std::vector<float> vectors(static_cast<size_t>(kBenchMemoryCapacity) * kBenchMemoryDim);
+    for (uint32_t row = 0; row < kBenchMemoryCapacity; ++row) {
+        records[row].size = sizeof(AstralMemoryRecord);
+        records[row].key = static_cast<uint64_t>(row + 1u);
+        records[row].group_id = row & 1u;
+        records[row].document_id = row >> 4u;
+        records[row].chunk_id = row;
+        for (uint32_t col = 0; col < kBenchMemoryDim; ++col) {
+            vectors[static_cast<size_t>(row) * kBenchMemoryDim + col] =
+                static_cast<float>(((row + 1u) * (col + kBenchMemoryColumnBias)) & kBenchMemoryValueMask) + 1.0f;
+        }
+    }
+    err = astral_memory_add_batch(index, records.data(), vectors.data(), kBenchMemoryCapacity);
+    if (err != ASTRAL_OK) {
+        astral_memory_destroy(index);
+        r.ops = 0;
+        return r;
+    }
+
+    float query[kBenchMemoryDim]{};
+    for (uint32_t i = 0; i < kBenchMemoryDim; ++i) {
+        query[i] = static_cast<float>((i & kBenchMemoryQueryMask) + 1u);
+    }
+    AstralMemorySearchDesc search{};
+    search.size = sizeof(AstralMemorySearchDesc);
+    search.top_k = kBenchMemoryTopK;
+    search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    AstralMemorySearchResult results[kBenchMemoryTopK]{};
+    uint32_t result_count = 0;
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        err = astral_memory_search(index, &search, query, results, kBenchMemoryTopK, &result_count);
+        if (err != ASTRAL_OK || result_count == 0) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_memory_destroy(index);
+    return r;
+}
+
 static AstralHandle create_session(AstralHandle model, uint32_t max_tokens, float temperature, uint32_t top_k, float top_p, uint32_t seed);
 
 static AstralErr init_media_for_model(AstralHandle model, const char* media_path) {
@@ -893,6 +967,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_prompt_cache_view(iters), clock_info().name);
         print_result(bench_toolset_parse(iters), clock_info().name);
         print_result(bench_chunk_word_ranges(iters), clock_info().name);
+        print_result(bench_memory_flat_search(iters), clock_info().name);
         astral_shutdown();
         return;
     }
@@ -930,6 +1005,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_prompt_cache_view(iters), clock_info().name);
     print_result(bench_toolset_parse(iters), clock_info().name);
     print_result(bench_chunk_word_ranges(iters), clock_info().name);
+    print_result(bench_memory_flat_search(iters), clock_info().name);
 
     // Embeddings.
     {

@@ -14,6 +14,7 @@
 #include "adapter.hpp"
 #include "tooling.hpp"
 #include "chunking.hpp"
+#include "memory_index.hpp"
 #include "../core/error.hpp"
 #include "../core/abi_guard.hpp"
 #include "../core/handles.hpp"
@@ -47,6 +48,12 @@ inline astral::inference::Model* lookup_model(AstralHandle model) {
 inline astral::inference::Toolset* lookup_toolset(AstralHandle toolset) {
     return static_cast<astral::inference::Toolset*>(
         astral::core::lookup_handle(toolset, astral::core::HandleKind::Toolset)
+    );
+}
+
+inline astral::inference::MemoryIndex* lookup_memory_index(AstralHandle index) {
+    return static_cast<astral::inference::MemoryIndex*>(
+        astral::core::lookup_handle(index, astral::core::HandleKind::MemoryIndex)
     );
 }
 
@@ -1540,6 +1547,177 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_token_chunk_ranges(
     ASTRAL_ABI_TRY_BEGIN
     const AstralErr err = astral::inference::token_chunk_ranges(desc, token_count, out_ranges, max_ranges, out_count);
     if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_create(const AstralMemoryIndexDesc* desc, AstralHandle* out_index) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (desc == nullptr || out_index == nullptr) {
+        set_err_invalid("desc/out_index");
+        return ASTRAL_E_INVALID;
+    }
+
+    astral::inference::MemoryIndex* index = nullptr;
+    const AstralErr err = astral::inference::memory_create(desc, &index);
+    if (err == ASTRAL_OK) {
+        *out_index = astral::inference::memory_handle(index);
+    } else {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API void ASTRAL_CALL astral_memory_destroy(AstralHandle index) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (index == 0) {
+        set_err_invalid("index");
+        return;
+    }
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr) {
+        set_err_invalid("index (invalid handle)");
+        return;
+    }
+    astral::inference::memory_destroy(mem);
+    ASTRAL_ABI_CATCH_END_VOID()
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_count(AstralHandle index, uint32_t* out_count) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr || out_count == nullptr) {
+        set_err_invalid("index/out_count");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_count(mem, out_count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_clear(AstralHandle index) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr) {
+        set_err_invalid("index");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_clear(mem);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_add_batch(
+    AstralHandle index,
+    const AstralMemoryRecord* records,
+    const float* vectors,
+    uint32_t count
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr) {
+        set_err_invalid("index");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_add_batch(mem, records, vectors, count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_remove(AstralHandle index, uint64_t key) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr) {
+        set_err_invalid("index");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_remove(mem, key);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search(
+    AstralHandle index,
+    const AstralMemorySearchDesc* desc,
+    const float* query,
+    AstralMemorySearchResult* out_results,
+    uint32_t max_results,
+    uint32_t* out_count
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr) {
+        set_err_invalid("index");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_search(mem, desc, query, out_results, max_results, out_count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save_size(AstralHandle index, uint64_t* out_bytes) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr || out_bytes == nullptr) {
+        set_err_invalid("index/out_bytes");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_save_size(mem, out_bytes);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save(AstralHandle index, AstralMutSpanU8 out_bytes, uint64_t* out_written) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr || out_written == nullptr) {
+        set_err_invalid("index/out_written");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_save(mem, out_bytes, out_written);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
+    const AstralMemoryIndexDesc* desc,
+    AstralSpanU8 bytes,
+    AstralHandle* out_index
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (desc == nullptr || bytes.data == nullptr || out_index == nullptr) {
+        set_err_invalid("desc/bytes/out_index");
+        return ASTRAL_E_INVALID;
+    }
+    astral::inference::MemoryIndex* index = nullptr;
+    const AstralErr err = astral::inference::memory_load(desc, bytes, &index);
+    if (err == ASTRAL_OK) {
+        *out_index = astral::inference::memory_handle(index);
+    } else {
         set_err_code(err);
     }
     return err;
