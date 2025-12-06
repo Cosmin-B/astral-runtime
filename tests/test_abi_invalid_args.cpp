@@ -154,6 +154,15 @@ TEST(abi_invalid_args_model_surface) {
     tool_info.size = sizeof(AstralToolInfo);
     AstralToolCallResult tool_call{};
     tool_call.size = sizeof(AstralToolCallResult);
+    constexpr uint32_t kChunkMaxUnits = 2;
+    constexpr uint32_t kInvalidTokenCount = 1;
+    constexpr uint32_t kRangeCapacity = 1;
+    AstralChunkerDesc chunker{};
+    chunker.size = sizeof(AstralChunkerDesc);
+    chunker.mode = ASTRAL_CHUNK_MODE_WORD;
+    chunker.max_units = kChunkMaxUnits;
+    AstralChunkRange chunk_range{};
+    chunk_range.size = sizeof(AstralChunkRange);
     int32_t tokens[2] = {1, 2};
     uint32_t token_count = 0;
     uint8_t text_buf[16] = {};
@@ -197,6 +206,16 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_toolset_get(1, 0, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_toolset_parse_call(0, null_span(), &tool_call), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_toolset_parse_call(1, null_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_count(nullptr, null_span(), &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_count(&chunker, null_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_ranges(nullptr, null_span(), &chunk_range, kRangeCapacity, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_ranges(&chunker, null_span(), nullptr, kRangeCapacity, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_text_copy(null_span(), nullptr, null_mut_span(), &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_text_copy(null_span(), &chunk_range, null_mut_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_token_chunk_count(nullptr, kInvalidTokenCount, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_token_chunk_count(&chunker, kInvalidTokenCount, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_token_chunk_ranges(nullptr, kInvalidTokenCount, &chunk_range, kRangeCapacity, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_token_chunk_ranges(&chunker, kInvalidTokenCount, nullptr, kRangeCapacity, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_configure(0, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_tune(0, nullptr), ASTRAL_E_INVALID);
 

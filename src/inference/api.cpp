@@ -13,6 +13,7 @@
 #include "embedder.hpp"
 #include "adapter.hpp"
 #include "tooling.hpp"
+#include "chunking.hpp"
 #include "../core/error.hpp"
 #include "../core/abi_guard.hpp"
 #include "../core/handles.hpp"
@@ -1463,6 +1464,81 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize_count(
 
     AstralMutSpanU8 out{};
     err = m->backend->ops->detokenize(m->backend_model_ctx, tokens, count, out, out_len);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_chunk_count(
+    const AstralChunkerDesc* desc,
+    AstralSpanU8 text,
+    uint32_t* out_count
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    const AstralErr err = astral::inference::chunk_count(desc, text, out_count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_chunk_ranges(
+    const AstralChunkerDesc* desc,
+    AstralSpanU8 text,
+    AstralChunkRange* out_ranges,
+    uint32_t max_ranges,
+    uint32_t* out_count
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    const AstralErr err = astral::inference::chunk_ranges(desc, text, out_ranges, max_ranges, out_count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_chunk_text_copy(
+    AstralSpanU8 text,
+    const AstralChunkRange* range,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    const AstralErr err = astral::inference::chunk_text_copy(text, range, out_text, out_len);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_token_chunk_count(
+    const AstralChunkerDesc* desc,
+    uint32_t token_count,
+    uint32_t* out_count
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    const AstralErr err = astral::inference::token_chunk_count(desc, token_count, out_count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_token_chunk_ranges(
+    const AstralChunkerDesc* desc,
+    uint32_t token_count,
+    AstralChunkRange* out_ranges,
+    uint32_t max_ranges,
+    uint32_t* out_count
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    const AstralErr err = astral::inference::token_chunk_ranges(desc, token_count, out_ranges, max_ranges, out_count);
     if (err != ASTRAL_OK) {
         set_err_code(err);
     }

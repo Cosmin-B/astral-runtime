@@ -52,6 +52,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
     static bool ParseToolCall(int64 ToolsetHandle, const FString& GeneratedText, FAstralToolCallResult& OutResult);
 
+    /** Split UTF-8 text into native byte ranges. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
+    static bool ChunkText(const FString& Text, const FAstralChunkerDesc& Desc, TArray<FAstralChunkRange>& OutRanges, int32& OutErrorCode);
+
+    /** Split an already-tokenized sequence into token ranges. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
+    static bool ChunkTokens(int32 TokenCount, const FAstralChunkerDesc& Desc, TArray<FAstralChunkRange>& OutRanges, int32& OutErrorCode);
+
     /** True when the capability bitmask contains embeddings support. */
     UFUNCTION(BlueprintPure, Category = "Astral|Capabilities")
     static bool HasEmbeddings(int64 Caps);

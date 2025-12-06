@@ -202,6 +202,43 @@ typedef struct AstralToolCallResult {
     AstralSpanU8 arguments_json;
 } AstralToolCallResult;
 
+typedef uint32_t AstralChunkMode;
+enum {
+    ASTRAL_CHUNK_MODE_NONE = 0,
+    ASTRAL_CHUNK_MODE_CHAR = 1,
+    ASTRAL_CHUNK_MODE_WORD = 2,
+    ASTRAL_CHUNK_MODE_SENTENCE = 3,
+    ASTRAL_CHUNK_MODE_TOKEN = 4,
+};
+
+typedef uint32_t AstralChunkFlags;
+enum {
+    ASTRAL_CHUNK_FLAG_KEEP_EMPTY = 1u << 0,
+};
+
+typedef struct AstralChunkerDesc {
+    uint32_t size;
+    AstralChunkMode mode;
+    uint32_t max_units;
+    uint32_t overlap_units;
+    uint32_t document_id;
+    uint32_t group_id;
+    AstralChunkFlags flags;
+    uint32_t _reserved0;
+    AstralSpanU8 delimiters;
+} AstralChunkerDesc;
+
+typedef struct AstralChunkRange {
+    uint32_t size;
+    uint32_t document_id;
+    uint32_t chunk_id;
+    uint32_t group_id;
+    uint32_t byte_begin;
+    uint32_t byte_end;
+    uint32_t token_begin;
+    uint32_t token_end;
+} AstralChunkRange;
+
 // Compile-time validation: Ensure struct sizes are correct
 // Use static_assert for C++ and _Static_assert for C
 #ifdef __cplusplus
@@ -218,6 +255,8 @@ typedef struct AstralToolCallResult {
   ASTRAL_STATIC_ASSERT(sizeof(AstralToolsetDesc) == 24, "AstralToolsetDesc must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralToolInfo) == 56, "AstralToolInfo must be 56 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 48, "AstralToolCallResult must be 48 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralChunkerDesc) == 48, "AstralChunkerDesc must be 48 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 64-bit");
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 8, "AstralSpanU8 must be 8 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 8, "AstralMutSpanU8 must be 8 bytes on 32-bit");
@@ -226,6 +265,8 @@ typedef struct AstralToolCallResult {
   ASTRAL_STATIC_ASSERT(sizeof(AstralToolsetDesc) == 20, "AstralToolsetDesc must be 20 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralToolInfo) == 32, "AstralToolInfo must be 32 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 32, "AstralToolCallResult must be 32 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralChunkerDesc) == 40, "AstralChunkerDesc must be 40 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 32-bit");
 #endif
 
 // ============================================================================
@@ -854,6 +895,63 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize_count(
     const int32_t* tokens,
     uint32_t count,
     uint32_t* out_len
+);
+
+/**
+ * Count text chunks for a UTF-8 span without writing ranges.
+ *
+ * Thread-safety: Safe to call from multiple threads.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_chunk_count(
+    const AstralChunkerDesc* desc,
+    AstralSpanU8 text,
+    uint32_t* out_count
+);
+
+/**
+ * Write UTF-8 byte ranges into a caller-owned range buffer.
+ *
+ * `out_ranges` must contain at least `max_ranges` entries. `out_count` receives
+ * the required range count even when `max_ranges` is too small.
+ *
+ * Thread-safety: Safe to call from multiple threads.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_chunk_ranges(
+    const AstralChunkerDesc* desc,
+    AstralSpanU8 text,
+    AstralChunkRange* out_ranges,
+    uint32_t max_ranges,
+    uint32_t* out_count
+);
+
+/**
+ * Copy one text range to a caller-owned UTF-8 buffer.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_chunk_text_copy(
+    AstralSpanU8 text,
+    const AstralChunkRange* range,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+);
+
+/**
+ * Count token chunks for an already-tokenized sequence.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_token_chunk_count(
+    const AstralChunkerDesc* desc,
+    uint32_t token_count,
+    uint32_t* out_count
+);
+
+/**
+ * Write token chunk ranges for an already-tokenized sequence.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_token_chunk_ranges(
+    const AstralChunkerDesc* desc,
+    uint32_t token_count,
+    AstralChunkRange* out_ranges,
+    uint32_t max_ranges,
+    uint32_t* out_count
 );
 
 /**

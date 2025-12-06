@@ -1090,6 +1090,107 @@ TEST(inference_toolset_parse_and_bind_mock) {
     astral_shutdown();
 }
 
+TEST(inference_chunking_ranges_mock) {
+    constexpr uint32_t kDocId = 17;
+    constexpr uint32_t kGroupId = 3;
+    constexpr uint32_t kWordMaxUnits = 2;
+    constexpr uint32_t kWordOverlapUnits = 1;
+    constexpr uint32_t kWordRangeCount = 3;
+    constexpr uint32_t kFirstWordRangeEnd = 10;
+    constexpr uint32_t kSecondWordRangeBegin = 6;
+    constexpr uint32_t kSecondWordRangeEnd = 16;
+    constexpr uint32_t kThirdWordRangeBegin = 11;
+    constexpr uint32_t kThirdWordRangeEnd = 22;
+    constexpr uint32_t kUtf8MaxUnits = 2;
+    constexpr uint32_t kUtf8RangeCount = 2;
+    constexpr uint32_t kFirstUtf8RangeEnd = 3;
+    constexpr uint32_t kSecondUtf8RangeBegin = 3;
+    constexpr uint32_t kSecondUtf8RangeEnd = 8;
+    constexpr uint32_t kSentenceMaxUnits = 2;
+    constexpr uint32_t kSentenceRangeCount = 2;
+    constexpr uint32_t kFirstSentenceRangeEnd = 9;
+    constexpr uint32_t kSecondSentenceRangeBegin = 10;
+    constexpr uint32_t kSecondSentenceRangeEnd = 16;
+    constexpr uint32_t kTokenCount = 10;
+    constexpr uint32_t kTokenMaxUnits = 4;
+    constexpr uint32_t kTokenOverlapUnits = 1;
+    constexpr uint32_t kTokenRangeCount = 3;
+    constexpr uint32_t kSecondTokenBegin = 3;
+    constexpr uint32_t kSecondTokenEnd = 7;
+    constexpr uint32_t kThirdTokenBegin = 6;
+    constexpr uint32_t kRangeCapacity = 4;
+
+    AstralChunkerDesc desc{};
+    desc.size = sizeof(AstralChunkerDesc);
+    desc.mode = ASTRAL_CHUNK_MODE_WORD;
+    desc.max_units = kWordMaxUnits;
+    desc.overlap_units = kWordOverlapUnits;
+    desc.document_id = kDocId;
+    desc.group_id = kGroupId;
+
+    uint32_t count = 0;
+    AstralErr err = astral_chunk_count(&desc, span_from_cstr("alpha beta gamma delta"), &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kWordRangeCount);
+
+    AstralChunkRange ranges[kRangeCapacity]{};
+    err = astral_chunk_ranges(&desc, span_from_cstr("alpha beta gamma delta"), ranges, kRangeCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kWordRangeCount);
+    ASSERT_EQ(ranges[0].document_id, kDocId);
+    ASSERT_EQ(ranges[0].group_id, kGroupId);
+    ASSERT_EQ(ranges[0].byte_begin, 0u);
+    ASSERT_EQ(ranges[0].byte_end, kFirstWordRangeEnd);
+    ASSERT_EQ(ranges[1].byte_begin, kSecondWordRangeBegin);
+    ASSERT_EQ(ranges[1].byte_end, kSecondWordRangeEnd);
+    ASSERT_EQ(ranges[2].byte_begin, kThirdWordRangeBegin);
+    ASSERT_EQ(ranges[2].byte_end, kThirdWordRangeEnd);
+
+    uint8_t copied[kFirstWordRangeEnd]{};
+    AstralMutSpanU8 copied_span{};
+    copied_span.data = copied;
+    copied_span.len = sizeof(copied);
+    uint32_t copied_len = 0;
+    err = astral_chunk_text_copy(span_from_cstr("alpha beta gamma delta"), &ranges[0], copied_span, &copied_len);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(copied_len, kFirstWordRangeEnd);
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(copied), copied_len), std::string("alpha beta"));
+
+    desc.mode = ASTRAL_CHUNK_MODE_CHAR;
+    desc.max_units = kUtf8MaxUnits;
+    desc.overlap_units = 0;
+    err = astral_chunk_ranges(&desc, span_from_cstr("aé🙂b"), ranges, kRangeCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kUtf8RangeCount);
+    ASSERT_EQ(ranges[0].byte_begin, 0u);
+    ASSERT_EQ(ranges[0].byte_end, kFirstUtf8RangeEnd);
+    ASSERT_EQ(ranges[1].byte_begin, kSecondUtf8RangeBegin);
+    ASSERT_EQ(ranges[1].byte_end, kSecondUtf8RangeEnd);
+
+    desc.mode = ASTRAL_CHUNK_MODE_SENTENCE;
+    desc.max_units = kSentenceMaxUnits;
+    err = astral_chunk_ranges(&desc, span_from_cstr("One. Two! Three?"), ranges, kRangeCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kSentenceRangeCount);
+    ASSERT_EQ(ranges[0].byte_begin, 0u);
+    ASSERT_EQ(ranges[0].byte_end, kFirstSentenceRangeEnd);
+    ASSERT_EQ(ranges[1].byte_begin, kSecondSentenceRangeBegin);
+    ASSERT_EQ(ranges[1].byte_end, kSecondSentenceRangeEnd);
+
+    desc.mode = ASTRAL_CHUNK_MODE_TOKEN;
+    desc.max_units = kTokenMaxUnits;
+    desc.overlap_units = kTokenOverlapUnits;
+    err = astral_token_chunk_ranges(&desc, kTokenCount, ranges, kRangeCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTokenRangeCount);
+    ASSERT_EQ(ranges[0].token_begin, 0u);
+    ASSERT_EQ(ranges[0].token_end, kTokenMaxUnits);
+    ASSERT_EQ(ranges[1].token_begin, kSecondTokenBegin);
+    ASSERT_EQ(ranges[1].token_end, kSecondTokenEnd);
+    ASSERT_EQ(ranges[2].token_begin, kThirdTokenBegin);
+    ASSERT_EQ(ranges[2].token_end, kTokenCount);
+}
+
 TEST(inference_adapters_mock) {
     constexpr float kPrimaryAdapterScale = 1.0f;
     constexpr float kSecondaryAdapterScale = 0.5f;

@@ -72,6 +72,17 @@ enum class EAstralToolChoiceMode : uint8
     TextOrTool = 2
 };
 
+/** Text or token splitting mode for native chunking. */
+UENUM(BlueprintType)
+enum class EAstralChunkMode : uint8
+{
+    None = 0,
+    Char = 1,
+    Word = 2,
+    Sentence = 3,
+    Token = 4
+};
+
 /** Root used to resolve relative filesystem paths before they cross the C ABI. */
 UENUM(BlueprintType)
 enum class EAstralUnrealPathRoot : uint8
@@ -81,6 +92,8 @@ enum class EAstralUnrealPathRoot : uint8
     ProjectSaved = 2,
     ProjectPersistentDownload = 3
 };
+
+inline constexpr int32 AstralChunkDefaultMaxUnits = 128;
 
 /** Load settings for a native Astral model. */
 USTRUCT(BlueprintType)
@@ -337,6 +350,65 @@ struct ASTRALRT_API FAstralToolCallResult
     /** Raw JSON object for the tool arguments. */
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Tools")
     FString ArgumentsJson;
+};
+
+/** Native chunking settings for text or token ranges. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralChunkerDesc
+{
+    GENERATED_BODY()
+
+    /** Split mode. Token mode expects an already-tokenized input count. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Chunking")
+    EAstralChunkMode Mode = EAstralChunkMode::Word;
+
+    /** Maximum words, sentences, characters, or tokens in one range. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Chunking")
+    int32 MaxUnits = AstralChunkDefaultMaxUnits;
+
+    /** Units repeated at the start of the next range. Must be smaller than MaxUnits. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Chunking")
+    int32 OverlapUnits = 0;
+
+    /** Caller-defined document id copied into emitted ranges. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Chunking")
+    int32 DocumentId = 0;
+
+    /** Caller-defined group id copied into emitted ranges. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Chunking")
+    int32 GroupId = 0;
+
+    /** Optional delimiter bytes for sentence mode. Empty uses the native default delimiters. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Chunking")
+    FString Delimiters;
+};
+
+/** One text or token range emitted by native chunking. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralChunkRange
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Chunking")
+    int32 DocumentId = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Chunking")
+    int32 ChunkId = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Chunking")
+    int32 GroupId = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Chunking")
+    int32 ByteBegin = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Chunking")
+    int32 ByteEnd = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Chunking")
+    int32 TokenBegin = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Chunking")
+    int32 TokenEnd = 0;
 };
 
 /** Media capabilities reported after InitMedia succeeds. */

@@ -21,6 +21,9 @@ static constexpr char kDisabledEnvValue[] = "0";
 static constexpr uint32_t kBenchToolSearchId = 1;
 static constexpr uint32_t kBenchToolOpenId = 2;
 static constexpr uint32_t kBenchToolCount = 2;
+static constexpr uint32_t kBenchChunkMaxWords = 32;
+static constexpr uint32_t kBenchChunkOverlapWords = 4;
+static constexpr uint32_t kBenchChunkRangeCapacity = 64;
 
 static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
     const char* v = std::getenv(key);
@@ -501,6 +504,48 @@ static BenchResult bench_toolset_parse(uint64_t iters) {
     return r;
 }
 
+static BenchResult bench_chunk_word_ranges(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.chunk word_ranges";
+    r.ops = iters;
+
+    const AstralSpanU8 text = span_from_cstr(
+        "Astral keeps chunking native so RAG ingest can build deterministic byte ranges without copying strings. "
+        "The wrappers can materialize text only for selected ranges while the core works on spans and caller buffers. "
+        "This benchmark exercises the range generation path used by document ingest and memory search preparation."
+    );
+
+    AstralChunkerDesc desc{};
+    desc.size = sizeof(AstralChunkerDesc);
+    desc.mode = ASTRAL_CHUNK_MODE_WORD;
+    desc.max_units = kBenchChunkMaxWords;
+    desc.overlap_units = kBenchChunkOverlapWords;
+
+    AstralChunkRange ranges[kBenchChunkRangeCapacity]{};
+    uint32_t count = 0;
+    AstralErr err = astral_chunk_ranges(&desc, text, ranges, kBenchChunkRangeCapacity, &count);
+    if (err != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        err = astral_chunk_ranges(&desc, text, ranges, kBenchChunkRangeCapacity, &count);
+        if (err != ASTRAL_OK || count == 0) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    return r;
+}
+
 static AstralHandle create_session(AstralHandle model, uint32_t max_tokens, float temperature, uint32_t top_k, float top_p, uint32_t seed);
 
 static AstralErr init_media_for_model(AstralHandle model, const char* media_path) {
@@ -847,6 +892,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_prompt_cache_get(iters), clock_info().name);
         print_result(bench_prompt_cache_view(iters), clock_info().name);
         print_result(bench_toolset_parse(iters), clock_info().name);
+        print_result(bench_chunk_word_ranges(iters), clock_info().name);
         astral_shutdown();
         return;
     }
@@ -883,6 +929,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_prompt_cache_get(iters), clock_info().name);
     print_result(bench_prompt_cache_view(iters), clock_info().name);
     print_result(bench_toolset_parse(iters), clock_info().name);
+    print_result(bench_chunk_word_ranges(iters), clock_info().name);
 
     // Embeddings.
     {
