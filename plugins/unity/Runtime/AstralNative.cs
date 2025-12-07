@@ -1027,6 +1027,15 @@ namespace Astral.Runtime
         public static extern unsafe int astral_memory_search(AstralHandle index, ref AstralMemorySearchDesc desc, float* query, AstralMemorySearchResult* out_results, uint max_results, out uint out_count);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_memory_search_begin(AstralHandle index, ref AstralMemorySearchDesc desc, float* query, out AstralHandle out_cursor);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_memory_search_fetch(AstralHandle cursor, AstralMemorySearchResult* out_results, uint max_results, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_memory_search_end(AstralHandle cursor);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_memory_save_size(AstralHandle index, out ulong out_bytes);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]

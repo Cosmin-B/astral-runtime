@@ -547,6 +547,97 @@ bool UAstralBlueprintLibrary::SearchMemoryIndex(
     return true;
 }
 
+bool UAstralBlueprintLibrary::BeginMemorySearch(
+    int64 MemoryHandle,
+    const TArray<float>& Query,
+    int32 TopK,
+    int32 GroupId,
+    int64& OutCursorHandle,
+    int32& OutErrorCode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_BeginMemorySearch);
+
+    OutCursorHandle = 0;
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (MemoryHandle == 0 || Query.Num() == 0 || TopK <= 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    AstralMemorySearchDesc NativeSearch{};
+    NativeSearch.size = sizeof(AstralMemorySearchDesc);
+    NativeSearch.top_k = static_cast<uint32_t>(TopK);
+    NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
+
+    AstralHandle Cursor = 0;
+    const AstralErr Err = astral_memory_search_begin(
+        static_cast<AstralHandle>(MemoryHandle),
+        &NativeSearch,
+        Query.GetData(),
+        &Cursor
+    );
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+
+    OutCursorHandle = static_cast<int64>(Cursor);
+    return true;
+}
+
+bool UAstralBlueprintLibrary::FetchMemorySearch(
+    int64 CursorHandle,
+    int32 MaxResults,
+    TArray<FAstralMemorySearchResult>& OutResults,
+    int32& OutErrorCode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_FetchMemorySearch);
+
+    OutResults.Reset();
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (CursorHandle == 0 || MaxResults < 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
+    NativeResults.SetNumZeroed(MaxResults);
+    uint32_t ResultCount = 0;
+    const AstralErr Err = astral_memory_search_fetch(
+        static_cast<AstralHandle>(CursorHandle),
+        NativeResults.GetData(),
+        static_cast<uint32_t>(NativeResults.Num()),
+        &ResultCount
+    );
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+
+    OutResults.Reserve(static_cast<int32>(ResultCount));
+    for (uint32_t Index = 0; Index < ResultCount; ++Index)
+    {
+        OutResults.Add(from_native_memory_result(NativeResults[static_cast<int32>(Index)]));
+    }
+    return true;
+}
+
+void UAstralBlueprintLibrary::EndMemorySearch(int64 CursorHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_EndMemorySearch);
+
+    if (CursorHandle != 0)
+    {
+        astral_memory_search_end(static_cast<AstralHandle>(CursorHandle));
+    }
+}
+
 bool UAstralBlueprintLibrary::HasEmbeddings(int64 Caps)
 {
     return has_cap(Caps, ASTRAL_CAP_EMBEDDINGS);

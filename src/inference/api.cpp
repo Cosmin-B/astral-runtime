@@ -57,6 +57,12 @@ inline astral::inference::MemoryIndex* lookup_memory_index(AstralHandle index) {
     );
 }
 
+inline astral::inference::MemorySearchCursor* lookup_memory_search_cursor(AstralHandle cursor) {
+    return static_cast<astral::inference::MemorySearchCursor*>(
+        astral::core::lookup_handle(cursor, astral::core::HandleKind::MemorySearch)
+    );
+}
+
 inline AstralErr require_model_ops(AstralHandle model, astral::inference::Model** out_model) {
     if (model == 0 || out_model == nullptr) {
         set_err_invalid("model");
@@ -1671,6 +1677,65 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search(
     }
     return err;
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_begin(
+    AstralHandle index,
+    const AstralMemorySearchDesc* desc,
+    const float* query,
+    AstralHandle* out_cursor
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr || out_cursor == nullptr) {
+        set_err_invalid("index/out_cursor");
+        return ASTRAL_E_INVALID;
+    }
+
+    astral::inference::MemorySearchCursor* cursor = nullptr;
+    const AstralErr err = astral::inference::memory_search_begin(mem, desc, query, &cursor);
+    if (err == ASTRAL_OK) {
+        *out_cursor = astral::inference::memory_search_cursor_handle(cursor);
+    } else {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_fetch(
+    AstralHandle cursor,
+    AstralMemorySearchResult* out_results,
+    uint32_t max_results,
+    uint32_t* out_count
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* search = lookup_memory_search_cursor(cursor);
+    if (search == nullptr) {
+        set_err_invalid("cursor");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_search_fetch(search, out_results, max_results, out_count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API void ASTRAL_CALL astral_memory_search_end(AstralHandle cursor) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (cursor == 0) {
+        set_err_invalid("cursor");
+        return;
+    }
+    auto* search = lookup_memory_search_cursor(cursor);
+    if (search == nullptr) {
+        set_err_invalid("cursor (invalid handle)");
+        return;
+    }
+    astral::inference::memory_search_end(search);
+    ASTRAL_ABI_CATCH_END_VOID()
 }
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save_size(AstralHandle index, uint64_t* out_bytes) {

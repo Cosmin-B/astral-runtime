@@ -1205,6 +1205,13 @@ TEST(inference_memory_index_flat_mock) {
     constexpr uint32_t kDocA = 101;
     constexpr uint32_t kChunkA = 3;
     constexpr uint32_t kResultCapacity = 4;
+    constexpr uint32_t kFirstFetchCapacity = 2;
+    constexpr uint32_t kSecondFetchCapacity = 2;
+    constexpr uint32_t kFinalFetchCapacity = 1;
+    constexpr uint32_t kFirstFetchCount = 2;
+    constexpr uint32_t kSecondFetchCount = 1;
+    constexpr uint32_t kFinalFetchCount = 0;
+    constexpr uint32_t kGroupBResultCount = 1;
 
     AstralMemoryIndexDesc desc{};
     desc.size = sizeof(AstralMemoryIndexDesc);
@@ -1262,10 +1269,31 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(results[0].chunk_id, kChunkA);
     ASSERT_EQ(results[1].key, kKeyD);
 
+    AstralHandle cursor = 0;
+    err = astral_memory_search_begin(index, &search, query, &cursor);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(cursor));
+
+    AstralMemorySearchResult cursor_results[kFirstFetchCapacity]{};
+    err = astral_memory_search_fetch(cursor, cursor_results, kFirstFetchCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kFirstFetchCount);
+    ASSERT_EQ(cursor_results[0].key, kKeyA);
+    ASSERT_EQ(cursor_results[1].key, kKeyD);
+
+    err = astral_memory_search_fetch(cursor, cursor_results, kSecondFetchCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kSecondFetchCount);
+
+    err = astral_memory_search_fetch(cursor, cursor_results, kFinalFetchCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kFinalFetchCount);
+    astral_memory_search_end(cursor);
+
     search.group_id = kGroupB;
     err = astral_memory_search(index, &search, query, results, kResultCapacity, &count);
     ASSERT_EQ(err, ASTRAL_OK);
-    ASSERT_EQ(count, 1u);
+    ASSERT_EQ(count, kGroupBResultCount);
     ASSERT_EQ(results[0].key, kKeyC);
 
     uint64_t save_bytes = 0;

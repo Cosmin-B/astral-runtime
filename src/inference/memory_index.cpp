@@ -18,6 +18,7 @@ constexpr uint32_t kMaxDim = 8192;
 constexpr uint32_t kSaveMagic = 0x414D454Du;
 constexpr uint32_t kSaveVersion = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
+constexpr uint32_t kNoResults = 0;
 
 struct MemorySlot {
   AstralMemoryRecord record;
@@ -109,8 +110,20 @@ struct MemoryIndex {
   float* vectors;
 };
 
+struct MemorySearchCursor {
+  AstralHandle handle;
+  uint32_t capacity;
+  uint32_t count;
+  uint32_t offset;
+  AstralMemorySearchResult* results;
+};
+
 AstralHandle memory_handle(MemoryIndex* index) {
   return index != nullptr ? index->handle : 0;
+}
+
+AstralHandle memory_search_cursor_handle(MemorySearchCursor* cursor) {
+  return cursor != nullptr ? cursor->handle : 0;
 }
 
 namespace {
@@ -181,6 +194,17 @@ void destroy_allocations(MemoryIndex* index) {
     core::runtime_free_array(index->vectors, index->capacity * index->dim);
     index->vectors = nullptr;
   }
+}
+
+void destroy_search_cursor(MemorySearchCursor* cursor) {
+  if (cursor == nullptr) {
+    return;
+  }
+  if (cursor->results != nullptr) {
+    core::runtime_free_array(cursor->results, cursor->capacity);
+    cursor->results = nullptr;
+  }
+  core::runtime_delete(cursor);
 }
 
 } // namespace
@@ -326,6 +350,79 @@ AstralErr memory_search(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
 
   *out_count = filled;
   return ASTRAL_OK;
+}
+
+AstralErr memory_search_begin(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                              const float* query, MemorySearchCursor** out_cursor) {
+  if (index == nullptr || desc == nullptr || desc->size != sizeof(AstralMemorySearchDesc) ||
+      query == nullptr || out_cursor == nullptr || desc->top_k == 0) {
+    return ASTRAL_E_INVALID;
+  }
+
+  const uint32_t capacity = desc->top_k < index->count ? desc->top_k : index->count;
+  MemorySearchCursor* cursor = core::runtime_new<MemorySearchCursor>();
+  if (cursor == nullptr) {
+    return ASTRAL_E_NOMEM;
+  }
+  cursor->handle = 0;
+  cursor->capacity = capacity;
+  cursor->count = kNoResults;
+  cursor->offset = 0;
+  cursor->results = core::runtime_alloc_array<AstralMemorySearchResult>(capacity);
+  if (capacity != kNoResults && cursor->results == nullptr) {
+    destroy_search_cursor(cursor);
+    return ASTRAL_E_NOMEM;
+  }
+
+  if (capacity != kNoResults) {
+    AstralMemorySearchDesc bounded_desc = *desc;
+    bounded_desc.top_k = capacity;
+    uint32_t result_count = 0;
+    const AstralErr search_err =
+        memory_search(index, &bounded_desc, query, cursor->results, capacity, &result_count);
+    if (search_err != ASTRAL_OK) {
+      destroy_search_cursor(cursor);
+      return search_err;
+    }
+    cursor->count = result_count;
+  }
+
+  const AstralHandle handle = core::register_handle(core::HandleKind::MemorySearch, cursor);
+  if (handle == 0) {
+    destroy_search_cursor(cursor);
+    return ASTRAL_E_BUSY;
+  }
+
+  cursor->handle = handle;
+  *out_cursor = cursor;
+  return ASTRAL_OK;
+}
+
+AstralErr memory_search_fetch(MemorySearchCursor* cursor, AstralMemorySearchResult* out_results,
+                              uint32_t max_results, uint32_t* out_count) {
+  if (cursor == nullptr || out_count == nullptr || (max_results != 0 && out_results == nullptr)) {
+    return ASTRAL_E_INVALID;
+  }
+  if (max_results == 0 || cursor->offset >= cursor->count) {
+    *out_count = kNoResults;
+    return ASTRAL_OK;
+  }
+
+  const uint32_t remaining = cursor->count - cursor->offset;
+  const uint32_t to_copy = remaining < max_results ? remaining : max_results;
+  std::memcpy(out_results, cursor->results + cursor->offset,
+              sizeof(AstralMemorySearchResult) * to_copy);
+  cursor->offset += to_copy;
+  *out_count = to_copy;
+  return ASTRAL_OK;
+}
+
+void memory_search_end(MemorySearchCursor* cursor) {
+  if (cursor == nullptr) {
+    return;
+  }
+  core::unregister_handle(cursor->handle, core::HandleKind::MemorySearch);
+  destroy_search_cursor(cursor);
 }
 
 AstralErr memory_save_size(MemoryIndex* index, uint64_t* out_bytes) {
