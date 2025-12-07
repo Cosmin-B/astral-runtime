@@ -126,6 +126,10 @@ int main() {
     EMIT_STRUCT(AstralToolCallResult);
     EMIT_STRUCT(AstralChunkerDesc);
     EMIT_STRUCT(AstralChunkRange);
+    EMIT_STRUCT(AstralMemoryIndexDesc);
+    EMIT_STRUCT(AstralMemoryRecord);
+    EMIT_STRUCT(AstralMemorySearchDesc);
+    EMIT_STRUCT(AstralMemorySearchResult);
     EMIT_STRUCT(AstralStats);
 
     std::printf("\n  ],\n");
@@ -203,6 +207,11 @@ int main() {
     EMIT_CONST(ASTRAL_CHUNK_MODE_SENTENCE);
     EMIT_CONST(ASTRAL_CHUNK_MODE_TOKEN);
     EMIT_CONST(ASTRAL_CHUNK_FLAG_KEEP_EMPTY);
+    EMIT_CONST(ASTRAL_MEMORY_METRIC_DOT);
+    EMIT_CONST(ASTRAL_MEMORY_METRIC_COSINE);
+    EMIT_CONST(ASTRAL_MEMORY_METRIC_L2);
+    EMIT_CONST(ASTRAL_MEMORY_INDEX_FLAT);
+    EMIT_CONST(ASTRAL_MEMORY_GROUP_ANY);
 
     std::printf("\n  ]\n");
     std::printf("}\n");
@@ -228,6 +237,8 @@ if [[ "${check_only}" -eq 1 ]]; then
   grep -q '"name":"ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL","value":2' "${report}"
   grep -q '"name":"AstralChunkRange"' "${report}"
   grep -q '"name":"ASTRAL_CHUNK_MODE_TOKEN","value":4' "${report}"
+  grep -q '"name":"AstralMemorySearchResult"' "${report}"
+  grep -q '"name":"ASTRAL_MEMORY_METRIC_L2","value":2' "${report}"
   grep -q '"name":"ASTRAL_CAP_MM_EMBEDDINGS","value":134217728' "${report}"
   grep -q '"name":"ASTRAL_GPU_ROUTE_STREAM","value":4' "${report}"
   exit 0

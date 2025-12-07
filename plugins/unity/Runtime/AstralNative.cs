@@ -803,6 +803,66 @@ namespace Astral.Runtime
             public uint token_end;
         }
 
+        public enum AstralMemoryMetric : uint
+        {
+            Dot = 0,
+            Cosine = 1,
+            L2 = 2
+        }
+
+        public enum AstralMemoryIndexKind : uint
+        {
+            Flat = 0
+        }
+
+        public const uint ASTRAL_MEMORY_GROUP_ANY = 0xFFFFFFFFu;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemoryIndexDesc
+        {
+            public uint size;
+            public uint dim;
+            public uint capacity;
+            public AstralMemoryMetric metric;
+            public AstralMemoryIndexKind index_kind;
+            public uint _reserved0;
+            public uint _reserved1;
+            public uint _reserved2;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemoryRecord
+        {
+            public uint size;
+            public uint group_id;
+            public ulong key;
+            public uint document_id;
+            public uint chunk_id;
+            public uint flags;
+            public uint _reserved0;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemorySearchDesc
+        {
+            public uint size;
+            public uint top_k;
+            public uint group_id;
+            public uint flags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemorySearchResult
+        {
+            public uint size;
+            public uint group_id;
+            public ulong key;
+            public uint document_id;
+            public uint chunk_id;
+            public float score;
+            public uint flags;
+        }
+
         /// <summary>
         /// Create an inference session.
         /// Thread-safety: Safe to call from multiple threads.
@@ -944,6 +1004,36 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern unsafe int astral_token_chunk_ranges(ref AstralChunkerDesc desc, uint token_count, AstralChunkRange* out_ranges, uint max_ranges, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_create(ref AstralMemoryIndexDesc desc, out AstralHandle out_index);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_memory_destroy(AstralHandle index);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_count(AstralHandle index, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_clear(AstralHandle index);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_memory_add_batch(AstralHandle index, AstralMemoryRecord* records, float* vectors, uint count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_remove(AstralHandle index, ulong key);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_memory_search(AstralHandle index, ref AstralMemorySearchDesc desc, float* query, AstralMemorySearchResult* out_results, uint max_results, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_save_size(AstralHandle index, out ulong out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_save(AstralHandle index, AstralMutSpanU8 out_bytes, out ulong out_written);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_load(ref AstralMemoryIndexDesc desc, AstralSpanU8 bytes, out AstralHandle out_index);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_set_slot(AstralHandle session, uint slot_id);

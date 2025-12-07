@@ -1191,6 +1191,125 @@ TEST(inference_chunking_ranges_mock) {
     ASSERT_EQ(ranges[2].token_end, kTokenCount);
 }
 
+TEST(inference_memory_index_flat_mock) {
+    constexpr uint32_t kDim = 4;
+    constexpr uint32_t kCapacity = 8;
+    constexpr uint32_t kRecordCount = 4;
+    constexpr uint32_t kTopK = 3;
+    constexpr uint64_t kKeyA = 11;
+    constexpr uint64_t kKeyB = 22;
+    constexpr uint64_t kKeyC = 33;
+    constexpr uint64_t kKeyD = 44;
+    constexpr uint32_t kGroupA = 7;
+    constexpr uint32_t kGroupB = 9;
+    constexpr uint32_t kDocA = 101;
+    constexpr uint32_t kChunkA = 3;
+    constexpr uint32_t kResultCapacity = 4;
+
+    AstralMemoryIndexDesc desc{};
+    desc.size = sizeof(AstralMemoryIndexDesc);
+    desc.dim = kDim;
+    desc.capacity = kCapacity;
+    desc.metric = ASTRAL_MEMORY_METRIC_COSINE;
+    desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+
+    AstralHandle index = 0;
+    AstralErr err = astral_memory_create(&desc, &index);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(index));
+
+    AstralMemoryRecord records[kRecordCount]{};
+    records[0].size = sizeof(AstralMemoryRecord);
+    records[0].key = kKeyA;
+    records[0].group_id = kGroupA;
+    records[0].document_id = kDocA;
+    records[0].chunk_id = kChunkA;
+    records[1].size = sizeof(AstralMemoryRecord);
+    records[1].key = kKeyB;
+    records[1].group_id = kGroupA;
+    records[2].size = sizeof(AstralMemoryRecord);
+    records[2].key = kKeyC;
+    records[2].group_id = kGroupB;
+    records[3].size = sizeof(AstralMemoryRecord);
+    records[3].key = kKeyD;
+    records[3].group_id = kGroupA;
+
+    const float vectors[kRecordCount * kDim] = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.5f, 0.5f, 0.0f, 0.0f,
+    };
+    err = astral_memory_add_batch(index, records, vectors, kRecordCount);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    uint32_t count = 0;
+    err = astral_memory_count(index, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kRecordCount);
+
+    AstralMemorySearchDesc search{};
+    search.size = sizeof(AstralMemorySearchDesc);
+    search.top_k = kTopK;
+    search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    const float query[kDim] = {1.0f, 0.0f, 0.0f, 0.0f};
+    AstralMemorySearchResult results[kResultCapacity]{};
+    err = astral_memory_search(index, &search, query, results, kResultCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopK);
+    ASSERT_EQ(results[0].key, kKeyA);
+    ASSERT_EQ(results[0].document_id, kDocA);
+    ASSERT_EQ(results[0].chunk_id, kChunkA);
+    ASSERT_EQ(results[1].key, kKeyD);
+
+    search.group_id = kGroupB;
+    err = astral_memory_search(index, &search, query, results, kResultCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, 1u);
+    ASSERT_EQ(results[0].key, kKeyC);
+
+    uint64_t save_bytes = 0;
+    err = astral_memory_save_size(index, &save_bytes);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_GT(save_bytes, 0ull);
+    std::string blob;
+    blob.resize(static_cast<size_t>(save_bytes));
+    AstralMutSpanU8 out_blob{};
+    out_blob.data = reinterpret_cast<uint8_t*>(&blob[0]);
+    out_blob.len = static_cast<uint32_t>(blob.size());
+    uint64_t written = 0;
+    err = astral_memory_save(index, out_blob, &written);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(written, save_bytes);
+
+    AstralSpanU8 blob_span{};
+    blob_span.data = reinterpret_cast<const uint8_t*>(blob.data());
+    blob_span.len = static_cast<uint32_t>(blob.size());
+    AstralHandle loaded = 0;
+    err = astral_memory_load(&desc, blob_span, &loaded);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(loaded));
+
+    search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    err = astral_memory_search(loaded, &search, query, results, kResultCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(results[0].key, kKeyA);
+
+    err = astral_memory_remove(index, kKeyA);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_count(index, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kRecordCount - 1u);
+    err = astral_memory_clear(index);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_count(index, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, 0u);
+
+    astral_memory_destroy(loaded);
+    astral_memory_destroy(index);
+}
+
 TEST(inference_adapters_mock) {
     constexpr float kPrimaryAdapterScale = 1.0f;
     constexpr float kSecondaryAdapterScale = 0.5f;
