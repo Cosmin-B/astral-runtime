@@ -1035,6 +1035,19 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search(
     uint32_t max_results,
     uint32_t* out_count
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_begin(
+    AstralHandle index,
+    const AstralMemorySearchDesc* desc,
+    const float* query,
+    AstralHandle* out_cursor
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_fetch(
+    AstralHandle cursor,
+    AstralMemorySearchResult* out_results,
+    uint32_t max_results,
+    uint32_t* out_count
+);
+ASTRAL_API void ASTRAL_CALL astral_memory_search_end(AstralHandle cursor);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save_size(AstralHandle index, uint64_t* out_bytes);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save(AstralHandle index, AstralMutSpanU8 out_bytes, uint64_t* out_written);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(

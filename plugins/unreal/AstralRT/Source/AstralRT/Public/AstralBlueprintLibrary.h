@@ -89,6 +89,30 @@ public:
         int32& OutErrorCode
     );
 
+    /** Start an incremental memory search. Release it with EndMemorySearch. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool BeginMemorySearch(
+        int64 MemoryHandle,
+        const TArray<float>& Query,
+        int32 TopK,
+        int32 GroupId,
+        int64& OutCursorHandle,
+        int32& OutErrorCode
+    );
+
+    /** Fetch the next batch from an incremental memory search. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool FetchMemorySearch(
+        int64 CursorHandle,
+        int32 MaxResults,
+        TArray<FAstralMemorySearchResult>& OutResults,
+        int32& OutErrorCode
+    );
+
+    /** Release an incremental memory search handle. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static void EndMemorySearch(int64 CursorHandle);
+
     /** True when the capability bitmask contains embeddings support. */
     UFUNCTION(BlueprintPure, Category = "Astral|Capabilities")
     static bool HasEmbeddings(int64 Caps);

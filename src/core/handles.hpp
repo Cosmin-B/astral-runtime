@@ -6,7 +6,7 @@
  * - slot index (24 bits)
  * - generation (32 bits)
  *
- * Goals:
+ * Design:
  * - Detect stale handles after free (generation mismatch).
  * - Provider-agnostic (stores opaque pointers only).
  * - No dynamic allocation (fixed-size table).
@@ -33,6 +33,7 @@ enum class HandleKind : uint32_t {
     PromptCache = 6,
     Toolset = 7,
     MemoryIndex = 8,
+    MemorySearch = MemoryIndex + 1,
 };
 
 inline constexpr uint32_t kMaxHandles = 8192;
