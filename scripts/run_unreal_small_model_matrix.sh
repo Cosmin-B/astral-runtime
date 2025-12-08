@@ -15,21 +15,16 @@ sample_prompt="${ASTRAL_UNREAL_SAMPLE_PROMPT:-Say hello from Astral.}"
 sample_memory_backend="${ASTRAL_UNREAL_SAMPLE_MEMORY_BACKEND:-mock}"
 sample_media_backend="${ASTRAL_UNREAL_SAMPLE_MEDIA_BACKEND:-mock}"
 expect_engine_version="${ASTRAL_UNREAL_SAMPLE_EXPECT_ENGINE_VERSION:-}"
+model_preset_tool="${root_dir}/scripts/model_preset_tool.py"
 validate_runtime=1
 download_missing=0
 build_native=1
 dry_run=0
 list_only=0
-known_presets=(
-  gemma3-270m-q4km
-  gemma3-1b-it-q4km
-  qwen3-0.6b-q8
-  qwen3-1.7b-q8
-  smollm3-3b-q4km
-)
 declare -a selected_models=()
 declare -a passthrough_args=()
 declare -a normalized_models=()
+declare -a known_presets=()
 
 usage() {
   cat <<'USAGE'
@@ -59,9 +54,8 @@ Options:
   --list                   Print resolved model list and exit
   -h, --help               Show help
 
-Known presets:
-  gemma3-270m-q4km, gemma3-1b-it-q4km, qwen3-0.6b-q8, qwen3-1.7b-q8,
-  smollm3-3b-q4km
+Known presets are loaded from scripts/model_presets.json entries marked for the
+Unreal sample matrix.
 
 When no --model or --preset is supplied, the runner auto-selects known small
 fixtures that already exist under --models-dir.
@@ -69,28 +63,11 @@ USAGE
 }
 
 preset_filename() {
-  case "$1" in
-    gemma3-270m-q4km) printf '%s\n' "gemma-3-270m-q4_k_m.gguf" ;;
-    gemma3-1b-it-q4km) printf '%s\n' "gemma-3-1b-it-Q4_K_M.gguf" ;;
-    qwen3-0.6b-q8) printf '%s\n' "Qwen3-0.6B-Q8_0.gguf" ;;
-    qwen3-1.7b-q8) printf '%s\n' "Qwen3-1.7B-Q8_0.gguf" ;;
-    smollm3-3b-q4km) printf '%s\n' "SmolLM3-Q4_K_M.gguf" ;;
-    *)
-      echo "Unknown small-model preset: $1" >&2
-      exit 2
-      ;;
-  esac
+  python3 "${model_preset_tool}" filename "$1"
 }
 
 downloader_preset_for_file() {
-  case "$(basename "$1")" in
-    gemma-3-270m-q4_k_m.gguf) printf '%s\n' "gemma3-270m-q4km" ;;
-    gemma-3-1b-it-Q4_K_M.gguf) printf '%s\n' "gemma3-1b-it-q4km" ;;
-    Qwen3-0.6B-Q8_0.gguf) printf '%s\n' "qwen3-0.6b-q8" ;;
-    Qwen3-1.7B-Q8_0.gguf) printf '%s\n' "qwen3-1.7b-q8" ;;
-    SmolLM3-Q4_K_M.gguf) printf '%s\n' "smollm3-3b-q4km" ;;
-    *) printf '\n' ;;
-  esac
+  python3 "${model_preset_tool}" preset-for-file "$(basename "$1")" || true
 }
 
 slug_for_model() {
@@ -140,6 +117,12 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+mapfile -t known_presets < <(python3 "${model_preset_tool}" list --unreal-matrix | awk -F $'\t' '{print $1}')
+if [[ "${#known_presets[@]}" -eq 0 ]]; then
+  echo "[unreal_small_matrix] no manifest presets marked for the Unreal sample matrix" >&2
+  exit 2
+fi
 
 models_dir="$(abs_under_root "${models_dir}")"
 out_root="$(abs_under_root "${out_root}")"

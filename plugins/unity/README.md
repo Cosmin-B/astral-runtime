@@ -183,6 +183,17 @@ bool isValid = model.IsValid;
 
 Note: embeddings are supported; `Embeddings` preset selects `embeddingsOnly=1` and related defaults.
 
+For local smoke tests, use the shared preset manifest instead of hard-coding
+model URLs:
+
+```bash
+./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
+./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
+```
+
+The manifest pins filenames, byte sizes, SHA-256 checksums, model type, context
+length, and embedding dimensions under `scripts/model_presets.json`.
+
 ### AstralSession
 
 Inference session with streaming support.

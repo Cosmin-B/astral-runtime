@@ -665,6 +665,8 @@ endforeach()
 
 set(model_downloader_file "${ROOT}/tests/model_downloader.sh")
 file(READ "${model_downloader_file}" model_downloader_content)
+set(model_presets_file "${ROOT}/scripts/model_presets.json")
+file(READ "${model_presets_file}" model_presets_content)
 foreach(required_model_downloader_text
     "qwen3-0.6b-q8"
     "Qwen/Qwen3-0.6B-GGUF"
@@ -684,9 +686,18 @@ foreach(required_model_downloader_text
     "qwen3-1.7b-q8"
     "Qwen/Qwen3-1.7B-GGUF"
     "Qwen3-1.7B-Q8_0.gguf")
-  string(FIND "${model_downloader_content}" "${required_model_downloader_text}" model_downloader_pos)
+  string(FIND "${model_presets_content}" "${required_model_downloader_text}" model_preset_pos)
+  if(model_preset_pos EQUAL -1)
+    message(FATAL_ERROR "Model presets are missing '${required_model_downloader_text}'")
+  endif()
+endforeach()
+foreach(required_model_tool_text
+    "model_preset_tool.py"
+    "download"
+    "list")
+  string(FIND "${model_downloader_content}" "${required_model_tool_text}" model_downloader_pos)
   if(model_downloader_pos EQUAL -1)
-    message(FATAL_ERROR "Model downloader is missing '${required_model_downloader_text}'")
+    message(FATAL_ERROR "Model downloader wrapper is missing '${required_model_tool_text}'")
   endif()
 endforeach()
 

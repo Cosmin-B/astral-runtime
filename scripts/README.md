@@ -459,6 +459,22 @@ The HF GGUF matrix is fail-hard by default: any `[bench] FAILED` row makes
 `run_hf_bench_matrix.sh` exit non-zero. Use `--allow-failures` only for local
 investigation, not for release evidence.
 
+Small model presets are pinned in `scripts/model_presets.json`. The manifest is
+the source of truth for preset names, filenames, byte sizes, SHA-256 checksums,
+model type, context length, embedding dimension, and whether the preset belongs
+in the Unreal packaged-sample matrix.
+
+```bash
+./tests/model_downloader.sh --list-presets
+./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
+./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
+python3 ./scripts/model_preset_tool.py validate-manifest
+```
+
+Existing files are validated against the pinned byte size and SHA-256 before
+they are reused. Incomplete downloads resume from the `.part` file when the
+server accepts range requests.
+
 `hetzner_watchdog.sh` can keep long-running HF downloads and wait+bench jobs
 alive on a remote runner. Use `--dry-run` to inspect the exact commands before
 letting it start background jobs.
@@ -473,7 +489,8 @@ use:
 ./scripts/run_unreal_small_model_matrix.sh --runuat "$UNREAL_RUNUAT" --skip-native-build
 ```
 
-The runner is intentionally a thin wrapper around
+The runner reads matrix presets from `scripts/model_presets.json` and is
+otherwise a thin wrapper around
 `run_unreal_sample_package.sh`: it chooses the local GGUF paths, creates
 per-model output directories, keeps runtime logs out of the repo, and validates
 each runtime log after a real sample launch. Use `--skip-runtime-validation`

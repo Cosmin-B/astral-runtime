@@ -161,6 +161,9 @@ on local GGUF files. Download the small fixtures first:
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8
 ```
 
+Presets are resolved from `scripts/model_presets.json`; use `--dry-run` to see
+the pinned path, URL, byte size, and SHA-256 before downloading.
+
 Then run the slim container against the package built by the full UE SDK lane:
 
 ```bash
@@ -193,7 +196,8 @@ Use `--dry-run` to inspect the generated `run_unreal_sample_package.sh`
 commands before starting Unreal, or `--preset qwen3-0.6b-q8` to run one
 candidate. Add `--download-missing` when a known Gemma/Qwen/SmolLM preset is
 not present under `tests/models`; the runner downloads it through
-`tests/model_downloader.sh` and keeps the GGUF outside git.
+`tests/model_downloader.sh` and keeps the GGUF outside git. The known model list
+comes from the same preset manifest used by native and Unity smoke runs.
 
 When the editor is only available through the cached Epic container images, run
 the same matrix inside the container:
