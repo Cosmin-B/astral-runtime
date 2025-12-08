@@ -15,6 +15,7 @@
 #include "tooling.hpp"
 #include "chunking.hpp"
 #include "memory_index.hpp"
+#include "agent.hpp"
 #include "../core/error.hpp"
 #include "../core/abi_guard.hpp"
 #include "../core/handles.hpp"
@@ -60,6 +61,12 @@ inline astral::inference::MemoryIndex* lookup_memory_index(AstralHandle index) {
 inline astral::inference::MemorySearchCursor* lookup_memory_search_cursor(AstralHandle cursor) {
     return static_cast<astral::inference::MemorySearchCursor*>(
         astral::core::lookup_handle(cursor, astral::core::HandleKind::MemorySearch)
+    );
+}
+
+inline astral::inference::Agent* lookup_agent(AstralHandle agent) {
+    return static_cast<astral::inference::Agent*>(
+        astral::core::lookup_handle(agent, astral::core::HandleKind::Agent)
     );
 }
 
@@ -3137,6 +3144,245 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stats(AstralHandle conv, AstralConv
     }
 
     const AstralErr err = astral::inference::conv_stats(c, out_stats);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+// ============================================================================
+// Agent API
+// ============================================================================
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_create(const AstralAgentDesc* desc, AstralHandle* out_agent) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (desc == nullptr || out_agent == nullptr) {
+        set_err_invalid("desc/out_agent");
+        return ASTRAL_E_INVALID;
+    }
+    astral::inference::Agent* agent = nullptr;
+    const AstralErr err = astral::inference::agent_create(desc, &agent);
+    if (err == ASTRAL_OK) {
+        *out_agent = astral::inference::agent_handle(agent);
+    } else {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API void ASTRAL_CALL astral_agent_destroy(AstralHandle agent) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (agent == 0) {
+        set_err_invalid("agent");
+        return;
+    }
+    auto* a = lookup_agent(agent);
+    if (a == nullptr) {
+        set_err_invalid("agent (invalid handle)");
+        return;
+    }
+    astral::inference::agent_destroy(a);
+    ASTRAL_ABI_CATCH_END_VOID()
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_system_prompt(AstralHandle agent, AstralSpanU8 system_prompt) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_set_system_prompt(a, system_prompt);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt_size(AstralHandle agent, uint32_t* out_bytes) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_bytes == nullptr) {
+        set_err_invalid("agent/out_bytes");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_get_system_prompt_size(a, out_bytes);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt(
+    AstralHandle agent,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_len == nullptr) {
+        set_err_invalid("agent/out_len");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_get_system_prompt(a, out_text, out_len);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_message_add(AstralHandle agent, const AstralAgentMessage* message) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_message_add(a, message);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_clear(AstralHandle agent) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_history_clear(a);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_count(AstralHandle agent, uint32_t* out_count) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_count == nullptr) {
+        set_err_invalid("agent/out_count");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_history_count(a, out_count);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_save_size(AstralHandle agent, uint32_t* out_bytes) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_bytes == nullptr) {
+        set_err_invalid("agent/out_bytes");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_history_save_size(a, out_bytes);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_save(AstralHandle agent, AstralMutSpanU8 out_bytes, uint32_t* out_len) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_len == nullptr) {
+        set_err_invalid("agent/out_len");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_history_save(a, out_bytes, out_len);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_load(AstralHandle agent, AstralSpanU8 bytes) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_history_load(a, bytes);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_enqueue(AstralHandle agent, const AstralAgentChatDesc* desc) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_chat_enqueue(a, desc);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_cancel(AstralHandle agent) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_chat_cancel(a);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API int32_t ASTRAL_CALL astral_agent_chat_stream_read(
+    AstralHandle agent,
+    AstralMutSpanU8 out_buf,
+    uint32_t timeout_ms
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    const int32_t result = astral::inference::agent_chat_stream_read(a, out_buf, timeout_ms);
+    if (result < 0 && result != ASTRAL_E_TIMEOUT) {
+        set_err_code(static_cast<AstralErr>(result));
+    }
+    return result;
+    ASTRAL_ABI_CATCH_END_I32(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_result(AstralHandle agent, AstralAgentChatResult* out_result) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_result == nullptr) {
+        set_err_invalid("agent/out_result");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_chat_result(a, out_result);
     if (err != ASTRAL_OK) {
         set_err_code(err);
     }

@@ -17,6 +17,9 @@ ANN indexes.
 - `astral_memory_remove()`
 - `astral_memory_clear()`
 - `astral_memory_search()`
+- `astral_memory_search_begin()`
+- `astral_memory_search_fetch()`
+- `astral_memory_search_end()`
 - `astral_memory_save_size()`
 - `astral_memory_save()`
 - `astral_memory_load()`
@@ -24,6 +27,11 @@ ANN indexes.
 The index is fixed-dimension and fixed-capacity. Add operations copy vectors
 into native storage. Search returns result metadata first; callers decide whether
 to fetch text or engine objects for the selected keys.
+
+Incremental search cursors snapshot the top-k result set at begin time and let
+callers fetch fixed-size batches without re-running the vector scan. The cursor
+owns its compact native result buffer and must be released with
+`astral_memory_search_end()`.
 
 ## Metrics
 

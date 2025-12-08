@@ -72,6 +72,16 @@ enum class EAstralToolChoiceMode : uint8
     TextOrTool = 2
 };
 
+/** Native chat history role. */
+UENUM(BlueprintType)
+enum class EAstralAgentRole : uint8
+{
+    System = 1,
+    User = 2,
+    Assistant = 3,
+    Tool = 4
+};
+
 /** Text or token splitting mode for native chunking. */
 UENUM(BlueprintType)
 enum class EAstralChunkMode : uint8
@@ -481,6 +491,83 @@ struct ASTRALRT_API FAstralMemorySearchResult
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
     int32 Flags = 0;
+};
+
+/** Native agent configuration. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralAgentDesc
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int64 ModelHandle = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int64 PromptCacheHandle = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int64 MemoryIndexHandle = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int64 ToolsetHandle = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int32 MaxTokens = 128;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    float Temperature = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int32 TopK = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    float TopP = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    bool bStream = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int32 Seed = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    EAstralToolChoiceMode ToolChoiceMode = EAstralToolChoiceMode::Auto;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int32 MaxMessages = 64;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int32 MaxPromptBytes = 65536;
+};
+
+/** Result from a native agent chat request. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralAgentChatResult
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int32 State = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int32 PromptBytes = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int32 HistoryMessages = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int32 PromptTokens = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int32 LastError = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int64 GeneratedTokens = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    double TimeToFirstTokenMs = 0.0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    double TokensPerSecond = 0.0;
 };
 
 /** Media capabilities reported after InitMedia succeeds. */

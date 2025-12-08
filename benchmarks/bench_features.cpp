@@ -35,6 +35,14 @@ static constexpr uint32_t kBenchMemoryGroupMask = 1u;
 static constexpr uint32_t kBenchMemoryDocShift = 4u;
 static constexpr uint64_t kBenchMemoryKeyBase = 1u;
 static constexpr float kBenchMemoryValueBias = 1.0f;
+static constexpr uint32_t kBenchAgentContextTokens = 256;
+static constexpr uint32_t kBenchAgentSlots = 1;
+static constexpr uint32_t kBenchAgentBatchTokens = 16;
+static constexpr uint32_t kBenchAgentMaxTokens = 0;
+static constexpr uint32_t kBenchAgentMaxMessages = 8;
+static constexpr uint32_t kBenchAgentMaxPromptBytes = 4096;
+static constexpr uint32_t kBenchAgentSeed = 11;
+static constexpr uint32_t kBenchAgentPollLimit = 1024;
 
 static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
     const char* v = std::getenv(key);
@@ -702,6 +710,103 @@ static BenchResult bench_memory_cursor_fetch(uint64_t iters) {
     return r;
 }
 
+static AstralHandle load_mock_model_for_agent_bench() {
+    AstralModelDesc desc{};
+    desc.size = sizeof(AstralModelDesc);
+    desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    desc.backend_name = span_from_cstr("mock");
+    desc.n_ctx = kBenchAgentContextTokens;
+
+    AstralHandle model = 0;
+    const AstralErr err = astral_model_load(&desc, &model);
+    return err == ASTRAL_OK ? model : 0;
+}
+
+static BenchResult bench_agent_prompt_warmup(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.agent prompt_warmup";
+    r.ops = iters;
+
+    AstralHandle model = load_mock_model_for_agent_bench();
+    if (!astral_handle_valid(model)) {
+        r.ops = 0;
+        return r;
+    }
+
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = kBenchAgentSlots;
+    ex.max_batch_tokens = kBenchAgentBatchTokens;
+    if (astral_model_executor_configure(model, &ex) != ASTRAL_OK) {
+        astral_model_release(model);
+        r.ops = 0;
+        return r;
+    }
+
+    AstralAgentDesc desc{};
+    desc.size = sizeof(AstralAgentDesc);
+    desc.model = model;
+    desc.max_tokens = kBenchAgentMaxTokens;
+    desc.temperature = 0.0f;
+    desc.top_p = 1.0f;
+    desc.stream_enabled = 0;
+    desc.seed = kBenchAgentSeed;
+    desc.max_messages = kBenchAgentMaxMessages;
+    desc.max_prompt_bytes = kBenchAgentMaxPromptBytes;
+
+    AstralHandle agent = 0;
+    if (astral_agent_create(&desc, &agent) != ASTRAL_OK) {
+        astral_model_release(model);
+        r.ops = 0;
+        return r;
+    }
+
+    (void)astral_agent_set_system_prompt(agent, span_from_cstr("Answer briefly."));
+    AstralAgentMessage history{};
+    history.size = sizeof(AstralAgentMessage);
+    history.role = ASTRAL_AGENT_ROLE_USER;
+    history.content = span_from_cstr("hello");
+    (void)astral_agent_message_add(agent, &history);
+
+    AstralAgentChatDesc chat{};
+    chat.size = sizeof(AstralAgentChatDesc);
+    chat.flags = ASTRAL_AGENT_CHAT_FLAG_WARMUP;
+    chat.user_message = span_from_cstr("summarize");
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        const AstralErr err = astral_agent_chat_enqueue(agent, &chat);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+        AstralAgentChatResult result{};
+        result.size = sizeof(AstralAgentChatResult);
+        for (uint32_t poll = 0; poll < kBenchAgentPollLimit; ++poll) {
+            if (astral_agent_chat_result(agent, &result) != ASTRAL_OK) {
+                break;
+            }
+            if (result.state == ASTRAL_SESSION_COMPLETED || result.state == ASTRAL_SESSION_FAILED ||
+                result.state == ASTRAL_SESSION_CANCELED) {
+                break;
+            }
+        }
+        if (result.state != ASTRAL_SESSION_COMPLETED) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_agent_destroy(agent);
+    astral_model_release(model);
+    return r;
+}
+
 static AstralHandle create_session(AstralHandle model, uint32_t max_tokens, float temperature, uint32_t top_k, float top_p, uint32_t seed);
 
 static AstralErr init_media_for_model(AstralHandle model, const char* media_path) {
@@ -1051,6 +1156,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_chunk_word_ranges(iters), clock_info().name);
         print_result(bench_memory_flat_search(iters), clock_info().name);
         print_result(bench_memory_cursor_fetch(iters), clock_info().name);
+        print_result(bench_agent_prompt_warmup(iters), clock_info().name);
         astral_shutdown();
         return;
     }
@@ -1090,6 +1196,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_chunk_word_ranges(iters), clock_info().name);
     print_result(bench_memory_flat_search(iters), clock_info().name);
     print_result(bench_memory_cursor_fetch(iters), clock_info().name);
+    print_result(bench_agent_prompt_warmup(iters), clock_info().name);
 
     // Embeddings.
     {

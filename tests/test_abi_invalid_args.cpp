@@ -182,6 +182,15 @@ TEST(abi_invalid_args_model_surface) {
     memory_search.top_k = kMemoryTopK;
     memory_search.group_id = ASTRAL_MEMORY_GROUP_ANY;
     AstralMemorySearchResult memory_result{};
+    AstralAgentDesc agent_desc{};
+    agent_desc.size = sizeof(AstralAgentDesc);
+    AstralAgentMessage agent_message{};
+    agent_message.size = sizeof(AstralAgentMessage);
+    agent_message.role = ASTRAL_AGENT_ROLE_USER;
+    AstralAgentChatDesc agent_chat{};
+    agent_chat.size = sizeof(AstralAgentChatDesc);
+    AstralAgentChatResult agent_result{};
+    agent_result.size = sizeof(AstralAgentChatResult);
     int32_t tokens[2] = {1, 2};
     uint32_t token_count = 0;
     uint8_t text_buf[16] = {};
@@ -249,6 +258,21 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_memory_save(0, null_mut_span(), nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(nullptr, null_span(), &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(&memory_desc, null_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_create(nullptr, &toolset), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_create(&agent_desc, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_set_system_prompt(0, null_span()), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_system_prompt_size(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_system_prompt(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_message_add(0, &agent_message), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_clear(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_count(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_save_size(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_save(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_load(0, null_span()), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_enqueue(0, &agent_chat), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_cancel(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_stream_read(0, text_out, 0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_result(0, &agent_result), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_configure(0, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_tune(0, nullptr), ASTRAL_E_INVALID);
 
