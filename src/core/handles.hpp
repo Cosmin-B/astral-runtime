@@ -34,6 +34,7 @@ enum class HandleKind : uint32_t {
     Toolset = 7,
     MemoryIndex = 8,
     MemorySearch = MemoryIndex + 1,
+    Agent = MemorySearch + 1,
 };
 
 inline constexpr uint32_t kMaxHandles = 8192;

@@ -863,6 +863,80 @@ namespace Astral.Runtime
             public uint flags;
         }
 
+        public enum AstralAgentRole : uint
+        {
+            System = 1,
+            User = 2,
+            Assistant = 3,
+            Tool = 4
+        }
+
+        [Flags]
+        public enum AstralAgentFlags : uint
+        {
+            None = 0
+        }
+
+        [Flags]
+        public enum AstralAgentChatFlags : uint
+        {
+            None = 0,
+            Warmup = 1u << 0
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentDesc
+        {
+            public uint size;
+            public AstralAgentFlags flags;
+            public AstralHandle model;
+            public AstralHandle prompt_cache;
+            public AstralHandle memory_index;
+            public AstralHandle toolset;
+            public uint max_tokens;
+            public float temperature;
+            public uint top_k;
+            public float top_p;
+            public byte stream_enabled;
+            public byte _padding0;
+            public byte _padding1;
+            public byte _padding2;
+            public uint seed;
+            public uint tool_choice_mode;
+            public uint max_messages;
+            public uint max_prompt_bytes;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentMessage
+        {
+            public uint size;
+            public AstralAgentRole role;
+            public AstralSpanU8 content;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentChatDesc
+        {
+            public uint size;
+            public AstralAgentChatFlags flags;
+            public AstralSpanU8 user_message;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentChatResult
+        {
+            public uint size;
+            public uint state;
+            public uint prompt_bytes;
+            public uint history_messages;
+            public uint prompt_tokens;
+            public int last_error;
+            public ulong generated_tokens;
+            public double t_first_token_ms;
+            public double tok_per_s;
+        }
+
         /// <summary>
         /// Create an inference session.
         /// Thread-safety: Safe to call from multiple threads.
@@ -1034,6 +1108,51 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern void astral_memory_search_end(AstralHandle cursor);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_create(ref AstralAgentDesc desc, out AstralHandle out_agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_agent_destroy(AstralHandle agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_set_system_prompt(AstralHandle agent, AstralSpanU8 system_prompt);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_system_prompt_size(AstralHandle agent, out uint out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_system_prompt(AstralHandle agent, AstralMutSpanU8 out_text, out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_message_add(AstralHandle agent, ref AstralAgentMessage message);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_clear(AstralHandle agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_count(AstralHandle agent, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_save_size(AstralHandle agent, out uint out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_save(AstralHandle agent, AstralMutSpanU8 out_bytes, out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_load(AstralHandle agent, AstralSpanU8 bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_enqueue(AstralHandle agent, ref AstralAgentChatDesc desc);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_cancel(AstralHandle agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_stream_read(AstralHandle agent, AstralMutSpanU8 out_buf, uint timeout_ms);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_result(AstralHandle agent, ref AstralAgentChatResult out_result);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_memory_save_size(AstralHandle index, out ulong out_bytes);

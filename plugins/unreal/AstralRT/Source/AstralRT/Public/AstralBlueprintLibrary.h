@@ -113,6 +113,42 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static void EndMemorySearch(int64 CursorHandle);
 
+    /** Create a native agent over an Astral model/executor. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool CreateAgent(const FAstralAgentDesc& Desc, int64& OutAgentHandle, int32& OutErrorCode);
+
+    /** Release a native agent handle. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static void DestroyAgent(int64 AgentHandle);
+
+    /** Store a native-owned system prompt for the agent. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool SetAgentSystemPrompt(int64 AgentHandle, const FString& SystemPrompt, int32& OutErrorCode);
+
+    /** Add one native-owned history entry. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode);
+
+    /** Clear native-owned chat history. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool ClearAgentHistory(int64 AgentHandle, int32& OutErrorCode);
+
+    /** Start a native agent chat request. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool EnqueueAgentChat(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly, int32& OutErrorCode);
+
+    /** Cancel a native agent chat request. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool CancelAgentChat(int64 AgentHandle, int32& OutErrorCode);
+
+    /** Poll native agent chat text. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool ReadAgentChat(int64 AgentHandle, int32 TimeoutMs, FString& OutText, bool& bEndOfStream, int32& OutErrorCode);
+
+    /** Read native agent chat status and counters. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool GetAgentChatResult(int64 AgentHandle, FAstralAgentChatResult& OutResult, int32& OutErrorCode);
+
     /** True when the capability bitmask contains embeddings support. */
     UFUNCTION(BlueprintPure, Category = "Astral|Capabilities")
     static bool HasEmbeddings(int64 Caps);

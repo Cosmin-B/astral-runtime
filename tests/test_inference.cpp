@@ -141,6 +141,33 @@ std::string read_conv_stream_all(AstralHandle conv) {
     return out;
 }
 
+std::string read_agent_stream_all(AstralHandle agent) {
+    constexpr uint32_t kBufferBytes = 256;
+    constexpr uint32_t kMaxReads = 256;
+    constexpr uint32_t kReadTimeoutMs = 10;
+    std::string out;
+    out.reserve(kBufferBytes);
+
+    uint8_t buf[kBufferBytes];
+    for (uint32_t i = 0; i < kMaxReads; ++i) {
+        AstralMutSpanU8 span{};
+        span.data = buf;
+        span.len = sizeof(buf);
+
+        const int32_t n = astral_agent_chat_stream_read(agent, span, kReadTimeoutMs);
+        if (n == 0) {
+            break;
+        }
+        if (n == ASTRAL_E_TIMEOUT) {
+            continue;
+        }
+        ASSERT_GT(n, 0);
+        out.append(reinterpret_cast<const char*>(buf), static_cast<size_t>(n));
+    }
+
+    return out;
+}
+
 void run_mock_lifecycle_session(AstralHandle model, uint32_t seed) {
     AstralSessionDesc session_desc = {};
     session_desc.model = model;
@@ -355,6 +382,131 @@ TEST(inference_conversation_grammar_gbnf_mock) {
     }
 
     astral_conv_destroy(conv);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(inference_agent_history_and_chat_mock) {
+    constexpr uint32_t kReserveBytes = 32 * 1024 * 1024;
+    constexpr uint32_t kExecutorSlots = 1;
+    constexpr uint32_t kBatchTokens = 8;
+    constexpr uint32_t kMaxTokens = 12;
+    constexpr uint32_t kMaxMessages = 8;
+    constexpr uint32_t kMaxPromptBytes = 4096;
+    constexpr uint32_t kSeed = 7;
+    constexpr uint32_t kSystemBytes = 13;
+    constexpr uint32_t kHistoryCount = 2;
+    constexpr uint32_t kSaveCapacity = 512;
+    constexpr uint32_t kChatHistoryCount = 3;
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = kReserveBytes;
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralHandle model = load_mock_model(nullptr);
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = kExecutorSlots;
+    ex.max_batch_tokens = kBatchTokens;
+    ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
+
+    AstralAgentDesc desc{};
+    desc.size = sizeof(AstralAgentDesc);
+    desc.model = model;
+    desc.max_tokens = kMaxTokens;
+    desc.temperature = 0.0f;
+    desc.top_p = 1.0f;
+    desc.stream_enabled = 1;
+    desc.seed = kSeed;
+    desc.max_messages = kMaxMessages;
+    desc.max_prompt_bytes = kMaxPromptBytes;
+
+    AstralHandle agent = 0;
+    ASSERT_EQ(astral_agent_create(&desc, &agent), ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(agent));
+
+    ASSERT_EQ(astral_agent_set_system_prompt(agent, span_from_cstr("reply tersely")), ASTRAL_OK);
+    uint32_t bytes = 0;
+    ASSERT_EQ(astral_agent_get_system_prompt_size(agent, &bytes), ASTRAL_OK);
+    ASSERT_EQ(bytes, kSystemBytes);
+
+    uint8_t system_buf[kSystemBytes]{};
+    AstralMutSpanU8 system_out{};
+    system_out.data = system_buf;
+    system_out.len = sizeof(system_buf);
+    ASSERT_EQ(astral_agent_get_system_prompt(agent, system_out, &bytes), ASTRAL_OK);
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(system_buf), bytes), "reply tersely");
+
+    AstralAgentMessage user{};
+    user.size = sizeof(AstralAgentMessage);
+    user.role = ASTRAL_AGENT_ROLE_USER;
+    user.content = span_from_cstr("hello");
+    ASSERT_EQ(astral_agent_message_add(agent, &user), ASTRAL_OK);
+
+    AstralAgentMessage assistant{};
+    assistant.size = sizeof(AstralAgentMessage);
+    assistant.role = ASTRAL_AGENT_ROLE_ASSISTANT;
+    assistant.content = span_from_cstr("hi");
+    ASSERT_EQ(astral_agent_message_add(agent, &assistant), ASTRAL_OK);
+
+    uint32_t count = 0;
+    ASSERT_EQ(astral_agent_history_count(agent, &count), ASTRAL_OK);
+    ASSERT_EQ(count, kHistoryCount);
+
+    uint32_t save_bytes = 0;
+    ASSERT_EQ(astral_agent_history_save_size(agent, &save_bytes), ASTRAL_OK);
+    ASSERT_GT(save_bytes, 0u);
+    ASSERT_LT(save_bytes, kSaveCapacity);
+    uint8_t saved[kSaveCapacity]{};
+    AstralMutSpanU8 saved_out{};
+    saved_out.data = saved;
+    saved_out.len = sizeof(saved);
+    uint32_t written = 0;
+    ASSERT_EQ(astral_agent_history_save(agent, saved_out, &written), ASTRAL_OK);
+    ASSERT_EQ(written, save_bytes);
+
+    ASSERT_EQ(astral_agent_history_clear(agent), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_history_count(agent, &count), ASTRAL_OK);
+    ASSERT_EQ(count, 0u);
+    AstralSpanU8 saved_in{};
+    saved_in.data = saved;
+    saved_in.len = written;
+    ASSERT_EQ(astral_agent_history_load(agent, saved_in), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_history_count(agent, &count), ASTRAL_OK);
+    ASSERT_EQ(count, kHistoryCount);
+
+    AstralAgentMessage next{};
+    next.size = sizeof(AstralAgentMessage);
+    next.role = ASTRAL_AGENT_ROLE_USER;
+    next.content = span_from_cstr("next");
+    ASSERT_EQ(astral_agent_message_add(agent, &next), ASTRAL_OK);
+
+    AstralAgentChatDesc chat{};
+    chat.size = sizeof(AstralAgentChatDesc);
+    chat.user_message = span_from_cstr("next");
+    const AstralErr chat_err = astral_agent_chat_enqueue(agent, &chat);
+    ASSERT_EQ(chat_err, ASTRAL_OK);
+    (void)read_agent_stream_all(agent);
+
+    AstralAgentChatResult result{};
+    result.size = sizeof(AstralAgentChatResult);
+    ASSERT_EQ(astral_agent_chat_result(agent, &result), ASTRAL_OK);
+    ASSERT_EQ(result.state, ASTRAL_SESSION_COMPLETED);
+    ASSERT_EQ(result.history_messages, kChatHistoryCount);
+    ASSERT_GT(result.prompt_bytes, 0u);
+    ASSERT_GT(result.generated_tokens, 0ull);
+
+    chat.flags = ASTRAL_AGENT_CHAT_FLAG_WARMUP;
+    ASSERT_EQ(astral_agent_chat_enqueue(agent, &chat), ASTRAL_OK);
+    (void)read_agent_stream_all(agent);
+    result = AstralAgentChatResult{};
+    result.size = sizeof(AstralAgentChatResult);
+    ASSERT_EQ(astral_agent_chat_result(agent, &result), ASTRAL_OK);
+    ASSERT_EQ(result.state, ASTRAL_SESSION_COMPLETED);
+    ASSERT_EQ(result.history_messages, kChatHistoryCount);
+    ASSERT_EQ(astral_agent_chat_cancel(agent), ASTRAL_OK);
+
+    astral_agent_destroy(agent);
     astral_model_release(model);
     astral_shutdown();
 }

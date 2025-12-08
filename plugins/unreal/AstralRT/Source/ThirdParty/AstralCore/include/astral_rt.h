@@ -1270,6 +1270,80 @@ enum {
     ASTRAL_SESSION_FAILED = 5,    /** Completed due to error */
 };
 
+typedef uint32_t AstralAgentRole;
+enum {
+    ASTRAL_AGENT_ROLE_SYSTEM = 1,
+    ASTRAL_AGENT_ROLE_USER = 2,
+    ASTRAL_AGENT_ROLE_ASSISTANT = 3,
+    ASTRAL_AGENT_ROLE_TOOL = 4,
+};
+
+typedef uint32_t AstralAgentFlags;
+enum {
+    ASTRAL_AGENT_FLAG_NONE = 0,
+};
+
+typedef uint32_t AstralAgentChatFlags;
+enum {
+    ASTRAL_AGENT_CHAT_FLAG_NONE = 0,
+    ASTRAL_AGENT_CHAT_FLAG_WARMUP = 1u << 0,
+};
+
+typedef struct AstralAgentDesc {
+    uint32_t size;
+    AstralAgentFlags flags;
+    AstralHandle model;
+    AstralHandle prompt_cache;
+    AstralHandle memory_index;
+    AstralHandle toolset;
+    uint32_t max_tokens;
+    float temperature;
+    uint32_t top_k;
+    float top_p;
+    uint8_t stream_enabled;
+    uint8_t _padding0[3];
+    uint32_t seed;
+    AstralToolChoiceMode tool_choice_mode;
+    uint32_t max_messages;
+    uint32_t max_prompt_bytes;
+} AstralAgentDesc;
+
+typedef struct AstralAgentMessage {
+    uint32_t size;
+    AstralAgentRole role;
+    AstralSpanU8 content;
+} AstralAgentMessage;
+
+typedef struct AstralAgentChatDesc {
+    uint32_t size;
+    AstralAgentChatFlags flags;
+    AstralSpanU8 user_message;
+} AstralAgentChatDesc;
+
+typedef struct AstralAgentChatResult {
+    uint32_t size;
+    AstralSessionState state;
+    uint32_t prompt_bytes;
+    uint32_t history_messages;
+    uint32_t prompt_tokens;
+    AstralErr last_error;
+    uint64_t generated_tokens;
+    double t_first_token_ms;
+    double tok_per_s;
+} AstralAgentChatResult;
+
+#if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 80, "AstralAgentDesc must be 80 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 24, "AstralAgentMessage must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 24, "AstralAgentChatDesc must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 48, "AstralAgentChatResult must be 48 bytes on 64-bit");
+#else
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 76, "AstralAgentDesc must be 76 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 16, "AstralAgentMessage must be 16 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 16, "AstralAgentChatDesc must be 16 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 48, "AstralAgentChatResult must be 48 bytes on 32-bit");
+#endif
+
 /**
  * Request cancellation for an in-flight session decode.
  * Thread-safety: Safe to call from any thread.
@@ -1695,6 +1769,34 @@ ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(
  * Thread-safety: Safe to call concurrently with decoding/streaming.
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stats(AstralHandle conv, AstralConvStats* out_stats);
+
+// ============================================================================
+// Agents
+// ============================================================================
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_create(const AstralAgentDesc* desc, AstralHandle* out_agent);
+ASTRAL_API void ASTRAL_CALL astral_agent_destroy(AstralHandle agent);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_system_prompt(AstralHandle agent, AstralSpanU8 system_prompt);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt_size(AstralHandle agent, uint32_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt(
+    AstralHandle agent,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_message_add(AstralHandle agent, const AstralAgentMessage* message);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_clear(AstralHandle agent);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_count(AstralHandle agent, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_save_size(AstralHandle agent, uint32_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_save(AstralHandle agent, AstralMutSpanU8 out_bytes, uint32_t* out_len);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_load(AstralHandle agent, AstralSpanU8 bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_enqueue(AstralHandle agent, const AstralAgentChatDesc* desc);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_cancel(AstralHandle agent);
+ASTRAL_API int32_t ASTRAL_CALL astral_agent_chat_stream_read(
+    AstralHandle agent,
+    AstralMutSpanU8 out_buf,
+    uint32_t timeout_ms
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_result(AstralHandle agent, AstralAgentChatResult* out_result);
 
 // ============================================================================
 // Embeddings

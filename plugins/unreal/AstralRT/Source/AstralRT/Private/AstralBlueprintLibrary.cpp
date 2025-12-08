@@ -15,6 +15,7 @@ static constexpr int32 kInlineToolCapacity = 8;
 static constexpr int32 kInlineChunkRangeCapacity = 32;
 static constexpr int32 kInlineMemoryRecordCapacity = 32;
 static constexpr int32 kInlineMemoryResultCapacity = 16;
+static constexpr int32 kAgentReadBufferBytes = 4096;
 
 static UObject* resolve_outer(UObject* Outer)
 {
@@ -73,6 +74,22 @@ static AstralMemoryMetric to_native_memory_metric(EAstralMemoryMetric Metric)
     }
 }
 
+static AstralAgentRole to_native_agent_role(EAstralAgentRole Role)
+{
+    switch (Role)
+    {
+    case EAstralAgentRole::System:
+        return ASTRAL_AGENT_ROLE_SYSTEM;
+    case EAstralAgentRole::Assistant:
+        return ASTRAL_AGENT_ROLE_ASSISTANT;
+    case EAstralAgentRole::Tool:
+        return ASTRAL_AGENT_ROLE_TOOL;
+    case EAstralAgentRole::User:
+    default:
+        return ASTRAL_AGENT_ROLE_USER;
+    }
+}
+
 static void fill_native_chunker(const FAstralChunkerDesc& Source, const FTCHARToUTF8& DelimitersUtf8, AstralChunkerDesc& Out)
 {
     Out = AstralChunkerDesc{};
@@ -108,6 +125,20 @@ static FAstralMemorySearchResult from_native_memory_result(const AstralMemorySea
     Result.ChunkId = static_cast<int32>(Native.chunk_id);
     Result.Score = Native.score;
     Result.Flags = static_cast<int32>(Native.flags);
+    return Result;
+}
+
+static FAstralAgentChatResult from_native_agent_result(const AstralAgentChatResult& Native)
+{
+    FAstralAgentChatResult Result;
+    Result.State = static_cast<int32>(Native.state);
+    Result.PromptBytes = static_cast<int32>(Native.prompt_bytes);
+    Result.HistoryMessages = static_cast<int32>(Native.history_messages);
+    Result.PromptTokens = static_cast<int32>(Native.prompt_tokens);
+    Result.LastError = static_cast<int32>(Native.last_error);
+    Result.GeneratedTokens = static_cast<int64>(Native.generated_tokens);
+    Result.TimeToFirstTokenMs = Native.t_first_token_ms;
+    Result.TokensPerSecond = Native.tok_per_s;
     return Result;
 }
 
@@ -636,6 +667,214 @@ void UAstralBlueprintLibrary::EndMemorySearch(int64 CursorHandle)
     {
         astral_memory_search_end(static_cast<AstralHandle>(CursorHandle));
     }
+}
+
+bool UAstralBlueprintLibrary::CreateAgent(const FAstralAgentDesc& Desc, int64& OutAgentHandle, int32& OutErrorCode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateAgent);
+
+    OutAgentHandle = 0;
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (Desc.ModelHandle == 0 || Desc.MaxTokens < 0 || Desc.TopK < 0 || Desc.MaxMessages < 0 || Desc.MaxPromptBytes < 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    AstralAgentDesc Native{};
+    Native.size = sizeof(AstralAgentDesc);
+    Native.model = static_cast<AstralHandle>(Desc.ModelHandle);
+    Native.prompt_cache = static_cast<AstralHandle>(Desc.PromptCacheHandle);
+    Native.memory_index = static_cast<AstralHandle>(Desc.MemoryIndexHandle);
+    Native.toolset = static_cast<AstralHandle>(Desc.ToolsetHandle);
+    Native.max_tokens = static_cast<uint32_t>(Desc.MaxTokens);
+    Native.temperature = Desc.Temperature;
+    Native.top_k = static_cast<uint32_t>(Desc.TopK);
+    Native.top_p = Desc.TopP;
+    Native.stream_enabled = Desc.bStream ? 1 : 0;
+    Native.seed = static_cast<uint32_t>(Desc.Seed);
+    Native.tool_choice_mode = to_native_tool_choice(Desc.ToolChoiceMode);
+    Native.max_messages = static_cast<uint32_t>(Desc.MaxMessages);
+    Native.max_prompt_bytes = static_cast<uint32_t>(Desc.MaxPromptBytes);
+
+    AstralHandle Handle = 0;
+    const AstralErr Err = astral_agent_create(&Native, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    OutAgentHandle = static_cast<int64>(Handle);
+    return true;
+}
+
+void UAstralBlueprintLibrary::DestroyAgent(int64 AgentHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyAgent);
+
+    if (AgentHandle != 0)
+    {
+        astral_agent_destroy(static_cast<AstralHandle>(AgentHandle));
+    }
+}
+
+bool UAstralBlueprintLibrary::SetAgentSystemPrompt(int64 AgentHandle, const FString& SystemPrompt, int32& OutErrorCode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SetAgentSystemPrompt);
+
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (AgentHandle == 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    FTCHARToUTF8 Utf8(*SystemPrompt);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Span.len = static_cast<uint32_t>(Utf8.Length());
+    const AstralErr Err = astral_agent_set_system_prompt(static_cast<AstralHandle>(AgentHandle), Span);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_AddAgentMessage);
+
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (AgentHandle == 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    FTCHARToUTF8 Utf8(*Text);
+    AstralAgentMessage Native{};
+    Native.size = sizeof(AstralAgentMessage);
+    Native.role = to_native_agent_role(Role);
+    Native.content.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Native.content.len = static_cast<uint32_t>(Utf8.Length());
+
+    const AstralErr Err = astral_agent_message_add(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::ClearAgentHistory(int64 AgentHandle, int32& OutErrorCode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ClearAgentHistory);
+
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    const AstralErr Err = astral_agent_history_clear(static_cast<AstralHandle>(AgentHandle));
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::EnqueueAgentChat(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly, int32& OutErrorCode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_EnqueueAgentChat);
+
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (AgentHandle == 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    FTCHARToUTF8 Utf8(*UserMessage);
+    AstralAgentChatDesc Native{};
+    Native.size = sizeof(AstralAgentChatDesc);
+    Native.flags = bWarmupOnly ? ASTRAL_AGENT_CHAT_FLAG_WARMUP : ASTRAL_AGENT_CHAT_FLAG_NONE;
+    Native.user_message.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Native.user_message.len = static_cast<uint32_t>(Utf8.Length());
+
+    const AstralErr Err = astral_agent_chat_enqueue(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::CancelAgentChat(int64 AgentHandle, int32& OutErrorCode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CancelAgentChat);
+
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    const AstralErr Err = astral_agent_chat_cancel(static_cast<AstralHandle>(AgentHandle));
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::ReadAgentChat(int64 AgentHandle, int32 TimeoutMs, FString& OutText, bool& bEndOfStream, int32& OutErrorCode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ReadAgentChat);
+
+    OutText.Reset();
+    bEndOfStream = false;
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (AgentHandle == 0 || TimeoutMs < 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    uint8 Buffer[kAgentReadBufferBytes]{};
+    AstralMutSpanU8 Out{};
+    Out.data = Buffer;
+    Out.len = static_cast<uint32_t>(sizeof(Buffer));
+    const int32 Result = astral_agent_chat_stream_read(static_cast<AstralHandle>(AgentHandle), Out, static_cast<uint32_t>(TimeoutMs));
+    if (Result == 0)
+    {
+        bEndOfStream = true;
+        return true;
+    }
+    if (Result < 0)
+    {
+        OutErrorCode = Result;
+        return false;
+    }
+
+    AstralSpanU8 TextSpan{};
+    TextSpan.data = Buffer;
+    TextSpan.len = static_cast<uint32_t>(Result);
+    OutText = utf8_span_to_string(TextSpan);
+    return true;
+}
+
+bool UAstralBlueprintLibrary::GetAgentChatResult(int64 AgentHandle, FAstralAgentChatResult& OutResult, int32& OutErrorCode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentChatResult);
+
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    AstralAgentChatResult Native{};
+    Native.size = sizeof(AstralAgentChatResult);
+    const AstralErr Err = astral_agent_chat_result(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    OutResult = from_native_agent_result(Native);
+    return true;
 }
 
 bool UAstralBlueprintLibrary::HasEmbeddings(int64 Caps)
