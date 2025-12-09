@@ -28,6 +28,9 @@ static constexpr uint32_t kBenchMemoryDim = 32;
 static constexpr uint32_t kBenchMemoryCapacity = 1024;
 static constexpr uint32_t kBenchMemoryTopK = 8;
 static constexpr uint32_t kBenchMemoryFetchK = 4;
+static constexpr uint32_t kBenchMemoryMinDim = 1;
+static constexpr uint32_t kBenchMemoryMaxDim = 8192;
+static constexpr uint32_t kBenchMemoryMinCapacity = 1;
 static constexpr uint32_t kBenchMemoryValueMask = 0xFu;
 static constexpr uint32_t kBenchMemoryColumnBias = 3;
 static constexpr uint32_t kBenchMemoryQueryMask = 7u;
@@ -43,6 +46,12 @@ static constexpr uint32_t kBenchAgentMaxMessages = 8;
 static constexpr uint32_t kBenchAgentMaxPromptBytes = 4096;
 static constexpr uint32_t kBenchAgentSeed = 11;
 static constexpr uint32_t kBenchAgentPollLimit = 1024;
+static constexpr char kBenchMemoryCapacityEnv[] = "ASTRAL_BENCH_MEMORY_CAPACITY";
+static constexpr char kBenchMemoryDimEnv[] = "ASTRAL_BENCH_MEMORY_DIM";
+static constexpr char kBenchMemoryMetricEnv[] = "ASTRAL_BENCH_MEMORY_METRIC";
+static constexpr char kBenchMemoryMetricDot[] = "dot";
+static constexpr char kBenchMemoryMetricL2[] = "l2";
+static constexpr char kBenchMemoryMetricCosine[] = "cosine";
 
 static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
     const char* v = std::getenv(key);
@@ -84,6 +93,31 @@ static bool file_is_large_enough(const char* path, uint64_t min_bytes) {
 static bool env_enabled(const char* key) {
     const char* value = std::getenv(key);
     return value != nullptr && value[0] != '\0' && std::strcmp(value, kDisabledEnvValue) != 0;
+}
+
+static uint32_t bounded_env_u32(const char* key, uint32_t fallback, uint32_t min_value, uint32_t max_value) {
+    const uint32_t parsed = parse_u32_env(key, fallback);
+    if (parsed < min_value) {
+        return min_value;
+    }
+    if (parsed > max_value) {
+        return max_value;
+    }
+    return parsed;
+}
+
+static AstralMemoryMetric parse_memory_metric_env() {
+    const char* value = std::getenv(kBenchMemoryMetricEnv);
+    if (value == nullptr || value[0] == '\0' || std::strcmp(value, kBenchMemoryMetricCosine) == 0) {
+        return ASTRAL_MEMORY_METRIC_COSINE;
+    }
+    if (std::strcmp(value, kBenchMemoryMetricDot) == 0) {
+        return ASTRAL_MEMORY_METRIC_DOT;
+    }
+    if (std::strcmp(value, kBenchMemoryMetricL2) == 0) {
+        return ASTRAL_MEMORY_METRIC_L2;
+    }
+    return ASTRAL_MEMORY_METRIC_COSINE;
 }
 
 static const char* find_model_path() {
@@ -565,16 +599,45 @@ static BenchResult bench_chunk_word_ranges(uint64_t iters) {
     return r;
 }
 
+static void fill_memory_fixture(std::vector<AstralMemoryRecord>& records,
+                                std::vector<float>& vectors,
+                                uint32_t capacity,
+                                uint32_t dim) {
+    for (uint32_t row = 0; row < capacity; ++row) {
+        records[row].size = sizeof(AstralMemoryRecord);
+        records[row].key = static_cast<uint64_t>(row) + kBenchMemoryKeyBase;
+        records[row].group_id = row & kBenchMemoryGroupMask;
+        records[row].document_id = row >> kBenchMemoryDocShift;
+        records[row].chunk_id = row;
+        for (uint32_t col = 0; col < dim; ++col) {
+            vectors[static_cast<size_t>(row) * dim + col] =
+                static_cast<float>(((row + kBenchMemoryKeyBase) * (col + kBenchMemoryColumnBias)) & kBenchMemoryValueMask) +
+                kBenchMemoryValueBias;
+        }
+    }
+}
+
+static void fill_memory_query(std::vector<float>& query) {
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.size()); ++i) {
+        query[i] = static_cast<float>((i & kBenchMemoryQueryMask) + kBenchMemoryValueBias);
+    }
+}
+
 static BenchResult bench_memory_flat_search(uint64_t iters) {
     BenchResult r{};
     r.name = "features.memory flat_search";
     r.ops = iters;
+    const uint32_t dim =
+        bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim);
+    const uint32_t capacity =
+        bounded_env_u32(kBenchMemoryCapacityEnv, kBenchMemoryCapacity, kBenchMemoryMinCapacity, UINT32_MAX / dim);
+    const AstralMemoryMetric metric = parse_memory_metric_env();
 
     AstralMemoryIndexDesc desc{};
     desc.size = sizeof(AstralMemoryIndexDesc);
-    desc.dim = kBenchMemoryDim;
-    desc.capacity = kBenchMemoryCapacity;
-    desc.metric = ASTRAL_MEMORY_METRIC_COSINE;
+    desc.dim = dim;
+    desc.capacity = capacity;
+    desc.metric = metric;
     desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
 
     AstralHandle index = 0;
@@ -584,31 +647,18 @@ static BenchResult bench_memory_flat_search(uint64_t iters) {
         return r;
     }
 
-    std::vector<AstralMemoryRecord> records(kBenchMemoryCapacity);
-    std::vector<float> vectors(static_cast<size_t>(kBenchMemoryCapacity) * kBenchMemoryDim);
-    for (uint32_t row = 0; row < kBenchMemoryCapacity; ++row) {
-        records[row].size = sizeof(AstralMemoryRecord);
-        records[row].key = static_cast<uint64_t>(row) + kBenchMemoryKeyBase;
-        records[row].group_id = row & kBenchMemoryGroupMask;
-        records[row].document_id = row >> kBenchMemoryDocShift;
-        records[row].chunk_id = row;
-        for (uint32_t col = 0; col < kBenchMemoryDim; ++col) {
-            vectors[static_cast<size_t>(row) * kBenchMemoryDim + col] =
-                static_cast<float>(((row + kBenchMemoryKeyBase) * (col + kBenchMemoryColumnBias)) & kBenchMemoryValueMask) +
-                kBenchMemoryValueBias;
-        }
-    }
-    err = astral_memory_add_batch(index, records.data(), vectors.data(), kBenchMemoryCapacity);
+    std::vector<AstralMemoryRecord> records(capacity);
+    std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+    fill_memory_fixture(records, vectors, capacity, dim);
+    err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
     if (err != ASTRAL_OK) {
         astral_memory_destroy(index);
         r.ops = 0;
         return r;
     }
 
-    float query[kBenchMemoryDim]{};
-    for (uint32_t i = 0; i < kBenchMemoryDim; ++i) {
-        query[i] = static_cast<float>((i & kBenchMemoryQueryMask) + kBenchMemoryValueBias);
-    }
+    std::vector<float> query(dim);
+    fill_memory_query(query);
     AstralMemorySearchDesc search{};
     search.size = sizeof(AstralMemorySearchDesc);
     search.top_k = kBenchMemoryTopK;
@@ -619,7 +669,7 @@ static BenchResult bench_memory_flat_search(uint64_t iters) {
     const uint64_t t0 = ticks_now();
     const uint64_t n0 = ns_now();
     for (uint64_t i = 0; i < iters; ++i) {
-        err = astral_memory_search(index, &search, query, results, kBenchMemoryTopK, &result_count);
+        err = astral_memory_search(index, &search, query.data(), results, kBenchMemoryTopK, &result_count);
         if (err != ASTRAL_OK || result_count == 0) {
             r.ops = i;
             break;
@@ -638,12 +688,17 @@ static BenchResult bench_memory_cursor_fetch(uint64_t iters) {
     BenchResult r{};
     r.name = "features.memory cursor_begin_fetch";
     r.ops = iters;
+    const uint32_t dim =
+        bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim);
+    const uint32_t capacity =
+        bounded_env_u32(kBenchMemoryCapacityEnv, kBenchMemoryCapacity, kBenchMemoryMinCapacity, UINT32_MAX / dim);
+    const AstralMemoryMetric metric = parse_memory_metric_env();
 
     AstralMemoryIndexDesc desc{};
     desc.size = sizeof(AstralMemoryIndexDesc);
-    desc.dim = kBenchMemoryDim;
-    desc.capacity = kBenchMemoryCapacity;
-    desc.metric = ASTRAL_MEMORY_METRIC_COSINE;
+    desc.dim = dim;
+    desc.capacity = capacity;
+    desc.metric = metric;
     desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
 
     AstralHandle index = 0;
@@ -653,31 +708,18 @@ static BenchResult bench_memory_cursor_fetch(uint64_t iters) {
         return r;
     }
 
-    std::vector<AstralMemoryRecord> records(kBenchMemoryCapacity);
-    std::vector<float> vectors(static_cast<size_t>(kBenchMemoryCapacity) * kBenchMemoryDim);
-    for (uint32_t row = 0; row < kBenchMemoryCapacity; ++row) {
-        records[row].size = sizeof(AstralMemoryRecord);
-        records[row].key = static_cast<uint64_t>(row) + kBenchMemoryKeyBase;
-        records[row].group_id = row & kBenchMemoryGroupMask;
-        records[row].document_id = row >> kBenchMemoryDocShift;
-        records[row].chunk_id = row;
-        for (uint32_t col = 0; col < kBenchMemoryDim; ++col) {
-            vectors[static_cast<size_t>(row) * kBenchMemoryDim + col] =
-                static_cast<float>(((row + kBenchMemoryKeyBase) * (col + kBenchMemoryColumnBias)) & kBenchMemoryValueMask) +
-                kBenchMemoryValueBias;
-        }
-    }
-    err = astral_memory_add_batch(index, records.data(), vectors.data(), kBenchMemoryCapacity);
+    std::vector<AstralMemoryRecord> records(capacity);
+    std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+    fill_memory_fixture(records, vectors, capacity, dim);
+    err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
     if (err != ASTRAL_OK) {
         astral_memory_destroy(index);
         r.ops = 0;
         return r;
     }
 
-    float query[kBenchMemoryDim]{};
-    for (uint32_t i = 0; i < kBenchMemoryDim; ++i) {
-        query[i] = static_cast<float>((i & kBenchMemoryQueryMask) + kBenchMemoryValueBias);
-    }
+    std::vector<float> query(dim);
+    fill_memory_query(query);
     AstralMemorySearchDesc search{};
     search.size = sizeof(AstralMemorySearchDesc);
     search.top_k = kBenchMemoryTopK;
@@ -689,7 +731,7 @@ static BenchResult bench_memory_cursor_fetch(uint64_t iters) {
     const uint64_t n0 = ns_now();
     for (uint64_t i = 0; i < iters; ++i) {
         AstralHandle cursor = 0;
-        err = astral_memory_search_begin(index, &search, query, &cursor);
+        err = astral_memory_search_begin(index, &search, query.data(), &cursor);
         if (err != ASTRAL_OK) {
             r.ops = i;
             break;
@@ -1123,6 +1165,15 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
     std::printf("  ASTRAL_BENCH_GPU_LAYERS=%u\n", gpu_layers);
     std::printf("  ASTRAL_BENCH_FEATURE_ITERS=%llu\n", (unsigned long long)parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", kFeatureDefaultIters));
     std::printf("  ASTRAL_BENCH_FEATURE_TOKENS=%u\n", parse_u32_env("ASTRAL_BENCH_FEATURE_TOKENS", 64));
+    std::printf("  ASTRAL_BENCH_MEMORY_CAPACITY=%u\n",
+                bounded_env_u32(kBenchMemoryCapacityEnv,
+                                kBenchMemoryCapacity,
+                                kBenchMemoryMinCapacity,
+                                UINT32_MAX / kBenchMemoryMinDim));
+    std::printf("  ASTRAL_BENCH_MEMORY_DIM=%u\n",
+                bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim));
+    std::printf("  ASTRAL_BENCH_MEMORY_METRIC=%s\n",
+                std::getenv(kBenchMemoryMetricEnv) ? std::getenv(kBenchMemoryMetricEnv) : kBenchMemoryMetricCosine);
     std::printf("  ASTRAL_BENCH_EMBED_MODEL=%s\n", std::getenv("ASTRAL_BENCH_EMBED_MODEL") ? std::getenv("ASTRAL_BENCH_EMBED_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MODEL=%s\n", std::getenv("ASTRAL_BENCH_VISION_MODEL") ? std::getenv("ASTRAL_BENCH_VISION_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MEDIA=%s\n", std::getenv("ASTRAL_BENCH_VISION_MEDIA") ? std::getenv("ASTRAL_BENCH_VISION_MEDIA") : "");

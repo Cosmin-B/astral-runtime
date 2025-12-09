@@ -45,10 +45,16 @@ Use `ASTRAL_MEMORY_GROUP_ANY` to search all groups, or set
 
 ## Performance
 
-The flat index stores vectors row-major and uses an AVX2 dot kernel when the
-compiler target supports it. The scalar fallback is unrolled by four lanes.
+The flat index stores vectors row-major and uses AVX2 dot and L2 kernels when
+the compiler target supports them. The scalar fallback is unrolled by four
+lanes.
 Search keeps the top-k result set in the caller-provided output array, avoiding
 heap allocation during query execution.
+
+Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
+`ASTRAL_BENCH_MEMORY_DIM`, and `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`,
+or `l2`) so local runs can cover 100, 1k, 10k, and 100k vector scans without
+changing source.
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
@@ -85,4 +91,5 @@ search.group_id = ASTRAL_MEMORY_GROUP_ANY;
 cmake --build --preset dev -j8 --target test_inference test_abi_invalid_args astral_benchmarks
 ctest --preset dev -R '^(test_inference|test_abi_invalid_args|gate_abi_layout_report|gate_source_scans|gate_doc_links)$' --output-on-failure
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/benchmarks/astral_benchmarks --features
+ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ./build/dev/benchmarks/astral_benchmarks --features
 ```
