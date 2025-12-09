@@ -46,6 +46,43 @@ struct ASTRALRT_API FAstralAsyncResult
     bool bUnsupported = false;
 };
 
+/** Blueprint-safe status for native handle and polling operations. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralOperationResult
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bSuccess = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int32 ErrorCode = static_cast<int32>(EAstralError::OK);
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int64 Handle = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int32 Count = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bBackpressure = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bTimeout = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bCanceled = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bUnsupported = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bNotFound = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bEndOfStream = false;
+};
+
 /** Pixel layouts accepted by Astral image media calls. */
 UENUM(BlueprintType)
 enum class EAstralImageFormat : uint8

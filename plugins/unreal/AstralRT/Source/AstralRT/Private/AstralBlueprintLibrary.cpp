@@ -142,6 +142,21 @@ static FAstralAgentChatResult from_native_agent_result(const AstralAgentChatResu
     return Result;
 }
 
+static FAstralOperationResult make_operation_result(AstralErr Err, int64 Handle = 0, int32 Count = 0)
+{
+    FAstralOperationResult Result;
+    Result.bSuccess = Err == ASTRAL_OK;
+    Result.ErrorCode = static_cast<int32>(Err);
+    Result.Handle = Handle;
+    Result.Count = Count;
+    Result.bBackpressure = Err == ASTRAL_E_BUSY;
+    Result.bTimeout = Err == ASTRAL_E_TIMEOUT;
+    Result.bCanceled = Err == ASTRAL_E_CANCELED;
+    Result.bUnsupported = Err == ASTRAL_E_UNSUPPORTED;
+    Result.bNotFound = Err == ASTRAL_E_NOT_FOUND;
+    return Result;
+}
+
 static bool chunker_desc_valid_for_blueprint(const FAstralChunkerDesc& Desc)
 {
     return Desc.MaxUnits > 0 && Desc.OverlapUnits >= 0 && Desc.OverlapUnits < Desc.MaxUnits &&
@@ -221,12 +236,21 @@ bool UAstralBlueprintLibrary::CreateToolset(
     int64& OutToolsetHandle
 )
 {
+    const FAstralOperationResult Result = CreateToolsetResult(Tools, ChoiceMode);
+    OutToolsetHandle = Result.Handle;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateToolsetResult(
+    const TArray<FAstralToolDesc>& Tools,
+    EAstralToolChoiceMode ChoiceMode
+)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateToolset);
 
-    OutToolsetHandle = 0;
     if (Tools.Num() == 0)
     {
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     int32 Utf8Bytes = 0;
@@ -281,11 +305,10 @@ bool UAstralBlueprintLibrary::CreateToolset(
     if (Err != ASTRAL_OK)
     {
         UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_toolset_create failed (%d)"), static_cast<int32>(Err));
-        return false;
+        return make_operation_result(Err);
     }
 
-    OutToolsetHandle = static_cast<int64>(Toolset);
-    return true;
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Toolset), static_cast<int32>(Tools.Num()));
 }
 
 void UAstralBlueprintLibrary::DestroyToolset(int64 ToolsetHandle)
@@ -304,13 +327,22 @@ bool UAstralBlueprintLibrary::ParseToolCall(
     FAstralToolCallResult& OutResult
 )
 {
+    return ParseToolCallResult(ToolsetHandle, GeneratedText, OutResult).bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ParseToolCallResult(
+    int64 ToolsetHandle,
+    const FString& GeneratedText,
+    FAstralToolCallResult& OutResult
+)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ParseToolCall);
 
     OutResult = FAstralToolCallResult{};
     if (ToolsetHandle == 0)
     {
         OutResult.ParseStatus = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     FTCHARToUTF8 GeneratedUtf8(*GeneratedText);
@@ -324,7 +356,7 @@ bool UAstralBlueprintLibrary::ParseToolCall(
     if (Err != ASTRAL_OK)
     {
         OutResult.ParseStatus = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
 
     OutResult.bFound = true;
@@ -332,7 +364,7 @@ bool UAstralBlueprintLibrary::ParseToolCall(
     OutResult.ToolId = static_cast<int32>(Native.tool_id);
     OutResult.Name = utf8_span_to_string(Native.name);
     OutResult.ArgumentsJson = utf8_span_to_string(Native.arguments_json);
-    return true;
+    return make_operation_result(ASTRAL_OK, ToolsetHandle, static_cast<int32>(Native.parse_status));
 }
 
 bool UAstralBlueprintLibrary::ChunkText(
@@ -446,14 +478,19 @@ bool UAstralBlueprintLibrary::CreateMemoryIndex(
     int32& OutErrorCode
 )
 {
+    const FAstralOperationResult Result = CreateMemoryIndexResult(Desc);
+    OutMemoryHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateMemoryIndexResult(const FAstralMemoryIndexDesc& Desc)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateMemoryIndex);
 
-    OutMemoryHandle = 0;
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (Desc.Dimension <= 0 || Desc.Capacity <= 0)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     AstralMemoryIndexDesc Native{};
@@ -467,11 +504,9 @@ bool UAstralBlueprintLibrary::CreateMemoryIndex(
     const AstralErr Err = astral_memory_create(&Native, &Handle);
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
-    OutMemoryHandle = static_cast<int64>(Handle);
-    return true;
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
 }
 
 void UAstralBlueprintLibrary::DestroyMemoryIndex(int64 MemoryHandle)
@@ -492,13 +527,23 @@ bool UAstralBlueprintLibrary::AddMemoryBatch(
     int32& OutErrorCode
 )
 {
+    const FAstralOperationResult Result = AddMemoryBatchResult(MemoryHandle, Records, Vectors, Dimension);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::AddMemoryBatchResult(
+    int64 MemoryHandle,
+    const TArray<FAstralMemoryRecord>& Records,
+    const TArray<float>& Vectors,
+    int32 Dimension
+)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_AddMemoryBatch);
 
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (MemoryHandle == 0 || Dimension <= 0 || Records.Num() == 0 || Vectors.Num() != Records.Num() * Dimension)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     TArray<AstralMemoryRecord, TInlineAllocator<kInlineMemoryRecordCapacity>> NativeRecords;
@@ -523,10 +568,9 @@ bool UAstralBlueprintLibrary::AddMemoryBatch(
     );
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
-    return true;
+    return make_operation_result(ASTRAL_OK, MemoryHandle, Records.Num());
 }
 
 bool UAstralBlueprintLibrary::SearchMemoryIndex(
@@ -538,14 +582,25 @@ bool UAstralBlueprintLibrary::SearchMemoryIndex(
     int32& OutErrorCode
 )
 {
+    const FAstralOperationResult Result = SearchMemoryIndexResult(MemoryHandle, Query, TopK, GroupId, OutResults);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SearchMemoryIndexResult(
+    int64 MemoryHandle,
+    const TArray<float>& Query,
+    int32 TopK,
+    int32 GroupId,
+    TArray<FAstralMemorySearchResult>& OutResults
+)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SearchMemoryIndex);
 
     OutResults.Reset();
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (MemoryHandle == 0 || Query.Num() == 0 || TopK <= 0)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     AstralMemorySearchDesc NativeSearch{};
@@ -566,8 +621,7 @@ bool UAstralBlueprintLibrary::SearchMemoryIndex(
     );
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
 
     OutResults.Reserve(static_cast<int32>(ResultCount));
@@ -575,7 +629,7 @@ bool UAstralBlueprintLibrary::SearchMemoryIndex(
     {
         OutResults.Add(from_native_memory_result(NativeResults[static_cast<int32>(Index)]));
     }
-    return true;
+    return make_operation_result(ASTRAL_OK, MemoryHandle, static_cast<int32>(ResultCount));
 }
 
 bool UAstralBlueprintLibrary::BeginMemorySearch(
@@ -587,14 +641,24 @@ bool UAstralBlueprintLibrary::BeginMemorySearch(
     int32& OutErrorCode
 )
 {
+    const FAstralOperationResult Result = BeginMemorySearchResult(MemoryHandle, Query, TopK, GroupId);
+    OutCursorHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::BeginMemorySearchResult(
+    int64 MemoryHandle,
+    const TArray<float>& Query,
+    int32 TopK,
+    int32 GroupId
+)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_BeginMemorySearch);
 
-    OutCursorHandle = 0;
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (MemoryHandle == 0 || Query.Num() == 0 || TopK <= 0)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     AstralMemorySearchDesc NativeSearch{};
@@ -611,12 +675,10 @@ bool UAstralBlueprintLibrary::BeginMemorySearch(
     );
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
 
-    OutCursorHandle = static_cast<int64>(Cursor);
-    return true;
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Cursor));
 }
 
 bool UAstralBlueprintLibrary::FetchMemorySearch(
@@ -626,14 +688,23 @@ bool UAstralBlueprintLibrary::FetchMemorySearch(
     int32& OutErrorCode
 )
 {
+    const FAstralOperationResult Result = FetchMemorySearchResult(CursorHandle, MaxResults, OutResults);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::FetchMemorySearchResult(
+    int64 CursorHandle,
+    int32 MaxResults,
+    TArray<FAstralMemorySearchResult>& OutResults
+)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_FetchMemorySearch);
 
     OutResults.Reset();
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (CursorHandle == 0 || MaxResults < 0)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
@@ -647,8 +718,7 @@ bool UAstralBlueprintLibrary::FetchMemorySearch(
     );
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
 
     OutResults.Reserve(static_cast<int32>(ResultCount));
@@ -656,7 +726,7 @@ bool UAstralBlueprintLibrary::FetchMemorySearch(
     {
         OutResults.Add(from_native_memory_result(NativeResults[static_cast<int32>(Index)]));
     }
-    return true;
+    return make_operation_result(ASTRAL_OK, CursorHandle, static_cast<int32>(ResultCount));
 }
 
 void UAstralBlueprintLibrary::EndMemorySearch(int64 CursorHandle)
@@ -671,14 +741,19 @@ void UAstralBlueprintLibrary::EndMemorySearch(int64 CursorHandle)
 
 bool UAstralBlueprintLibrary::CreateAgent(const FAstralAgentDesc& Desc, int64& OutAgentHandle, int32& OutErrorCode)
 {
+    const FAstralOperationResult Result = CreateAgentResult(Desc);
+    OutAgentHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateAgentResult(const FAstralAgentDesc& Desc)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateAgent);
 
-    OutAgentHandle = 0;
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (Desc.ModelHandle == 0 || Desc.MaxTokens < 0 || Desc.TopK < 0 || Desc.MaxMessages < 0 || Desc.MaxPromptBytes < 0)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     AstralAgentDesc Native{};
@@ -701,11 +776,9 @@ bool UAstralBlueprintLibrary::CreateAgent(const FAstralAgentDesc& Desc, int64& O
     const AstralErr Err = astral_agent_create(&Native, &Handle);
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
-    OutAgentHandle = static_cast<int64>(Handle);
-    return true;
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
 }
 
 void UAstralBlueprintLibrary::DestroyAgent(int64 AgentHandle)
@@ -720,13 +793,18 @@ void UAstralBlueprintLibrary::DestroyAgent(int64 AgentHandle)
 
 bool UAstralBlueprintLibrary::SetAgentSystemPrompt(int64 AgentHandle, const FString& SystemPrompt, int32& OutErrorCode)
 {
+    const FAstralOperationResult Result = SetAgentSystemPromptResult(AgentHandle, SystemPrompt);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SetAgentSystemPromptResult(int64 AgentHandle, const FString& SystemPrompt)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SetAgentSystemPrompt);
 
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (AgentHandle == 0)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     FTCHARToUTF8 Utf8(*SystemPrompt);
@@ -736,21 +814,25 @@ bool UAstralBlueprintLibrary::SetAgentSystemPrompt(int64 AgentHandle, const FStr
     const AstralErr Err = astral_agent_set_system_prompt(static_cast<AstralHandle>(AgentHandle), Span);
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
-    return true;
+    return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
 }
 
 bool UAstralBlueprintLibrary::AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode)
 {
+    const FAstralOperationResult Result = AddAgentMessageResult(AgentHandle, Role, Text);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::AddAgentMessageResult(int64 AgentHandle, EAstralAgentRole Role, const FString& Text)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_AddAgentMessage);
 
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (AgentHandle == 0)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     FTCHARToUTF8 Utf8(*Text);
@@ -763,35 +845,44 @@ bool UAstralBlueprintLibrary::AddAgentMessage(int64 AgentHandle, EAstralAgentRol
     const AstralErr Err = astral_agent_message_add(static_cast<AstralHandle>(AgentHandle), &Native);
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
-    return true;
+    return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
 }
 
 bool UAstralBlueprintLibrary::ClearAgentHistory(int64 AgentHandle, int32& OutErrorCode)
 {
+    const FAstralOperationResult Result = ClearAgentHistoryResult(AgentHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ClearAgentHistoryResult(int64 AgentHandle)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ClearAgentHistory);
 
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     const AstralErr Err = astral_agent_history_clear(static_cast<AstralHandle>(AgentHandle));
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
-    return true;
+    return make_operation_result(ASTRAL_OK, AgentHandle);
 }
 
 bool UAstralBlueprintLibrary::EnqueueAgentChat(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly, int32& OutErrorCode)
 {
+    const FAstralOperationResult Result = EnqueueAgentChatResult(AgentHandle, UserMessage, bWarmupOnly);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::EnqueueAgentChatResult(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_EnqueueAgentChat);
 
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (AgentHandle == 0)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     FTCHARToUTF8 Utf8(*UserMessage);
@@ -804,37 +895,46 @@ bool UAstralBlueprintLibrary::EnqueueAgentChat(int64 AgentHandle, const FString&
     const AstralErr Err = astral_agent_chat_enqueue(static_cast<AstralHandle>(AgentHandle), &Native);
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
-    return true;
+    return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
 }
 
 bool UAstralBlueprintLibrary::CancelAgentChat(int64 AgentHandle, int32& OutErrorCode)
 {
+    const FAstralOperationResult Result = CancelAgentChatResult(AgentHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CancelAgentChatResult(int64 AgentHandle)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CancelAgentChat);
 
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     const AstralErr Err = astral_agent_chat_cancel(static_cast<AstralHandle>(AgentHandle));
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
-    return true;
+    return make_operation_result(ASTRAL_OK, AgentHandle);
 }
 
 bool UAstralBlueprintLibrary::ReadAgentChat(int64 AgentHandle, int32 TimeoutMs, FString& OutText, bool& bEndOfStream, int32& OutErrorCode)
 {
+    const FAstralOperationResult Result = ReadAgentChatResult(AgentHandle, TimeoutMs, OutText);
+    bEndOfStream = Result.bEndOfStream;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ReadAgentChatResult(int64 AgentHandle, int32 TimeoutMs, FString& OutText)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ReadAgentChat);
 
     OutText.Reset();
-    bEndOfStream = false;
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     if (AgentHandle == 0 || TimeoutMs < 0)
     {
-        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID);
     }
 
     uint8 Buffer[kAgentReadBufferBytes]{};
@@ -844,37 +944,42 @@ bool UAstralBlueprintLibrary::ReadAgentChat(int64 AgentHandle, int32 TimeoutMs, 
     const int32 Result = astral_agent_chat_stream_read(static_cast<AstralHandle>(AgentHandle), Out, static_cast<uint32_t>(TimeoutMs));
     if (Result == 0)
     {
-        bEndOfStream = true;
-        return true;
+        FAstralOperationResult Status = make_operation_result(ASTRAL_OK, AgentHandle);
+        Status.bEndOfStream = true;
+        return Status;
     }
     if (Result < 0)
     {
-        OutErrorCode = Result;
-        return false;
+        return make_operation_result(static_cast<AstralErr>(Result), AgentHandle);
     }
 
     AstralSpanU8 TextSpan{};
     TextSpan.data = Buffer;
     TextSpan.len = static_cast<uint32_t>(Result);
     OutText = utf8_span_to_string(TextSpan);
-    return true;
+    return make_operation_result(ASTRAL_OK, AgentHandle, Result);
 }
 
 bool UAstralBlueprintLibrary::GetAgentChatResult(int64 AgentHandle, FAstralAgentChatResult& OutResult, int32& OutErrorCode)
 {
+    const FAstralOperationResult Result = GetAgentChatStatusResult(AgentHandle, OutResult);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentChatStatusResult(int64 AgentHandle, FAstralAgentChatResult& OutResult)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentChatResult);
 
-    OutErrorCode = static_cast<int32>(ASTRAL_OK);
     AstralAgentChatResult Native{};
     Native.size = sizeof(AstralAgentChatResult);
     const AstralErr Err = astral_agent_chat_result(static_cast<AstralHandle>(AgentHandle), &Native);
     if (Err != ASTRAL_OK)
     {
-        OutErrorCode = static_cast<int32>(Err);
-        return false;
+        return make_operation_result(Err);
     }
     OutResult = from_native_agent_result(Native);
-    return true;
+    return make_operation_result(ASTRAL_OK, AgentHandle, OutResult.PromptTokens);
 }
 
 bool UAstralBlueprintLibrary::HasEmbeddings(int64 Caps)

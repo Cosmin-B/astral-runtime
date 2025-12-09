@@ -258,11 +258,123 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
 
     TArray<uint8> EmptyBytes;
     constexpr int64 InvalidTicket = 0;
+    constexpr int64 InvalidHandle = 0;
     const FAstralAsyncResult InvalidEnqueue = Embedder->EnqueueUtf8BytesResult(EmptyBytes);
     TestFalse(TEXT("invalid embedder enqueue result fails"), InvalidEnqueue.bSuccess);
     TestEqual(TEXT("invalid embedder enqueue error"), InvalidEnqueue.ErrorCode, static_cast<int32>(ASTRAL_E_STATE));
     TestEqual(TEXT("invalid embedder enqueue ticket"), InvalidEnqueue.Ticket, InvalidTicket);
     TestFalse(TEXT("invalid embedder enqueue backpressure flag"), InvalidEnqueue.bBackpressure);
+
+    TArray<FAstralToolDesc> Tools;
+    constexpr int32 ToolLookupId = 7;
+    FAstralToolDesc Tool;
+    Tool.ToolId = ToolLookupId;
+    Tool.Name = TEXT("lookup");
+    Tool.Description = TEXT("search memory");
+    Tool.JsonSchema = TEXT("{}");
+    Tools.Add(Tool);
+
+    const FAstralOperationResult ToolsetResult =
+        UAstralBlueprintLibrary::CreateToolsetResult(Tools, EAstralToolChoiceMode::Auto);
+    TestTrue(TEXT("toolset result succeeds"), ToolsetResult.bSuccess);
+    TestTrue(TEXT("toolset handle valid"), ToolsetResult.Handle != InvalidHandle);
+    TestEqual(TEXT("toolset count"), ToolsetResult.Count, Tools.Num());
+
+    FAstralToolCallResult ToolCall;
+    const FAstralOperationResult ParseResult =
+        UAstralBlueprintLibrary::ParseToolCallResult(ToolsetResult.Handle, TEXT("{\"name\":\"lookup\",\"arguments\":{\"q\":\"x\"}}"), ToolCall);
+    TestTrue(TEXT("tool parse result succeeds"), ParseResult.bSuccess);
+    TestTrue(TEXT("tool parse found"), ToolCall.bFound);
+    TestEqual(TEXT("tool parse id"), ToolCall.ToolId, Tool.ToolId);
+    TestEqual(TEXT("tool parse name"), ToolCall.Name, Tool.Name);
+    TestEqual(TEXT("tool parse arguments"), ToolCall.ArgumentsJson, FString(TEXT("{\"q\":\"x\"}")));
+
+    FAstralToolCallResult MissingToolCall;
+    const FAstralOperationResult MissingTool =
+        UAstralBlueprintLibrary::ParseToolCallResult(ToolsetResult.Handle, TEXT("{\"name\":\"missing\",\"arguments\":{}}"), MissingToolCall);
+    TestFalse(TEXT("missing tool parse fails"), MissingTool.bSuccess);
+    TestTrue(TEXT("missing tool flag"), MissingTool.bNotFound);
+
+    UAstralBlueprintLibrary::DestroyToolset(ToolsetResult.Handle);
+
+    constexpr int32 MemoryDim = 2;
+    constexpr int32 MemoryCapacity = 3;
+    constexpr int64 MemoryKeyA = 10;
+    constexpr int64 MemoryKeyB = 20;
+    constexpr int32 MemoryGroupA = 1;
+    constexpr int32 MemoryGroupB = 2;
+    constexpr int32 MemoryDocumentA = 100;
+    constexpr int32 MemoryDocumentB = 200;
+    constexpr int32 MemoryChunkA = 1000;
+    constexpr int32 MemoryChunkB = 2000;
+    constexpr float VectorOne = 1.0f;
+    constexpr float VectorZero = 0.0f;
+    constexpr int32 SearchTopK = 2;
+    constexpr int32 AnyMemoryGroup = -1;
+    constexpr int32 CursorFetchLimit = 1;
+    FAstralMemoryIndexDesc MemoryDesc;
+    MemoryDesc.Dimension = MemoryDim;
+    MemoryDesc.Capacity = MemoryCapacity;
+    MemoryDesc.Metric = EAstralMemoryMetric::Cosine;
+    const FAstralOperationResult MemoryCreate = UAstralBlueprintLibrary::CreateMemoryIndexResult(MemoryDesc);
+    TestTrue(TEXT("memory create result succeeds"), MemoryCreate.bSuccess);
+    TestTrue(TEXT("memory handle valid"), MemoryCreate.Handle != InvalidHandle);
+
+    TArray<FAstralMemoryRecord> Records;
+    FAstralMemoryRecord RecordA;
+    RecordA.Key = MemoryKeyA;
+    RecordA.GroupId = MemoryGroupA;
+    RecordA.DocumentId = MemoryDocumentA;
+    RecordA.ChunkId = MemoryChunkA;
+    Records.Add(RecordA);
+    FAstralMemoryRecord RecordB;
+    RecordB.Key = MemoryKeyB;
+    RecordB.GroupId = MemoryGroupB;
+    RecordB.DocumentId = MemoryDocumentB;
+    RecordB.ChunkId = MemoryChunkB;
+    Records.Add(RecordB);
+    TArray<float> Vectors;
+    Vectors.Add(VectorOne);
+    Vectors.Add(VectorZero);
+    Vectors.Add(VectorZero);
+    Vectors.Add(VectorOne);
+
+    const FAstralOperationResult AddMemory = UAstralBlueprintLibrary::AddMemoryBatchResult(MemoryCreate.Handle, Records, Vectors, MemoryDesc.Dimension);
+    TestTrue(TEXT("memory add result succeeds"), AddMemory.bSuccess);
+    TestEqual(TEXT("memory add count"), AddMemory.Count, Records.Num());
+
+    TArray<float> Query;
+    Query.Add(VectorOne);
+    Query.Add(VectorZero);
+    TArray<FAstralMemorySearchResult> MemoryResults;
+    const FAstralOperationResult SearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(MemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup, MemoryResults);
+    TestTrue(TEXT("memory search result succeeds"), SearchMemory.bSuccess);
+    TestEqual(TEXT("memory search count"), SearchMemory.Count, SearchTopK);
+    TestEqual(TEXT("memory top key"), MemoryResults[0].Key, RecordA.Key);
+
+    const FAstralOperationResult BeginSearch =
+        UAstralBlueprintLibrary::BeginMemorySearchResult(MemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup);
+    TestTrue(TEXT("memory cursor begin succeeds"), BeginSearch.bSuccess);
+    TestTrue(TEXT("memory cursor handle valid"), BeginSearch.Handle != InvalidHandle);
+
+    TArray<FAstralMemorySearchResult> CursorResults;
+    const FAstralOperationResult FetchSearch =
+        UAstralBlueprintLibrary::FetchMemorySearchResult(BeginSearch.Handle, CursorFetchLimit, CursorResults);
+    TestTrue(TEXT("memory cursor fetch succeeds"), FetchSearch.bSuccess);
+    TestEqual(TEXT("memory cursor fetch count"), FetchSearch.Count, CursorFetchLimit);
+    TestEqual(TEXT("memory cursor top key"), CursorResults[0].Key, RecordA.Key);
+    UAstralBlueprintLibrary::EndMemorySearch(BeginSearch.Handle);
+    UAstralBlueprintLibrary::DestroyMemoryIndex(MemoryCreate.Handle);
+
+    FAstralMemoryIndexDesc InvalidMemoryDesc;
+    const FAstralOperationResult InvalidMemoryCreate = UAstralBlueprintLibrary::CreateMemoryIndexResult(InvalidMemoryDesc);
+    TestFalse(TEXT("invalid memory create fails"), InvalidMemoryCreate.bSuccess);
+    TestEqual(TEXT("invalid memory create error"), InvalidMemoryCreate.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidAgentCancel = UAstralBlueprintLibrary::CancelAgentChatResult(InvalidHandle);
+    TestFalse(TEXT("invalid agent cancel fails"), InvalidAgentCancel.bSuccess);
+    TestEqual(TEXT("invalid agent cancel error"), InvalidAgentCancel.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
 
     return true;
 }

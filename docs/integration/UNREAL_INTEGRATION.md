@@ -33,6 +33,8 @@ setup and diagnostics:
   as `ASTRAL_E_TIMEOUT`.
 - `FAstralAsyncResult` reports `bSuccess`, native `ErrorCode`, ticket, and
   queue-state flags for ticketed Blueprint operations.
+- `FAstralOperationResult` reports native handle, count, and polling state for
+  tool, memory, and agent helpers that need more detail than a bool return.
 - `HasEmbeddings`, `HasSamplerControls`, `HasStopSequences`,
   `HasGpuOffload`, `HasLora`, `HasImageInput`, `HasAudioInput`,
   `HasMultimodalEmbeddings`, `HasGrammar`, `HasLogprobs`, `HasKvState`,
@@ -43,6 +45,20 @@ The factories do not load models or create native sessions by themselves. They
 only create wrapper objects; ownership, model lifetime, and session creation
 still follow the contracts on `UAstralModel`, `UAstralSession`, and
 `UAstralEmbedder`.
+
+For Blueprint graphs that manage native handles directly, prefer the
+result-returning helpers:
+
+- `CreateToolsetResult` and `ParseToolCallResult`
+- `CreateMemoryIndexResult`, `AddMemoryBatchResult`,
+  `SearchMemoryIndexResult`, `BeginMemorySearchResult`, and
+  `FetchMemorySearchResult`
+- `CreateAgentResult`, `SetAgentSystemPromptResult`,
+  `AddAgentMessageResult`, `ClearAgentHistoryResult`,
+  `EnqueueAgentChatResult`, `CancelAgentChatResult`, `ReadAgentChatResult`,
+  and `GetAgentChatStatusResult`
+
+The older bool helpers remain compatibility wrappers over the same native calls.
 
 ## Layout
 

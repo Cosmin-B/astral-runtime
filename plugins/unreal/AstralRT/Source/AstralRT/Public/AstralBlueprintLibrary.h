@@ -44,6 +44,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
     static bool CreateToolset(const TArray<FAstralToolDesc>& Tools, EAstralToolChoiceMode ChoiceMode, int64& OutToolsetHandle);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
+    static FAstralOperationResult CreateToolsetResult(const TArray<FAstralToolDesc>& Tools, EAstralToolChoiceMode ChoiceMode);
+
     /** Release a native structured-output toolset handle. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
     static void DestroyToolset(int64 ToolsetHandle);
@@ -51,6 +54,9 @@ public:
     /** Parse a completed tool-call JSON payload against a native toolset. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
     static bool ParseToolCall(int64 ToolsetHandle, const FString& GeneratedText, FAstralToolCallResult& OutResult);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
+    static FAstralOperationResult ParseToolCallResult(int64 ToolsetHandle, const FString& GeneratedText, FAstralToolCallResult& OutResult);
 
     /** Split UTF-8 text into native byte ranges. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
@@ -63,6 +69,9 @@ public:
     /** Create a native flat vector memory index. Release it with DestroyMemoryIndex. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static bool CreateMemoryIndex(const FAstralMemoryIndexDesc& Desc, int64& OutMemoryHandle, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult CreateMemoryIndexResult(const FAstralMemoryIndexDesc& Desc);
 
     /** Release a native memory index handle. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
@@ -78,6 +87,14 @@ public:
         int32& OutErrorCode
     );
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult AddMemoryBatchResult(
+        int64 MemoryHandle,
+        const TArray<FAstralMemoryRecord>& Records,
+        const TArray<float>& Vectors,
+        int32 Dimension
+    );
+
     /** Search a native memory index with one query vector. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static bool SearchMemoryIndex(
@@ -87,6 +104,15 @@ public:
         int32 GroupId,
         TArray<FAstralMemorySearchResult>& OutResults,
         int32& OutErrorCode
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult SearchMemoryIndexResult(
+        int64 MemoryHandle,
+        const TArray<float>& Query,
+        int32 TopK,
+        int32 GroupId,
+        TArray<FAstralMemorySearchResult>& OutResults
     );
 
     /** Start an incremental memory search. Release it with EndMemorySearch. */
@@ -100,6 +126,14 @@ public:
         int32& OutErrorCode
     );
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult BeginMemorySearchResult(
+        int64 MemoryHandle,
+        const TArray<float>& Query,
+        int32 TopK,
+        int32 GroupId
+    );
+
     /** Fetch the next batch from an incremental memory search. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static bool FetchMemorySearch(
@@ -107,6 +141,13 @@ public:
         int32 MaxResults,
         TArray<FAstralMemorySearchResult>& OutResults,
         int32& OutErrorCode
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult FetchMemorySearchResult(
+        int64 CursorHandle,
+        int32 MaxResults,
+        TArray<FAstralMemorySearchResult>& OutResults
     );
 
     /** Release an incremental memory search handle. */
@@ -117,6 +158,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool CreateAgent(const FAstralAgentDesc& Desc, int64& OutAgentHandle, int32& OutErrorCode);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult CreateAgentResult(const FAstralAgentDesc& Desc);
+
     /** Release a native agent handle. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static void DestroyAgent(int64 AgentHandle);
@@ -125,29 +169,50 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool SetAgentSystemPrompt(int64 AgentHandle, const FString& SystemPrompt, int32& OutErrorCode);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult SetAgentSystemPromptResult(int64 AgentHandle, const FString& SystemPrompt);
+
     /** Add one native-owned history entry. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult AddAgentMessageResult(int64 AgentHandle, EAstralAgentRole Role, const FString& Text);
 
     /** Clear native-owned chat history. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool ClearAgentHistory(int64 AgentHandle, int32& OutErrorCode);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult ClearAgentHistoryResult(int64 AgentHandle);
+
     /** Start a native agent chat request. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool EnqueueAgentChat(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult EnqueueAgentChatResult(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly);
 
     /** Cancel a native agent chat request. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool CancelAgentChat(int64 AgentHandle, int32& OutErrorCode);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult CancelAgentChatResult(int64 AgentHandle);
+
     /** Poll native agent chat text. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool ReadAgentChat(int64 AgentHandle, int32 TimeoutMs, FString& OutText, bool& bEndOfStream, int32& OutErrorCode);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult ReadAgentChatResult(int64 AgentHandle, int32 TimeoutMs, FString& OutText);
+
     /** Read native agent chat status and counters. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool GetAgentChatResult(int64 AgentHandle, FAstralAgentChatResult& OutResult, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult GetAgentChatStatusResult(int64 AgentHandle, FAstralAgentChatResult& OutResult);
 
     /** True when the capability bitmask contains embeddings support. */
     UFUNCTION(BlueprintPure, Category = "Astral|Capabilities")
