@@ -8,6 +8,36 @@
 
 #include "astral_rt.h"
 
+namespace {
+
+constexpr uint32 kFloatSampleBytes = sizeof(float);
+constexpr uint32 kInt16SampleBytes = sizeof(int16);
+
+FAstralAsyncResult make_async_result(AstralErr Err, uint64 Ticket = 0)
+{
+    FAstralAsyncResult Result;
+    Result.bSuccess = Err == ASTRAL_OK;
+    Result.ErrorCode = static_cast<int32>(Err);
+    Result.Ticket = static_cast<int64>(Ticket);
+    Result.bBackpressure = Err == ASTRAL_E_BUSY;
+    Result.bTimeout = Err == ASTRAL_E_TIMEOUT;
+    Result.bCanceled = Err == ASTRAL_E_CANCELED;
+    Result.bUnsupported = Err == ASTRAL_E_UNSUPPORTED;
+    return Result;
+}
+
+AstralErr invalid_arg()
+{
+    return ASTRAL_E_INVALID;
+}
+
+AstralErr invalid_state()
+{
+    return ASTRAL_E_STATE;
+}
+
+} // namespace
+
 bool UAstralEmbedder::IsCurrentRuntimeGeneration() const
 {
     return IAstralRT::IsAvailable() &&
@@ -99,12 +129,18 @@ void UAstralEmbedder::Destroy()
 
 bool UAstralEmbedder::EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& OutTicket)
 {
+    const FAstralAsyncResult Result = EnqueueUtf8BytesResult(Utf8Bytes);
+    OutTicket = Result.Ticket;
+    return Result.bSuccess;
+}
+
+FAstralAsyncResult UAstralEmbedder::EnqueueUtf8BytesResult(const TArray<uint8>& Utf8Bytes)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueUtf8Bytes);
 
-    OutTicket = 0;
     if (!IsValid())
     {
-        return false;
+        return make_async_result(invalid_state());
     }
 
     AstralSpanU8 Text{};
@@ -113,27 +149,27 @@ bool UAstralEmbedder::EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& Ou
 
     uint64_t Ticket = 0;
     const AstralErr Err = astral_embed_enqueue(static_cast<AstralHandle>(EmbedderHandle), Text, &Ticket);
-    if (Err != ASTRAL_OK)
-    {
-        return false;
-    }
-
-    OutTicket = static_cast<int64>(Ticket);
-    return true;
+    return make_async_result(Err, Ticket);
 }
 
 bool UAstralEmbedder::EnqueueImage(const FAstralImageDesc& Image, int64& OutTicket)
 {
+    const FAstralAsyncResult Result = EnqueueImageResult(Image);
+    OutTicket = Result.Ticket;
+    return Result.bSuccess;
+}
+
+FAstralAsyncResult UAstralEmbedder::EnqueueImageResult(const FAstralImageDesc& Image)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueImage);
 
-    OutTicket = 0;
     if (!IsValid())
     {
-        return false;
+        return make_async_result(invalid_state());
     }
     if (Image.Pixels.Num() == 0)
     {
-        return false;
+        return make_async_result(invalid_arg());
     }
 
     AstralImageDesc Native{};
@@ -152,27 +188,27 @@ bool UAstralEmbedder::EnqueueImage(const FAstralImageDesc& Image, int64& OutTick
 
     uint64_t Ticket = 0;
     const AstralErr Err = astral_embed_enqueue_image(static_cast<AstralHandle>(EmbedderHandle), &Native, &Ticket);
-    if (Err != ASTRAL_OK)
-    {
-        return false;
-    }
-
-    OutTicket = static_cast<int64>(Ticket);
-    return true;
+    return make_async_result(Err, Ticket);
 }
 
 bool UAstralEmbedder::EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTicket)
 {
+    const FAstralAsyncResult Result = EnqueueAudioResult(Audio);
+    OutTicket = Result.Ticket;
+    return Result.bSuccess;
+}
+
+FAstralAsyncResult UAstralEmbedder::EnqueueAudioResult(const FAstralAudioDesc& Audio)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueAudio);
 
-    OutTicket = 0;
     if (!IsValid())
     {
-        return false;
+        return make_async_result(invalid_state());
     }
     if (Audio.Samples.Num() == 0)
     {
-        return false;
+        return make_async_result(invalid_arg());
     }
 
     AstralAudioDesc Native{};
@@ -180,17 +216,17 @@ bool UAstralEmbedder::EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTick
     Native.format = static_cast<AstralAudioFormat>(Audio.Format);
     if (Audio.Channels == 0)
     {
-        return false;
+        return make_async_result(invalid_arg());
     }
 
     uint64 FrameCount = static_cast<uint64>(Audio.FrameCount);
     if (FrameCount == 0)
     {
-        const uint32 BytesPerSample = (Audio.Format == EAstralAudioFormat::F32) ? 4u : 2u;
+        const uint32 BytesPerSample = (Audio.Format == EAstralAudioFormat::F32) ? kFloatSampleBytes : kInt16SampleBytes;
         const uint64 TotalSamples = static_cast<uint64>(Audio.Samples.Num()) / BytesPerSample;
         if (TotalSamples % Audio.Channels != 0)
         {
-            return false;
+            return make_async_result(invalid_arg());
         }
         FrameCount = TotalSamples / Audio.Channels;
     }
@@ -208,13 +244,7 @@ bool UAstralEmbedder::EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTick
 
     uint64_t Ticket = 0;
     const AstralErr Err = astral_embed_enqueue_audio(static_cast<AstralHandle>(EmbedderHandle), &Native, &Ticket);
-    if (Err != ASTRAL_OK)
-    {
-        return false;
-    }
-
-    OutTicket = static_cast<int64>(Ticket);
-    return true;
+    return make_async_result(Err, Ticket);
 }
 
 bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
@@ -224,12 +254,22 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
                                         bool bUseAudio,
                                         int64& OutTicket)
 {
+    const FAstralAsyncResult Result = EnqueueMultimodalResult(Text, Image, Audio, bUseImage, bUseAudio);
+    OutTicket = Result.Ticket;
+    return Result.bSuccess;
+}
+
+FAstralAsyncResult UAstralEmbedder::EnqueueMultimodalResult(const FString& Text,
+                                                            const FAstralImageDesc& Image,
+                                                            const FAstralAudioDesc& Audio,
+                                                            bool bUseImage,
+                                                            bool bUseAudio)
+{
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_EnqueueMultimodal);
 
-    OutTicket = 0;
     if (!IsValid())
     {
-        return false;
+        return make_async_result(invalid_state());
     }
 
     FTCHARToUTF8 Utf8(*Text);
@@ -243,7 +283,7 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
     {
         if (Image.Pixels.Num() == 0)
         {
-            return false;
+            return make_async_result(invalid_arg());
         }
         ImageNative.size = sizeof(AstralImageDesc);
         ImageNative.format = static_cast<AstralImageFormat>(Image.Format);
@@ -266,22 +306,22 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
     {
         if (Audio.Samples.Num() == 0)
         {
-            return false;
+            return make_async_result(invalid_arg());
         }
         AudioNative.size = sizeof(AstralAudioDesc);
         AudioNative.format = static_cast<AstralAudioFormat>(Audio.Format);
         if (Audio.Channels == 0)
         {
-            return false;
+            return make_async_result(invalid_arg());
         }
         uint64 FrameCount = static_cast<uint64>(Audio.FrameCount);
         if (FrameCount == 0)
         {
-            const uint32 BytesPerSample = (Audio.Format == EAstralAudioFormat::F32) ? 4u : 2u;
+            const uint32 BytesPerSample = (Audio.Format == EAstralAudioFormat::F32) ? kFloatSampleBytes : kInt16SampleBytes;
             const uint64 TotalSamples = static_cast<uint64>(Audio.Samples.Num()) / BytesPerSample;
             if (TotalSamples % Audio.Channels != 0)
             {
-                return false;
+                return make_async_result(invalid_arg());
             }
             FrameCount = TotalSamples / Audio.Channels;
         }
@@ -301,22 +341,22 @@ bool UAstralEmbedder::EnqueueMultimodal(const FString& Text,
     uint64_t Ticket = 0;
     const AstralErr Err = astral_embed_enqueue_multimodal(
         static_cast<AstralHandle>(EmbedderHandle), TextSpan, ImagePtr, AudioPtr, &Ticket);
-    if (Err != ASTRAL_OK)
-    {
-        return false;
-    }
-
-    OutTicket = static_cast<int64>(Ticket);
-    return true;
+    return make_async_result(Err, Ticket);
 }
 
 bool UAstralEmbedder::Collect(int64 Ticket, TArray<float>& OutVector)
+{
+    return CollectResult(Ticket, OutVector).bSuccess;
+}
+
+FAstralAsyncResult UAstralEmbedder::CollectResult(int64 Ticket, TArray<float>& OutVector)
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Collect);
 
     if (!IsValid() || Ticket <= 0 || EmbeddingDim <= 0)
     {
-        return false;
+        OutVector.Reset();
+        return make_async_result(invalid_state());
     }
 
     OutVector.SetNumUninitialized(EmbeddingDim);
@@ -327,21 +367,30 @@ bool UAstralEmbedder::Collect(int64 Ticket, TArray<float>& OutVector)
 
     const AstralErr Err =
         astral_embed_collect(static_cast<AstralHandle>(EmbedderHandle), static_cast<uint64_t>(Ticket), Out);
-    return Err == ASTRAL_OK;
+    if (Err != ASTRAL_OK)
+    {
+        OutVector.Reset();
+    }
+    return make_async_result(Err, static_cast<uint64>(Ticket));
 }
 
 bool UAstralEmbedder::Cancel(int64 Ticket)
+{
+    return CancelResult(Ticket).bSuccess;
+}
+
+FAstralAsyncResult UAstralEmbedder::CancelResult(int64 Ticket)
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralRT_Embedder_Cancel);
 
     if (!IsValid() || Ticket <= 0)
     {
-        return false;
+        return make_async_result(invalid_state());
     }
 
     const AstralErr Err =
         astral_embed_cancel(static_cast<AstralHandle>(EmbedderHandle), static_cast<uint64_t>(Ticket));
-    return Err == ASTRAL_OK;
+    return make_async_result(Err, static_cast<uint64>(Ticket));
 }
 
 bool UAstralEmbedder::EmbedUtf8Bytes(const TArray<uint8>& Utf8Bytes, TArray<float>& OutVector)

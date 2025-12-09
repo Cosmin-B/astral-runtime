@@ -31,6 +31,8 @@ setup and diagnostics:
   failed Astral call.
 - `ErrorCodeName` maps native integer error codes to stable symbolic names such
   as `ASTRAL_E_TIMEOUT`.
+- `FAstralAsyncResult` reports `bSuccess`, native `ErrorCode`, ticket, and
+  queue-state flags for ticketed Blueprint operations.
 - `HasEmbeddings`, `HasSamplerControls`, `HasStopSequences`,
   `HasGpuOffload`, `HasLora`, `HasImageInput`, `HasAudioInput`,
   `HasMultimodalEmbeddings`, `HasGrammar`, `HasLogprobs`, `HasKvState`,
@@ -404,19 +406,32 @@ if (!Embedder->Create(Model))
 }
 
 TArray<uint8> Utf8Bytes;
-Utf8Bytes.Append(reinterpret_cast<const uint8*>("hello"), 5);
+constexpr ANSICHAR SampleText[] = "hello";
+Utf8Bytes.Append(reinterpret_cast<const uint8*>(SampleText), UE_ARRAY_COUNT(SampleText) - 1);
 
-int64 Ticket = 0;
-if (Embedder->EnqueueUtf8Bytes(Utf8Bytes, Ticket))
+FAstralAsyncResult Enqueue = Embedder->EnqueueUtf8BytesResult(Utf8Bytes);
+if (Enqueue.bSuccess)
 {
     TArray<float> Vector;
-    Embedder->Collect(Ticket, Vector);
+    FAstralAsyncResult Collect = Embedder->CollectResult(Enqueue.Ticket, Vector);
+    if (!Collect.bSuccess)
+    {
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: collect failed %d"), Collect.ErrorCode);
+    }
+}
+else if (Enqueue.bBackpressure)
+{
+    UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: embedding queue is full"));
 }
 ```
 
 `EmbedText` is the `FString` convenience path. `EmbedUtf8Bytes` keeps callers on
-the UTF-8 byte path. `Cancel` releases a queued ticket that has not started
-collecting yet, which lets batching callers shed work under queue pressure.
+the UTF-8 byte path. The result-returning enqueue, collect, and cancel helpers
+are preferred for Blueprint logic because they distinguish `ASTRAL_E_BUSY`,
+timeout, canceled, invalid-input, and unsupported-backend states without
+scraping log text. The older bool helpers remain as simple compatibility paths.
+`Cancel` releases a queued ticket that has not started collecting yet, which
+lets batching callers shed work under queue pressure.
 Image, audio, and multimodal embedding calls require media initialization when
 the backend needs a projector.
 

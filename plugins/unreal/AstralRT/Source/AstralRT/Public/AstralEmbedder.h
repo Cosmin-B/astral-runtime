@@ -41,13 +41,22 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& OutTicket);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    FAstralAsyncResult EnqueueUtf8BytesResult(const TArray<uint8>& Utf8Bytes);
+
     /** Enqueue image bytes for embedding. Pixel data must be valid for the call duration. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EnqueueImage(const FAstralImageDesc& Image, int64& OutTicket);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    FAstralAsyncResult EnqueueImageResult(const FAstralImageDesc& Image);
+
     /** Enqueue audio bytes for embedding. FrameCount may be inferred from sample data. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EnqueueAudio(const FAstralAudioDesc& Audio, int64& OutTicket);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    FAstralAsyncResult EnqueueAudioResult(const FAstralAudioDesc& Audio);
 
     /** Enqueue text with image and/or audio payloads when the model media projector supports them. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
@@ -58,13 +67,26 @@ public:
                            bool bUseAudio,
                            int64& OutTicket);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    FAstralAsyncResult EnqueueMultimodalResult(const FString& Text,
+                                               const FAstralImageDesc& Image,
+                                               const FAstralAudioDesc& Audio,
+                                               bool bUseImage,
+                                               bool bUseAudio);
+
     /** Collect a vector for a previously enqueued ticket. OutVector is resized to GetDim(). */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Collect(int64 Ticket, TArray<float>& OutVector);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    FAstralAsyncResult CollectResult(int64 Ticket, TArray<float>& OutVector);
+
     /** Cancel a queued ticket that has not started collecting. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Cancel(int64 Ticket);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    FAstralAsyncResult CancelResult(int64 Ticket);
 
     /** Enqueue and collect in one call using caller-owned UTF-8 bytes. */
     UFUNCTION(BlueprintCallable, Category = "Astral")

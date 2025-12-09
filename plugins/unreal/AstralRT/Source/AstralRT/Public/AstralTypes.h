@@ -18,6 +18,34 @@ enum class EAstralError : int32
     NotFound = -9
 };
 
+/** Blueprint-safe status for native ticketed operations. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralAsyncResult
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bSuccess = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int32 ErrorCode = static_cast<int32>(EAstralError::OK);
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int64 Ticket = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bBackpressure = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bTimeout = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bCanceled = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bUnsupported = false;
+};
+
 /** Pixel layouts accepted by Astral image media calls. */
 UENUM(BlueprintType)
 enum class EAstralImageFormat : uint8
@@ -76,6 +104,7 @@ enum class EAstralToolChoiceMode : uint8
 UENUM(BlueprintType)
 enum class EAstralAgentRole : uint8
 {
+    None = 0,
     System = 1,
     User = 2,
     Assistant = 3,

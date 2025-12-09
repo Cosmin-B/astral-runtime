@@ -256,6 +256,14 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("json schema grammar cap"), UAstralBlueprintLibrary::HasJsonSchemaGrammar(Caps));
     TestFalse(TEXT("empty caps"), UAstralBlueprintLibrary::HasEmbeddings(0));
 
+    TArray<uint8> EmptyBytes;
+    constexpr int64 InvalidTicket = 0;
+    const FAstralAsyncResult InvalidEnqueue = Embedder->EnqueueUtf8BytesResult(EmptyBytes);
+    TestFalse(TEXT("invalid embedder enqueue result fails"), InvalidEnqueue.bSuccess);
+    TestEqual(TEXT("invalid embedder enqueue error"), InvalidEnqueue.ErrorCode, static_cast<int32>(ASTRAL_E_STATE));
+    TestEqual(TEXT("invalid embedder enqueue ticket"), InvalidEnqueue.Ticket, InvalidTicket);
+    TestFalse(TEXT("invalid embedder enqueue backpressure flag"), InvalidEnqueue.bBackpressure);
+
     return true;
 }
 
@@ -1054,6 +1062,7 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
     };
     int64 Tickets[Inflight] = {};
     TArray<uint8> Bytes;
+    constexpr int64 InvalidTicket = 0;
 
     for (int32 i = 0; i < Inflight; ++i) {
         append_ascii(Bytes, Texts[i]);
@@ -1062,17 +1071,23 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
         TestTrue(TEXT("ticket valid"), Tickets[i] > 0);
     }
 
-    int64 OverflowTicket = 0;
+    int64 OverflowTicket = InvalidTicket;
     append_ascii(Bytes, "overflow");
+    const FAstralAsyncResult Overflow = Embedder->EnqueueUtf8BytesResult(Bytes);
+    TestFalse(TEXT("overflow result fails"), Overflow.bSuccess);
+    TestEqual(TEXT("overflow error code"), Overflow.ErrorCode, static_cast<int32>(ASTRAL_E_BUSY));
+    TestTrue(TEXT("overflow backpressure flag"), Overflow.bBackpressure);
+    TestEqual(TEXT("overflow result ticket remains zero"), Overflow.Ticket, InvalidTicket);
     ok = Embedder->EnqueueUtf8Bytes(Bytes, OverflowTicket);
     TestFalse(TEXT("overflow returns busy through wrapper"), ok);
-    TestEqual(TEXT("overflow ticket remains zero"), OverflowTicket, static_cast<int64>(0));
+    TestEqual(TEXT("overflow wrapper ticket remains zero"), OverflowTicket, InvalidTicket);
 
     constexpr int32 CanceledIndex = 3;
     ok = Embedder->Cancel(Tickets[CanceledIndex]);
     TestTrue(TEXT("cancel queued embedding ticket"), ok);
-    ok = Embedder->Cancel(Tickets[CanceledIndex]);
-    TestFalse(TEXT("cancel stale embedding ticket fails"), ok);
+    const FAstralAsyncResult StaleCancel = Embedder->CancelResult(Tickets[CanceledIndex]);
+    TestFalse(TEXT("cancel stale embedding ticket fails"), StaleCancel.bSuccess);
+    TestEqual(TEXT("cancel stale error"), StaleCancel.ErrorCode, static_cast<int32>(ASTRAL_E_NOT_FOUND));
 
     int64 ReplacementTicket = 0;
     append_ascii(Bytes, "replacement");
@@ -1107,10 +1122,13 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
     ++Collected;
     const double ElapsedSeconds = FPlatformTime::Seconds() - StartSeconds;
 
-    ok = Embedder->Collect(Tickets[0], Vec);
-    TestFalse(TEXT("stale ticket rejected"), ok);
-    ok = Embedder->Collect(Tickets[CanceledIndex], Vec);
-    TestFalse(TEXT("canceled ticket rejected"), ok);
+    const FAstralAsyncResult StaleCollect = Embedder->CollectResult(Tickets[0], Vec);
+    TestFalse(TEXT("stale ticket rejected"), StaleCollect.bSuccess);
+    TestEqual(TEXT("stale ticket error"), StaleCollect.ErrorCode, static_cast<int32>(ASTRAL_E_NOT_FOUND));
+    const FAstralAsyncResult CanceledCollect = Embedder->CollectResult(Tickets[CanceledIndex], Vec);
+    TestFalse(TEXT("canceled ticket rejected"), CanceledCollect.bSuccess);
+    TestEqual(TEXT("canceled ticket error"), CanceledCollect.ErrorCode, static_cast<int32>(ASTRAL_E_CANCELED));
+    TestTrue(TEXT("canceled ticket flag"), CanceledCollect.bCanceled);
 
     int64 ReuseTicket = 0;
     append_ascii(Bytes, "reuse");
