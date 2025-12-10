@@ -77,6 +77,39 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static void DestroyMemoryIndex(int64 MemoryHandle);
 
+    /** Restore a native memory index snapshot. Release it with DestroyMemoryIndex. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool LoadMemoryIndex(
+        const FAstralMemoryIndexDesc& Desc,
+        const TArray<uint8>& Bytes,
+        int64& OutMemoryHandle,
+        int32& OutErrorCode
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult LoadMemoryIndexResult(const FAstralMemoryIndexDesc& Desc, const TArray<uint8>& Bytes);
+
+    /** Remove every record from a native memory index. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool ClearMemoryIndex(int64 MemoryHandle, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult ClearMemoryIndexResult(int64 MemoryHandle);
+
+    /** Remove one record from a native memory index by key. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool RemoveMemoryRecord(int64 MemoryHandle, int64 Key, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult RemoveMemoryRecordResult(int64 MemoryHandle, int64 Key);
+
+    /** Serialize a native memory index into engine-owned bytes. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool SaveMemoryIndex(int64 MemoryHandle, TArray<uint8>& OutBytes, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult SaveMemoryIndexResult(int64 MemoryHandle, TArray<uint8>& OutBytes);
+
     /** Add records and row-major vectors to a native memory index. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static bool AddMemoryBatch(

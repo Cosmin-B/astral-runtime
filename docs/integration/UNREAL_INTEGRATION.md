@@ -50,7 +50,9 @@ For Blueprint graphs that manage native handles directly, prefer the
 result-returning helpers:
 
 - `CreateToolsetResult` and `ParseToolCallResult`
-- `CreateMemoryIndexResult`, `AddMemoryBatchResult`,
+- `CreateMemoryIndexResult`, `LoadMemoryIndexResult`,
+  `AddMemoryBatchResult`, `RemoveMemoryRecordResult`,
+  `ClearMemoryIndexResult`, `SaveMemoryIndexResult`,
   `SearchMemoryIndexResult`, `BeginMemorySearchResult`, and
   `FetchMemorySearchResult`
 - `CreatePromptCacheResult`, `LoadPromptCacheResult`,
@@ -71,6 +73,12 @@ model-scoped section, and `FAstralPromptCacheStats` reports occupancy plus
 optional hit/miss counters. Agents can consume the resulting native cache
 handle through `FAstralAgentDesc::PromptCacheHandle`; Blueprint token arrays are
 copied only when `GetPromptCacheTokensResult` is called.
+
+Memory helpers expose the native flat vector index lifecycle, including
+snapshot save/load for staged RAG data. `SaveMemoryIndexResult` writes an
+engine-owned byte array, `LoadMemoryIndexResult` restores it with the same
+descriptor shape, and remove/clear helpers update the native index without
+rebuilding it from Blueprint arrays.
 
 ## Layout
 
