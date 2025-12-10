@@ -90,6 +90,74 @@ static AstralAgentRole to_native_agent_role(EAstralAgentRole Role)
     }
 }
 
+static AstralPromptSectionKind to_native_prompt_section(EAstralPromptSectionKind Section)
+{
+    switch (Section)
+    {
+    case EAstralPromptSectionKind::Tools:
+        return ASTRAL_PROMPT_SECTION_TOOLS;
+    case EAstralPromptSectionKind::Memory:
+        return ASTRAL_PROMPT_SECTION_MEMORY;
+    case EAstralPromptSectionKind::History:
+        return ASTRAL_PROMPT_SECTION_HISTORY;
+    case EAstralPromptSectionKind::User:
+        return ASTRAL_PROMPT_SECTION_USER;
+    case EAstralPromptSectionKind::Raw:
+        return ASTRAL_PROMPT_SECTION_RAW;
+    case EAstralPromptSectionKind::System:
+    default:
+        return ASTRAL_PROMPT_SECTION_SYSTEM;
+    }
+}
+
+static AstralPromptCacheEvictionPolicy to_native_prompt_cache_eviction(EAstralPromptCacheEvictionPolicy Policy)
+{
+    switch (Policy)
+    {
+    case EAstralPromptCacheEvictionPolicy::Fifo:
+    default:
+        return ASTRAL_PROMPT_CACHE_EVICT_FIFO;
+    }
+}
+
+static AstralPromptCacheDesc to_native_prompt_cache_desc(const FAstralPromptCacheDesc& Desc)
+{
+    AstralPromptCacheDesc Native{};
+    Native.size = sizeof(AstralPromptCacheDesc);
+    Native.max_entries = static_cast<uint32_t>(Desc.MaxEntries);
+    Native.max_tokens = static_cast<uint32_t>(Desc.MaxTokens);
+    Native.max_bytes = static_cast<uint32_t>(Desc.MaxBytes);
+    Native.eviction_policy = to_native_prompt_cache_eviction(Desc.EvictionPolicy);
+    Native.flags = Desc.bTrackStats ? ASTRAL_PROMPT_CACHE_FLAG_TRACK_STATS : 0u;
+    return Native;
+}
+
+static AstralPromptCacheKey to_native_prompt_cache_key(const FAstralPromptCacheKey& Key)
+{
+    AstralPromptCacheKey Native{};
+    Native.size = sizeof(AstralPromptCacheKey);
+    Native.section_kind = to_native_prompt_section(Key.Section);
+    Native.model = static_cast<AstralHandle>(Key.ModelHandle);
+    Native.key = static_cast<uint64_t>(Key.Key);
+    Native.generation = static_cast<uint32_t>(Key.Generation);
+    return Native;
+}
+
+static FAstralPromptCacheStats from_native_prompt_cache_stats(const AstralPromptCacheStats& Native)
+{
+    FAstralPromptCacheStats Stats;
+    Stats.Entries = static_cast<int32>(Native.entries);
+    Stats.MaxEntries = static_cast<int32>(Native.max_entries);
+    Stats.Tokens = static_cast<int32>(Native.tokens);
+    Stats.MaxTokens = static_cast<int32>(Native.max_tokens);
+    Stats.Bytes = static_cast<int32>(Native.bytes);
+    Stats.MaxBytes = static_cast<int32>(Native.max_bytes);
+    Stats.Hits = static_cast<int64>(Native.hits);
+    Stats.Misses = static_cast<int64>(Native.misses);
+    Stats.Evictions = static_cast<int64>(Native.evictions);
+    return Stats;
+}
+
 static void fill_native_chunker(const FAstralChunkerDesc& Source, const FTCHARToUTF8& DelimitersUtf8, AstralChunkerDesc& Out)
 {
     Out = AstralChunkerDesc{};
@@ -737,6 +805,252 @@ void UAstralBlueprintLibrary::EndMemorySearch(int64 CursorHandle)
     {
         astral_memory_search_end(static_cast<AstralHandle>(CursorHandle));
     }
+}
+
+bool UAstralBlueprintLibrary::CreatePromptCache(const FAstralPromptCacheDesc& Desc, int64& OutCacheHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = CreatePromptCacheResult(Desc);
+    OutCacheHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreatePromptCacheResult(const FAstralPromptCacheDesc& Desc)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreatePromptCache);
+
+    if (Desc.MaxEntries < 0 || Desc.MaxTokens < 0 || Desc.MaxBytes < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralPromptCacheDesc Native = to_native_prompt_cache_desc(Desc);
+    AstralHandle Handle = 0;
+    const AstralErr Err = astral_prompt_cache_create(&Native, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
+}
+
+bool UAstralBlueprintLibrary::LoadPromptCache(
+    const FAstralPromptCacheDesc& Desc,
+    const TArray<uint8>& Bytes,
+    int64& OutCacheHandle,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = LoadPromptCacheResult(Desc, Bytes);
+    OutCacheHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::LoadPromptCacheResult(const FAstralPromptCacheDesc& Desc, const TArray<uint8>& Bytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_LoadPromptCache);
+
+    if (Desc.MaxEntries < 0 || Desc.MaxTokens < 0 || Desc.MaxBytes < 0 || Bytes.Num() == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralPromptCacheDesc NativeDesc = to_native_prompt_cache_desc(Desc);
+    AstralSpanU8 Span{};
+    Span.data = Bytes.GetData();
+    Span.len = static_cast<uint32_t>(Bytes.Num());
+
+    AstralHandle Handle = 0;
+    const AstralErr Err = astral_prompt_cache_load(&NativeDesc, Span, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
+}
+
+void UAstralBlueprintLibrary::DestroyPromptCache(int64 CacheHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyPromptCache);
+
+    if (CacheHandle != 0)
+    {
+        astral_prompt_cache_destroy(static_cast<AstralHandle>(CacheHandle));
+    }
+}
+
+bool UAstralBlueprintLibrary::ClearPromptCache(int64 CacheHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = ClearPromptCacheResult(CacheHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ClearPromptCacheResult(int64 CacheHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ClearPromptCache);
+
+    if (CacheHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    const AstralErr Err = astral_prompt_cache_clear(static_cast<AstralHandle>(CacheHandle));
+    return make_operation_result(Err, CacheHandle);
+}
+
+bool UAstralBlueprintLibrary::GetPromptCacheStats(int64 CacheHandle, FAstralPromptCacheStats& OutStats, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetPromptCacheStatsResult(CacheHandle, OutStats);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetPromptCacheStatsResult(int64 CacheHandle, FAstralPromptCacheStats& OutStats)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetPromptCacheStats);
+
+    OutStats = FAstralPromptCacheStats();
+    if (CacheHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralPromptCacheStats Native{};
+    Native.size = sizeof(AstralPromptCacheStats);
+    const AstralErr Err = astral_prompt_cache_stats(static_cast<AstralHandle>(CacheHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutStats = from_native_prompt_cache_stats(Native);
+    return make_operation_result(ASTRAL_OK, CacheHandle, OutStats.Entries);
+}
+
+bool UAstralBlueprintLibrary::PutPromptCacheTokens(
+    int64 CacheHandle,
+    const FAstralPromptCacheKey& Key,
+    const TArray<int32>& Tokens,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = PutPromptCacheTokensResult(CacheHandle, Key, Tokens);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::PutPromptCacheTokensResult(
+    int64 CacheHandle,
+    const FAstralPromptCacheKey& Key,
+    const TArray<int32>& Tokens
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_PutPromptCacheTokens);
+
+    if (CacheHandle == 0 || Key.ModelHandle == 0 || Key.Generation < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralPromptCacheKey NativeKey = to_native_prompt_cache_key(Key);
+    const AstralErr Err = astral_prompt_cache_put_tokens(
+        static_cast<AstralHandle>(CacheHandle),
+        &NativeKey,
+        Tokens.GetData(),
+        static_cast<uint32_t>(Tokens.Num())
+    );
+    return make_operation_result(Err, CacheHandle, Tokens.Num());
+}
+
+bool UAstralBlueprintLibrary::GetPromptCacheTokens(
+    int64 CacheHandle,
+    const FAstralPromptCacheKey& Key,
+    int32 MaxTokens,
+    TArray<int32>& OutTokens,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = GetPromptCacheTokensResult(CacheHandle, Key, MaxTokens, OutTokens);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetPromptCacheTokensResult(
+    int64 CacheHandle,
+    const FAstralPromptCacheKey& Key,
+    int32 MaxTokens,
+    TArray<int32>& OutTokens
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetPromptCacheTokens);
+
+    OutTokens.Reset();
+    if (CacheHandle == 0 || Key.ModelHandle == 0 || Key.Generation < 0 || MaxTokens < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    OutTokens.SetNumZeroed(MaxTokens);
+    AstralPromptCacheKey NativeKey = to_native_prompt_cache_key(Key);
+    uint32_t TokenCount = 0;
+    const AstralErr Err = astral_prompt_cache_get_tokens(
+        static_cast<AstralHandle>(CacheHandle),
+        &NativeKey,
+        OutTokens.GetData(),
+        static_cast<uint32_t>(OutTokens.Num()),
+        &TokenCount
+    );
+    if (Err != ASTRAL_OK)
+    {
+        OutTokens.Reset();
+        return make_operation_result(Err);
+    }
+
+    OutTokens.SetNum(static_cast<int32>(TokenCount), EAllowShrinking::No);
+    return make_operation_result(ASTRAL_OK, CacheHandle, static_cast<int32>(TokenCount));
+}
+
+bool UAstralBlueprintLibrary::SavePromptCache(int64 CacheHandle, TArray<uint8>& OutBytes, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SavePromptCacheResult(CacheHandle, OutBytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SavePromptCacheResult(int64 CacheHandle, TArray<uint8>& OutBytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SavePromptCache);
+
+    OutBytes.Reset();
+    if (CacheHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t ByteCount = 0;
+    AstralErr Err = astral_prompt_cache_save_size(static_cast<AstralHandle>(CacheHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Span{};
+    Span.data = OutBytes.GetData();
+    Span.len = ByteCount;
+
+    uint32_t Written = 0;
+    Err = astral_prompt_cache_save(static_cast<AstralHandle>(CacheHandle), Span, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        OutBytes.Reset();
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNum(static_cast<int32>(Written), EAllowShrinking::No);
+    return make_operation_result(ASTRAL_OK, CacheHandle, static_cast<int32>(Written));
 }
 
 bool UAstralBlueprintLibrary::CreateAgent(const FAstralAgentDesc& Desc, int64& OutAgentHandle, int32& OutErrorCode)

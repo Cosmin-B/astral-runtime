@@ -148,6 +148,26 @@ enum class EAstralAgentRole : uint8
     Tool = 4
 };
 
+/** Prompt section encoded into native prompt cache keys. */
+UENUM(BlueprintType)
+enum class EAstralPromptSectionKind : uint8
+{
+    None = 0,
+    System = 1,
+    Tools = 2,
+    Memory = 3,
+    History = 4,
+    User = 5,
+    Raw = 6
+};
+
+/** Prompt cache eviction policy. */
+UENUM(BlueprintType)
+enum class EAstralPromptCacheEvictionPolicy : uint8
+{
+    Fifo = 0
+};
+
 /** Text or token splitting mode for native chunking. */
 UENUM(BlueprintType)
 enum class EAstralChunkMode : uint8
@@ -179,6 +199,9 @@ enum class EAstralUnrealPathRoot : uint8
 };
 
 inline constexpr int32 AstralChunkDefaultMaxUnits = 128;
+inline constexpr int32 AstralPromptCacheDefaultMaxEntries = 64;
+inline constexpr int32 AstralPromptCacheDefaultMaxTokens = 8192;
+inline constexpr int32 AstralPromptCacheTrackStatsFlag = 1;
 
 /** Load settings for a native Astral model. */
 USTRUCT(BlueprintType)
@@ -557,6 +580,81 @@ struct ASTRALRT_API FAstralMemorySearchResult
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
     int32 Flags = 0;
+};
+
+/** Native prompt cache capacity and telemetry settings. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralPromptCacheDesc
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Prompt Cache")
+    int32 MaxEntries = AstralPromptCacheDefaultMaxEntries;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Prompt Cache")
+    int32 MaxTokens = AstralPromptCacheDefaultMaxTokens;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Prompt Cache")
+    int32 MaxBytes = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Prompt Cache")
+    EAstralPromptCacheEvictionPolicy EvictionPolicy = EAstralPromptCacheEvictionPolicy::Fifo;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Prompt Cache")
+    bool bTrackStats = true;
+};
+
+/** Native prompt cache lookup key. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralPromptCacheKey
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Prompt Cache")
+    EAstralPromptSectionKind Section = EAstralPromptSectionKind::System;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Prompt Cache")
+    int64 ModelHandle = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Prompt Cache")
+    int64 Key = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Prompt Cache")
+    int32 Generation = 0;
+};
+
+/** Native prompt cache counters and capacity. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralPromptCacheStats
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Prompt Cache")
+    int32 Entries = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Prompt Cache")
+    int32 MaxEntries = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Prompt Cache")
+    int32 Tokens = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Prompt Cache")
+    int32 MaxTokens = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Prompt Cache")
+    int32 Bytes = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Prompt Cache")
+    int32 MaxBytes = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Prompt Cache")
+    int64 Hits = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Prompt Cache")
+    int64 Misses = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Prompt Cache")
+    int64 Evictions = 0;
 };
 
 /** Native agent configuration. */
