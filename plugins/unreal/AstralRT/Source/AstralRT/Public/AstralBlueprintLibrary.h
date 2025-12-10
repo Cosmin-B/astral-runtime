@@ -154,6 +154,84 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static void EndMemorySearch(int64 CursorHandle);
 
+    /** Create a native prompt cache. Release it with DestroyPromptCache. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static bool CreatePromptCache(const FAstralPromptCacheDesc& Desc, int64& OutCacheHandle, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static FAstralOperationResult CreatePromptCacheResult(const FAstralPromptCacheDesc& Desc);
+
+    /** Restore a native prompt cache snapshot. Release it with DestroyPromptCache. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static bool LoadPromptCache(
+        const FAstralPromptCacheDesc& Desc,
+        const TArray<uint8>& Bytes,
+        int64& OutCacheHandle,
+        int32& OutErrorCode
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static FAstralOperationResult LoadPromptCacheResult(const FAstralPromptCacheDesc& Desc, const TArray<uint8>& Bytes);
+
+    /** Release a native prompt cache handle. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static void DestroyPromptCache(int64 CacheHandle);
+
+    /** Remove all prompt cache entries. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static bool ClearPromptCache(int64 CacheHandle, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static FAstralOperationResult ClearPromptCacheResult(int64 CacheHandle);
+
+    /** Read prompt cache counters and capacity. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static bool GetPromptCacheStats(int64 CacheHandle, FAstralPromptCacheStats& OutStats, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static FAstralOperationResult GetPromptCacheStatsResult(int64 CacheHandle, FAstralPromptCacheStats& OutStats);
+
+    /** Store tokenized prompt section bytes under a native key. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static bool PutPromptCacheTokens(
+        int64 CacheHandle,
+        const FAstralPromptCacheKey& Key,
+        const TArray<int32>& Tokens,
+        int32& OutErrorCode
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static FAstralOperationResult PutPromptCacheTokensResult(
+        int64 CacheHandle,
+        const FAstralPromptCacheKey& Key,
+        const TArray<int32>& Tokens
+    );
+
+    /** Copy cached tokens into an engine-owned array. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static bool GetPromptCacheTokens(
+        int64 CacheHandle,
+        const FAstralPromptCacheKey& Key,
+        int32 MaxTokens,
+        TArray<int32>& OutTokens,
+        int32& OutErrorCode
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static FAstralOperationResult GetPromptCacheTokensResult(
+        int64 CacheHandle,
+        const FAstralPromptCacheKey& Key,
+        int32 MaxTokens,
+        TArray<int32>& OutTokens
+    );
+
+    /** Serialize prompt cache entries into engine-owned bytes. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static bool SavePromptCache(int64 CacheHandle, TArray<uint8>& OutBytes, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static FAstralOperationResult SavePromptCacheResult(int64 CacheHandle, TArray<uint8>& OutBytes);
+
     /** Create a native agent over an Astral model/executor. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool CreateAgent(const FAstralAgentDesc& Desc, int64& OutAgentHandle, int32& OutErrorCode);

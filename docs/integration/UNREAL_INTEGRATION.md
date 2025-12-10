@@ -53,12 +53,24 @@ result-returning helpers:
 - `CreateMemoryIndexResult`, `AddMemoryBatchResult`,
   `SearchMemoryIndexResult`, `BeginMemorySearchResult`, and
   `FetchMemorySearchResult`
+- `CreatePromptCacheResult`, `LoadPromptCacheResult`,
+  `ClearPromptCacheResult`, `GetPromptCacheStatsResult`,
+  `PutPromptCacheTokensResult`, `GetPromptCacheTokensResult`, and
+  `SavePromptCacheResult`
 - `CreateAgentResult`, `SetAgentSystemPromptResult`,
   `AddAgentMessageResult`, `ClearAgentHistoryResult`,
   `EnqueueAgentChatResult`, `CancelAgentChatResult`, `ReadAgentChatResult`,
   and `GetAgentChatStatusResult`
 
 The older bool helpers remain compatibility wrappers over the same native calls.
+
+Prompt cache helpers are setup-time APIs for tokenized system prompts, tool
+prefixes, memory sections, and history fragments. `FAstralPromptCacheDesc`
+controls entry and token budgets, `FAstralPromptCacheKey` identifies one
+model-scoped section, and `FAstralPromptCacheStats` reports occupancy plus
+optional hit/miss counters. Agents can consume the resulting native cache
+handle through `FAstralAgentDesc::PromptCacheHandle`; Blueprint token arrays are
+copied only when `GetPromptCacheTokensResult` is called.
 
 ## Layout
 

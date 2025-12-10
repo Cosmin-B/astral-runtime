@@ -367,6 +367,82 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     UAstralBlueprintLibrary::EndMemorySearch(BeginSearch.Handle);
     UAstralBlueprintLibrary::DestroyMemoryIndex(MemoryCreate.Handle);
 
+    constexpr int32 PromptCacheMaxEntries = 4;
+    constexpr int32 PromptCacheMaxTokens = 16;
+    constexpr int64 PromptCacheModelHandle = 1;
+    constexpr int64 PromptCacheSystemKey = 11;
+    constexpr int32 PromptCacheGeneration = 1;
+    constexpr int32 PromptCacheTokenA = 101;
+    constexpr int32 PromptCacheTokenB = 202;
+    constexpr int32 PromptCacheReadCapacity = 4;
+    constexpr int32 PromptCacheEntryCount = 1;
+    constexpr int32 PromptCacheTokenCount = 2;
+    FAstralPromptCacheDesc PromptCacheDesc;
+    PromptCacheDesc.MaxEntries = PromptCacheMaxEntries;
+    PromptCacheDesc.MaxTokens = PromptCacheMaxTokens;
+    PromptCacheDesc.bTrackStats = true;
+
+    const FAstralOperationResult PromptCacheCreate = UAstralBlueprintLibrary::CreatePromptCacheResult(PromptCacheDesc);
+    TestTrue(TEXT("prompt cache create succeeds"), PromptCacheCreate.bSuccess);
+    TestTrue(TEXT("prompt cache handle valid"), PromptCacheCreate.Handle != InvalidHandle);
+
+    FAstralPromptCacheKey PromptCacheKey;
+    PromptCacheKey.Section = EAstralPromptSectionKind::System;
+    PromptCacheKey.ModelHandle = PromptCacheModelHandle;
+    PromptCacheKey.Key = PromptCacheSystemKey;
+    PromptCacheKey.Generation = PromptCacheGeneration;
+
+    TArray<int32> PromptCacheTokens;
+    PromptCacheTokens.Add(PromptCacheTokenA);
+    PromptCacheTokens.Add(PromptCacheTokenB);
+    const FAstralOperationResult PromptCachePut =
+        UAstralBlueprintLibrary::PutPromptCacheTokensResult(PromptCacheCreate.Handle, PromptCacheKey, PromptCacheTokens);
+    TestTrue(TEXT("prompt cache put succeeds"), PromptCachePut.bSuccess);
+    TestEqual(TEXT("prompt cache put count"), PromptCachePut.Count, PromptCacheTokens.Num());
+
+    TArray<int32> PromptCacheReadTokens;
+    const FAstralOperationResult PromptCacheGet =
+        UAstralBlueprintLibrary::GetPromptCacheTokensResult(PromptCacheCreate.Handle, PromptCacheKey, PromptCacheReadCapacity, PromptCacheReadTokens);
+    TestTrue(TEXT("prompt cache get succeeds"), PromptCacheGet.bSuccess);
+    TestEqual(TEXT("prompt cache get count"), PromptCacheGet.Count, PromptCacheTokenCount);
+    TestEqual(TEXT("prompt cache token a"), PromptCacheReadTokens[0], PromptCacheTokenA);
+    TestEqual(TEXT("prompt cache token b"), PromptCacheReadTokens[1], PromptCacheTokenB);
+
+    FAstralPromptCacheStats PromptCacheStats;
+    const FAstralOperationResult PromptCacheStatsResult =
+        UAstralBlueprintLibrary::GetPromptCacheStatsResult(PromptCacheCreate.Handle, PromptCacheStats);
+    TestTrue(TEXT("prompt cache stats succeeds"), PromptCacheStatsResult.bSuccess);
+    TestEqual(TEXT("prompt cache stats entries"), PromptCacheStats.Entries, PromptCacheEntryCount);
+    TestEqual(TEXT("prompt cache stats tokens"), PromptCacheStats.Tokens, PromptCacheTokenCount);
+
+    TArray<uint8> PromptCacheBytes;
+    const FAstralOperationResult PromptCacheSave = UAstralBlueprintLibrary::SavePromptCacheResult(PromptCacheCreate.Handle, PromptCacheBytes);
+    TestTrue(TEXT("prompt cache save succeeds"), PromptCacheSave.bSuccess);
+    TestTrue(TEXT("prompt cache save has bytes"), PromptCacheBytes.Num() > 0);
+
+    const FAstralOperationResult PromptCacheLoad = UAstralBlueprintLibrary::LoadPromptCacheResult(PromptCacheDesc, PromptCacheBytes);
+    TestTrue(TEXT("prompt cache load succeeds"), PromptCacheLoad.bSuccess);
+    TestTrue(TEXT("prompt cache load handle valid"), PromptCacheLoad.Handle != InvalidHandle);
+
+    TArray<int32> LoadedPromptCacheTokens;
+    const FAstralOperationResult LoadedPromptCacheGet =
+        UAstralBlueprintLibrary::GetPromptCacheTokensResult(PromptCacheLoad.Handle, PromptCacheKey, PromptCacheReadCapacity, LoadedPromptCacheTokens);
+    TestTrue(TEXT("loaded prompt cache get succeeds"), LoadedPromptCacheGet.bSuccess);
+    TestEqual(TEXT("loaded prompt cache token count"), LoadedPromptCacheGet.Count, PromptCacheTokenCount);
+
+    const FAstralOperationResult PromptCacheClear = UAstralBlueprintLibrary::ClearPromptCacheResult(PromptCacheCreate.Handle);
+    TestTrue(TEXT("prompt cache clear succeeds"), PromptCacheClear.bSuccess);
+    FAstralPromptCacheKey MissingPromptCacheKey = PromptCacheKey;
+    MissingPromptCacheKey.Key = PromptCacheSystemKey + PromptCacheEntryCount;
+    TArray<int32> MissingPromptCacheTokens;
+    const FAstralOperationResult MissingPromptCache =
+        UAstralBlueprintLibrary::GetPromptCacheTokensResult(PromptCacheCreate.Handle, MissingPromptCacheKey, PromptCacheReadCapacity, MissingPromptCacheTokens);
+    TestFalse(TEXT("missing prompt cache lookup fails"), MissingPromptCache.bSuccess);
+    TestTrue(TEXT("missing prompt cache flag"), MissingPromptCache.bNotFound);
+
+    UAstralBlueprintLibrary::DestroyPromptCache(PromptCacheLoad.Handle);
+    UAstralBlueprintLibrary::DestroyPromptCache(PromptCacheCreate.Handle);
+
     FAstralMemoryIndexDesc InvalidMemoryDesc;
     const FAstralOperationResult InvalidMemoryCreate = UAstralBlueprintLibrary::CreateMemoryIndexResult(InvalidMemoryDesc);
     TestFalse(TEXT("invalid memory create fails"), InvalidMemoryCreate.bSuccess);
