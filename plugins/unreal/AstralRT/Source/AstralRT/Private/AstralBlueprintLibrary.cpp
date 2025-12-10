@@ -16,6 +16,11 @@ static constexpr int32 kInlineChunkRangeCapacity = 32;
 static constexpr int32 kInlineMemoryRecordCapacity = 32;
 static constexpr int32 kInlineMemoryResultCapacity = 16;
 static constexpr int32 kAgentReadBufferBytes = 4096;
+static constexpr int32 kNoElements = 0;
+static constexpr int32 kEmptyResultCount = 0;
+static constexpr int64 kInvalidAstralHandle = 0;
+static constexpr AstralHandle kNullNativeHandle = 0;
+static constexpr uint64_t kNoByteCount = 0;
 
 static UObject* resolve_outer(UObject* Outer)
 {
@@ -72,6 +77,17 @@ static AstralMemoryMetric to_native_memory_metric(EAstralMemoryMetric Metric)
     default:
         return ASTRAL_MEMORY_METRIC_COSINE;
     }
+}
+
+static AstralMemoryIndexDesc to_native_memory_desc(const FAstralMemoryIndexDesc& Desc)
+{
+    AstralMemoryIndexDesc Native{};
+    Native.size = sizeof(AstralMemoryIndexDesc);
+    Native.dim = static_cast<uint32_t>(Desc.Dimension);
+    Native.capacity = static_cast<uint32_t>(Desc.Capacity);
+    Native.metric = to_native_memory_metric(Desc.Metric);
+    Native.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    return Native;
 }
 
 static AstralAgentRole to_native_agent_role(EAstralAgentRole Role)
@@ -210,7 +226,11 @@ static FAstralAgentChatResult from_native_agent_result(const AstralAgentChatResu
     return Result;
 }
 
-static FAstralOperationResult make_operation_result(AstralErr Err, int64 Handle = 0, int32 Count = 0)
+static FAstralOperationResult make_operation_result(
+    AstralErr Err,
+    int64 Handle = kInvalidAstralHandle,
+    int32 Count = kEmptyResultCount
+)
 {
     FAstralOperationResult Result;
     Result.bSuccess = Err == ASTRAL_OK;
@@ -561,14 +581,9 @@ FAstralOperationResult UAstralBlueprintLibrary::CreateMemoryIndexResult(const FA
         return make_operation_result(ASTRAL_E_INVALID);
     }
 
-    AstralMemoryIndexDesc Native{};
-    Native.size = sizeof(AstralMemoryIndexDesc);
-    Native.dim = static_cast<uint32_t>(Desc.Dimension);
-    Native.capacity = static_cast<uint32_t>(Desc.Capacity);
-    Native.metric = to_native_memory_metric(Desc.Metric);
-    Native.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    AstralMemoryIndexDesc Native = to_native_memory_desc(Desc);
 
-    AstralHandle Handle = 0;
+    AstralHandle Handle = kNullNativeHandle;
     const AstralErr Err = astral_memory_create(&Native, &Handle);
     if (Err != ASTRAL_OK)
     {
@@ -581,10 +596,131 @@ void UAstralBlueprintLibrary::DestroyMemoryIndex(int64 MemoryHandle)
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyMemoryIndex);
 
-    if (MemoryHandle != 0)
+    if (MemoryHandle != kInvalidAstralHandle)
     {
         astral_memory_destroy(static_cast<AstralHandle>(MemoryHandle));
     }
+}
+
+bool UAstralBlueprintLibrary::LoadMemoryIndex(
+    const FAstralMemoryIndexDesc& Desc,
+    const TArray<uint8>& Bytes,
+    int64& OutMemoryHandle,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = LoadMemoryIndexResult(Desc, Bytes);
+    OutMemoryHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::LoadMemoryIndexResult(const FAstralMemoryIndexDesc& Desc, const TArray<uint8>& Bytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_LoadMemoryIndex);
+
+    if (Desc.Dimension <= kNoElements || Desc.Capacity <= kNoElements || Bytes.Num() == kNoElements)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralMemoryIndexDesc Native = to_native_memory_desc(Desc);
+    AstralSpanU8 Span{};
+    Span.data = Bytes.GetData();
+    Span.len = static_cast<uint32_t>(Bytes.Num());
+
+    AstralHandle Handle = kNullNativeHandle;
+    const AstralErr Err = astral_memory_load(&Native, Span, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
+}
+
+bool UAstralBlueprintLibrary::ClearMemoryIndex(int64 MemoryHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = ClearMemoryIndexResult(MemoryHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ClearMemoryIndexResult(int64 MemoryHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ClearMemoryIndex);
+
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    const AstralErr Err = astral_memory_clear(static_cast<AstralHandle>(MemoryHandle));
+    return make_operation_result(Err, MemoryHandle);
+}
+
+bool UAstralBlueprintLibrary::RemoveMemoryRecord(int64 MemoryHandle, int64 Key, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = RemoveMemoryRecordResult(MemoryHandle, Key);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::RemoveMemoryRecordResult(int64 MemoryHandle, int64 Key)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_RemoveMemoryRecord);
+
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    const AstralErr Err = astral_memory_remove(static_cast<AstralHandle>(MemoryHandle), static_cast<uint64_t>(Key));
+    return make_operation_result(Err, MemoryHandle);
+}
+
+bool UAstralBlueprintLibrary::SaveMemoryIndex(int64 MemoryHandle, TArray<uint8>& OutBytes, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SaveMemoryIndexResult(MemoryHandle, OutBytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SaveMemoryIndexResult(int64 MemoryHandle, TArray<uint8>& OutBytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SaveMemoryIndex);
+
+    OutBytes.Reset();
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint64_t ByteCount = kNoByteCount;
+    AstralErr Err = astral_memory_save_size(static_cast<AstralHandle>(MemoryHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    if (ByteCount > static_cast<uint64_t>(TNumericLimits<int32>::Max()))
+    {
+        return make_operation_result(ASTRAL_E_NOMEM);
+    }
+
+    OutBytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Span{};
+    Span.data = OutBytes.GetData();
+    Span.len = static_cast<uint32_t>(OutBytes.Num());
+
+    uint64_t Written = kNoByteCount;
+    Err = astral_memory_save(static_cast<AstralHandle>(MemoryHandle), Span, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        OutBytes.Reset();
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNum(static_cast<int32>(Written), EAllowShrinking::No);
+    return make_operation_result(ASTRAL_OK, MemoryHandle, static_cast<int32>(Written));
 }
 
 bool UAstralBlueprintLibrary::AddMemoryBatch(

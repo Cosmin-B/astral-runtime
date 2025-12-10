@@ -312,6 +312,8 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     constexpr int32 SearchTopK = 2;
     constexpr int32 AnyMemoryGroup = -1;
     constexpr int32 CursorFetchLimit = 1;
+    constexpr int32 EmptySearchCount = 0;
+    constexpr int32 EmptyByteCount = 0;
     FAstralMemoryIndexDesc MemoryDesc;
     MemoryDesc.Dimension = MemoryDim;
     MemoryDesc.Capacity = MemoryCapacity;
@@ -365,6 +367,43 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("memory cursor fetch count"), FetchSearch.Count, CursorFetchLimit);
     TestEqual(TEXT("memory cursor top key"), CursorResults[0].Key, RecordA.Key);
     UAstralBlueprintLibrary::EndMemorySearch(BeginSearch.Handle);
+
+    TArray<uint8> MemoryBytes;
+    const FAstralOperationResult SaveMemory = UAstralBlueprintLibrary::SaveMemoryIndexResult(MemoryCreate.Handle, MemoryBytes);
+    TestTrue(TEXT("memory save succeeds"), SaveMemory.bSuccess);
+    TestTrue(TEXT("memory save has bytes"), MemoryBytes.Num() > EmptyByteCount);
+
+    const FAstralOperationResult LoadMemory = UAstralBlueprintLibrary::LoadMemoryIndexResult(MemoryDesc, MemoryBytes);
+    TestTrue(TEXT("memory load succeeds"), LoadMemory.bSuccess);
+    TestTrue(TEXT("memory load handle valid"), LoadMemory.Handle != InvalidHandle);
+
+    TArray<FAstralMemorySearchResult> LoadedMemoryResults;
+    const FAstralOperationResult LoadedSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, LoadedMemoryResults);
+    TestTrue(TEXT("loaded memory search succeeds"), LoadedSearchMemory.bSuccess);
+    TestEqual(TEXT("loaded memory search count"), LoadedSearchMemory.Count, SearchTopK);
+    TestEqual(TEXT("loaded memory top key"), LoadedMemoryResults[0].Key, RecordA.Key);
+
+    const FAstralOperationResult RemoveMemory = UAstralBlueprintLibrary::RemoveMemoryRecordResult(LoadMemory.Handle, MemoryKeyA);
+    TestTrue(TEXT("memory remove succeeds"), RemoveMemory.bSuccess);
+
+    TArray<FAstralMemorySearchResult> RemovedMemoryResults;
+    const FAstralOperationResult RemovedSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, RemovedMemoryResults);
+    TestTrue(TEXT("removed memory search succeeds"), RemovedSearchMemory.bSuccess);
+    TestEqual(TEXT("removed memory search count"), RemovedSearchMemory.Count, CursorFetchLimit);
+    TestEqual(TEXT("removed memory top key"), RemovedMemoryResults[0].Key, RecordB.Key);
+
+    const FAstralOperationResult ClearMemory = UAstralBlueprintLibrary::ClearMemoryIndexResult(LoadMemory.Handle);
+    TestTrue(TEXT("memory clear succeeds"), ClearMemory.bSuccess);
+
+    TArray<FAstralMemorySearchResult> ClearedMemoryResults;
+    const FAstralOperationResult ClearedSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, ClearedMemoryResults);
+    TestTrue(TEXT("cleared memory search succeeds"), ClearedSearchMemory.bSuccess);
+    TestEqual(TEXT("cleared memory search count"), ClearedSearchMemory.Count, EmptySearchCount);
+
+    UAstralBlueprintLibrary::DestroyMemoryIndex(LoadMemory.Handle);
     UAstralBlueprintLibrary::DestroyMemoryIndex(MemoryCreate.Handle);
 
     constexpr int32 PromptCacheMaxEntries = 4;
