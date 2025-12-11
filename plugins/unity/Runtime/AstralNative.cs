@@ -931,6 +931,10 @@ namespace Astral.Runtime
             public uint prompt_bytes;
             public uint history_messages;
             public uint prompt_tokens;
+            public uint prompt_cache_reused_tokens;
+            public uint prompt_cache_new_tokens;
+            public uint prompt_cache_hits;
+            public uint prompt_cache_misses;
             public int last_error;
             public ulong generated_tokens;
             public double t_first_token_ms;

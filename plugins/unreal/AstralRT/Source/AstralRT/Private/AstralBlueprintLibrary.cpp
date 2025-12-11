@@ -219,6 +219,10 @@ static FAstralAgentChatResult from_native_agent_result(const AstralAgentChatResu
     Result.PromptBytes = static_cast<int32>(Native.prompt_bytes);
     Result.HistoryMessages = static_cast<int32>(Native.history_messages);
     Result.PromptTokens = static_cast<int32>(Native.prompt_tokens);
+    Result.PromptCacheReusedTokens = static_cast<int32>(Native.prompt_cache_reused_tokens);
+    Result.PromptCacheNewTokens = static_cast<int32>(Native.prompt_cache_new_tokens);
+    Result.PromptCacheHits = static_cast<int32>(Native.prompt_cache_hits);
+    Result.PromptCacheMisses = static_cast<int32>(Native.prompt_cache_misses);
     Result.LastError = static_cast<int32>(Native.last_error);
     Result.GeneratedTokens = static_cast<int64>(Native.generated_tokens);
     Result.TimeToFirstTokenMs = Native.t_first_token_ms;

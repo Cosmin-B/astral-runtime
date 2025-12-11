@@ -19,6 +19,14 @@ constexpr uint32_t kCapacityGrowthFactor = 2;
 constexpr uint32_t kSaveMagic = 0x41414754u;
 constexpr uint32_t kSaveVersion = 1;
 constexpr uint32_t kHeaderReserveBytes = 96;
+constexpr uint32_t kPromptCacheGeneration = 1;
+constexpr uint32_t kPromptCacheHitCount = 1;
+constexpr uint32_t kPromptCacheMissCount = 1;
+constexpr uint8_t kPromptFinalize = 1;
+constexpr uint8_t kPromptAddSpecial = 1;
+constexpr uint8_t kPromptParseSpecial = 0;
+constexpr uint64_t kFnvOffsetBasis = 14695981039346656037ull;
+constexpr uint64_t kFnvPrime = 1099511628211ull;
 
 constexpr char kSystemLabel[] = "System: ";
 constexpr char kUserLabel[] = "User: ";
@@ -71,6 +79,15 @@ inline bool span_valid(AstralSpanU8 span) {
     return span.len == 0 || span.data != nullptr;
 }
 
+uint64_t hash_bytes(AstralSpanU8 bytes) {
+    uint64_t hash = kFnvOffsetBasis;
+    for (uint32_t i = 0; i < bytes.len; ++i) {
+        hash ^= static_cast<uint64_t>(bytes.data[i]);
+        hash *= kFnvPrime;
+    }
+    return hash;
+}
+
 uint8_t* copy_span(AstralSpanU8 span) {
     if (span.len == 0) {
         return nullptr;
@@ -111,6 +128,10 @@ struct Agent {
     uint32_t max_prompt_bytes;
     uint32_t last_prompt_bytes;
     uint32_t last_prompt_tokens;
+    uint32_t last_prompt_cache_reused_tokens;
+    uint32_t last_prompt_cache_new_tokens;
+    uint32_t last_prompt_cache_hits;
+    uint32_t last_prompt_cache_misses;
     AstralErr last_error;
 };
 
@@ -256,6 +277,87 @@ AstralErr build_prompt(Agent* agent, AstralSpanU8 user_message, uint8_t** out_by
     return ASTRAL_OK;
 }
 
+AstralPromptCacheKey prompt_cache_key(const Agent* agent, AstralSpanU8 prompt) {
+    AstralPromptCacheKey key{};
+    key.size = sizeof(AstralPromptCacheKey);
+    key.section_kind = ASTRAL_PROMPT_SECTION_RAW;
+    key.model = agent->desc.model;
+    key.key = hash_bytes(prompt);
+    key.generation = kPromptCacheGeneration;
+    return key;
+}
+
+Conversation* agent_conversation(Agent* agent) {
+    return static_cast<Conversation*>(
+        core::lookup_handle(agent->conv, core::HandleKind::Conversation)
+    );
+}
+
+void reset_prompt_cache_stats(Agent* agent) {
+    agent->last_prompt_cache_reused_tokens = 0;
+    agent->last_prompt_cache_new_tokens = 0;
+    agent->last_prompt_cache_hits = 0;
+    agent->last_prompt_cache_misses = 0;
+}
+
+AstralErr feed_prompt_with_cache(Agent* agent, AstralSpanU8 prompt) {
+    const AstralPromptCacheKey key = prompt_cache_key(agent, prompt);
+    const int32_t* cached_tokens = nullptr;
+    uint32_t cached_count = 0;
+
+    AstralErr err =
+        astral_prompt_cache_get_token_view(agent->desc.prompt_cache, &key, &cached_tokens, &cached_count);
+    if (err == ASTRAL_OK) {
+        agent->last_prompt_cache_reused_tokens = cached_count;
+        agent->last_prompt_cache_hits = kPromptCacheHitCount;
+        return conv_feed_tokens(agent_conversation(agent), cached_tokens, cached_count, kPromptFinalize);
+    }
+    if (err != ASTRAL_E_NOT_FOUND) {
+        return err;
+    }
+
+    uint32_t token_count = 0;
+    err = astral_tokenize_count(agent->desc.model, prompt, kPromptAddSpecial, kPromptParseSpecial, &token_count);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    int32_t* tokens = nullptr;
+    if (token_count != 0) {
+        tokens = core::runtime_alloc_array<int32_t>(token_count);
+        if (tokens == nullptr) {
+            return ASTRAL_E_NOMEM;
+        }
+    }
+
+    uint32_t written = 0;
+    err = astral_tokenize(
+        agent->desc.model,
+        prompt,
+        tokens,
+        token_count,
+        kPromptAddSpecial,
+        kPromptParseSpecial,
+        &written
+    );
+    if (err == ASTRAL_OK && written != token_count) {
+        err = ASTRAL_E_BACKEND;
+    }
+    if (err == ASTRAL_OK) {
+        err = astral_prompt_cache_put_tokens(agent->desc.prompt_cache, &key, tokens, written);
+    }
+    if (err == ASTRAL_OK) {
+        agent->last_prompt_cache_new_tokens = written;
+        agent->last_prompt_cache_misses = kPromptCacheMissCount;
+        err = conv_feed_tokens(agent_conversation(agent), tokens, written, kPromptFinalize);
+    }
+
+    if (tokens != nullptr) {
+        core::runtime_free_array(tokens, token_count);
+    }
+    return err;
+}
+
 AstralErr replace_system_prompt(Agent* agent, AstralSpanU8 system_prompt) {
     if (agent == nullptr || !span_valid(system_prompt)) {
         return ASTRAL_E_INVALID;
@@ -323,6 +425,16 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
     }
     if (desc->toolset != 0) {
         err = astral_conv_set_toolset(agent->conv, desc->toolset, desc->tool_choice_mode);
+        if (err != ASTRAL_OK) {
+            destroy_agent_allocations(agent);
+            core::runtime_delete(agent);
+            return err;
+        }
+    }
+    if (desc->prompt_cache != 0) {
+        AstralPromptCacheStats stats{};
+        stats.size = sizeof(AstralPromptCacheStats);
+        err = astral_prompt_cache_stats(desc->prompt_cache, &stats);
         if (err != ASTRAL_OK) {
             destroy_agent_allocations(agent);
             core::runtime_delete(agent);
@@ -555,6 +667,7 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
         agent->last_error = err;
         return err;
     }
+    reset_prompt_cache_stats(agent);
     if (state == ASTRAL_SESSION_DECODING) {
         agent->last_error = ASTRAL_E_STATE;
         return ASTRAL_E_STATE;
@@ -580,11 +693,16 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
     conv_desc.seed = agent->desc.seed;
 
     err = astral_conv_reset(agent->conv, &conv_desc);
-    if (err == ASTRAL_OK) {
+    if (err == ASTRAL_OK && agent->desc.prompt_cache != 0) {
         AstralSpanU8 prompt_span{};
         prompt_span.data = prompt;
         prompt_span.len = prompt_len;
-        err = astral_conv_feed(agent->conv, prompt_span, 1);
+        err = feed_prompt_with_cache(agent, prompt_span);
+    } else if (err == ASTRAL_OK) {
+        AstralSpanU8 prompt_span{};
+        prompt_span.data = prompt;
+        prompt_span.len = prompt_len;
+        err = astral_conv_feed(agent->conv, prompt_span, kPromptFinalize);
     }
     if (err == ASTRAL_OK) {
         err = astral_conv_decode(agent->conv);
@@ -636,6 +754,10 @@ AstralErr agent_chat_result(Agent* agent, AstralAgentChatResult* out_result) {
     out_result->prompt_bytes = agent->last_prompt_bytes;
     out_result->history_messages = agent->message_count;
     out_result->prompt_tokens = stats_err == ASTRAL_OK ? stats.prompt_tokens : agent->last_prompt_tokens;
+    out_result->prompt_cache_reused_tokens = agent->last_prompt_cache_reused_tokens;
+    out_result->prompt_cache_new_tokens = agent->last_prompt_cache_new_tokens;
+    out_result->prompt_cache_hits = agent->last_prompt_cache_hits;
+    out_result->prompt_cache_misses = agent->last_prompt_cache_misses;
     out_result->last_error = agent->last_error;
     out_result->generated_tokens = stats_err == ASTRAL_OK ? stats.generated_tokens : 0;
     out_result->t_first_token_ms = stats_err == ASTRAL_OK ? stats.t_first_token_ms : 0.0;

@@ -398,6 +398,12 @@ TEST(inference_agent_history_and_chat_mock) {
     constexpr uint32_t kHistoryCount = 2;
     constexpr uint32_t kSaveCapacity = 512;
     constexpr uint32_t kChatHistoryCount = 3;
+    constexpr uint32_t kPromptCacheEntries = 4;
+    constexpr uint32_t kPromptCacheTokens = 128;
+    constexpr uint32_t kPromptCacheFirstMisses = 1;
+    constexpr uint32_t kPromptCacheSecondHits = 1;
+    constexpr uint32_t kPromptCacheNoReusedTokens = 0;
+    constexpr uint32_t kPromptCacheNoNewTokens = 0;
 
     AstralInit cfg{};
     cfg.reserve_bytes = kReserveBytes;
@@ -410,9 +416,19 @@ TEST(inference_agent_history_and_chat_mock) {
     ex.max_batch_tokens = kBatchTokens;
     ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
 
+    AstralPromptCacheDesc cache_desc{};
+    cache_desc.size = sizeof(AstralPromptCacheDesc);
+    cache_desc.max_entries = kPromptCacheEntries;
+    cache_desc.max_tokens = kPromptCacheTokens;
+    cache_desc.eviction_policy = ASTRAL_PROMPT_CACHE_EVICT_FIFO;
+    cache_desc.flags = ASTRAL_PROMPT_CACHE_FLAG_TRACK_STATS;
+    AstralHandle prompt_cache = 0;
+    ASSERT_EQ(astral_prompt_cache_create(&cache_desc, &prompt_cache), ASTRAL_OK);
+
     AstralAgentDesc desc{};
     desc.size = sizeof(AstralAgentDesc);
     desc.model = model;
+    desc.prompt_cache = prompt_cache;
     desc.max_tokens = kMaxTokens;
     desc.temperature = 0.0f;
     desc.top_p = 1.0f;
@@ -495,6 +511,9 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(result.history_messages, kChatHistoryCount);
     ASSERT_GT(result.prompt_bytes, 0u);
     ASSERT_GT(result.generated_tokens, 0ull);
+    ASSERT_GT(result.prompt_cache_new_tokens, kPromptCacheNoNewTokens);
+    ASSERT_EQ(result.prompt_cache_reused_tokens, kPromptCacheNoReusedTokens);
+    ASSERT_EQ(result.prompt_cache_misses, kPromptCacheFirstMisses);
 
     chat.flags = ASTRAL_AGENT_CHAT_FLAG_WARMUP;
     ASSERT_EQ(astral_agent_chat_enqueue(agent, &chat), ASTRAL_OK);
@@ -504,9 +523,13 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(astral_agent_chat_result(agent, &result), ASTRAL_OK);
     ASSERT_EQ(result.state, ASTRAL_SESSION_COMPLETED);
     ASSERT_EQ(result.history_messages, kChatHistoryCount);
+    ASSERT_GT(result.prompt_cache_reused_tokens, kPromptCacheNoReusedTokens);
+    ASSERT_EQ(result.prompt_cache_new_tokens, kPromptCacheNoNewTokens);
+    ASSERT_EQ(result.prompt_cache_hits, kPromptCacheSecondHits);
     ASSERT_EQ(astral_agent_chat_cancel(agent), ASTRAL_OK);
 
     astral_agent_destroy(agent);
+    astral_prompt_cache_destroy(prompt_cache);
     astral_model_release(model);
     astral_shutdown();
 }

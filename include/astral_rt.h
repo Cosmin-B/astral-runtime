@@ -1326,6 +1326,10 @@ typedef struct AstralAgentChatResult {
     uint32_t prompt_bytes;
     uint32_t history_messages;
     uint32_t prompt_tokens;
+    uint32_t prompt_cache_reused_tokens;
+    uint32_t prompt_cache_new_tokens;
+    uint32_t prompt_cache_hits;
+    uint32_t prompt_cache_misses;
     AstralErr last_error;
     uint64_t generated_tokens;
     double t_first_token_ms;
@@ -1336,12 +1340,12 @@ typedef struct AstralAgentChatResult {
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 80, "AstralAgentDesc must be 80 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 24, "AstralAgentMessage must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 24, "AstralAgentChatDesc must be 24 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 48, "AstralAgentChatResult must be 48 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 64-bit");
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 76, "AstralAgentDesc must be 76 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 16, "AstralAgentMessage must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 16, "AstralAgentChatDesc must be 16 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 48, "AstralAgentChatResult must be 48 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 32-bit");
 #endif
 
 /**
