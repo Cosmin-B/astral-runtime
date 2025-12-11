@@ -1,0 +1,49 @@
+# Model Presets
+
+Astral model presets describe known GGUF fixtures and sample models without
+committing model files. The manifest lives at `scripts/model_presets.json` and
+records preset name, label, model type, Hugging Face repository, filename,
+revision, size, SHA-256, license note, context length, embedding dimension, and
+sample-matrix eligibility.
+
+## Tooling
+
+- `scripts/model_preset_tool.py list`
+- `scripts/model_preset_tool.py filename <preset>`
+- `scripts/model_preset_tool.py path <preset> --dir <dir>`
+- `scripts/model_preset_tool.py validate-file --preset <preset> --dir <dir>`
+- `tests/model_downloader.sh --preset <preset> --dry-run`
+- `tests/model_downloader.sh --preset <preset> --validate-only`
+- `tests/model_downloader.sh --preset <preset> --print-path`
+
+`--dry-run` prints the resolved preset, output path, URL, byte size, checksum,
+and repeatable downloader command without touching the network. `--validate-only`
+checks an existing local file against the manifest size and SHA-256 and returns a
+non-zero exit code for missing, truncated, or checksum-drifted files.
+
+## Ownership
+
+The preset manifest is source-controlled. GGUF files, partial downloads, and
+download logs stay outside commits. The downloader writes to `tests/models` by
+default and resumes through a `.part` file before replacing the final path after
+checksum validation.
+
+## Engine Use
+
+Unreal and Unity wrappers should use preset names only for setup tools,
+samples, and editor workflows. Runtime model loading still receives a concrete
+filesystem path through the native model descriptor. Packaged builds should
+resolve content or persistent-download paths in engine code before crossing the
+C ABI.
+
+## Validation
+
+```bash
+python3 scripts/model_preset_tool.py validate-manifest
+./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
+./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
+./tests/model_downloader.sh --preset qwen3-0.6b-q8 --print-path
+```
+
+Expected evidence markers include `manifest OK`, `preset: qwen3-0.6b-q8`,
+`sha256:`, and a resolved `.gguf` path.
