@@ -44,6 +44,8 @@ static constexpr uint32_t kBenchAgentBatchTokens = 16;
 static constexpr uint32_t kBenchAgentMaxTokens = 0;
 static constexpr uint32_t kBenchAgentMaxMessages = 8;
 static constexpr uint32_t kBenchAgentMaxPromptBytes = 4096;
+static constexpr uint32_t kBenchAgentPromptCacheEntries = 4;
+static constexpr uint32_t kBenchAgentPromptCacheTokens = 256;
 static constexpr uint32_t kBenchAgentSeed = 11;
 static constexpr uint32_t kBenchAgentPollLimit = 1024;
 static constexpr char kBenchMemoryCapacityEnv[] = "ASTRAL_BENCH_MEMORY_CAPACITY";
@@ -764,9 +766,9 @@ static AstralHandle load_mock_model_for_agent_bench() {
     return err == ASTRAL_OK ? model : 0;
 }
 
-static BenchResult bench_agent_prompt_warmup(uint64_t iters) {
+static BenchResult bench_agent_prompt_warmup_impl(uint64_t iters, bool use_prompt_cache) {
     BenchResult r{};
-    r.name = "features.agent prompt_warmup";
+    r.name = use_prompt_cache ? "features.agent prompt_cache_warmup" : "features.agent prompt_warmup";
     r.ops = iters;
 
     AstralHandle model = load_mock_model_for_agent_bench();
@@ -785,9 +787,24 @@ static BenchResult bench_agent_prompt_warmup(uint64_t iters) {
         return r;
     }
 
+    AstralHandle prompt_cache = 0;
+    if (use_prompt_cache) {
+        AstralPromptCacheDesc cache_desc{};
+        cache_desc.size = sizeof(AstralPromptCacheDesc);
+        cache_desc.max_entries = kBenchAgentPromptCacheEntries;
+        cache_desc.max_tokens = kBenchAgentPromptCacheTokens;
+        cache_desc.eviction_policy = ASTRAL_PROMPT_CACHE_EVICT_FIFO;
+        if (astral_prompt_cache_create(&cache_desc, &prompt_cache) != ASTRAL_OK) {
+            astral_model_release(model);
+            r.ops = 0;
+            return r;
+        }
+    }
+
     AstralAgentDesc desc{};
     desc.size = sizeof(AstralAgentDesc);
     desc.model = model;
+    desc.prompt_cache = prompt_cache;
     desc.max_tokens = kBenchAgentMaxTokens;
     desc.temperature = 0.0f;
     desc.top_p = 1.0f;
@@ -798,6 +815,9 @@ static BenchResult bench_agent_prompt_warmup(uint64_t iters) {
 
     AstralHandle agent = 0;
     if (astral_agent_create(&desc, &agent) != ASTRAL_OK) {
+        if (prompt_cache != 0) {
+            astral_prompt_cache_destroy(prompt_cache);
+        }
         astral_model_release(model);
         r.ops = 0;
         return r;
@@ -845,8 +865,19 @@ static BenchResult bench_agent_prompt_warmup(uint64_t iters) {
     r.ticks = t1 - t0;
     r.ns = n1 - n0;
     astral_agent_destroy(agent);
+    if (prompt_cache != 0) {
+        astral_prompt_cache_destroy(prompt_cache);
+    }
     astral_model_release(model);
     return r;
+}
+
+static BenchResult bench_agent_prompt_warmup(uint64_t iters) {
+    return bench_agent_prompt_warmup_impl(iters, false);
+}
+
+static BenchResult bench_agent_prompt_cache_warmup(uint64_t iters) {
+    return bench_agent_prompt_warmup_impl(iters, true);
 }
 
 static AstralHandle create_session(AstralHandle model, uint32_t max_tokens, float temperature, uint32_t top_k, float top_p, uint32_t seed);
@@ -1208,6 +1239,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_memory_flat_search(iters), clock_info().name);
         print_result(bench_memory_cursor_fetch(iters), clock_info().name);
         print_result(bench_agent_prompt_warmup(iters), clock_info().name);
+        print_result(bench_agent_prompt_cache_warmup(iters), clock_info().name);
         astral_shutdown();
         return;
     }
@@ -1248,6 +1280,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_memory_flat_search(iters), clock_info().name);
     print_result(bench_memory_cursor_fetch(iters), clock_info().name);
     print_result(bench_agent_prompt_warmup(iters), clock_info().name);
+    print_result(bench_agent_prompt_cache_warmup(iters), clock_info().name);
 
     // Embeddings.
     {

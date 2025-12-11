@@ -539,6 +539,41 @@ AstralErr conv_feed(Conversation* conv, AstralSpanU8 prompt_chunk, uint8_t final
     return ASTRAL_OK;
 }
 
+AstralErr conv_feed_tokens(Conversation* conv, const int32_t* tokens, uint32_t token_count, uint8_t finalize) {
+    if (conv == nullptr || (token_count != 0 && tokens == nullptr)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    ConvState state = conv->state.load(std::memory_order_acquire);
+    if (state != ConvState::Idle && state != ConvState::FeedingPrompt) {
+        return ASTRAL_E_STATE;
+    }
+
+    if (state == ConvState::Idle) {
+        conv->state.store(ConvState::FeedingPrompt, std::memory_order_release);
+    }
+
+    if (token_count == 0) {
+        return ASTRAL_OK;
+    }
+    if (conv->prompt_chunk_count >= kMaxPromptChunks) {
+        return ASTRAL_E_NOMEM;
+    }
+    const uint32_t space = conv->prompt_capacity - conv->prompt_count;
+    if (token_count >= space) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    const uint32_t token_start = conv->prompt_count;
+    std::memcpy(
+        conv->prompt_tokens + conv->prompt_count,
+        tokens,
+        static_cast<size_t>(token_count) * sizeof(int32_t)
+    );
+    conv->prompt_count += token_count;
+    return conv_push_text_chunk(conv, token_start, token_count, finalize);
+}
+
 AstralErr conv_feed_image(Conversation* conv, const AstralImageDesc* image, uint8_t finalize) {
     if (conv == nullptr || !image_desc_valid(image)) {
         return ASTRAL_E_INVALID;

@@ -43,6 +43,11 @@ token copy. The returned pointer is valid only until the next cache mutation or
 destroy call. Engine wrappers should use the copy API unless they can keep that
 lifetime local and obvious.
 
+Agents may bind a prompt cache through `AstralAgentDesc::prompt_cache`. The
+agent uses the native view path during chat setup, so repeated identical prompt
+assemblies can skip tokenization and feed cached tokens directly into the
+conversation prompt buffer.
+
 System prompts must be set before normal prompt text is fed. A late call returns
 `ASTRAL_E_STATE`.
 
@@ -97,4 +102,5 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10000000 ./build/dev
 ```
 
 Expected evidence markers include `test_prompt_cache Passed`,
-`features.prompt_cache get`, and `features.prompt_cache view`.
+`features.prompt_cache get`, `features.prompt_cache view`, and
+`features.agent prompt_cache_warmup`.

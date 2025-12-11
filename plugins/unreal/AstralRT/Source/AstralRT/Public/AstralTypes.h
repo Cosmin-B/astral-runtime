@@ -722,6 +722,18 @@ struct ASTRALRT_API FAstralAgentChatResult
     int32 PromptTokens = 0;
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int32 PromptCacheReusedTokens = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int32 PromptCacheNewTokens = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int32 PromptCacheHits = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    int32 PromptCacheMisses = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
     int32 LastError = 0;
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")

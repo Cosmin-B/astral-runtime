@@ -72,7 +72,8 @@ controls entry and token budgets, `FAstralPromptCacheKey` identifies one
 model-scoped section, and `FAstralPromptCacheStats` reports occupancy plus
 optional hit/miss counters. Agents can consume the resulting native cache
 handle through `FAstralAgentDesc::PromptCacheHandle`; Blueprint token arrays are
-copied only when `GetPromptCacheTokensResult` is called.
+copied only when `GetPromptCacheTokensResult` is called. Agent chat status also
+reports prompt-cache reused/new token counts and per-request hit/miss markers.
 
 Memory helpers expose the native flat vector index lifecycle, including
 snapshot save/load for staged RAG data. `SaveMemoryIndexResult` writes an
