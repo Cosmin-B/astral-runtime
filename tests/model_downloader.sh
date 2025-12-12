@@ -15,6 +15,8 @@ Options:
   --preset <name>       Download a named preset from scripts/model_presets.json
   --dir <path>          Output directory (default: tests/models)
   --dry-run             Print resolved preset, path, URL, checksum, and command
+  --validate-only       Validate an existing local preset file without downloading
+  --print-path          Print the resolved local path for a preset
   --list-presets        Print available presets
   --token <token>       Hugging Face token, otherwise HF_TOKEN/HUGGINGFACE_HUB_TOKEN is used
   --url <url>           Custom GGUF URL; requires --file
@@ -51,11 +53,17 @@ if [[ -n "${ASTRAL_MODEL_SHA256:-}" ]]; then
   args+=(--sha256 "${ASTRAL_MODEL_SHA256}")
 fi
 
+print_path=0
+preset_name=""
+output_dir="tests/models"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --preset) args+=(--preset "${2:-}"); shift 2 ;;
-    --dir) args+=(--dir "${2:-}"); shift 2 ;;
+    --preset) preset_name="${2:-}"; args+=(--preset "${preset_name}"); shift 2 ;;
+    --dir) output_dir="${2:-}"; args+=(--dir "${output_dir}"); shift 2 ;;
     --dry-run) args+=(--dry-run); shift ;;
+    --validate-only) args+=(--validate-only); shift ;;
+    --print-path) print_path=1; shift ;;
     --token) args+=(--token "${2:-}"); shift 2 ;;
     --url) args+=(--url "${2:-}"); shift 2 ;;
     --file) args+=(--file "${2:-}"); shift 2 ;;
@@ -78,5 +86,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${print_path}" -eq 1 ]]; then
+  if [[ -z "${preset_name}" ]]; then
+    echo "--print-path requires --preset" >&2
+    exit "${exit_usage}"
+  fi
+  exec python3 "${tool}" path "${preset_name}" --dir "${output_dir}"
+fi
 
 exec python3 "${tool}" download "${args[@]}"

@@ -207,6 +207,16 @@ def _verify_existing(path: Path, preset: Preset) -> None:
         raise ValueError(f"{path.name} size mismatch: got {size}, expected at least {preset.size_bytes}")
 
 
+def _resolved_output_path(args: argparse.Namespace, preset: Preset) -> Path:
+    return _repo_root_path(args.dir) / preset.filename
+
+
+def _format_download_command(preset: Preset, output_dir: Path) -> str:
+    if preset.name == CUSTOM_PRESET_NAME:
+        return f"{Path('tests') / 'model_downloader.sh'} --url {preset.url} --file {preset.filename} --dir {output_dir}"
+    return f"{Path('tests') / 'model_downloader.sh'} --preset {preset.name} --dir {output_dir}"
+
+
 def _request(url: str, token: str, start: int) -> urllib.request.Request:
     request = urllib.request.Request(url)
     request.add_header("User-Agent", "astral-model-downloader/1.0")
@@ -311,13 +321,10 @@ def cmd_preset_for_file(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def cmd_download(args: argparse.Namespace) -> int:
-    manifest_path = Path(args.manifest)
-    presets = _load_presets(manifest_path)
+def _select_download_preset(args: argparse.Namespace, presets: List[Preset], manifest_path: Path) -> Preset:
     if args.url or args.hf_repo or args.hf_file or args.file:
         if not args.file:
-            sys.stderr.write("custom downloads require --file\n")
-            return EXIT_USAGE
+            raise ValueError("custom downloads require --file")
         if args.url:
             url = args.url
             repo = ""
@@ -332,9 +339,8 @@ def cmd_download(args: argparse.Namespace) -> int:
             file_q = urllib.parse.quote(filename, safe="/")
             url = f"https://huggingface.co/{repo_q}/resolve/{rev_q}/{file_q}"
         else:
-            sys.stderr.write("custom Hugging Face downloads require --hf-repo and --hf-file\n")
-            return EXIT_USAGE
-        preset = Preset(
+            raise ValueError("custom Hugging Face downloads require --hf-repo and --hf-file")
+        return Preset(
             name=CUSTOM_PRESET_NAME,
             label=CUSTOM_PRESET_LABEL,
             model_type=CUSTOM_MODEL_TYPE,
@@ -350,23 +356,44 @@ def cmd_download(args: argparse.Namespace) -> int:
             huggingface_base_url="https://huggingface.co",
             direct_url=url,
         )
-    else:
-        preset_name = args.preset or _default_preset_name(manifest_path)
-        try:
-            preset = _find_preset(presets, preset_name)
-        except KeyError:
-            sys.stderr.write(f"Unknown preset: {preset_name}\n")
-            return EXIT_USAGE
+
+    preset_name = args.preset or _default_preset_name(manifest_path)
+    try:
+        return _find_preset(presets, preset_name)
+    except KeyError as exc:
+        raise ValueError(f"Unknown preset: {preset_name}") from exc
+
+
+def cmd_path(args: argparse.Namespace) -> int:
+    preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
+    print(_resolved_output_path(args, preset))
+    return EXIT_OK
+
+
+def cmd_validate_file(args: argparse.Namespace) -> int:
+    preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
+    output_path = Path(args.path).expanduser() if args.path else _resolved_output_path(args, preset)
+    _verify_existing(output_path, preset)
+    print(f"valid: {output_path}")
+    return EXIT_OK
+
+
+def cmd_download(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest)
+    presets = _load_presets(manifest_path)
+    preset = _select_download_preset(args, presets, manifest_path)
 
     output_dir = _repo_root_path(args.dir)
     output_path = output_dir / preset.filename
     _print_preset(preset, output_path)
-    if preset.name == CUSTOM_PRESET_NAME:
-        print(f"command: {Path('tests') / 'model_downloader.sh'} --url {preset.url} --file {preset.filename} --dir {output_dir}")
-    else:
-        print(f"command: {Path('tests') / 'model_downloader.sh'} --preset {preset.name} --dir {output_dir}")
+    print(f"command: {_format_download_command(preset, output_dir)}")
 
     if args.dry_run:
+        return EXIT_OK
+
+    if args.validate_only:
+        _verify_existing(output_path, preset)
+        print(f"valid: {output_path}")
         return EXIT_OK
 
     if output_path.exists():
@@ -401,14 +428,26 @@ def main(argv: List[str]) -> int:
     filename_parser.add_argument("preset")
     filename_parser.set_defaults(func=cmd_filename)
 
+    path_parser = sub.add_parser("path")
+    path_parser.add_argument("preset")
+    path_parser.add_argument("--dir", default="tests/models")
+    path_parser.set_defaults(func=cmd_path)
+
     preset_for_file_parser = sub.add_parser("preset-for-file")
     preset_for_file_parser.add_argument("filename")
     preset_for_file_parser.set_defaults(func=cmd_preset_for_file)
+
+    validate_file_parser = sub.add_parser("validate-file")
+    validate_file_parser.add_argument("--preset", required=True)
+    validate_file_parser.add_argument("--dir", default="tests/models")
+    validate_file_parser.add_argument("--path", default="")
+    validate_file_parser.set_defaults(func=cmd_validate_file)
 
     download_parser = sub.add_parser("download")
     download_parser.add_argument("--preset", default="")
     download_parser.add_argument("--dir", default="tests/models")
     download_parser.add_argument("--dry-run", action="store_true")
+    download_parser.add_argument("--validate-only", action="store_true")
     download_parser.add_argument("--token", default="")
     download_parser.add_argument("--url", default="")
     download_parser.add_argument("--hf-repo", default="")
