@@ -1039,6 +1039,9 @@ namespace Astral.Runtime
         public static extern int astral_session_adapters_get(AstralHandle session, uint index, out AstralHandle out_adapter, out float out_scale);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_adapters_set_scale(AstralHandle session, uint index, float scale);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_set_grammar_gbnf(AstralHandle session, AstralSpanU8 gbnf, AstralSpanU8 root);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]

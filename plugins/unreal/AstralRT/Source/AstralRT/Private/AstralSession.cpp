@@ -457,6 +457,29 @@ bool UAstralSession::GetAdapter(int32 Index, int64& OutAdapterHandle, float& Out
     return true;
 }
 
+bool UAstralSession::SetAdapterScale(int32 Index, float Scale)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_SetAdapterScale);
+
+    if (!IsValid() || Index < 0)
+    {
+        return false;
+    }
+
+    const AstralErr Err = astral_session_adapters_set_scale(
+        static_cast<AstralHandle>(SessionHandle),
+        static_cast<uint32>(Index),
+        Scale
+    );
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_adapters_set_scale failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
 bool UAstralSession::SetToolset(int64 ToolsetHandle, EAstralToolChoiceMode ChoiceMode)
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_SetToolset);

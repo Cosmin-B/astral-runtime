@@ -1516,6 +1516,8 @@ TEST(inference_memory_index_flat_mock) {
 TEST(inference_adapters_mock) {
     constexpr float kPrimaryAdapterScale = 1.0f;
     constexpr float kSecondaryAdapterScale = 0.5f;
+    constexpr float kUpdatedAdapterScale = 0.75f;
+    constexpr uint32_t kPrimaryAdapterIndex = 0u;
     constexpr uint32_t kAttachedPrimaryAdapterCount = 1u;
 
     AstralInit cfg = {};
@@ -1590,6 +1592,17 @@ TEST(inference_adapters_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(attached_adapter, adapter);
     ASSERT_EQ(attached_scale, kPrimaryAdapterScale);
+
+    err = astral_session_adapters_set_scale(session, kAttachedPrimaryAdapterCount, kUpdatedAdapterScale);
+    ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
+
+    err = astral_session_adapters_set_scale(session, kPrimaryAdapterIndex, kUpdatedAdapterScale);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_session_adapters_get(session, kPrimaryAdapterIndex, &attached_adapter, &attached_scale);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(attached_adapter, adapter);
+    ASSERT_EQ(attached_scale, kUpdatedAdapterScale);
 
     AstralHandle overflow_adapters[ASTRAL_SESSION_ADAPTERS_MAX]{};
     for (uint32_t i = kAttachedPrimaryAdapterCount; i < ASTRAL_SESSION_ADAPTERS_MAX; ++i) {
