@@ -325,6 +325,7 @@ TEST(abi_invalid_args_session_surface) {
     ASSERT_EQ(astral_session_adapters_get(0, 0, &adapter, &adapter_scale), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_adapters_get(1, 0, nullptr, &adapter_scale), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_adapters_get(1, 0, &adapter, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_set_scale(0, 0, adapter_scale), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_grammar_gbnf(0, null_span(), null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_grammar_json_schema(0, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_clear_grammar(0), ASTRAL_E_INVALID);

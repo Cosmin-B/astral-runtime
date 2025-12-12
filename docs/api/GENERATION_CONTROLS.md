@@ -78,9 +78,12 @@ If `ASTRAL_CAP_LORA` is set:
   - `astral_session_adapters_add(session, adapter, scale)`
   - `astral_session_adapters_count(session, &out_count)`
   - `astral_session_adapters_get(session, index, &out_adapter, &out_scale)`
+  - `astral_session_adapters_set_scale(session, index, scale)`
 
 Adapters are model-scoped; sessions retain references to attached adapters.
-Each session can hold up to `ASTRAL_SESSION_ADAPTERS_MAX` adapters.
+Each session can hold up to `ASTRAL_SESSION_ADAPTERS_MAX` adapters. Scale
+updates are setup-time operations and return `ASTRAL_E_STATE` while the session
+is decoding.
 
 ## Grammar (GBNF)
 

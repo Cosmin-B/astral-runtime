@@ -288,6 +288,7 @@ AstralErr session_adapters_clear(Session* session);
 AstralErr session_adapters_add(Session* session, AstralHandle adapter, float scale);
 AstralErr session_adapters_count(Session* session, uint32_t* out_count);
 AstralErr session_adapters_get(Session* session, uint32_t index, AstralHandle* out_adapter, float* out_scale);
+AstralErr session_adapters_set_scale(Session* session, uint32_t index, float scale);
 
 /// Configure grammar-constrained decoding.
 AstralErr session_set_grammar_gbnf(Session* session, AstralSpanU8 gbnf, AstralSpanU8 root);

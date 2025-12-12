@@ -94,6 +94,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
     bool GetAdapter(int32 Index, int64& OutAdapterHandle, float& OutScale) const;
 
+    /** Update one attached adapter scale between requests. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool SetAdapterScale(int32 Index, float Scale);
+
     /** Bind a native toolset handle for structured output. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
     bool SetToolset(int64 ToolsetHandle, EAstralToolChoiceMode ChoiceMode = EAstralToolChoiceMode::Auto);

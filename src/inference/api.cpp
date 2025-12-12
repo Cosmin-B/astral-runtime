@@ -2277,6 +2277,28 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_get(
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_set_scale(AstralHandle session, uint32_t index, float scale) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (session == 0) {
+        set_err_invalid("session");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* s =
+        static_cast<astral::inference::Session*>(astral::core::lookup_handle(session, astral::core::HandleKind::Session));
+    if (s == nullptr) {
+        set_err_invalid("session (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::session_adapters_set_scale(s, index, scale);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_gbnf(AstralHandle session, AstralSpanU8 gbnf, AstralSpanU8 root) {
     ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {

@@ -1561,6 +1561,46 @@ AstralErr session_adapters_get(Session* session, uint32_t index, AstralHandle* o
     return ASTRAL_OK;
 }
 
+AstralErr session_adapters_set_scale(Session* session, uint32_t index, float scale) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (index >= session->adapter_count) {
+        return ASTRAL_E_NOT_FOUND;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_adapter_clear == nullptr || ops->session_adapter_add == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+
+    AstralErr err = ops->session_adapter_clear(session->backend_session_ctx);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    for (uint32_t i = 0; i < session->adapter_count; ++i) {
+        auto* a = static_cast<Adapter*>(core::lookup_handle(session->adapter_handles[i], core::HandleKind::Adapter));
+        if (a == nullptr || a->model != session->model || a->backend_adapter_ctx == nullptr) {
+            return ASTRAL_E_INVALID;
+        }
+        const float next_scale = i == index ? scale : session->adapter_scales[i];
+        err = ops->session_adapter_add(session->backend_session_ctx, a->backend_adapter_ctx, next_scale);
+        if (err != ASTRAL_OK) {
+            return err;
+        }
+    }
+
+    session->adapter_scales[index] = scale;
+    return ASTRAL_OK;
+}
+
 AstralErr session_set_grammar_gbnf(Session* session, AstralSpanU8 gbnf, AstralSpanU8 root) {
     if (session == nullptr || gbnf.data == nullptr || gbnf.len == 0) {
         return ASTRAL_E_INVALID;

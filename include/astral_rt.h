@@ -1526,6 +1526,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_get(
     AstralHandle* out_adapter,
     float* out_scale
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_set_scale(AstralHandle session, uint32_t index, float scale);
 
 /**
  * Create a bounded token prompt cache.
