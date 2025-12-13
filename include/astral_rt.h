@@ -1289,6 +1289,12 @@ enum {
     ASTRAL_AGENT_CHAT_FLAG_WARMUP = 1u << 0,
 };
 
+typedef uint32_t AstralAgentOverflowPolicy;
+enum {
+    ASTRAL_AGENT_OVERFLOW_REJECT = 0,
+    ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST = 1,
+};
+
 typedef struct AstralAgentDesc {
     uint32_t size;
     AstralAgentFlags flags;
@@ -1306,6 +1312,8 @@ typedef struct AstralAgentDesc {
     AstralToolChoiceMode tool_choice_mode;
     uint32_t max_messages;
     uint32_t max_prompt_bytes;
+    AstralAgentOverflowPolicy overflow_policy;
+    uint32_t _reserved0;
 } AstralAgentDesc;
 
 typedef struct AstralAgentMessage {
@@ -1337,12 +1345,12 @@ typedef struct AstralAgentChatResult {
 } AstralAgentChatResult;
 
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 80, "AstralAgentDesc must be 80 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 88, "AstralAgentDesc must be 88 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 24, "AstralAgentMessage must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 24, "AstralAgentChatDesc must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 64-bit");
 #else
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 76, "AstralAgentDesc must be 76 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 84, "AstralAgentDesc must be 84 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 16, "AstralAgentMessage must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 16, "AstralAgentChatDesc must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 32-bit");

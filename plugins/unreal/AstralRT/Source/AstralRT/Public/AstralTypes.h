@@ -148,6 +148,14 @@ enum class EAstralAgentRole : uint8
     Tool = 4
 };
 
+/** Native agent history overflow behavior. */
+UENUM(BlueprintType)
+enum class EAstralAgentOverflowPolicy : uint8
+{
+    Reject = 0,
+    TruncateOldest = 1
+};
+
 /** Prompt section encoded into native prompt cache keys. */
 UENUM(BlueprintType)
 enum class EAstralPromptSectionKind : uint8
@@ -701,6 +709,9 @@ struct ASTRALRT_API FAstralAgentDesc
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
     int32 MaxPromptBytes = 65536;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    EAstralAgentOverflowPolicy OverflowPolicy = EAstralAgentOverflowPolicy::Reject;
 };
 
 /** Result from a native agent chat request. */

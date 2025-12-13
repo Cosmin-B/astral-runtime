@@ -45,6 +45,13 @@ tokens.
 into a caller-provided buffer. `astral_agent_history_load()` replaces the
 current native prompt/history copy after validating the payload.
 
+`AstralAgentDesc::overflow_policy` controls history overflow before prompt
+decode starts. `ASTRAL_AGENT_OVERFLOW_REJECT` is the default and returns
+`ASTRAL_E_NOMEM` when adding history beyond `max_messages` or when the assembled
+prompt exceeds `max_prompt_bytes`. `ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST`
+removes oldest history messages during message add or prompt setup until the
+configured bounds are met.
+
 ## Thread Safety
 
 Creation and destruction are control-path operations. A single control thread

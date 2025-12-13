@@ -1225,6 +1225,7 @@ FAstralOperationResult UAstralBlueprintLibrary::CreateAgentResult(const FAstralA
     Native.tool_choice_mode = to_native_tool_choice(Desc.ToolChoiceMode);
     Native.max_messages = static_cast<uint32_t>(Desc.MaxMessages);
     Native.max_prompt_bytes = static_cast<uint32_t>(Desc.MaxPromptBytes);
+    Native.overflow_policy = static_cast<AstralAgentOverflowPolicy>(Desc.OverflowPolicy);
 
     AstralHandle Handle = 0;
     const AstralErr Err = astral_agent_create(&Native, &Handle);
