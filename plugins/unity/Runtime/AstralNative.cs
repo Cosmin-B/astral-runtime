@@ -884,6 +884,12 @@ namespace Astral.Runtime
             Warmup = 1u << 0
         }
 
+        public enum AstralAgentOverflowPolicy : uint
+        {
+            Reject = 0,
+            TruncateOldest = 1
+        }
+
         [StructLayout(LayoutKind.Sequential)]
         public struct AstralAgentDesc
         {
@@ -905,6 +911,8 @@ namespace Astral.Runtime
             public uint tool_choice_mode;
             public uint max_messages;
             public uint max_prompt_bytes;
+            public AstralAgentOverflowPolicy overflow_policy;
+            public uint _reserved0;
         }
 
         [StructLayout(LayoutKind.Sequential)]

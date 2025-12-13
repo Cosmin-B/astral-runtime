@@ -25,6 +25,7 @@ constexpr uint32_t kPromptCacheMissCount = 1;
 constexpr uint8_t kPromptFinalize = 1;
 constexpr uint8_t kPromptAddSpecial = 1;
 constexpr uint8_t kPromptParseSpecial = 0;
+constexpr uint32_t kOneMessage = 1;
 constexpr uint64_t kFnvOffsetBasis = 14695981039346656037ull;
 constexpr uint64_t kFnvPrime = 1099511628211ull;
 
@@ -77,6 +78,10 @@ inline const char* role_label(AstralAgentRole role, uint32_t* out_len) {
 
 inline bool span_valid(AstralSpanU8 span) {
     return span.len == 0 || span.data != nullptr;
+}
+
+inline bool overflow_policy_valid(AstralAgentOverflowPolicy policy) {
+    return policy == ASTRAL_AGENT_OVERFLOW_REJECT || policy == ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST;
 }
 
 uint64_t hash_bytes(AstralSpanU8 bytes) {
@@ -201,6 +206,21 @@ AstralErr ensure_message_capacity(Agent* agent, uint32_t required) {
     return ASTRAL_OK;
 }
 
+void remove_oldest_message(Agent* agent) {
+    if (agent->message_count == 0) {
+        return;
+    }
+    clear_message(agent->messages[0]);
+    const uint32_t remaining = agent->message_count - kOneMessage;
+    for (uint32_t i = 0; i < remaining; ++i) {
+        agent->messages[i] = agent->messages[i + kOneMessage];
+    }
+    agent->message_count = remaining;
+    if (agent->message_capacity != 0) {
+        std::memset(&agent->messages[agent->message_count], 0, sizeof(AgentMessageStorage));
+    }
+}
+
 uint32_t prompt_bytes_required(const Agent* agent, AstralSpanU8 user_message) {
     uint32_t bytes = kHeaderReserveBytes;
     if (agent->system_prompt_len != 0) {
@@ -218,6 +238,26 @@ uint32_t prompt_bytes_required(const Agent* agent, AstralSpanU8 user_message) {
     }
     bytes += static_cast<uint32_t>(sizeof(kAssistantLabel) - 1u);
     return bytes;
+}
+
+AstralErr apply_prompt_overflow(Agent* agent, AstralSpanU8 user_message, uint32_t* out_bytes) {
+    uint32_t bytes = prompt_bytes_required(agent, user_message);
+    if (bytes <= agent->max_prompt_bytes) {
+        *out_bytes = bytes;
+        return ASTRAL_OK;
+    }
+    if (agent->desc.overflow_policy != ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST) {
+        return ASTRAL_E_NOMEM;
+    }
+    while (bytes > agent->max_prompt_bytes && agent->message_count != 0) {
+        remove_oldest_message(agent);
+        bytes = prompt_bytes_required(agent, user_message);
+    }
+    if (bytes > agent->max_prompt_bytes) {
+        return ASTRAL_E_NOMEM;
+    }
+    *out_bytes = bytes;
+    return ASTRAL_OK;
 }
 
 void append_bytes(uint8_t*& dst, const void* src, uint32_t len) {
@@ -245,9 +285,10 @@ AstralErr build_prompt(Agent* agent, AstralSpanU8 user_message, uint8_t** out_by
         return ASTRAL_E_INVALID;
     }
 
-    const uint32_t bytes = prompt_bytes_required(agent, user_message);
-    if (bytes > agent->max_prompt_bytes) {
-        return ASTRAL_E_NOMEM;
+    uint32_t bytes = 0;
+    const AstralErr overflow_err = apply_prompt_overflow(agent, user_message, &bytes);
+    if (overflow_err != ASTRAL_OK) {
+        return overflow_err;
     }
 
     uint8_t* prompt = core::runtime_alloc_array<uint8_t>(bytes);
@@ -376,7 +417,13 @@ AstralErr add_message_storage(Agent* agent, AstralAgentRole role, AstralSpanU8 c
     if (agent == nullptr || !role_valid(role) || !span_valid(content)) {
         return ASTRAL_E_INVALID;
     }
-    const AstralErr cap_err = ensure_message_capacity(agent, agent->message_count + 1u);
+    if (agent->message_count == agent->max_messages) {
+        if (agent->desc.overflow_policy != ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST) {
+            return ASTRAL_E_NOMEM;
+        }
+        remove_oldest_message(agent);
+    }
+    const AstralErr cap_err = ensure_message_capacity(agent, agent->message_count + kOneMessage);
     if (cap_err != ASTRAL_OK) {
         return cap_err;
     }
@@ -395,6 +442,9 @@ AstralErr add_message_storage(Agent* agent, AstralAgentRole role, AstralSpanU8 c
 
 AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
     if (desc == nullptr || out_agent == nullptr || desc->size != sizeof(AstralAgentDesc) || desc->model == 0) {
+        return ASTRAL_E_INVALID;
+    }
+    if (!overflow_policy_valid(desc->overflow_policy) || desc->_reserved0 != 0) {
         return ASTRAL_E_INVALID;
     }
 

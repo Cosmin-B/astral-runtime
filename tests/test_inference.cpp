@@ -47,6 +47,19 @@ AstralSpanU8 span_from_cstr(const char* text) {
     return span;
 }
 
+bool bytes_contain(const std::vector<uint8_t>& bytes, const char* needle) {
+    const size_t needle_len = std::strlen(needle);
+    if (needle_len == 0 || bytes.size() < needle_len) {
+        return false;
+    }
+    for (size_t i = 0; i + needle_len <= bytes.size(); ++i) {
+        if (std::memcmp(bytes.data() + i, needle, needle_len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 uint32_t drain_stream(AstralHandle session, uint32_t max_reads) {
     uint8_t buf[256];
     uint32_t total = 0;
@@ -530,6 +543,121 @@ TEST(inference_agent_history_and_chat_mock) {
 
     astral_agent_destroy(agent);
     astral_prompt_cache_destroy(prompt_cache);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
+TEST(inference_agent_overflow_truncate_mock) {
+    constexpr uint32_t kReserveBytes = 32 * 1024 * 1024;
+    constexpr uint32_t kMaxTokens = 0;
+    constexpr uint32_t kRejectMaxMessages = 2;
+    constexpr uint32_t kTruncateMaxMessages = 2;
+    constexpr uint32_t kPromptMaxMessages = 8;
+    constexpr uint32_t kLongHistoryCount = 2;
+    constexpr uint32_t kExpectedTruncatedCount = 2;
+    constexpr uint32_t kExpectedPromptCount = 1;
+    constexpr uint32_t kSaveCapacity = 512;
+    constexpr uint32_t kReservedNonZero = 1;
+    constexpr AstralAgentOverflowPolicy kInvalidOverflowPolicy =
+        static_cast<AstralAgentOverflowPolicy>(ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST + kReservedNonZero);
+    constexpr char kLongHistoryMessage[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    constexpr char kShortUserMessage[] = "go";
+    constexpr uint32_t kPromptHeaderReserveBytes = 96;
+    constexpr uint32_t kUserLabelBytes = static_cast<uint32_t>(sizeof("User: ") - 1);
+    constexpr uint32_t kAssistantLabelBytes = static_cast<uint32_t>(sizeof("Assistant: ") - 1);
+    constexpr uint32_t kLineBreakBytes = static_cast<uint32_t>(sizeof("\n") - 1);
+    constexpr uint32_t kLongHistoryBytes = static_cast<uint32_t>(sizeof(kLongHistoryMessage) - 1);
+    constexpr uint32_t kShortUserBytes = static_cast<uint32_t>(sizeof(kShortUserMessage) - 1);
+    constexpr uint32_t kOneHistoryPromptBytes = kPromptHeaderReserveBytes + kUserLabelBytes + kLongHistoryBytes +
+                                                kLineBreakBytes + kUserLabelBytes + kShortUserBytes +
+                                                kLineBreakBytes + kAssistantLabelBytes;
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = kReserveBytes;
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    const AstralHandle model = load_mock_model(nullptr);
+
+    AstralAgentDesc reject_desc{};
+    reject_desc.size = sizeof(AstralAgentDesc);
+    reject_desc.model = model;
+    reject_desc.max_tokens = kMaxTokens;
+    reject_desc.max_messages = kRejectMaxMessages;
+
+    AstralAgentDesc invalid_desc = reject_desc;
+    invalid_desc.overflow_policy = kInvalidOverflowPolicy;
+    AstralHandle invalid_agent = 0;
+    ASSERT_EQ(astral_agent_create(&invalid_desc, &invalid_agent), ASTRAL_E_INVALID);
+
+    invalid_desc = reject_desc;
+    invalid_desc._reserved0 = kReservedNonZero;
+    ASSERT_EQ(astral_agent_create(&invalid_desc, &invalid_agent), ASTRAL_E_INVALID);
+
+    AstralHandle reject_agent = 0;
+    ASSERT_EQ(astral_agent_create(&reject_desc, &reject_agent), ASTRAL_OK);
+
+    AstralAgentMessage msg{};
+    msg.size = sizeof(AstralAgentMessage);
+    msg.role = ASTRAL_AGENT_ROLE_USER;
+    msg.content = span_from_cstr("first");
+    ASSERT_EQ(astral_agent_message_add(reject_agent, &msg), ASTRAL_OK);
+    msg.content = span_from_cstr("second");
+    ASSERT_EQ(astral_agent_message_add(reject_agent, &msg), ASTRAL_OK);
+    msg.content = span_from_cstr("third");
+    ASSERT_EQ(astral_agent_message_add(reject_agent, &msg), ASTRAL_E_NOMEM);
+    astral_agent_destroy(reject_agent);
+
+    AstralAgentDesc truncate_desc = reject_desc;
+    truncate_desc.overflow_policy = ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST;
+    truncate_desc.max_messages = kTruncateMaxMessages;
+
+    AstralHandle truncate_agent = 0;
+    ASSERT_EQ(astral_agent_create(&truncate_desc, &truncate_agent), ASTRAL_OK);
+    msg.content = span_from_cstr("first");
+    ASSERT_EQ(astral_agent_message_add(truncate_agent, &msg), ASTRAL_OK);
+    msg.content = span_from_cstr("second");
+    ASSERT_EQ(astral_agent_message_add(truncate_agent, &msg), ASTRAL_OK);
+    msg.content = span_from_cstr("third");
+    ASSERT_EQ(astral_agent_message_add(truncate_agent, &msg), ASTRAL_OK);
+
+    uint32_t count = 0;
+    ASSERT_EQ(astral_agent_history_count(truncate_agent, &count), ASTRAL_OK);
+    ASSERT_EQ(count, kExpectedTruncatedCount);
+
+    std::vector<uint8_t> saved(kSaveCapacity);
+    AstralMutSpanU8 saved_out{};
+    saved_out.data = saved.data();
+    saved_out.len = static_cast<uint32_t>(saved.size());
+    uint32_t written = 0;
+    ASSERT_EQ(astral_agent_history_save(truncate_agent, saved_out, &written), ASTRAL_OK);
+    saved.resize(written);
+    ASSERT_FALSE(bytes_contain(saved, "first"));
+    ASSERT_TRUE(bytes_contain(saved, "second"));
+    ASSERT_TRUE(bytes_contain(saved, "third"));
+    astral_agent_destroy(truncate_agent);
+
+    AstralAgentDesc prompt_desc = truncate_desc;
+    prompt_desc.max_messages = kPromptMaxMessages;
+    prompt_desc.max_prompt_bytes = kOneHistoryPromptBytes;
+
+    AstralHandle prompt_agent = 0;
+    ASSERT_EQ(astral_agent_create(&prompt_desc, &prompt_agent), ASTRAL_OK);
+    msg.content = span_from_cstr(kLongHistoryMessage);
+    for (uint32_t i = 0; i < kLongHistoryCount; ++i) {
+        ASSERT_EQ(astral_agent_message_add(prompt_agent, &msg), ASTRAL_OK);
+    }
+
+    AstralAgentChatDesc chat{};
+    chat.size = sizeof(AstralAgentChatDesc);
+    chat.flags = ASTRAL_AGENT_CHAT_FLAG_WARMUP;
+    chat.user_message = span_from_cstr(kShortUserMessage);
+    ASSERT_EQ(astral_agent_chat_enqueue(prompt_agent, &chat), ASTRAL_OK);
+    (void)read_agent_stream_all(prompt_agent);
+
+    ASSERT_EQ(astral_agent_history_count(prompt_agent, &count), ASTRAL_OK);
+    ASSERT_EQ(count, kExpectedPromptCount);
+
+    astral_agent_destroy(prompt_agent);
     astral_model_release(model);
     astral_shutdown();
 }
