@@ -407,7 +407,10 @@ TEST(inference_agent_history_and_chat_mock) {
     constexpr uint32_t kMaxMessages = 8;
     constexpr uint32_t kMaxPromptBytes = 4096;
     constexpr uint32_t kSeed = 7;
-    constexpr uint32_t kSystemBytes = 13;
+    constexpr char kSystemPrompt[] = "reply tersely";
+    constexpr char kSummary[] = "user likes short answers";
+    constexpr uint32_t kSystemBytes = static_cast<uint32_t>(sizeof(kSystemPrompt) - 1);
+    constexpr uint32_t kSummaryBytes = static_cast<uint32_t>(sizeof(kSummary) - 1);
     constexpr uint32_t kHistoryCount = 2;
     constexpr uint32_t kSaveCapacity = 512;
     constexpr uint32_t kChatHistoryCount = 3;
@@ -454,7 +457,7 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(astral_agent_create(&desc, &agent), ASTRAL_OK);
     ASSERT_TRUE(astral_handle_valid(agent));
 
-    ASSERT_EQ(astral_agent_set_system_prompt(agent, span_from_cstr("reply tersely")), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_set_system_prompt(agent, span_from_cstr(kSystemPrompt)), ASTRAL_OK);
     uint32_t bytes = 0;
     ASSERT_EQ(astral_agent_get_system_prompt_size(agent, &bytes), ASTRAL_OK);
     ASSERT_EQ(bytes, kSystemBytes);
@@ -464,7 +467,18 @@ TEST(inference_agent_history_and_chat_mock) {
     system_out.data = system_buf;
     system_out.len = sizeof(system_buf);
     ASSERT_EQ(astral_agent_get_system_prompt(agent, system_out, &bytes), ASTRAL_OK);
-    ASSERT_EQ(std::string(reinterpret_cast<const char*>(system_buf), bytes), "reply tersely");
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(system_buf), bytes), kSystemPrompt);
+
+    ASSERT_EQ(astral_agent_set_summary(agent, span_from_cstr(kSummary)), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_get_summary_size(agent, &bytes), ASTRAL_OK);
+    ASSERT_EQ(bytes, kSummaryBytes);
+
+    uint8_t summary_buf[kSummaryBytes]{};
+    AstralMutSpanU8 summary_out{};
+    summary_out.data = summary_buf;
+    summary_out.len = sizeof(summary_buf);
+    ASSERT_EQ(astral_agent_get_summary(agent, summary_out, &bytes), ASTRAL_OK);
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(summary_buf), bytes), kSummary);
 
     AstralAgentMessage user{};
     user.size = sizeof(AstralAgentMessage);
@@ -503,6 +517,13 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(astral_agent_history_load(agent, saved_in), ASTRAL_OK);
     ASSERT_EQ(astral_agent_history_count(agent, &count), ASTRAL_OK);
     ASSERT_EQ(count, kHistoryCount);
+    ASSERT_EQ(astral_agent_get_summary_size(agent, &bytes), ASTRAL_OK);
+    ASSERT_EQ(bytes, kSummaryBytes);
+    uint8_t loaded_summary[kSummaryBytes]{};
+    summary_out.data = loaded_summary;
+    summary_out.len = sizeof(loaded_summary);
+    ASSERT_EQ(astral_agent_get_summary(agent, summary_out, &bytes), ASTRAL_OK);
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(loaded_summary), bytes), kSummary);
 
     AstralAgentMessage next{};
     next.size = sizeof(AstralAgentMessage);

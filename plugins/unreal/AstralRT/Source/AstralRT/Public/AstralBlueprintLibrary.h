@@ -283,6 +283,20 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static FAstralOperationResult SetAgentSystemPromptResult(int64 AgentHandle, const FString& SystemPrompt);
 
+    /** Store a native-owned rolling summary for the agent. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool SetAgentSummary(int64 AgentHandle, const FString& Summary, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult SetAgentSummaryResult(int64 AgentHandle, const FString& Summary);
+
+    /** Copy the native-owned rolling summary into an engine string. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool GetAgentSummary(int64 AgentHandle, FString& OutSummary, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult GetAgentSummaryResult(int64 AgentHandle, FString& OutSummary);
+
     /** Add one native-owned history entry. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode);
