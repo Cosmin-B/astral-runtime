@@ -1400,6 +1400,75 @@ FAstralOperationResult UAstralBlueprintLibrary::ClearAgentHistoryResult(int64 Ag
     return make_operation_result(ASTRAL_OK, AgentHandle);
 }
 
+bool UAstralBlueprintLibrary::SaveAgentHistory(int64 AgentHandle, TArray<uint8>& OutBytes, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SaveAgentHistoryResult(AgentHandle, OutBytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SaveAgentHistoryResult(int64 AgentHandle, TArray<uint8>& OutBytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SaveAgentHistory);
+
+    OutBytes.Reset();
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t ByteCount = 0;
+    AstralErr Err = astral_agent_history_save_size(static_cast<AstralHandle>(AgentHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Span{};
+    Span.data = OutBytes.GetData();
+    Span.len = ByteCount;
+
+    uint32_t Written = 0;
+    Err = astral_agent_history_save(static_cast<AstralHandle>(AgentHandle), Span, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        OutBytes.Reset();
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNum(static_cast<int32>(Written), EAllowShrinking::No);
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Written));
+}
+
+bool UAstralBlueprintLibrary::LoadAgentHistory(int64 AgentHandle, const TArray<uint8>& Bytes, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = LoadAgentHistoryResult(AgentHandle, Bytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::LoadAgentHistoryResult(int64 AgentHandle, const TArray<uint8>& Bytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_LoadAgentHistory);
+
+    if (AgentHandle == 0 || Bytes.Num() == kNoElements)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralSpanU8 Span{};
+    Span.data = Bytes.GetData();
+    Span.len = static_cast<uint32_t>(Bytes.Num());
+
+    const AstralErr Err = astral_agent_history_load(static_cast<AstralHandle>(AgentHandle), Span);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, Bytes.Num());
+}
+
 bool UAstralBlueprintLibrary::EnqueueAgentChat(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly, int32& OutErrorCode)
 {
     const FAstralOperationResult Result = EnqueueAgentChatResult(AgentHandle, UserMessage, bWarmupOnly);

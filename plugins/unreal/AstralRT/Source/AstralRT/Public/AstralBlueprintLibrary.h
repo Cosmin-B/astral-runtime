@@ -311,6 +311,20 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static FAstralOperationResult ClearAgentHistoryResult(int64 AgentHandle);
 
+    /** Serialize native-owned agent prompt state and history. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool SaveAgentHistory(int64 AgentHandle, TArray<uint8>& OutBytes, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult SaveAgentHistoryResult(int64 AgentHandle, TArray<uint8>& OutBytes);
+
+    /** Restore native-owned agent prompt state and history. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool LoadAgentHistory(int64 AgentHandle, const TArray<uint8>& Bytes, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult LoadAgentHistoryResult(int64 AgentHandle, const TArray<uint8>& Bytes);
+
     /** Start a native agent chat request. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool EnqueueAgentChat(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly, int32& OutErrorCode);

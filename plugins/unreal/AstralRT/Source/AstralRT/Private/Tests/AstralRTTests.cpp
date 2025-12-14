@@ -491,6 +491,15 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestFalse(TEXT("invalid agent cancel fails"), InvalidAgentCancel.bSuccess);
     TestEqual(TEXT("invalid agent cancel error"), InvalidAgentCancel.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
 
+    TArray<uint8> AgentHistoryBytes;
+    const FAstralOperationResult InvalidAgentSave = UAstralBlueprintLibrary::SaveAgentHistoryResult(InvalidHandle, AgentHistoryBytes);
+    TestFalse(TEXT("invalid agent history save fails"), InvalidAgentSave.bSuccess);
+    TestEqual(TEXT("invalid agent history save error"), InvalidAgentSave.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidAgentLoad = UAstralBlueprintLibrary::LoadAgentHistoryResult(InvalidHandle, AgentHistoryBytes);
+    TestFalse(TEXT("invalid agent history load fails"), InvalidAgentLoad.bSuccess);
+    TestEqual(TEXT("invalid agent history load error"), InvalidAgentLoad.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
     return true;
 }
 
