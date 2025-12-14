@@ -15,6 +15,9 @@ through the ABI; they do not build prompts or manage history themselves.
 - `astral_agent_set_system_prompt()`
 - `astral_agent_get_system_prompt_size()`
 - `astral_agent_get_system_prompt()`
+- `astral_agent_set_summary()`
+- `astral_agent_get_summary_size()`
+- `astral_agent_get_summary()`
 - `astral_agent_message_add()`
 - `astral_agent_history_clear()`
 - `astral_agent_history_count()`
@@ -32,18 +35,20 @@ bound at creation time and are forwarded to native prompt setup.
 
 ## Ownership
 
-The agent copies system prompt and history content into native storage. Input
-spans only need to remain valid for the duration of the call. Chat enqueue
-assembles one bounded prompt buffer, feeds it to the conversation, and releases
-the temporary buffer before returning. When `AstralAgentDesc::prompt_cache` is
-set, the agent looks up the assembled prompt in the native prompt cache during
-request setup. Cache hits feed cached token spans directly into the conversation
-prompt buffer; misses tokenize once, insert the token span, and then feed those
-tokens.
+The agent copies system prompt, rolling summary, and history content into
+native storage. Input spans only need to remain valid for the duration of the
+call. Chat enqueue assembles one bounded prompt buffer in this order: system
+prompt, summary, history, current user turn, assistant prefix. The temporary
+buffer is released before the call returns. When `AstralAgentDesc::prompt_cache`
+is set, the agent looks up the assembled prompt in the native prompt cache
+during request setup. Cache hits feed cached token spans directly into the
+conversation prompt buffer; misses tokenize once, insert the token span, and
+then feed those tokens.
 
 `astral_agent_history_save()` serializes the system prompt and history entries
-into a caller-provided buffer. `astral_agent_history_load()` replaces the
-current native prompt/history copy after validating the payload.
+into a caller-provided buffer. Current snapshots include the rolling summary.
+`astral_agent_history_load()` replaces the current native prompt, summary, and
+history copy after validating the payload.
 
 `AstralAgentDesc::overflow_policy` controls history overflow before prompt
 decode starts. `ASTRAL_AGENT_OVERFLOW_REJECT` is the default and returns
@@ -55,9 +60,9 @@ configured bounds are met.
 ## Thread Safety
 
 Creation and destruction are control-path operations. A single control thread
-should mutate one agent's system prompt or history. Chat streaming follows the
-same rule as conversations: one consumer may read from the stream while decode
-is active.
+should mutate one agent's system prompt, summary, or history. Chat streaming
+follows the same rule as conversations: one consumer may read from the stream
+while decode is active.
 
 ## Performance
 
@@ -95,6 +100,9 @@ desc.max_prompt_bytes = kMaxPromptBytes;
 
 AstralHandle agent = 0;
 AstralErr err = astral_agent_create(&desc, &agent);
+
+AstralSpanU8 summary = {0};
+err = astral_agent_set_summary(agent, summary);
 
 AstralAgentMessage message = {0};
 message.size = sizeof(AstralAgentMessage);

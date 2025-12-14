@@ -16,6 +16,7 @@ static constexpr int32 kInlineChunkRangeCapacity = 32;
 static constexpr int32 kInlineMemoryRecordCapacity = 32;
 static constexpr int32 kInlineMemoryResultCapacity = 16;
 static constexpr int32 kAgentReadBufferBytes = 4096;
+static constexpr int32 kInlineAgentSummaryBytes = kAgentReadBufferBytes;
 static constexpr int32 kNoElements = 0;
 static constexpr int32 kEmptyResultCount = 0;
 static constexpr int64 kInvalidAstralHandle = 0;
@@ -1272,6 +1273,81 @@ FAstralOperationResult UAstralBlueprintLibrary::SetAgentSystemPromptResult(int64
         return make_operation_result(Err);
     }
     return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
+}
+
+bool UAstralBlueprintLibrary::SetAgentSummary(int64 AgentHandle, const FString& Summary, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SetAgentSummaryResult(AgentHandle, Summary);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SetAgentSummaryResult(int64 AgentHandle, const FString& Summary)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SetAgentSummary);
+
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 Utf8(*Summary);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Span.len = static_cast<uint32_t>(Utf8.Length());
+    const AstralErr Err = astral_agent_set_summary(static_cast<AstralHandle>(AgentHandle), Span);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
+}
+
+bool UAstralBlueprintLibrary::GetAgentSummary(int64 AgentHandle, FString& OutSummary, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetAgentSummaryResult(AgentHandle, OutSummary);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentSummaryResult(int64 AgentHandle, FString& OutSummary)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentSummary);
+
+    OutSummary.Reset();
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t ByteCount = 0;
+    AstralErr Err = astral_agent_get_summary_size(static_cast<AstralHandle>(AgentHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    if (ByteCount == kNoElements)
+    {
+        return make_operation_result(ASTRAL_OK, AgentHandle, kEmptyResultCount);
+    }
+
+    TArray<uint8, TInlineAllocator<kInlineAgentSummaryBytes>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = ByteCount;
+    uint32_t Written = 0;
+    Err = astral_agent_get_summary(static_cast<AstralHandle>(AgentHandle), Out, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    AstralSpanU8 TextSpan{};
+    TextSpan.data = Bytes.GetData();
+    TextSpan.len = Written;
+    OutSummary = utf8_span_to_string(TextSpan);
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Written));
 }
 
 bool UAstralBlueprintLibrary::AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode)

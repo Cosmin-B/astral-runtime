@@ -1796,6 +1796,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt(
     AstralMutSpanU8 out_text,
     uint32_t* out_len
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_summary(AstralHandle agent, AstralSpanU8 summary);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_summary_size(AstralHandle agent, uint32_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_summary(
+    AstralHandle agent,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_message_add(AstralHandle agent, const AstralAgentMessage* message);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_clear(AstralHandle agent);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_count(AstralHandle agent, uint32_t* out_count);
