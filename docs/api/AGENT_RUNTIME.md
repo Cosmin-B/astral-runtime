@@ -77,8 +77,9 @@ the most recent request. These counters describe agent prompt setup only; they
 do not imply backend KV-prefix reuse.
 
 Unreal wrapper functions use `TRACE_CPUPROFILER_EVENT_SCOPE` around meaningful
-agent operations. Unity bindings are direct P/Invoke declarations over the same
-ABI.
+agent operations, including history save/load helpers that copy native snapshot
+bytes into engine-owned arrays. Unity bindings are direct P/Invoke declarations
+over the same ABI.
 
 ## Example
 
