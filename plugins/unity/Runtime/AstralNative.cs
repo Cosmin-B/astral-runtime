@@ -125,6 +125,13 @@ namespace Astral.Runtime
             Fifo = 0
         }
 
+        public enum AstralToolChoiceMode : uint
+        {
+            Auto = 0,
+            Required = 1,
+            TextOrTool = 2
+        }
+
         [Flags]
         public enum AstralPromptCacheFlags : uint
         {
