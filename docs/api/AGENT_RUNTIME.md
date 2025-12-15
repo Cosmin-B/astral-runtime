@@ -78,8 +78,9 @@ do not imply backend KV-prefix reuse.
 
 Unreal wrapper functions use `TRACE_CPUPROFILER_EVENT_SCOPE` around meaningful
 agent operations, including history save/load helpers that copy native snapshot
-bytes into engine-owned arrays. Unity bindings are direct P/Invoke declarations
-over the same ABI.
+bytes into engine-owned arrays. Unity exposes `AstralAgent` as a thin owned
+handle over the same ABI; prompt assembly, summary storage, history snapshots,
+and streaming remain native.
 
 ## Example
 
