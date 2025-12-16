@@ -43,6 +43,10 @@ token copy. The returned pointer is valid only until the next cache mutation or
 destroy call. Engine wrappers should use the copy API unless they can keep that
 lifetime local and obvious.
 
+Unity exposes `AstralPromptCache` as an owned handle. The wrapper keeps token
+input/output in `NativeArray<int>` and serializes cache snapshots through
+managed byte arrays; native lookup and eviction behavior remain unchanged.
+
 Agents may bind a prompt cache through `AstralAgentDesc::prompt_cache`. The
 agent uses the native view path during chat setup, so repeated identical prompt
 assemblies can skip tokenization and feed cached tokens directly into the
