@@ -18,6 +18,10 @@ wrappers only convert engine strings and arrays around the same native calls.
 - `astral_detokenize(model, tokens, count, out_text, out_len)` writes UTF-8
   bytes into a caller-owned buffer.
 
+Unity exposes the same flow on `AstralModel`: `CountTokens()` for sizing,
+`Tokenize()` for caller-owned or newly allocated `NativeArray<int>` output, and
+`Detokenize()` for managed string conversion outside hot paths.
+
 ## Ownership And Lifetime
 
 The model handle owns tokenizer metadata. Text spans, token arrays, offsets, and

@@ -8,6 +8,7 @@ using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace Astral.Runtime
 {
@@ -89,6 +90,174 @@ namespace Astral.Runtime
             }
 
             return limits;
+        }
+
+        /// <summary>
+        /// Count token ids produced for UTF-8 text without allocating a token buffer.
+        /// </summary>
+        public uint CountTokens(string text, bool addSpecial = false, bool parseSpecial = false)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            NativeArray<byte> textArray;
+            var textSpan = AstralNative.AstralSpanU8.FromString(text, out textArray);
+            try
+            {
+                int err = AstralNative.astral_tokenize_count(
+                    m_handle,
+                    textSpan,
+                    (byte)(addSpecial ? 1 : 0),
+                    (byte)(parseSpecial ? 1 : 0),
+                    out uint count);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_tokenize_count failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+                return count;
+            }
+            finally
+            {
+                if (textArray.IsCreated)
+                {
+                    textArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tokenize UTF-8 text into a new NativeArray owned by the caller.
+        /// </summary>
+        public unsafe NativeArray<int> Tokenize(string text, Allocator allocator, bool addSpecial = false, bool parseSpecial = false)
+        {
+            uint count = CountTokens(text, addSpecial, parseSpecial);
+            var tokens = new NativeArray<int>((int)count, allocator, NativeArrayOptions.UninitializedMemory);
+            if (count == 0)
+            {
+                return tokens;
+            }
+
+            NativeArray<byte> textArray;
+            var textSpan = AstralNative.AstralSpanU8.FromString(text, out textArray);
+            try
+            {
+                int err = AstralNative.astral_tokenize(
+                    m_handle,
+                    textSpan,
+                    (int*)tokens.GetUnsafePtr(),
+                    count,
+                    (byte)(addSpecial ? 1 : 0),
+                    (byte)(parseSpecial ? 1 : 0),
+                    out uint written);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    tokens.Dispose();
+                    throw new AstralException($"astral_tokenize failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+                if (written != count)
+                {
+                    tokens.Dispose();
+                    throw new AstralException("astral_tokenize wrote an unexpected token count.", AstralNative.ASTRAL_E_BACKEND);
+                }
+                return tokens;
+            }
+            finally
+            {
+                if (textArray.IsCreated)
+                {
+                    textArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tokenize UTF-8 text into a caller-owned NativeArray.
+        /// </summary>
+        public unsafe uint Tokenize(string text, NativeArray<int> outTokens, bool addSpecial = false, bool parseSpecial = false)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+            if (!outTokens.IsCreated)
+            {
+                throw new ArgumentException("outTokens must be created", nameof(outTokens));
+            }
+
+            NativeArray<byte> textArray;
+            var textSpan = AstralNative.AstralSpanU8.FromString(text, out textArray);
+            try
+            {
+                int err = AstralNative.astral_tokenize(
+                    m_handle,
+                    textSpan,
+                    (int*)outTokens.GetUnsafePtr(),
+                    (uint)outTokens.Length,
+                    (byte)(addSpecial ? 1 : 0),
+                    (byte)(parseSpecial ? 1 : 0),
+                    out uint written);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_tokenize failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+                return written;
+            }
+            finally
+            {
+                if (textArray.IsCreated)
+                {
+                    textArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Detokenize token ids into a managed UTF-8 string.
+        /// </summary>
+        public unsafe string Detokenize(NativeArray<int> tokens)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+            if (!tokens.IsCreated)
+            {
+                throw new ArgumentException("tokens must be created", nameof(tokens));
+            }
+
+            int err = AstralNative.astral_detokenize_count(
+                m_handle,
+                (int*)tokens.GetUnsafeReadOnlyPtr(),
+                (uint)tokens.Length,
+                out uint byteCount);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_detokenize_count failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+            if (byteCount == 0)
+            {
+                return string.Empty;
+            }
+
+            using (var bytes = new NativeArray<byte>((int)byteCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory))
+            {
+                err = AstralNative.astral_detokenize(
+                    m_handle,
+                    (int*)tokens.GetUnsafeReadOnlyPtr(),
+                    (uint)tokens.Length,
+                    AstralNative.AstralMutSpanU8.FromNativeArray(bytes),
+                    out uint written);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_detokenize failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+
+                byte[] managed = new byte[written];
+                NativeArray<byte>.Copy(bytes, managed, (int)written);
+                return System.Text.Encoding.UTF8.GetString(managed);
+            }
         }
 
         /// <summary>
