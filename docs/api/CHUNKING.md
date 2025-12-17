@@ -37,6 +37,17 @@ retry `astral_chunk_ranges()` after `ASTRAL_E_NOMEM`.
 `astral_chunk_text_copy()` is a convenience function for selected text ranges. It
 copies into a caller-owned UTF-8 buffer and reports the required byte count.
 
+## Unity
+
+`AstralChunker` wraps the native API for Unity callers. The primary methods take
+caller-owned `NativeArray<byte>` and `NativeArray<AstralChunkRange>` buffers, so
+ingest code can count and emit chunk ranges without managed allocations.
+
+Use `AstralChunker.TextDesc()` for UTF-8 text ranges and
+`AstralChunker.TokenDesc()` for token-count planning. String overloads are
+available for setup and editor tooling, but runtime ingest paths should keep text
+as UTF-8 bytes and reuse output buffers.
+
 ## Performance
 
 The range path scans the input span directly and emits POD records. Overlap is
