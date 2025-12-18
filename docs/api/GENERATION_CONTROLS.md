@@ -85,6 +85,9 @@ Each session can hold up to `ASTRAL_SESSION_ADAPTERS_MAX` adapters. Scale
 updates are setup-time operations and return `ASTRAL_E_STATE` while the session
 is decoding.
 
+See `docs/api/LORA_ADAPTERS.md` for ownership, engine wrapper notes, and
+validation commands.
+
 ## Grammar (GBNF)
 
 If `ASTRAL_CAP_GRAMMAR_GBNF` is set:

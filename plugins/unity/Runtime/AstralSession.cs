@@ -21,6 +21,8 @@ namespace Astral.Runtime
     /// </summary>
     public class AstralSession : IDisposable
     {
+        public const float DefaultAdapterScale = 1.0f;
+
         private AstralNative.AstralHandle m_handle;
         private bool m_disposed = false;
         private AstralSessionConfig m_config;
@@ -547,20 +549,98 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Remove every adapter attached to this session.
+        /// </summary>
+        public void ClearAdapters()
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_adapters_clear(m_handle);
+            ThrowIfError(err, "astral_session_adapters_clear");
+        }
+
+        /// <summary>
+        /// Attach a model-scoped adapter between requests.
+        /// </summary>
+        public void AddAdapter(AstralAdapter adapter, float scale = DefaultAdapterScale)
+        {
+            ThrowIfDisposed();
+            if (adapter == null)
+            {
+                throw new ArgumentNullException(nameof(adapter));
+            }
+            if (!adapter.IsValid)
+            {
+                throw new ArgumentException("adapter must be valid", nameof(adapter));
+            }
+
+            int err = AstralNative.astral_session_adapters_add(m_handle, adapter.Handle, scale);
+            ThrowIfError(err, "astral_session_adapters_add");
+        }
+
+        /// <summary>
+        /// Return the number of adapters currently attached to this session.
+        /// </summary>
+        public uint GetAdapterCount()
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_adapters_count(m_handle, out uint count);
+            ThrowIfError(err, "astral_session_adapters_count");
+            return count;
+        }
+
+        /// <summary>
+        /// Return one attached adapter handle and scale by index.
+        /// </summary>
+        public AstralSessionAdapterInfo GetAdapter(uint index)
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_adapters_get(m_handle, index, out var adapter, out float scale);
+            ThrowIfError(err, "astral_session_adapters_get");
+            return new AstralSessionAdapterInfo
+            {
+                adapter = adapter,
+                scale = scale
+            };
+        }
+
+        /// <summary>
+        /// Update one attached adapter scale between requests.
+        /// </summary>
+        public void SetAdapterScale(uint index, float scale)
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_adapters_set_scale(m_handle, index, scale);
+            ThrowIfError(err, "astral_session_adapters_set_scale");
+        }
+
+        /// <summary>
         /// Request cancellation for an in-flight decode.
         /// Thread-safety: Safe to call from any thread, but this wrapper is not synchronized.
         /// </summary>
         public void Cancel()
         {
-            if (m_disposed)
-            {
-                throw new ObjectDisposedException(nameof(AstralSession));
-            }
+            ThrowIfDisposed();
 
             int err = AstralNative.astral_session_cancel(m_handle);
             if (err != AstralNative.ASTRAL_OK)
             {
                 throw new AstralException($"Failed to cancel session: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (m_disposed)
+            {
+                throw new ObjectDisposedException(nameof(AstralSession));
+            }
+        }
+
+        private static void ThrowIfError(int err, string call)
+        {
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"{call} failed: {AstralRuntime.GetErrorString(err)}", err);
             }
         }
 

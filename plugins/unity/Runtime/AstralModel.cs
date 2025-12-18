@@ -358,6 +358,14 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Load a model-scoped LoRA adapter for later session attachment.
+        /// </summary>
+        public AstralAdapter LoadAdapter(string adapterPath)
+        {
+            return AstralAdapter.Load(this, adapterPath);
+        }
+
+        /// <summary>
         /// Load a GGUF model.
         /// Thread-safety: Safe to call from multiple threads.
         /// </summary>

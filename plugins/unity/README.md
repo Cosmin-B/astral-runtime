@@ -15,12 +15,13 @@ sign-off.
 - **Explicit P/Invoke ABI**: Declarations use the public C ABI and EditMode tests check key struct layouts.
 - **Streaming support**: Frame-polled token reads with native backpressure control
 - **Deterministic ownership**: Native handles are released through `IDisposable`.
+- **LoRA adapter ownership**: `AstralAdapter` owns model-scoped adapter handles and sessions attach them between requests.
 - **Thread ownership**: Native buffers are owned by `NativeArray`; session concurrency still needs real Unity runner evidence.
 - **Platform package surface**: desktop and mobile plugin layouts exist; each target still needs real Unity import/player evidence.
 
 ## Requirements
 
-- Unity 2021.3 or later
+- Unity 6.0 or later
 - Unity Collections package 1.4.0
 - Native plugin for target platform (see Runtime/Plugins/)
 
