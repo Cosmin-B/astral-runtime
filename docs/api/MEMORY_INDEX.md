@@ -60,6 +60,17 @@ Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
 storage and search ordering.
 
+## Unity
+
+`AstralMemoryIndex` owns the native index handle and releases it with
+`Dispose()`. `AddBatch()`, `Search()`, and cursor `Fetch()` operate on
+caller-owned `NativeArray` buffers, which keeps vectors and result records out of
+managed collections during retrieval.
+
+Use `AstralMemoryIndex.Record()` to create records with the ABI size field set,
+and `AstralMemoryIndex.SearchDesc()` for search descriptors. `Save()` and
+`Load()` are snapshot helpers for editor tooling and staged RAG data.
+
 ## Example
 
 ```c
