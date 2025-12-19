@@ -69,7 +69,9 @@ Unity exposes `AstralToolset` as an owned handle over the same native C ABI.
 `AstralToolset.Create()` copies managed tool definitions into native runtime
 memory, `ParseCall()` parses a completed tool-call payload, and
 `AstralSession.SetToolset()` / `ClearToolset()` bind or clear the handle between
-requests.
+requests. `AstralSession.SetGrammarGbnf()`, `SetGrammarJsonSchema()`, and
+`ClearGrammar()` expose direct grammar binding for callers that do not need a
+toolset.
 
 ## Example
 

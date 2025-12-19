@@ -645,6 +645,76 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Configure a GBNF grammar between requests.
+        /// </summary>
+        public void SetGrammarGbnf(string grammar, string rootSymbol)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrEmpty(grammar))
+            {
+                throw new ArgumentNullException(nameof(grammar));
+            }
+
+            NativeArray<byte> grammarArray;
+            NativeArray<byte> rootArray;
+            var grammarSpan = AstralNative.AstralSpanU8.FromString(grammar, out grammarArray);
+            var rootSpan = AstralNative.AstralSpanU8.FromString(rootSymbol, out rootArray);
+            try
+            {
+                int err = AstralNative.astral_session_set_grammar_gbnf(m_handle, grammarSpan, rootSpan);
+                ThrowIfError(err, "astral_session_set_grammar_gbnf");
+            }
+            finally
+            {
+                if (grammarArray.IsCreated)
+                {
+                    grammarArray.Dispose();
+                }
+                if (rootArray.IsCreated)
+                {
+                    rootArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Configure a JSON schema grammar between requests.
+        /// </summary>
+        public void SetGrammarJsonSchema(string jsonSchema)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrEmpty(jsonSchema))
+            {
+                throw new ArgumentNullException(nameof(jsonSchema));
+            }
+
+            NativeArray<byte> schemaArray;
+            var schemaSpan = AstralNative.AstralSpanU8.FromString(jsonSchema, out schemaArray);
+            try
+            {
+                int err = AstralNative.astral_session_set_grammar_json_schema(m_handle, schemaSpan);
+                ThrowIfError(err, "astral_session_set_grammar_json_schema");
+            }
+            finally
+            {
+                if (schemaArray.IsCreated)
+                {
+                    schemaArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Clear any grammar binding.
+        /// </summary>
+        public void ClearGrammar()
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_clear_grammar(m_handle);
+            ThrowIfError(err, "astral_session_clear_grammar");
+        }
+
+        /// <summary>
         /// Request cancellation for an in-flight decode.
         /// Thread-safety: Safe to call from any thread, but this wrapper is not synchronized.
         /// </summary>
