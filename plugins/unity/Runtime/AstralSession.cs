@@ -614,6 +614,37 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Bind a native structured-output toolset between requests.
+        /// </summary>
+        public void SetToolset(
+            AstralToolset toolset,
+            AstralNative.AstralToolChoiceMode choiceMode = AstralNative.AstralToolChoiceMode.Auto)
+        {
+            ThrowIfDisposed();
+            if (toolset == null)
+            {
+                throw new ArgumentNullException(nameof(toolset));
+            }
+            if (!toolset.IsValid)
+            {
+                throw new ArgumentException("toolset must be valid", nameof(toolset));
+            }
+
+            int err = AstralNative.astral_session_set_toolset(m_handle, toolset.Handle, (uint)choiceMode);
+            ThrowIfError(err, "astral_session_set_toolset");
+        }
+
+        /// <summary>
+        /// Clear any structured-output toolset binding.
+        /// </summary>
+        public void ClearToolset()
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_clear_toolset(m_handle);
+            ThrowIfError(err, "astral_session_clear_toolset");
+        }
+
+        /// <summary>
         /// Request cancellation for an in-flight decode.
         /// Thread-safety: Safe to call from any thread, but this wrapper is not synchronized.
         /// </summary>
