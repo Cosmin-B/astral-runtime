@@ -65,8 +65,11 @@ Unreal exposes Blueprint-safe helpers on `UAstralBlueprintLibrary`:
 clear native toolset handles. The wrapper uses Unreal containers for transient
 UTF-8 conversion and passes all core ownership to the native runtime.
 
-Unity exposes the same native C ABI through `AstralNative` P/Invoke structs and
-functions. Managed code owns only transient spans and handle lifetimes.
+Unity exposes `AstralToolset` as an owned handle over the same native C ABI.
+`AstralToolset.Create()` copies managed tool definitions into native runtime
+memory, `ParseCall()` parses a completed tool-call payload, and
+`AstralSession.SetToolset()` / `ClearToolset()` bind or clear the handle between
+requests.
 
 ## Example
 

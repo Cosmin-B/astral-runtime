@@ -16,6 +16,7 @@ sign-off.
 - **Streaming support**: Frame-polled token reads with native backpressure control
 - **Deterministic ownership**: Native handles are released through `IDisposable`.
 - **LoRA adapter ownership**: `AstralAdapter` owns model-scoped adapter handles and sessions attach them between requests.
+- **Structured output tools**: `AstralToolset` owns native tool definitions and parses completed tool calls.
 - **Thread ownership**: Native buffers are owned by `NativeArray`; session concurrency still needs real Unity runner evidence.
 - **Platform package surface**: desktop and mobile plugin layouts exist; each target still needs real Unity import/player evidence.
 
