@@ -376,6 +376,20 @@ namespace Astral.Runtime
             }
         }
 
+        public void Cancel(ulong ticket)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Embedder is not valid (disposed or not created).");
+            }
+
+            int err = AstralNative.astral_embed_cancel(m_handle, ticket);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_embed_cancel failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
         public void Embed(NativeArray<byte> utf8Text, NativeArray<float> outVector)
         {
             ulong ticket = Enqueue(utf8Text);

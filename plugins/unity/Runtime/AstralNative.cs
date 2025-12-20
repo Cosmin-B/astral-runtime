@@ -1256,6 +1256,9 @@ namespace Astral.Runtime
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_embed_collect(AstralHandle emb, ulong ticket, AstralMutSpanU8 out_vector);
 
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_embed_cancel(AstralHandle emb, ulong ticket);
+
         // ====================================================================
         // Statistics
         // ====================================================================
