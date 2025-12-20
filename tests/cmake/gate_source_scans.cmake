@@ -1357,6 +1357,30 @@ if(EXISTS "${unreal_embedder_file}")
   endforeach()
 endif()
 
+file(GLOB_RECURSE unreal_plugin_sources
+  "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/*.h"
+  "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/*.cpp"
+)
+foreach(path IN LISTS unreal_plugin_sources)
+  file(READ "${path}" content)
+  if(content MATCHES "ASTRAL_ZONE")
+    message(FATAL_ERROR "Unreal plugin code must use TRACE_CPUPROFILER_EVENT_SCOPE instead of native Tracy wrappers: ${path}")
+  endif()
+endforeach()
+
+file(GLOB_RECURSE native_runtime_sources
+  "${ROOT}/include/*.h"
+  "${ROOT}/src/*.h"
+  "${ROOT}/src/*.hpp"
+  "${ROOT}/src/*.cpp"
+)
+foreach(path IN LISTS native_runtime_sources)
+  file(READ "${path}" content)
+  if(content MATCHES "TRACE_CPUPROFILER_EVENT_SCOPE")
+    message(FATAL_ERROR "Native runtime code must use Astral Tracy wrappers instead of Unreal profiler scopes: ${path}")
+  endif()
+endforeach()
+
 set(unreal_build_rules_file "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/AstralRT.Build.cs")
 if(EXISTS "${unreal_build_rules_file}")
   file(READ "${unreal_build_rules_file}" unreal_build_rules_content)
