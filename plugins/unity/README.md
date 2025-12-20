@@ -265,6 +265,9 @@ ulong mmTicket = embedder.EnqueueMultimodal("describe", ref imageDesc);
 embedder.Collect(mmTicket, outVec);
 ```
 
+`Cancel(ticket)` releases queued embedding work that no longer needs to be
+collected.
+
 ## Configuration
 
 ### Runtime Configuration
