@@ -99,3 +99,38 @@ Practical constraint:
 
 - Each configured model executor occupies one runtime worker thread while it is active. Size `AstralInit.thread_count`
   accordingly if you plan to run multiple models concurrently.
+
+## Unity API
+
+Unity exposes the same executor/conversation split:
+
+```csharp
+using Astral.Runtime;
+using Unity.Collections;
+
+model.ConfigureExecutor(AstralExecutorConfig.Default);
+
+using var conv = AstralConversation.Create(model, AstralConversationConfig.Default);
+using var buffer = new NativeArray<byte>(
+    AstralConversation.DefaultStreamBufferBytes,
+    Allocator.Persistent,
+    NativeArrayOptions.UninitializedMemory);
+
+conv.SetSystemPrompt("Answer as an in-game navigator.");
+conv.Feed("Where should I go next?", finalize: true);
+conv.Decode();
+
+while (conv.GetState() == AstralSessionState.Decoding)
+{
+    int bytes = conv.ReadStream(buffer, AstralConversation.NonBlockingTimeoutMs);
+    if (bytes > AstralNative.ASTRAL_OK)
+    {
+        ConsumeUtf8(buffer, bytes);
+    }
+}
+```
+
+`AstralConversation` also exposes per-slot grammar, toolset, logprob metadata,
+stop sequences, media feed, cancellation, reset, and stats APIs. Use
+`ReadStream(NativeArray<byte>)` and `ReadStreamMeta(NativeArray<AstralTokenMeta>)`
+for allocation-free polling; `ReadStreamAsString()` is only a convenience path.

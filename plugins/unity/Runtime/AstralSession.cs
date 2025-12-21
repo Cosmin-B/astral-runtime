@@ -1041,46 +1041,63 @@ namespace Astral.Runtime
     [Serializable]
     public class AstralSessionConfig
     {
+        public const uint DefaultMaxTokens = 512;
+        public const float DefaultTemperature = 0.7f;
+        public const uint DefaultTopK = 40;
+        public const float DefaultTopP = 0.9f;
+        public const bool DefaultStreamEnabled = true;
+        public const uint AutoSeed = 0;
+
+        public const float GreedyTemperature = 0.1f;
+        public const uint GreedyTopK = 1;
+        public const float GreedyTopP = 1.0f;
+        public const uint GreedySeed = 1;
+
+        public const uint CreativeMaxTokens = 1024;
+        public const float CreativeTemperature = 1.0f;
+        public const uint CreativeTopK = 80;
+        public const float CreativeTopP = 0.95f;
+
         /// <summary>
         /// Maximum tokens to generate.
         ///  Higher values allow longer responses but take more time.
         /// Recommended: 256 (short); 512 (medium); 1024 (long); 2048 (very long)
         /// </summary>
-        public uint maxTokens = 512;
+        public uint maxTokens = DefaultMaxTokens;
 
         /// <summary>
         /// Sampling temperature (0.0 = greedy, 1.0 = diverse).
         ///  Lower = more deterministic; higher = more creative.
         /// Recommended: 0.7 (balanced); 0.1 (factual); 1.0 (creative)
         /// </summary>
-        public float temperature = 0.7f;
+        public float temperature = DefaultTemperature;
 
         /// <summary>
         /// Top-K sampling (0 = disabled).
         /// Only consider top K tokens by probability.
         /// Recommended: 40 (balanced); 1 (greedy); 80 (diverse)
         /// </summary>
-        public uint topK = 40;
+        public uint topK = DefaultTopK;
 
         /// <summary>
         /// Top-P (nucleus) sampling (0.0-1.0).
         /// Only consider tokens with cumulative probability > P.
         /// Recommended: 0.9 (balanced); 1.0 (disabled); 0.5 (focused)
         /// </summary>
-        public float topP = 0.9f;
+        public float topP = DefaultTopP;
 
         /// <summary>
         /// Enable token streaming.
         /// If true, tokens are emitted as they are generated (use ReadStream/StreamAll).
         /// If false, all tokens are buffered until generation completes.
         /// </summary>
-        public bool streamEnabled = true;
+        public bool streamEnabled = DefaultStreamEnabled;
 
         /// <summary>
         /// RNG seed for sampling (0 = auto).
         /// Set to a non-zero value for deterministic generation (given same prompt + model).
         /// </summary>
-        public uint seed = 0;
+        public uint seed = AutoSeed;
 
         /// <summary>
         /// Default configuration.
@@ -1092,12 +1109,12 @@ namespace Astral.Runtime
         /// </summary>
         public static AstralSessionConfig Greedy => new AstralSessionConfig
         {
-            maxTokens = 512,
-            temperature = 0.1f,
-            topK = 1,
-            topP = 1.0f,
-            streamEnabled = true,
-            seed = 1
+            maxTokens = DefaultMaxTokens,
+            temperature = GreedyTemperature,
+            topK = GreedyTopK,
+            topP = GreedyTopP,
+            streamEnabled = DefaultStreamEnabled,
+            seed = GreedySeed
         };
 
         /// <summary>
@@ -1105,11 +1122,11 @@ namespace Astral.Runtime
         /// </summary>
         public static AstralSessionConfig Creative => new AstralSessionConfig
         {
-            maxTokens = 1024,
-            temperature = 1.0f,
-            topK = 80,
-            topP = 0.95f,
-            streamEnabled = true
+            maxTokens = CreativeMaxTokens,
+            temperature = CreativeTemperature,
+            topK = CreativeTopK,
+            topP = CreativeTopP,
+            streamEnabled = DefaultStreamEnabled
         };
     }
 
