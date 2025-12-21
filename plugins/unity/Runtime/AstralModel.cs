@@ -366,6 +366,54 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Configure continuous batching before creating conversations.
+        /// </summary>
+        public void ConfigureExecutor(AstralExecutorConfig config)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            var desc = new AstralNative.AstralExecutorDesc
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralExecutorDesc>(),
+                max_slots = config.maxSlots,
+                max_batch_tokens = config.maxBatchTokens,
+                worker_hint = config.workerHint
+            };
+
+            int err = AstralNative.astral_model_executor_configure(m_handle, ref desc);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_model_executor_configure failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
+        /// Tune continuous batching after an executor has been configured.
+        /// </summary>
+        public void TuneExecutor(AstralExecutorTuning tuning)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            var desc = new AstralNative.AstralExecutorTuning
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralExecutorTuning>(),
+                max_prompt_tokens_per_slot_tick = tuning.maxPromptTokensPerSlotTick
+            };
+
+            int err = AstralNative.astral_model_executor_tune(m_handle, ref desc);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_model_executor_tune failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
         /// Load a GGUF model.
         /// Thread-safety: Safe to call from multiple threads.
         /// </summary>
@@ -553,6 +601,38 @@ namespace Astral.Runtime
             batchSize = 512,
             threads = 0,
             embeddingsOnly = true
+        };
+    }
+
+    [Serializable]
+    public struct AstralExecutorConfig
+    {
+        public const uint DefaultMaxSlots = AstralConversationConfig.DefaultMaxSlots;
+        public const uint DefaultMaxBatchTokens = AstralConversationConfig.DefaultMaxBatchTokens;
+        public const uint AutoWorkerHint = 0;
+
+        public uint maxSlots;
+        public uint maxBatchTokens;
+        public uint workerHint;
+
+        public static AstralExecutorConfig Default => new AstralExecutorConfig
+        {
+            maxSlots = DefaultMaxSlots,
+            maxBatchTokens = DefaultMaxBatchTokens,
+            workerHint = AutoWorkerHint
+        };
+    }
+
+    [Serializable]
+    public struct AstralExecutorTuning
+    {
+        public const uint LeavePromptTokensPerSlotTickUnchanged = 0;
+
+        public uint maxPromptTokensPerSlotTick;
+
+        public static AstralExecutorTuning Default => new AstralExecutorTuning
+        {
+            maxPromptTokensPerSlotTick = LeavePromptTokensPerSlotTickUnchanged
         };
     }
 }

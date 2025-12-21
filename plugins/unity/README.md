@@ -17,6 +17,7 @@ sign-off.
 - **Deterministic ownership**: Native handles are released through `IDisposable`.
 - **LoRA adapter ownership**: `AstralAdapter` owns model-scoped adapter handles and sessions attach them between requests.
 - **Structured output tools**: `AstralToolset` owns native tool definitions and sessions can bind toolsets or grammar.
+- **Continuous batching conversations**: `AstralConversation` wraps model-scoped executor slots for multi-stream generation.
 - **Thread ownership**: Native buffers are owned by `NativeArray`; session concurrency still needs real Unity runner evidence.
 - **Platform package surface**: desktop and mobile plugin layouts exist; each target still needs real Unity import/player evidence.
 
@@ -115,7 +116,9 @@ using Unity.Collections;
 IEnumerator RunInferenceNativeArray(AstralModel model, string prompt)
 {
     using var session = AstralSession.Create(model);
-    using var buffer = new NativeArray<byte>(4096, Allocator.Persistent);
+    const int streamBufferBytes = AstralConversation.DefaultStreamBufferBytes;
+    const uint pollTimeoutMs = AstralConversation.NonBlockingTimeoutMs;
+    using var buffer = new NativeArray<byte>(streamBufferBytes, Allocator.Persistent);
 
     // Feed prompt
     session.Feed(prompt, finalize: true);
@@ -124,7 +127,7 @@ IEnumerator RunInferenceNativeArray(AstralModel model, string prompt)
     // Stream tokens into a caller-owned byte buffer.
     while (true)
     {
-        int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
+        int bytesRead = session.ReadStream(buffer, timeoutMs: pollTimeoutMs);
 
         if (bytesRead > 0)
         {
@@ -211,7 +214,8 @@ session.Feed("Once upon a time", finalize: true);
 session.Decode();
 
 // Read stream (blocking)
-string token = session.ReadStreamAsString(timeoutMs: 100);
+const uint readTimeoutMs = AstralConversation.DefaultReadTimeoutMs;
+string token = session.ReadStreamAsString(timeoutMs: readTimeoutMs);
 
 // Stream all tokens (convenience)
 session.StreamAll(token => Debug.Log(token));
@@ -222,6 +226,31 @@ Debug.Log($"Tokens/sec: {stats.tokensPerSecond:F2}");
 ```
 
 **Configs**: `Default`, `Greedy`, `Creative`
+
+### AstralConversation
+
+Continuous batching conversation slot.
+
+```csharp
+model.ConfigureExecutor(AstralExecutorConfig.Default);
+
+using var conv = AstralConversation.Create(model, AstralConversationConfig.Default);
+using var buffer = new NativeArray<byte>(
+    AstralConversation.DefaultStreamBufferBytes,
+    Allocator.Persistent,
+    NativeArrayOptions.UninitializedMemory);
+
+conv.SetSystemPrompt("Answer as an in-game navigator.");
+conv.Feed("Where should I go next?", finalize: true);
+conv.Decode();
+
+int bytes = conv.ReadStream(buffer, AstralConversation.NonBlockingTimeoutMs);
+var stats = conv.GetStats();
+```
+
+Conversations support grammar, toolsets, stop sequences, logprob metadata,
+media chunks, cancellation, reset, and stats. Prefer
+`ReadStream(NativeArray<byte>)` for frame-polled gameplay paths.
 
 ### Vision / Audio (Media)
 
