@@ -28,7 +28,7 @@ must map to local tests, release evidence, or an explicit caveat.
 
 Notes:
 - Embedded presets are intended to be “no VM / no dynamic loader / no JSON-schema grammar” by default (`docs/EMBEDDED_PROFILE.md`).
-- “No exceptions” is a build goal; third-party code may still throw unless fully audited.
+- “No exceptions” is a build constraint; third-party code may still throw unless fully audited.
 - Multimodal media requires `ASTRAL_ENABLE_MTMD=ON` and a media projector file initialized via `astral_model_media_init`.
 
 ## Providers / backends
@@ -91,12 +91,36 @@ Notes:
 | Embeddings API (`astral_embed_*`) | ✅ | ✅ | ✅ |
 | Image/audio embeddings (`astral_embed_enqueue_*`) | ⚠️ (mtmd + model support) | 🧪 | ❌ |
 
+## Native product surfaces
+
+| Feature | CPU-only (desktop) | CUDA build (desktop) | Embedded presets |
+|---|---:|---:|---:|
+| Tokenization count/batch/detokenize sizing | ✅ | ✅ | ✅ |
+| Prompt cache handles, stats, save/load, token view | ✅ | ✅ | ✅ |
+| LoRA adapter handles and session attachment | ⚠️ (backend/model support) | ⚠️ (backend/model support) | ⚠️ (backend/model support) |
+| Toolsets and tool-call parsing | ✅ | ✅ | ✅ |
+| Text/token chunk planning | ✅ | ✅ | ✅ |
+| Vector memory index, save/load, cursor fetch | ✅ | ✅ | ✅ |
+| Continuous-batching conversations | ✅ | ✅ | ✅ |
+| Native agents with system prompt/history/prompt cache stats | ✅ | ✅ | ✅ |
+| Remote runtime transport | ❌ | ❌ | ❌ |
+
+Notes:
+- Vector memory is currently brute-force and bounded by native index capacity.
+- Continuous batching requires a backend with slot/batch operations; built-in
+  mock and CPU backends implement that surface.
+- Remote transport is intentionally absent from the public C ABI today.
+
 ## Test validation map
 
 | Test | What it covers | Where it should run |
 |---|---|---|
 | `test_embeddings` | embeddings mock + CPU e2e | CPU-only + CUDA build |
 | `test_media` | mock media feed + multimodal embeddings | CPU-only + CUDA build |
+| `test_tokenization` | tokenization sizing, batch, detokenize | CPU-only + CUDA build |
+| `test_prompt_cache` | prompt cache hits, eviction, save/load | CPU-only + CUDA build |
+| `test_inference` | sessions, grammar, LoRA, prompt cache, agents, vector memory | CPU-only + CUDA build |
+| `test_continuous_batching` | conversation slot fairness and CPU probe | CPU-only + CUDA build |
 | `test_cuda_parity` | CUDA surface + (optional) CPU-vs-CUDA parity harness | CUDA build (optional inference via env) |
 | `test_cuda_e2e` | end-to-end logprobs/grammar/kv/embeddings on real model | CPU-only always; CUDA when `ASTRAL_TEST_CUDA_E2E=1` |
 

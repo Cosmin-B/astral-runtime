@@ -17,7 +17,7 @@ Generation sessions:
 
 Continuous-batching conversations:
 
-- `astral_conv_start()`
+- `astral_conv_decode()`
 - `astral_conv_cancel()`
 - `astral_conv_state()`
 - `astral_conv_wait()`
