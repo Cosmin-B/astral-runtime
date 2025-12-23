@@ -4,7 +4,8 @@
 
 ## Setup
 
-- Open `ci/unity/AstralCiUnityProject/` in Unity (2021.3+).
+- Open `ci/unity/AstralCiUnityProject/` in Unity 6.0 or newer. The checked-in
+  CI project currently pins `6000.0.57f1`.
 - Ensure the Astral native plugin binaries are present under `plugins/unity/Runtime/Plugins/<arch>/`.
   - On desktop, you can build/package them from the repo:
     - `cmake --preset unity-plugin`
@@ -21,3 +22,17 @@ Example:
 cd astral
 UNITY_EDITOR="/path/to/Unity" ./scripts/run_unity_ci_tests.sh
 ```
+
+## GameCI v4
+
+The manual workflow `.github/workflows/unity-gameci.yml` runs the same EditMode
+ABI project through `game-ci/unity-test-runner@v4` on Linux. It requires Unity
+license secrets as repository or environment secrets:
+
+- `UNITY_LICENSE`
+- `UNITY_EMAIL`
+- `UNITY_PASSWORD`
+
+Run it from GitHub Actions with a Unity 6 editor version and the native plugin
+build enabled. The workflow builds `cmake --preset unity-plugin` before invoking
+GameCI so the package tests load the current native library.
