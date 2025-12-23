@@ -1,0 +1,59 @@
+name: Unity GameCI
+
+on:
+  workflow_dispatch:
+    inputs:
+      unity-version:
+        description: Unity editor version
+        required: true
+        default: 6000.0.57f1
+
+env:
+  ASTRAL_UNITY_BUILD_PRESET: unity-plugin
+  ASTRAL_UNITY_PROJECT_PATH: ci/unity/AstralCiUnityProject
+  ASTRAL_UNITY_RESULTS_DIR: build/unity-gameci-results
+  ASTRAL_UNITY_TEST_PLATFORM: editmode
+  ASTRAL_UNITY_ARTIFACT_NAME: unity-gameci-results
+
+jobs:
+  editmode:
+    name: EditMode ABI
+    runs-on: ubuntu-24.04
+    env:
+      ASTRAL_UNITY_REQUIRE_NATIVE: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Configure native plugin
+        run: cmake --preset "${ASTRAL_UNITY_BUILD_PRESET}"
+
+      - name: Build native plugin
+        run: cmake --build --preset "${ASTRAL_UNITY_BUILD_PRESET}" -j
+
+      - name: Run Unity EditMode tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: ${{ env.ASTRAL_UNITY_PROJECT_PATH }}
+          unityVersion: ${{ inputs.unity-version }}
+          testMode: ${{ env.ASTRAL_UNITY_TEST_PLATFORM }}
+          artifactsPath: ${{ env.ASTRAL_UNITY_RESULTS_DIR }}
+
+      - name: Upload Unity results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASTRAL_UNITY_ARTIFACT_NAME }}
+          path: ${{ env.ASTRAL_UNITY_RESULTS_DIR }}
+          if-no-files-found: ignore

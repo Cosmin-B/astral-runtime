@@ -138,7 +138,7 @@ session.ReadStream(buffer);
 
 ### Compilation
 
-- [ ] Code compiles in Unity 2021.3+ with a real Unity Editor runner.
+- [ ] Code compiles in Unity 6.0+ with a real Unity Editor runner.
 - [x] `allowUnsafeCode: true` in asmdef
 - [ ] IL2CPP player build has no compile errors on each supported target.
 
