@@ -11,15 +11,23 @@ sample-matrix eligibility.
 - `scripts/model_preset_tool.py list`
 - `scripts/model_preset_tool.py filename <preset>`
 - `scripts/model_preset_tool.py path <preset> --dir <dir>`
+- `scripts/model_preset_tool.py info <preset> --dir <dir>`
 - `scripts/model_preset_tool.py validate-file --preset <preset> --dir <dir>`
 - `tests/model_downloader.sh --preset <preset> --dry-run`
 - `tests/model_downloader.sh --preset <preset> --validate-only`
+- `tests/model_downloader.sh --preset <preset> --info`
 - `tests/model_downloader.sh --preset <preset> --print-path`
 
 `--dry-run` prints the resolved preset, output path, URL, byte size, checksum,
 and repeatable downloader command without touching the network. `--validate-only`
 checks an existing local file against the manifest size and SHA-256 and returns a
 non-zero exit code for missing, truncated, or checksum-drifted files.
+
+`info` prints a stable JSON record with the preset name, model type, repository,
+revision, URL, resolved local path, byte size, checksum, context length,
+embedding dimension, sample-matrix flag, license note, and repeatable downloader
+command. Engine setup tools can consume this output without scraping dry-run
+text.
 
 ## Ownership
 
@@ -40,10 +48,11 @@ C ABI.
 
 ```bash
 python3 scripts/model_preset_tool.py validate-manifest
+python3 scripts/model_preset_tool.py info qwen3-0.6b-q8 --dir tests/models
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --print-path
 ```
 
 Expected evidence markers include `manifest OK`, `preset: qwen3-0.6b-q8`,
-`sha256:`, and a resolved `.gguf` path.
+`"download_command"`, `sha256:`, and a resolved `.gguf` path.

@@ -67,12 +67,17 @@ Download helpers:
 
 Preset inspection and local validation:
 - `./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run`
+- `./tests/model_downloader.sh --preset qwen3-0.6b-q8 --info`
 - `./tests/model_downloader.sh --preset qwen3-0.6b-q8 --print-path`
 - `./tests/model_downloader.sh --preset qwen3-0.6b-q8 --validate-only`
 
 `--validate-only` does not download. It verifies the existing local file against
 the preset size and SHA-256, so truncated or checksum-drifted files fail before
 tests or sample runners spend time configuring a build.
+
+`--info` prints machine-readable preset metadata for setup tools that need the
+resolved path, URL, checksum, model type, context length, embedding dimension,
+and repeatable download command without starting a network request.
 
 ### Environment variables
 Astral uses a single model for decode/stream gates and (optionally) a different model for embeddings tests:
