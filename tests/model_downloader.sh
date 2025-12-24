@@ -17,6 +17,7 @@ Options:
   --dry-run             Print resolved preset, path, URL, checksum, and command
   --validate-only       Validate an existing local preset file without downloading
   --print-path          Print the resolved local path for a preset
+  --info                Print resolved preset metadata as JSON
   --list-presets        Print available presets
   --token <token>       Hugging Face token, otherwise HF_TOKEN/HUGGINGFACE_HUB_TOKEN is used
   --url <url>           Custom GGUF URL; requires --file
@@ -54,6 +55,7 @@ if [[ -n "${ASTRAL_MODEL_SHA256:-}" ]]; then
 fi
 
 print_path=0
+print_info=0
 preset_name=""
 output_dir="tests/models"
 
@@ -64,6 +66,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) args+=(--dry-run); shift ;;
     --validate-only) args+=(--validate-only); shift ;;
     --print-path) print_path=1; shift ;;
+    --info) print_info=1; shift ;;
     --token) args+=(--token "${2:-}"); shift 2 ;;
     --url) args+=(--url "${2:-}"); shift 2 ;;
     --file) args+=(--file "${2:-}"); shift 2 ;;
@@ -93,6 +96,14 @@ if [[ "${print_path}" -eq 1 ]]; then
     exit "${exit_usage}"
   fi
   exec python3 "${tool}" path "${preset_name}" --dir "${output_dir}"
+fi
+
+if [[ "${print_info}" -eq 1 ]]; then
+  if [[ -z "${preset_name}" ]]; then
+    echo "--info requires --preset" >&2
+    exit "${exit_usage}"
+  fi
+  exec python3 "${tool}" info "${preset_name}" --dir "${output_dir}"
 fi
 
 exec python3 "${tool}" download "${args[@]}"

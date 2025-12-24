@@ -34,6 +34,11 @@ CUSTOM_PRESET_NAME = "custom"
 CUSTOM_PRESET_LABEL = "Custom GGUF model"
 CUSTOM_MODEL_TYPE = "custom"
 DEFAULT_REVISION = "main"
+GGUF_SUFFIX = ".gguf"
+MODEL_TYPE_TEXT = "text"
+MODEL_TYPE_EMBEDDING = "embedding"
+MODEL_TYPE_CUSTOM = CUSTOM_MODEL_TYPE
+KNOWN_MODEL_TYPES = (MODEL_TYPE_TEXT, MODEL_TYPE_EMBEDDING, MODEL_TYPE_CUSTOM)
 
 
 @dataclass(frozen=True)
@@ -143,6 +148,31 @@ def _load_presets(manifest_path: Path) -> List[Preset]:
     return out
 
 
+def _validate_manifest(data: Dict[str, Any], presets: List[Preset]) -> None:
+    default_name = data.get("default_preset")
+    if not isinstance(default_name, str) or not default_name:
+        raise ValueError("manifest has invalid default_preset")
+    preset_names = {preset.name for preset in presets}
+    if default_name not in preset_names:
+        raise ValueError(f"default preset is not defined: {default_name}")
+
+    filenames = set()
+    for preset in presets:
+        if preset.model_type not in KNOWN_MODEL_TYPES:
+            raise ValueError(f"preset {preset.name} has unsupported model_type: {preset.model_type}")
+        if not preset.filename.endswith(GGUF_SUFFIX):
+            raise ValueError(f"preset {preset.name} filename must end with {GGUF_SUFFIX}")
+        if preset.filename in filenames:
+            raise ValueError(f"duplicate preset filename: {preset.filename}")
+        filenames.add(preset.filename)
+        if any(ch not in "0123456789abcdef" for ch in preset.sha256):
+            raise ValueError(f"preset {preset.name} has non-lowercase sha256")
+        if preset.model_type == MODEL_TYPE_EMBEDDING and preset.embedding_dimension is None:
+            raise ValueError(f"embedding preset {preset.name} is missing embedding_dimension")
+        if preset.model_type == MODEL_TYPE_TEXT and preset.embedding_dimension is not None:
+            raise ValueError(f"text preset {preset.name} should not set embedding_dimension")
+
+
 def _default_preset_name(manifest_path: Path) -> str:
     data = _read_manifest(manifest_path)
     value = data.get("default_preset")
@@ -215,6 +245,27 @@ def _format_download_command(preset: Preset, output_dir: Path) -> str:
     if preset.name == CUSTOM_PRESET_NAME:
         return f"{Path('tests') / 'model_downloader.sh'} --url {preset.url} --file {preset.filename} --dir {output_dir}"
     return f"{Path('tests') / 'model_downloader.sh'} --preset {preset.name} --dir {output_dir}"
+
+
+def _preset_record(preset: Preset, output_dir: Path) -> Dict[str, Any]:
+    output_path = output_dir / preset.filename
+    return {
+        "name": preset.name,
+        "label": preset.label,
+        "model_type": preset.model_type,
+        "repo": preset.repo,
+        "filename": preset.filename,
+        "revision": preset.revision,
+        "url": preset.url,
+        "path": str(output_path),
+        "size_bytes": preset.size_bytes,
+        "sha256": preset.sha256,
+        "license_note": preset.license_note,
+        "context_length": preset.context_length,
+        "embedding_dimension": preset.embedding_dimension,
+        "include_in_unreal_sample_matrix": preset.include_in_unreal_sample_matrix,
+        "download_command": _format_download_command(preset, output_dir),
+    }
 
 
 def _request(url: str, token: str, start: int) -> urllib.request.Request:
@@ -370,6 +421,19 @@ def cmd_path(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_info(args: argparse.Namespace) -> int:
+    preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
+    output_dir = _repo_root_path(args.dir)
+    record = _preset_record(preset, output_dir)
+    if args.format == "json":
+        json.dump(record, sys.stdout, indent=2, sort_keys=True)
+        print()
+    else:
+        _print_preset(preset, output_dir / preset.filename)
+        print(f"command: {record['download_command']}")
+    return EXIT_OK
+
+
 def cmd_validate_file(args: argparse.Namespace) -> int:
     preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
     output_path = Path(args.path).expanduser() if args.path else _resolved_output_path(args, preset)
@@ -408,7 +472,10 @@ def cmd_download(args: argparse.Namespace) -> int:
 
 
 def cmd_validate_manifest(args: argparse.Namespace) -> int:
-    presets = _load_presets(Path(args.manifest))
+    manifest_path = Path(args.manifest)
+    data = _read_manifest(manifest_path)
+    presets = _load_presets(manifest_path)
+    _validate_manifest(data, presets)
     if not presets:
         raise ValueError("no presets")
     print(f"manifest OK: {args.manifest} presets={len(presets)}")
@@ -432,6 +499,12 @@ def main(argv: List[str]) -> int:
     path_parser.add_argument("preset")
     path_parser.add_argument("--dir", default="tests/models")
     path_parser.set_defaults(func=cmd_path)
+
+    info_parser = sub.add_parser("info")
+    info_parser.add_argument("preset")
+    info_parser.add_argument("--dir", default="tests/models")
+    info_parser.add_argument("--format", choices=("json", "text"), default="json")
+    info_parser.set_defaults(func=cmd_info)
 
     preset_for_file_parser = sub.add_parser("preset-for-file")
     preset_for_file_parser.add_argument("filename")

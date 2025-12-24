@@ -395,6 +395,20 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_embedded_presets")
         endif()
 
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/model_preset_tool_smoke.py)
+            add_test(
+                NAME gate_model_presets
+                COMMAND ${ASTRAL_PYTHON_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/model_preset_tool_smoke.py
+                    ${CMAKE_SOURCE_DIR}
+            )
+            set_tests_properties(gate_model_presets PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_model_presets")
+        endif()
+
         if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_comment_inventory.cmake)
             add_test(
                 NAME gate_comment_inventory
