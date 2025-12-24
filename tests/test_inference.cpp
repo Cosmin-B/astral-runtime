@@ -420,6 +420,8 @@ TEST(inference_agent_history_and_chat_mock) {
     constexpr uint32_t kPromptCacheSecondHits = 1;
     constexpr uint32_t kPromptCacheNoReusedTokens = 0;
     constexpr uint32_t kPromptCacheNoNewTokens = 0;
+    constexpr uint32_t kMemoryDim = 4;
+    constexpr uint32_t kMemoryCapacity = 8;
 
     AstralInit cfg{};
     cfg.reserve_bytes = kReserveBytes;
@@ -441,10 +443,20 @@ TEST(inference_agent_history_and_chat_mock) {
     AstralHandle prompt_cache = 0;
     ASSERT_EQ(astral_prompt_cache_create(&cache_desc, &prompt_cache), ASTRAL_OK);
 
+    AstralMemoryIndexDesc memory_desc{};
+    memory_desc.size = sizeof(AstralMemoryIndexDesc);
+    memory_desc.dim = kMemoryDim;
+    memory_desc.capacity = kMemoryCapacity;
+    memory_desc.metric = ASTRAL_MEMORY_METRIC_COSINE;
+    memory_desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    AstralHandle memory_index = 0;
+    ASSERT_EQ(astral_memory_create(&memory_desc, &memory_index), ASTRAL_OK);
+
     AstralAgentDesc desc{};
     desc.size = sizeof(AstralAgentDesc);
     desc.model = model;
     desc.prompt_cache = prompt_cache;
+    desc.memory_index = memory_index;
     desc.max_tokens = kMaxTokens;
     desc.temperature = 0.0f;
     desc.top_p = 1.0f;
@@ -563,6 +575,7 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(astral_agent_chat_cancel(agent), ASTRAL_OK);
 
     astral_agent_destroy(agent);
+    astral_memory_destroy(memory_index);
     astral_prompt_cache_destroy(prompt_cache);
     astral_model_release(model);
     astral_shutdown();
@@ -612,6 +625,10 @@ TEST(inference_agent_overflow_truncate_mock) {
 
     invalid_desc = reject_desc;
     invalid_desc._reserved0 = kReservedNonZero;
+    ASSERT_EQ(astral_agent_create(&invalid_desc, &invalid_agent), ASTRAL_E_INVALID);
+
+    invalid_desc = reject_desc;
+    invalid_desc.memory_index = model;
     ASSERT_EQ(astral_agent_create(&invalid_desc, &invalid_agent), ASTRAL_E_INVALID);
 
     AstralHandle reject_agent = 0;
