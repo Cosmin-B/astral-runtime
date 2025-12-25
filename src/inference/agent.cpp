@@ -528,6 +528,15 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
             return err;
         }
     }
+    if (desc->memory_index != 0) {
+        uint32_t memory_count = 0;
+        err = astral_memory_count(desc->memory_index, &memory_count);
+        if (err != ASTRAL_OK) {
+            destroy_agent_allocations(agent);
+            core::runtime_delete(agent);
+            return err;
+        }
+    }
 
     const AstralHandle handle = core::register_handle(core::HandleKind::Agent, agent);
     if (handle == 0) {
