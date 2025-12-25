@@ -258,18 +258,24 @@ float score_vector(const MemoryIndex* index, const float* query, float query_nor
   return dot;
 }
 
+inline bool result_better(const AstralMemorySearchResult& candidate,
+                          const AstralMemorySearchResult& existing) {
+  return candidate.score > existing.score ||
+         (candidate.score == existing.score && candidate.key < existing.key);
+}
+
 void insert_result(AstralMemorySearchResult* results, uint32_t top_k, uint32_t* filled,
                    const AstralMemorySearchResult& candidate) {
   uint32_t pos = *filled;
   if (pos < top_k) {
     ++(*filled);
-  } else if (top_k != 0 && candidate.score <= results[top_k - 1u].score) {
+  } else if (top_k != 0 && !result_better(candidate, results[top_k - 1u])) {
     return;
   } else {
     pos = top_k - 1u;
   }
 
-  while (pos > 0 && candidate.score > results[pos - 1u].score) {
+  while (pos > 0 && result_better(candidate, results[pos - 1u])) {
     results[pos] = results[pos - 1u];
     --pos;
   }

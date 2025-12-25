@@ -1535,12 +1535,13 @@ TEST(inference_chunking_ranges_mock) {
 TEST(inference_memory_index_flat_mock) {
     constexpr uint32_t kDim = 4;
     constexpr uint32_t kCapacity = 8;
-    constexpr uint32_t kRecordCount = 4;
-    constexpr uint32_t kTopK = 3;
+    constexpr uint32_t kRecordCount = 5;
+    constexpr uint32_t kTopK = 4;
     constexpr uint64_t kKeyA = 11;
     constexpr uint64_t kKeyB = 22;
     constexpr uint64_t kKeyC = 33;
     constexpr uint64_t kKeyD = 44;
+    constexpr uint64_t kKeyE = 55;
     constexpr uint32_t kGroupA = 7;
     constexpr uint32_t kGroupB = 9;
     constexpr uint32_t kDocA = 101;
@@ -1550,7 +1551,7 @@ TEST(inference_memory_index_flat_mock) {
     constexpr uint32_t kSecondFetchCapacity = 2;
     constexpr uint32_t kFinalFetchCapacity = 1;
     constexpr uint32_t kFirstFetchCount = 2;
-    constexpr uint32_t kSecondFetchCount = 1;
+    constexpr uint32_t kSecondFetchCount = 2;
     constexpr uint32_t kFinalFetchCount = 0;
     constexpr uint32_t kGroupBResultCount = 1;
 
@@ -1581,11 +1582,15 @@ TEST(inference_memory_index_flat_mock) {
     records[3].size = sizeof(AstralMemoryRecord);
     records[3].key = kKeyD;
     records[3].group_id = kGroupA;
+    records[4].size = sizeof(AstralMemoryRecord);
+    records[4].key = kKeyE;
+    records[4].group_id = kGroupA;
 
     const float vectors[kRecordCount * kDim] = {
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
+        0.5f, 0.5f, 0.0f, 0.0f,
         0.5f, 0.5f, 0.0f, 0.0f,
     };
     err = astral_memory_add_batch(index, records, vectors, kRecordCount);
@@ -1609,6 +1614,7 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(results[0].document_id, kDocA);
     ASSERT_EQ(results[0].chunk_id, kChunkA);
     ASSERT_EQ(results[1].key, kKeyD);
+    ASSERT_EQ(results[2].key, kKeyE);
 
     AstralHandle cursor = 0;
     err = astral_memory_search_begin(index, &search, query, &cursor);
