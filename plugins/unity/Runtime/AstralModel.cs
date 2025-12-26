@@ -485,6 +485,11 @@ namespace Astral.Runtime
             }
         }
 
+        public static AstralModel Load(AstralModelPath modelPath, AstralModelConfig config = null)
+        {
+            return Load(modelPath.Resolve(), config);
+        }
+
         /// <summary>
         /// Release the native model handle.
         /// Thread-safety: Not thread-safe; must not be in use by any session.

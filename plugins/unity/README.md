@@ -82,6 +82,10 @@ using var model = AstralModel.Load("/path/to/model.gguf");
 
 // Or use mobile-optimized config
 using var model = AstralModel.Load("/path/to/model.gguf", AstralModelConfig.Mobile);
+
+// Resolve packaged or downloaded model paths before loading
+using var packaged = AstralModel.Load(AstralModelPath.StreamingAssets("Models/model.gguf"));
+using var cached = AstralModel.Load(AstralModelPath.PersistentData("Models/model.gguf"), AstralModelConfig.Mobile);
 ```
 
 ### 3. Run Inference (Streaming)
@@ -330,6 +334,11 @@ var model = AstralModel.Load("/path/to/model.gguf", config);
 ```
 
 **Presets**: `Default`, `Mobile`, `HighPerformance`, `Embeddings`
+
+Use `AstralModelPath.StreamingAssets(...)` for files staged with the player and
+`AstralModelPath.PersistentData(...)` for first-run downloads or user-managed
+cache files. Absolute paths and `AstralModelPath.Raw(...)` are passed through
+unchanged.
 
 ### Session Configuration
 
