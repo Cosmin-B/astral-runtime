@@ -6,12 +6,25 @@
 
 namespace {
 
-inline constexpr uint32_t kRuntimeReserveBytes = 16 * 1024 * 1024;
+inline constexpr uint32_t kBytesPerKiB = 1024;
+inline constexpr uint32_t kKiBPerMiB = 1024;
+inline constexpr uint32_t kRuntimeReserveMiB = 16;
+inline constexpr uint32_t kRuntimeReserveBytes = kRuntimeReserveMiB * kKiBPerMiB * kBytesPerKiB;
 inline constexpr uint32_t kCacheEntries = 4;
 inline constexpr uint32_t kCacheTokens = 16;
+inline constexpr uint32_t kFifoEvictionEntries = 2;
+inline constexpr uint32_t kSingleTokenCount = 1;
+inline constexpr uint32_t kTokenReadCapacity = 1;
+inline constexpr uint32_t kPromptCacheSnapshotBytes = 512;
 inline constexpr AstralHandle kModelHandle = 0x0100000100000001ull;
 inline constexpr uint64_t kSystemKey = 1001;
 inline constexpr uint64_t kUserKey = 2001;
+inline constexpr uint64_t kAssistantKey = 3001;
+inline constexpr uint64_t kRawKey = 4001;
+inline constexpr uint32_t kFifoGeneration = 7;
+inline constexpr int32_t kFifoFirstToken = 101;
+inline constexpr int32_t kFifoSecondToken = 202;
+inline constexpr int32_t kFifoThirdToken = 303;
 
 void init_runtime() {
     AstralInit cfg{};
@@ -187,6 +200,50 @@ TEST(prompt_cache_save_and_load_roundtrip) {
 
   astral_prompt_cache_destroy(loaded);
   astral_shutdown();
+}
+
+TEST(prompt_cache_fifo_order_survives_save_load) {
+    init_runtime();
+
+    AstralHandle cache = 0;
+    const AstralPromptCacheDesc desc = cache_desc(kFifoEvictionEntries, kCacheTokens);
+    ASSERT_EQ(astral_prompt_cache_create(&desc, &cache), ASTRAL_OK);
+
+    const int32_t first[] = {kFifoFirstToken};
+    const int32_t second[] = {kFifoSecondToken};
+    const AstralPromptCacheKey key0 = cache_key(kAssistantKey, kFifoGeneration, ASTRAL_PROMPT_SECTION_HISTORY);
+    const AstralPromptCacheKey key1 = cache_key(kRawKey, kFifoGeneration, ASTRAL_PROMPT_SECTION_RAW);
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key0, first, kSingleTokenCount), ASTRAL_OK);
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key1, second, kSingleTokenCount), ASTRAL_OK);
+
+    uint8_t storage[kPromptCacheSnapshotBytes]{};
+    AstralMutSpanU8 out{};
+    out.data = storage;
+    out.len = sizeof(storage);
+    uint32_t written = 0;
+    ASSERT_EQ(astral_prompt_cache_save(cache, out, &written), ASTRAL_OK);
+    astral_prompt_cache_destroy(cache);
+
+    AstralSpanU8 in{};
+    in.data = storage;
+    in.len = written;
+    AstralHandle loaded = 0;
+    ASSERT_EQ(astral_prompt_cache_load(&desc, in, &loaded), ASTRAL_OK);
+
+    const int32_t third[] = {kFifoThirdToken};
+    const AstralPromptCacheKey key2 = cache_key(kSystemKey, kFifoGeneration);
+    ASSERT_EQ(astral_prompt_cache_put_tokens(loaded, &key2, third, kSingleTokenCount), ASTRAL_OK);
+
+    int32_t token[kTokenReadCapacity]{};
+    uint32_t count = 0;
+    ASSERT_EQ(astral_prompt_cache_get_tokens(loaded, &key0, token, kTokenReadCapacity, &count), ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(astral_prompt_cache_get_tokens(loaded, &key1, token, kTokenReadCapacity, &count), ASTRAL_OK);
+    ASSERT_EQ(token[0], kFifoSecondToken);
+    ASSERT_EQ(astral_prompt_cache_get_tokens(loaded, &key2, token, kTokenReadCapacity, &count), ASTRAL_OK);
+    ASSERT_EQ(token[0], kFifoThirdToken);
+
+    astral_prompt_cache_destroy(loaded);
+    astral_shutdown();
 }
 
 TEST(system_prompt_feeds_before_user_prompt) {
