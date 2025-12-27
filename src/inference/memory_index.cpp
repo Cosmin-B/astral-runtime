@@ -31,7 +31,8 @@ constexpr uint32_t kAvx2Offset3 = kAvx2F32Lanes * 3u;
 
 struct MemorySlot {
   AstralMemoryRecord record;
-  float norm;
+  float score_scale;
+  uint32_t active_pos;
   uint8_t occupied;
 };
 
@@ -189,6 +190,11 @@ inline float vector_norm(const float* v, uint32_t dim) {
   return sq > 0.0f ? std::sqrt(sq) : 0.0f;
 }
 
+inline float cosine_scale(const float* v, uint32_t dim) {
+  const float norm = vector_norm(v, dim);
+  return norm > 0.0f ? 1.0f / norm : 0.0f;
+}
+
 } // namespace
 
 struct MemoryIndex {
@@ -199,6 +205,7 @@ struct MemoryIndex {
   AstralMemoryMetric metric;
   MemorySlot* slots;
   float* vectors;
+  uint32_t* active_slots;
 };
 
 struct MemorySearchCursor {
@@ -245,15 +252,14 @@ uint32_t find_free_slot(const MemoryIndex* index) {
   return kU32Max;
 }
 
-float score_vector(const MemoryIndex* index, const float* query, float query_norm, uint32_t slot) {
+float score_vector(const MemoryIndex* index, const float* query, float query_scale, uint32_t slot) {
   const float* v = vector_at(index, slot);
   if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
     return l2_score_f32(query, v, index->dim);
   }
   const float dot = dot_f32(query, v, index->dim);
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-    const float denom = query_norm * index->slots[slot].norm;
-    return denom > 0.0f ? dot / denom : 0.0f;
+    return dot * query_scale * index->slots[slot].score_scale;
   }
   return dot;
 }
@@ -262,6 +268,12 @@ inline bool result_better(const AstralMemorySearchResult& candidate,
                           const AstralMemorySearchResult& existing) {
   return candidate.score > existing.score ||
          (candidate.score == existing.score && candidate.key < existing.key);
+}
+
+inline bool result_better_values(float candidate_score, uint64_t candidate_key,
+                                 const AstralMemorySearchResult& existing) {
+  return candidate_score > existing.score ||
+         (candidate_score == existing.score && candidate_key < existing.key);
 }
 
 void insert_result(AstralMemorySearchResult* results, uint32_t top_k, uint32_t* filled,
@@ -290,6 +302,10 @@ void destroy_allocations(MemoryIndex* index) {
   if (index->vectors != nullptr) {
     core::runtime_free_array(index->vectors, index->capacity * index->dim);
     index->vectors = nullptr;
+  }
+  if (index->active_slots != nullptr) {
+    core::runtime_free_array(index->active_slots, index->capacity);
+    index->active_slots = nullptr;
   }
 }
 
@@ -325,13 +341,15 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->metric = desc->metric;
   index->slots = core::runtime_alloc_array<MemorySlot>(desc->capacity);
   index->vectors = core::runtime_alloc_array<float>(desc->capacity * desc->dim);
-  if (index->slots == nullptr || index->vectors == nullptr) {
+  index->active_slots = core::runtime_alloc_array<uint32_t>(desc->capacity);
+  if (index->slots == nullptr || index->vectors == nullptr || index->active_slots == nullptr) {
     destroy_allocations(index);
     core::runtime_delete(index);
     return ASTRAL_E_NOMEM;
   }
 
   std::memset(index->slots, 0, sizeof(MemorySlot) * desc->capacity);
+  std::memset(index->active_slots, 0, sizeof(uint32_t) * desc->capacity);
   const AstralHandle handle = core::register_handle(core::HandleKind::MemoryIndex, index);
   if (handle == 0) {
     destroy_allocations(index);
@@ -366,6 +384,7 @@ AstralErr memory_clear(MemoryIndex* index) {
     return ASTRAL_E_INVALID;
   }
   std::memset(index->slots, 0, sizeof(MemorySlot) * index->capacity);
+  std::memset(index->active_slots, 0, sizeof(uint32_t) * index->capacity);
   index->count = 0;
   return ASTRAL_OK;
 }
@@ -386,6 +405,8 @@ AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records
       if (slot == kU32Max) {
         return ASTRAL_E_NOMEM;
       }
+      index->slots[slot].active_pos = index->count;
+      index->active_slots[index->count] = slot;
       index->slots[slot].occupied = 1;
       ++index->count;
     }
@@ -393,7 +414,8 @@ AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records
     float* dst = vector_at(index, slot);
     const float* src = vectors + static_cast<size_t>(i) * index->dim;
     std::memcpy(dst, src, sizeof(float) * index->dim);
-    index->slots[slot].norm = vector_norm(dst, index->dim);
+    index->slots[slot].score_scale =
+        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(dst, index->dim) : 0.0f;
   }
   return ASTRAL_OK;
 }
@@ -406,6 +428,11 @@ AstralErr memory_remove(MemoryIndex* index, uint64_t key) {
   if (slot == kU32Max) {
     return ASTRAL_E_NOT_FOUND;
   }
+  const uint32_t active_pos = index->slots[slot].active_pos;
+  const uint32_t last_pos = index->count - 1u;
+  const uint32_t last_slot = index->active_slots[last_pos];
+  index->active_slots[active_pos] = last_slot;
+  index->slots[last_slot].active_pos = active_pos;
   index->slots[slot] = MemorySlot{};
   --index->count;
   return ASTRAL_OK;
@@ -423,14 +450,17 @@ AstralErr memory_search(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
   }
 
   uint32_t filled = 0;
-  const float query_norm =
-      index->metric == ASTRAL_MEMORY_METRIC_COSINE ? vector_norm(query, index->dim) : 0.0f;
-  for (uint32_t slot = 0; slot < index->capacity; ++slot) {
+  const float query_scale =
+      index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 0.0f;
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = index->active_slots[active_pos];
     const MemorySlot& s = index->slots[slot];
-    if (s.occupied == 0) {
+    if (desc->group_id != ASTRAL_MEMORY_GROUP_ANY && s.record.group_id != desc->group_id) {
       continue;
     }
-    if (desc->group_id != ASTRAL_MEMORY_GROUP_ANY && s.record.group_id != desc->group_id) {
+
+    const float score = score_vector(index, query, query_scale, slot);
+    if (filled == desc->top_k && !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
       continue;
     }
 
@@ -441,7 +471,7 @@ AstralErr memory_search(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
     candidate.document_id = s.record.document_id;
     candidate.chunk_id = s.record.chunk_id;
     candidate.flags = s.record.flags;
-    candidate.score = score_vector(index, query, query_norm, slot);
+    candidate.score = score;
     insert_result(out_results, desc->top_k, &filled, candidate);
   }
 
@@ -559,13 +589,11 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
   std::memcpy(cursor, &header, sizeof(header));
   cursor += sizeof(header);
 
-  for (uint32_t i = 0; i < index->capacity; ++i) {
-    if (index->slots[i].occupied == 0) {
-      continue;
-    }
-    std::memcpy(cursor, &index->slots[i].record, sizeof(AstralMemoryRecord));
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = index->active_slots[active_pos];
+    std::memcpy(cursor, &index->slots[slot].record, sizeof(AstralMemoryRecord));
     cursor += sizeof(AstralMemoryRecord);
-    std::memcpy(cursor, vector_at(index, i), sizeof(float) * index->dim);
+    std::memcpy(cursor, vector_at(index, slot), sizeof(float) * index->dim);
     cursor += sizeof(float) * index->dim;
   }
   return ASTRAL_OK;
