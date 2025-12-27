@@ -1554,6 +1554,7 @@ TEST(inference_memory_index_flat_mock) {
     constexpr uint32_t kSecondFetchCount = 2;
     constexpr uint32_t kFinalFetchCount = 0;
     constexpr uint32_t kGroupBResultCount = 1;
+    constexpr uint32_t kPostRemoveResultCount = kRecordCount - 1u;
 
     AstralMemoryIndexDesc desc{};
     desc.size = sizeof(AstralMemoryIndexDesc);
@@ -1674,7 +1675,11 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
     err = astral_memory_count(index, &count);
     ASSERT_EQ(err, ASTRAL_OK);
-    ASSERT_EQ(count, kRecordCount - 1u);
+    ASSERT_EQ(count, kPostRemoveResultCount);
+    err = astral_memory_search(index, &search, query, results, kResultCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kPostRemoveResultCount);
+    ASSERT_EQ(results[0].key, kKeyD);
     err = astral_memory_clear(index);
     ASSERT_EQ(err, ASTRAL_OK);
     err = astral_memory_count(index, &count);
