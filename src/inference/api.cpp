@@ -3432,6 +3432,55 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_summary(
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_memory_context(AstralHandle agent, AstralSpanU8 memory_context) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_set_memory_context(a, memory_context);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_memory_context_size(AstralHandle agent, uint32_t* out_bytes) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_bytes == nullptr) {
+        set_err_invalid("agent/out_bytes");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_get_memory_context_size(a, out_bytes);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_memory_context(
+    AstralHandle agent,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_len == nullptr) {
+        set_err_invalid("agent/out_len");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_get_memory_context(a, out_text, out_len);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_message_add(AstralHandle agent, const AstralAgentMessage* message) {
     ASTRAL_ABI_TRY_BEGIN
     auto* a = lookup_agent(agent);

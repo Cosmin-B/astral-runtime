@@ -32,7 +32,8 @@ namespace Astral.Runtime
         private enum AgentTextSlot
         {
             SystemPrompt,
-            Summary
+            Summary,
+            MemoryContext
         }
 
         public bool IsValid => !m_disposed && m_handle.IsValid;
@@ -101,6 +102,16 @@ namespace Astral.Runtime
         public string GetSummary()
         {
             return GetText(AgentTextSlot.Summary);
+        }
+
+        public void SetMemoryContext(string memoryContext)
+        {
+            SetText(AgentTextSlot.MemoryContext, memoryContext, nameof(memoryContext));
+        }
+
+        public string GetMemoryContext()
+        {
+            return GetText(AgentTextSlot.MemoryContext);
         }
 
         public void AddMessage(AstralNative.AstralAgentRole role, string text)
@@ -283,9 +294,7 @@ namespace Astral.Runtime
             var span = AstralNative.AstralSpanU8.FromString(text, out bytes);
             try
             {
-                int err = slot == AgentTextSlot.SystemPrompt
-                    ? AstralNative.astral_agent_set_system_prompt(m_handle, span)
-                    : AstralNative.astral_agent_set_summary(m_handle, span);
+                int err = SetTextNative(slot, span);
                 ThrowIfError(err, paramName);
             }
             finally
@@ -301,9 +310,7 @@ namespace Astral.Runtime
         {
             ThrowIfInvalid();
             uint byteCount = 0;
-            int err = slot == AgentTextSlot.SystemPrompt
-                ? AstralNative.astral_agent_get_system_prompt_size(m_handle, out byteCount)
-                : AstralNative.astral_agent_get_summary_size(m_handle, out byteCount);
+            int err = GetTextSizeNative(slot, out byteCount);
             ThrowIfError(err, "agent text size");
             if (byteCount == 0)
             {
@@ -313,13 +320,53 @@ namespace Astral.Runtime
             using (var bytes = new NativeArray<byte>((int)byteCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory))
             {
                 uint written = 0;
-                err = slot == AgentTextSlot.SystemPrompt
-                    ? AstralNative.astral_agent_get_system_prompt(m_handle, AstralNative.AstralMutSpanU8.FromNativeArray(bytes), out written)
-                    : AstralNative.astral_agent_get_summary(m_handle, AstralNative.AstralMutSpanU8.FromNativeArray(bytes), out written);
+                err = GetTextNative(slot, AstralNative.AstralMutSpanU8.FromNativeArray(bytes), out written);
                 ThrowIfError(err, "agent text get");
                 byte[] managed = new byte[written];
                 NativeArray<byte>.Copy(bytes, managed, (int)written);
                 return Encoding.UTF8.GetString(managed);
+            }
+        }
+
+        private int SetTextNative(AgentTextSlot slot, AstralNative.AstralSpanU8 span)
+        {
+            switch (slot)
+            {
+                case AgentTextSlot.SystemPrompt:
+                    return AstralNative.astral_agent_set_system_prompt(m_handle, span);
+                case AgentTextSlot.MemoryContext:
+                    return AstralNative.astral_agent_set_memory_context(m_handle, span);
+                case AgentTextSlot.Summary:
+                default:
+                    return AstralNative.astral_agent_set_summary(m_handle, span);
+            }
+        }
+
+        private int GetTextSizeNative(AgentTextSlot slot, out uint byteCount)
+        {
+            switch (slot)
+            {
+                case AgentTextSlot.SystemPrompt:
+                    return AstralNative.astral_agent_get_system_prompt_size(m_handle, out byteCount);
+                case AgentTextSlot.MemoryContext:
+                    return AstralNative.astral_agent_get_memory_context_size(m_handle, out byteCount);
+                case AgentTextSlot.Summary:
+                default:
+                    return AstralNative.astral_agent_get_summary_size(m_handle, out byteCount);
+            }
+        }
+
+        private int GetTextNative(AgentTextSlot slot, AstralNative.AstralMutSpanU8 outText, out uint written)
+        {
+            switch (slot)
+            {
+                case AgentTextSlot.SystemPrompt:
+                    return AstralNative.astral_agent_get_system_prompt(m_handle, outText, out written);
+                case AgentTextSlot.MemoryContext:
+                    return AstralNative.astral_agent_get_memory_context(m_handle, outText, out written);
+                case AgentTextSlot.Summary:
+                default:
+                    return AstralNative.astral_agent_get_summary(m_handle, outText, out written);
             }
         }
 

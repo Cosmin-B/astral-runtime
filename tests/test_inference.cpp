@@ -400,22 +400,28 @@ TEST(inference_conversation_grammar_gbnf_mock) {
 }
 
 TEST(inference_agent_history_and_chat_mock) {
-    constexpr uint32_t kReserveBytes = 32 * 1024 * 1024;
+    constexpr uint32_t kBytesPerKiB = 1024;
+    constexpr uint32_t kBytesPerMiB = kBytesPerKiB * kBytesPerKiB;
+    constexpr uint32_t kReserveMiB = 32;
+    constexpr uint32_t kReserveBytes = kReserveMiB * kBytesPerMiB;
     constexpr uint32_t kExecutorSlots = 1;
     constexpr uint32_t kBatchTokens = 8;
     constexpr uint32_t kMaxTokens = 12;
     constexpr uint32_t kMaxMessages = 8;
-    constexpr uint32_t kMaxPromptBytes = 4096;
+    constexpr uint32_t kMaxPromptKiB = 4;
+    constexpr uint32_t kMaxPromptBytes = kMaxPromptKiB * kBytesPerKiB;
     constexpr uint32_t kSeed = 7;
     constexpr char kSystemPrompt[] = "reply tersely";
     constexpr char kSummary[] = "user likes short answers";
+    constexpr char kMemoryContext[] = "Retrieved: alpha document says use compact output.";
     constexpr uint32_t kSystemBytes = static_cast<uint32_t>(sizeof(kSystemPrompt) - 1);
     constexpr uint32_t kSummaryBytes = static_cast<uint32_t>(sizeof(kSummary) - 1);
+    constexpr uint32_t kMemoryContextBytes = static_cast<uint32_t>(sizeof(kMemoryContext) - 1);
     constexpr uint32_t kHistoryCount = 2;
     constexpr uint32_t kSaveCapacity = 512;
     constexpr uint32_t kChatHistoryCount = 3;
     constexpr uint32_t kPromptCacheEntries = 4;
-    constexpr uint32_t kPromptCacheTokens = 128;
+    constexpr uint32_t kPromptCacheTokens = kMaxPromptBytes;
     constexpr uint32_t kPromptCacheFirstMisses = 1;
     constexpr uint32_t kPromptCacheSecondHits = 1;
     constexpr uint32_t kPromptCacheNoReusedTokens = 0;
@@ -492,6 +498,17 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(astral_agent_get_summary(agent, summary_out, &bytes), ASTRAL_OK);
     ASSERT_EQ(std::string(reinterpret_cast<const char*>(summary_buf), bytes), kSummary);
 
+    ASSERT_EQ(astral_agent_set_memory_context(agent, span_from_cstr(kMemoryContext)), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_get_memory_context_size(agent, &bytes), ASTRAL_OK);
+    ASSERT_EQ(bytes, kMemoryContextBytes);
+
+    uint8_t memory_context_buf[kMemoryContextBytes]{};
+    AstralMutSpanU8 memory_context_out{};
+    memory_context_out.data = memory_context_buf;
+    memory_context_out.len = sizeof(memory_context_buf);
+    ASSERT_EQ(astral_agent_get_memory_context(agent, memory_context_out, &bytes), ASTRAL_OK);
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(memory_context_buf), bytes), kMemoryContext);
+
     AstralAgentMessage user{};
     user.size = sizeof(AstralAgentMessage);
     user.role = ASTRAL_AGENT_ROLE_USER;
@@ -536,6 +553,13 @@ TEST(inference_agent_history_and_chat_mock) {
     summary_out.len = sizeof(loaded_summary);
     ASSERT_EQ(astral_agent_get_summary(agent, summary_out, &bytes), ASTRAL_OK);
     ASSERT_EQ(std::string(reinterpret_cast<const char*>(loaded_summary), bytes), kSummary);
+    ASSERT_EQ(astral_agent_get_memory_context_size(agent, &bytes), ASTRAL_OK);
+    ASSERT_EQ(bytes, kMemoryContextBytes);
+    uint8_t loaded_memory_context[kMemoryContextBytes]{};
+    memory_context_out.data = loaded_memory_context;
+    memory_context_out.len = sizeof(loaded_memory_context);
+    ASSERT_EQ(astral_agent_get_memory_context(agent, memory_context_out, &bytes), ASTRAL_OK);
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(loaded_memory_context), bytes), kMemoryContext);
 
     AstralAgentMessage next{};
     next.size = sizeof(AstralAgentMessage);
