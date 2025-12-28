@@ -270,6 +270,33 @@ namespace Astral.Runtime
             return result;
         }
 
+        public AstralToolCall ParseToolCall(string generatedText)
+        {
+            NativeArray<byte> textArray;
+            var textSpan = AstralNative.AstralSpanU8.FromString(generatedText, out textArray);
+            try
+            {
+                return ParseToolCall(textSpan);
+            }
+            finally
+            {
+                if (textArray.IsCreated)
+                {
+                    textArray.Dispose();
+                }
+            }
+        }
+
+        public AstralToolCall ParseToolCall(NativeArray<byte> generatedText)
+        {
+            if (!generatedText.IsCreated)
+            {
+                throw new ArgumentException("generatedText must be created", nameof(generatedText));
+            }
+
+            return ParseToolCall(AstralNative.AstralSpanU8.FromNativeArray(generatedText));
+        }
+
         public void Dispose()
         {
             if (m_disposed)
@@ -326,6 +353,35 @@ namespace Astral.Runtime
                 NativeArray<byte>.Copy(bytes, managed, (int)written);
                 return Encoding.UTF8.GetString(managed);
             }
+        }
+
+        private AstralToolCall ParseToolCall(AstralNative.AstralSpanU8 generatedText)
+        {
+            ThrowIfInvalid();
+            var result = new AstralNative.AstralToolCallResult
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralToolCallResult>()
+            };
+
+            int err = AstralNative.astral_agent_parse_tool_call(m_handle, generatedText, ref result);
+            if (err == AstralNative.ASTRAL_E_NOT_FOUND)
+            {
+                return new AstralToolCall
+                {
+                    found = false,
+                    parseStatus = err
+                };
+            }
+            ThrowIfError(err, "astral_agent_parse_tool_call");
+
+            return new AstralToolCall
+            {
+                found = true,
+                toolId = result.tool_id,
+                parseStatus = result.parse_status,
+                name = result.name.ToUtf8String(),
+                argumentsJson = result.arguments_json.ToUtf8String()
+            };
         }
 
         private int SetTextNative(AgentTextSlot slot, AstralNative.AstralSpanU8 span)

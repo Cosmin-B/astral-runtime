@@ -311,6 +311,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static FAstralOperationResult GetAgentMemoryContextResult(int64 AgentHandle, FString& OutMemoryContext);
 
+    /** Parse a completed tool-call JSON payload against an agent-bound toolset. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool ParseAgentToolCall(int64 AgentHandle, const FString& GeneratedText, FAstralToolCallResult& OutResult);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult ParseAgentToolCallResult(
+        int64 AgentHandle,
+        const FString& GeneratedText,
+        FAstralToolCallResult& OutResult
+    );
+
     /** Add one native-owned history entry. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode);
