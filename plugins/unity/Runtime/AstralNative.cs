@@ -1278,6 +1278,15 @@ namespace Astral.Runtime
         public static extern int astral_agent_get_summary(AstralHandle agent, AstralMutSpanU8 out_text, out uint out_len);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_set_memory_context(AstralHandle agent, AstralSpanU8 memory_context);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_memory_context_size(AstralHandle agent, out uint out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_memory_context(AstralHandle agent, AstralMutSpanU8 out_text, out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_agent_message_add(AstralHandle agent, ref AstralAgentMessage message);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]

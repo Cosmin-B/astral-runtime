@@ -297,6 +297,20 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static FAstralOperationResult GetAgentSummaryResult(int64 AgentHandle, FString& OutSummary);
 
+    /** Store native-owned retrieved context for the next agent prompt. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool SetAgentMemoryContext(int64 AgentHandle, const FString& MemoryContext, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult SetAgentMemoryContextResult(int64 AgentHandle, const FString& MemoryContext);
+
+    /** Copy the native-owned retrieved context into an engine string. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool GetAgentMemoryContext(int64 AgentHandle, FString& OutMemoryContext, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult GetAgentMemoryContextResult(int64 AgentHandle, FString& OutMemoryContext);
+
     /** Add one native-owned history entry. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode);

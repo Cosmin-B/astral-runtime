@@ -266,6 +266,9 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_agent_set_summary(0, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_get_summary_size(0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_get_summary(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_set_memory_context(0, null_span()), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_memory_context_size(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_memory_context(0, text_out, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_message_add(0, &agent_message), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_history_clear(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_history_count(0, &token_count), ASTRAL_E_INVALID);
