@@ -22,6 +22,7 @@ history themselves.
 - `astral_agent_set_memory_context()`
 - `astral_agent_get_memory_context_size()`
 - `astral_agent_get_memory_context()`
+- `astral_agent_parse_tool_call()`
 - `astral_agent_message_add()`
 - `astral_agent_history_clear()`
 - `astral_agent_history_count()`
@@ -35,7 +36,10 @@ history themselves.
 
 Agents run on the existing model-scoped conversation executor. Configure the
 executor before creating agents for a model. Toolsets and prompt caches can be
-bound at creation time and are forwarded to native prompt setup.
+bound at creation time and are forwarded to native prompt setup. A bound
+toolset can also be used through `astral_agent_parse_tool_call()` after
+generation, so wrappers do not need to retain a separate toolset handle for
+completed output parsing.
 
 ## Ownership
 
@@ -95,6 +99,7 @@ enum {
     kMaxTokens = 128,
     kMaxMessages = 64,
     kMaxPromptBytes = kMaxPromptKiB * kBytesPerKiB,
+    kStreamEnabled = 1,
 };
 
 AstralAgentDesc desc = {0};
@@ -102,7 +107,7 @@ desc.size = sizeof(AstralAgentDesc);
 desc.model = model;
 desc.prompt_cache = cache;
 desc.max_tokens = kMaxTokens;
-desc.stream_enabled = 1;
+desc.stream_enabled = kStreamEnabled;
 desc.max_messages = kMaxMessages;
 desc.max_prompt_bytes = kMaxPromptBytes;
 
@@ -131,4 +136,5 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ./build/dev/ben
 ```
 
 Expected markers include `features.agent prompt_warmup` and
-`features.agent prompt_cache_warmup`.
+`features.agent prompt_cache_warmup`. Native tests include agent-bound tool
+call parsing in `inference_toolset_parse_and_bind_mock`.

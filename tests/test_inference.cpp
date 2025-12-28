@@ -1329,6 +1329,14 @@ TEST(inference_toolset_parse_and_bind_mock) {
     constexpr uint32_t kOpenToolIndex = 1;
     constexpr uint32_t kSessionMaxTokens = 4;
     constexpr uint32_t kExecutorMaxBatchTokens = 8;
+    constexpr float kAgentTemperature = 0.0f;
+    constexpr uint32_t kAgentTopK = 0;
+    constexpr float kAgentTopP = 1.0f;
+    constexpr uint8_t kAgentStreamEnabled = 1;
+    constexpr uint32_t kAgentSeed = 1;
+    constexpr char kAgentToolCallJson[] = "{\"name\":\"search\",\"arguments\":{\"query\":\"agent\"}}";
+    constexpr char kAgentToolCallArgs[] = "{\"query\":\"agent\"}";
+    constexpr char kPlainText[] = "plain text";
 
     AstralInit cfg = {};
     cfg.reserve_bytes = kRuntimeReserveBytes;
@@ -1448,8 +1456,45 @@ TEST(inference_toolset_parse_and_bind_mock) {
     err = astral_conv_clear_toolset(conv);
     ASSERT_EQ(err, ASTRAL_OK);
 
-    astral_toolset_destroy(toolset2);
     astral_conv_destroy(conv);
+    astral_toolset_destroy(toolset2);
+
+    AstralHandle agent_toolset = 0;
+    err = astral_toolset_create(&td, &agent_toolset);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralAgentDesc agent_desc{};
+    agent_desc.size = sizeof(AstralAgentDesc);
+    agent_desc.model = model;
+    agent_desc.toolset = agent_toolset;
+    agent_desc.tool_choice_mode = ASTRAL_TOOL_CHOICE_REQUIRED;
+    agent_desc.max_tokens = kSessionMaxTokens;
+    agent_desc.temperature = kAgentTemperature;
+    agent_desc.top_k = kAgentTopK;
+    agent_desc.top_p = kAgentTopP;
+    agent_desc.stream_enabled = kAgentStreamEnabled;
+    agent_desc.seed = kAgentSeed;
+
+    AstralHandle agent = 0;
+    err = astral_agent_create(&agent_desc, &agent);
+    ASSERT_EQ(err, ASTRAL_OK);
+    astral_toolset_destroy(agent_toolset);
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_agent_parse_tool_call(agent, span_from_cstr(kAgentToolCallJson), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSearchToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+    const std::string agent_args(reinterpret_cast<const char*>(call.arguments_json.data), call.arguments_json.len);
+    ASSERT_EQ(agent_args, std::string(kAgentToolCallArgs));
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_agent_parse_tool_call(agent, span_from_cstr(kPlainText), &call);
+    ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
+
+    astral_agent_destroy(agent);
     astral_session_destroy(session);
     astral_model_release(model);
     astral_shutdown();

@@ -3481,6 +3481,25 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_memory_context(
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_parse_tool_call(
+    AstralHandle agent,
+    AstralSpanU8 generated_text,
+    AstralToolCallResult* out_result
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_result == nullptr) {
+        set_err_invalid("agent/out_result");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_parse_tool_call(a, generated_text, out_result);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_message_add(AstralHandle agent, const AstralAgentMessage* message) {
     ASTRAL_ABI_TRY_BEGIN
     auto* a = lookup_agent(agent);

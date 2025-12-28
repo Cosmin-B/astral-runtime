@@ -20,6 +20,8 @@ completed tool-call payload without requiring engine wrappers to scrape streams.
 - `astral_conv_set_toolset(conv, toolset, choice_mode)` binds a toolset to a
   conversation.
 - `astral_conv_clear_toolset(conv)` clears the conversation binding.
+- `astral_agent_parse_tool_call(agent, generated_text, out_result)` parses a
+  completed payload against the toolset bound at agent creation.
 
 `AstralToolChoiceMode` is one of:
 
@@ -31,8 +33,8 @@ completed tool-call payload without requiring engine wrappers to scrape streams.
 
 Tool names, descriptions, and JSON schemas are copied by
 `astral_toolset_create()`. Spans returned by `astral_toolset_get()` remain valid
-until the toolset is destroyed. Session and conversation bindings retain the
-toolset, so callers may release their own handle after binding.
+until the toolset is destroyed. Session, conversation, and agent bindings retain
+the toolset, so callers may release their own handle after binding.
 
 `astral_toolset_parse_call()` returns `arguments_json` as a span into the caller
 provided generated text. Keep that text alive until the result has been
@@ -60,6 +62,7 @@ Unreal exposes Blueprint-safe helpers on `UAstralBlueprintLibrary`:
 - `CreateToolset()`
 - `DestroyToolset()`
 - `ParseToolCall()`
+- `ParseAgentToolCall()`
 
 `UAstralSession::SetToolset()` and `UAstralSession::ClearToolset()` bind and
 clear native toolset handles. The wrapper uses Unreal containers for transient
@@ -68,10 +71,11 @@ UTF-8 conversion and passes all core ownership to the native runtime.
 Unity exposes `AstralToolset` as an owned handle over the same native C ABI.
 `AstralToolset.Create()` copies managed tool definitions into native runtime
 memory, `ParseCall()` parses a completed tool-call payload, and
-`AstralSession.SetToolset()` / `ClearToolset()` bind or clear the handle between
-requests. `AstralSession.SetGrammarGbnf()`, `SetGrammarJsonSchema()`, and
-`ClearGrammar()` expose direct grammar binding for callers that do not need a
-toolset.
+`AstralAgent.ParseToolCall()` parses against the toolset bound at agent
+creation. `AstralSession.SetToolset()` / `ClearToolset()` bind or clear the
+handle between requests. `AstralSession.SetGrammarGbnf()`,
+`SetGrammarJsonSchema()`, and `ClearGrammar()` expose direct grammar binding for
+callers that do not need a toolset.
 
 ## Example
 

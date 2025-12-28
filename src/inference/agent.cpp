@@ -4,6 +4,7 @@
 #include "../core/runtime_alloc.hpp"
 
 #include "conversation_runtime.hpp"
+#include "tooling.hpp"
 
 #include <cstddef>
 #include <cstring>
@@ -139,6 +140,7 @@ struct Agent {
     AstralHandle handle;
     AstralAgentDesc desc;
     AstralHandle conv;
+    Toolset* toolset;
     uint8_t* system_prompt;
     uint32_t system_prompt_len;
     uint8_t* summary;
@@ -185,6 +187,10 @@ void destroy_agent_allocations(Agent* agent) {
     if (agent->conv != 0) {
         astral_conv_destroy(agent->conv);
         agent->conv = 0;
+    }
+    if (agent->toolset != nullptr) {
+        toolset_release(agent->toolset);
+        agent->toolset = nullptr;
     }
     free_bytes(agent->system_prompt, agent->system_prompt_len);
     agent->system_prompt_len = 0;
@@ -543,12 +549,20 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
         return err;
     }
     if (desc->toolset != 0) {
+        auto* toolset = static_cast<Toolset*>(core::lookup_handle(desc->toolset, core::HandleKind::Toolset));
+        if (toolset == nullptr) {
+            destroy_agent_allocations(agent);
+            core::runtime_delete(agent);
+            return ASTRAL_E_INVALID;
+        }
         err = astral_conv_set_toolset(agent->conv, desc->toolset, desc->tool_choice_mode);
         if (err != ASTRAL_OK) {
             destroy_agent_allocations(agent);
             core::runtime_delete(agent);
             return err;
         }
+        toolset_retain(toolset);
+        agent->toolset = toolset;
     }
     if (desc->prompt_cache != 0) {
         AstralPromptCacheStats stats{};
@@ -703,6 +717,18 @@ AstralErr agent_get_memory_context(Agent* agent, AstralMutSpanU8 out_text, uint3
     }
     std::memcpy(out_text.data, agent->memory_context, agent->memory_context_len);
     return ASTRAL_OK;
+}
+
+AstralErr agent_parse_tool_call(Agent* agent, AstralSpanU8 generated_text, AstralToolCallResult* out_result) {
+    if (agent == nullptr || out_result == nullptr || out_result->size != sizeof(AstralToolCallResult)) {
+        return ASTRAL_E_INVALID;
+    }
+    if (agent->toolset == nullptr) {
+        return ASTRAL_E_NOT_FOUND;
+    }
+    const AstralErr err = toolset_parse_call(agent->toolset, generated_text, out_result);
+    agent->last_error = err;
+    return err;
 }
 
 AstralErr agent_message_add(Agent* agent, const AstralAgentMessage* message) {

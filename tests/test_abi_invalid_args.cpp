@@ -191,6 +191,8 @@ TEST(abi_invalid_args_model_surface) {
     agent_chat.size = sizeof(AstralAgentChatDesc);
     AstralAgentChatResult agent_result{};
     agent_result.size = sizeof(AstralAgentChatResult);
+    constexpr AstralHandle kInvalidAgentHandle = 0;
+    constexpr AstralHandle kMissingAgentHandle = 1;
     int32_t tokens[2] = {1, 2};
     uint32_t token_count = 0;
     uint8_t text_buf[16] = {};
@@ -269,6 +271,8 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_agent_set_memory_context(0, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_get_memory_context_size(0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_get_memory_context(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_parse_tool_call(kInvalidAgentHandle, null_span(), &tool_call), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_parse_tool_call(kMissingAgentHandle, null_span(), nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_message_add(0, &agent_message), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_history_clear(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_history_count(0, &token_count), ASTRAL_E_INVALID);
