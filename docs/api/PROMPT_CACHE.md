@@ -106,5 +106,5 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10000000 ./build/dev
 ```
 
 Expected evidence markers include `test_prompt_cache Passed`,
-`features.prompt_cache get`, `features.prompt_cache view`, and
-`features.agent prompt_cache_warmup`.
+`features.prompt_cache get`, `features.prompt_cache view`,
+`features.prompt_cache miss`, and `features.agent prompt_cache_warmup`.
