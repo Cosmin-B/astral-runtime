@@ -14,6 +14,7 @@ EXPECTED_QWEN_CONTEXT = 40960
 EXPECTED_QWEN_SIZE_BYTES = 639446688
 EXPECTED_EMBED_DIMENSION = 1024
 MODEL_TYPE_EMBEDDING = "embedding"
+MODEL_TYPE_TEXT = "text"
 QWEN_TEXT_PRESET = "qwen3-0.6b-q8"
 QWEN_EMBED_PRESET = "qwen3-embed-0.6b-q8"
 QWEN_TEXT_FILE = "Qwen3-0.6B-Q8_0.gguf"
@@ -61,6 +62,14 @@ def main(argv: list[str]) -> int:
     embed = json.loads(run_tool(root, "info", QWEN_EMBED_PRESET).stdout)
     require(embed["embedding_dimension"] == EXPECTED_EMBED_DIMENSION, "wrong embedding dimension")
     require(embed["model_type"] == MODEL_TYPE_EMBEDDING, "wrong embedding model type")
+
+    embedding_presets = json.loads(run_tool(root, "list", "--type", MODEL_TYPE_EMBEDDING, "--format", "json").stdout)
+    require(any(row["name"] == QWEN_EMBED_PRESET for row in embedding_presets), "embedding list missed Qwen embed preset")
+    require(all(row["model_type"] == MODEL_TYPE_EMBEDDING for row in embedding_presets), "embedding list mixed model types")
+
+    text_presets = run_tool(root, "list", "--type", MODEL_TYPE_TEXT).stdout
+    require(QWEN_TEXT_PRESET in text_presets, "text list missed Qwen text preset")
+    require(QWEN_EMBED_PRESET not in text_presets, "text list included embedding preset")
 
     dry_run = run_tool(root, "download", "--preset", QWEN_TEXT_PRESET, "--dry-run").stdout
     for marker in ("preset:", "path:", "url:", "size_bytes:", "sha256:", "command:"):

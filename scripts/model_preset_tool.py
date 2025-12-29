@@ -39,6 +39,9 @@ MODEL_TYPE_TEXT = "text"
 MODEL_TYPE_EMBEDDING = "embedding"
 MODEL_TYPE_CUSTOM = CUSTOM_MODEL_TYPE
 KNOWN_MODEL_TYPES = (MODEL_TYPE_TEXT, MODEL_TYPE_EMBEDDING, MODEL_TYPE_CUSTOM)
+LIST_FORMAT_TEXT = "text"
+LIST_FORMAT_JSON = "json"
+MODEL_TYPE_ALL = "all"
 
 
 @dataclass(frozen=True)
@@ -353,6 +356,13 @@ def cmd_list(args: argparse.Namespace) -> int:
     selected = presets
     if args.unreal_matrix:
         selected = [preset for preset in presets if preset.include_in_unreal_sample_matrix]
+    if args.type != MODEL_TYPE_ALL:
+        selected = [preset for preset in selected if preset.model_type == args.type]
+    if args.format == LIST_FORMAT_JSON:
+        output_dir = _repo_root_path(args.dir)
+        json.dump([_preset_record(preset, output_dir) for preset in selected], sys.stdout, indent=2, sort_keys=True)
+        print()
+        return EXIT_OK
     for preset in selected:
         print(f"{preset.name}\t{preset.filename}\t{preset.model_type}\t{preset.label}")
     return EXIT_OK
@@ -489,6 +499,9 @@ def main(argv: List[str]) -> int:
 
     list_parser = sub.add_parser("list")
     list_parser.add_argument("--unreal-matrix", action="store_true")
+    list_parser.add_argument("--type", choices=(MODEL_TYPE_ALL, MODEL_TYPE_TEXT, MODEL_TYPE_EMBEDDING), default=MODEL_TYPE_ALL)
+    list_parser.add_argument("--format", choices=(LIST_FORMAT_TEXT, LIST_FORMAT_JSON), default=LIST_FORMAT_TEXT)
+    list_parser.add_argument("--dir", default="tests/models")
     list_parser.set_defaults(func=cmd_list)
 
     filename_parser = sub.add_parser("filename")
