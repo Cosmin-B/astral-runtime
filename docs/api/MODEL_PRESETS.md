@@ -9,6 +9,7 @@ sample-matrix eligibility.
 ## Tooling
 
 - `scripts/model_preset_tool.py list`
+- `scripts/model_preset_tool.py list --type embedding --format json`
 - `scripts/model_preset_tool.py filename <preset>`
 - `scripts/model_preset_tool.py path <preset> --dir <dir>`
 - `scripts/model_preset_tool.py info <preset> --dir <dir>`
@@ -17,6 +18,8 @@ sample-matrix eligibility.
 - `tests/model_downloader.sh --preset <preset> --validate-only`
 - `tests/model_downloader.sh --preset <preset> --info`
 - `tests/model_downloader.sh --preset <preset> --print-path`
+- `tests/model_downloader.sh --list-presets --list-type text`
+- `tests/model_downloader.sh --list-presets --list-type embedding --list-format json`
 
 `--dry-run` prints the resolved preset, output path, URL, byte size, checksum,
 and repeatable downloader command without touching the network. `--validate-only`
@@ -26,8 +29,9 @@ non-zero exit code for missing, truncated, or checksum-drifted files.
 `info` prints a stable JSON record with the preset name, model type, repository,
 revision, URL, resolved local path, byte size, checksum, context length,
 embedding dimension, sample-matrix flag, license note, and repeatable downloader
-command. Engine setup tools can consume this output without scraping dry-run
-text.
+command. `list --format json` prints the same records for every selected preset,
+optionally filtered by `--type text` or `--type embedding`. Engine setup tools
+can consume this output without scraping dry-run text.
 
 ## Ownership
 
@@ -48,9 +52,11 @@ C ABI.
 
 ```bash
 python3 scripts/model_preset_tool.py validate-manifest
+python3 scripts/model_preset_tool.py list --type embedding --format json
 python3 scripts/model_preset_tool.py info qwen3-0.6b-q8 --dir tests/models
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
+./tests/model_downloader.sh --list-presets --list-type text
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --print-path
 ```
 

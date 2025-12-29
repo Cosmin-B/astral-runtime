@@ -19,6 +19,8 @@ Options:
   --print-path          Print the resolved local path for a preset
   --info                Print resolved preset metadata as JSON
   --list-presets        Print available presets
+  --list-type <type>    Filter --list-presets by all, text, or embedding
+  --list-format <fmt>   Print --list-presets as text or json
   --token <token>       Hugging Face token, otherwise HF_TOKEN/HUGGINGFACE_HUB_TOKEN is used
   --url <url>           Custom GGUF URL; requires --file
   --file <name.gguf>    Output filename for custom URL/HF downloads
@@ -56,8 +58,11 @@ fi
 
 print_path=0
 print_info=0
+list_presets=0
 preset_name=""
 output_dir="tests/models"
+list_type="all"
+list_format="text"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -67,6 +72,8 @@ while [[ $# -gt 0 ]]; do
     --validate-only) args+=(--validate-only); shift ;;
     --print-path) print_path=1; shift ;;
     --info) print_info=1; shift ;;
+    --list-type) list_type="${2:-}"; shift 2 ;;
+    --list-format) list_format="${2:-}"; shift 2 ;;
     --token) args+=(--token "${2:-}"); shift 2 ;;
     --url) args+=(--url "${2:-}"); shift 2 ;;
     --file) args+=(--file "${2:-}"); shift 2 ;;
@@ -76,7 +83,8 @@ while [[ $# -gt 0 ]]; do
     --hf-file) args+=(--hf-file "${2:-}"); shift 2 ;;
     --hf-rev|--hf-revision) args+=(--hf-revision "${2:-}"); shift 2 ;;
     --list-presets)
-      exec python3 "${tool}" list
+      list_presets=1
+      shift
       ;;
     --help|-h)
       usage
@@ -89,6 +97,10 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${list_presets}" -eq 1 ]]; then
+  exec python3 "${tool}" list --type "${list_type}" --format "${list_format}" --dir "${output_dir}"
+fi
 
 if [[ "${print_path}" -eq 1 ]]; then
   if [[ -z "${preset_name}" ]]; then
