@@ -1605,6 +1605,7 @@ TEST(inference_memory_index_flat_mock) {
     constexpr uint32_t kDim = 4;
     constexpr uint32_t kCapacity = 8;
     constexpr uint32_t kRecordCount = 5;
+    constexpr uint32_t kTopOne = 1;
     constexpr uint32_t kTopK = 4;
     constexpr uint64_t kKeyA = 11;
     constexpr uint64_t kKeyB = 22;
@@ -1686,6 +1687,13 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(results[1].key, kKeyD);
     ASSERT_EQ(results[2].key, kKeyE);
 
+    search.top_k = kTopOne;
+    err = astral_memory_search(index, &search, query, results, kResultCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopOne);
+    ASSERT_EQ(results[0].key, kKeyA);
+
+    search.top_k = kTopK;
     AstralHandle cursor = 0;
     err = astral_memory_search_begin(index, &search, query, &cursor);
     ASSERT_EQ(err, ASTRAL_OK);

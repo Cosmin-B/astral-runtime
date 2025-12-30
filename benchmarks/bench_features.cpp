@@ -27,6 +27,7 @@ static constexpr uint32_t kBenchChunkOverlapWords = 4;
 static constexpr uint32_t kBenchChunkRangeCapacity = 64;
 static constexpr uint32_t kBenchMemoryDim = 32;
 static constexpr uint32_t kBenchMemoryCapacity = 1024;
+static constexpr uint32_t kBenchMemoryTopOne = 1;
 static constexpr uint32_t kBenchMemoryTopK = 8;
 static constexpr uint32_t kBenchMemoryFetchK = 4;
 static constexpr uint32_t kBenchMemoryMinDim = 1;
@@ -823,6 +824,67 @@ static BenchResult bench_memory_flat_search(uint64_t iters) {
     return r;
 }
 
+static BenchResult bench_memory_flat_search_top1(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.memory flat_search_top1";
+    r.ops = iters;
+    const uint32_t dim =
+        bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim);
+    const uint32_t capacity =
+        bounded_env_u32(kBenchMemoryCapacityEnv, kBenchMemoryCapacity, kBenchMemoryMinCapacity, UINT32_MAX / dim);
+    const AstralMemoryMetric metric = parse_memory_metric_env();
+
+    AstralMemoryIndexDesc desc{};
+    desc.size = sizeof(AstralMemoryIndexDesc);
+    desc.dim = dim;
+    desc.capacity = capacity;
+    desc.metric = metric;
+    desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+
+    AstralHandle index = 0;
+    AstralErr err = astral_memory_create(&desc, &index);
+    if (err != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<AstralMemoryRecord> records(capacity);
+    std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+    fill_memory_fixture(records, vectors, capacity, dim);
+    err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
+    if (err != ASTRAL_OK) {
+        astral_memory_destroy(index);
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<float> query(dim);
+    fill_memory_query(query);
+    AstralMemorySearchDesc search{};
+    search.size = sizeof(AstralMemorySearchDesc);
+    search.top_k = kBenchMemoryTopOne;
+    search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    AstralMemorySearchResult results[kBenchMemoryTopOne]{};
+    uint32_t result_count = 0;
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        err = astral_memory_search(index, &search, query.data(), results, kBenchMemoryTopOne, &result_count);
+        if (err != ASTRAL_OK || result_count != kBenchMemoryTopOne) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_memory_destroy(index);
+    return r;
+}
+
 static BenchResult bench_memory_cursor_fetch(uint64_t iters) {
     BenchResult r{};
     r.name = "features.memory cursor_begin_fetch";
@@ -1375,6 +1437,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
         print_result(bench_toolset_parse(iters), clock_info().name);
         print_result(bench_chunk_word_ranges(iters), clock_info().name);
+        print_result(bench_memory_flat_search_top1(iters), clock_info().name);
         print_result(bench_memory_flat_search(iters), clock_info().name);
         print_result(bench_memory_cursor_fetch(iters), clock_info().name);
         print_result(bench_agent_prompt_warmup(iters), clock_info().name);
@@ -1418,6 +1481,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
     print_result(bench_toolset_parse(iters), clock_info().name);
     print_result(bench_chunk_word_ranges(iters), clock_info().name);
+    print_result(bench_memory_flat_search_top1(iters), clock_info().name);
     print_result(bench_memory_flat_search(iters), clock_info().name);
     print_result(bench_memory_cursor_fetch(iters), clock_info().name);
     print_result(bench_agent_prompt_warmup(iters), clock_info().name);

@@ -252,16 +252,8 @@ uint32_t find_free_slot(const MemoryIndex* index) {
   return kU32Max;
 }
 
-float score_vector(const MemoryIndex* index, const float* query, float query_scale, uint32_t slot) {
-  const float* v = vector_at(index, slot);
-  if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
-    return l2_score_f32(query, v, index->dim);
-  }
-  const float dot = dot_f32(query, v, index->dim);
-  if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-    return dot * query_scale * index->slots[slot].score_scale;
-  }
-  return dot;
+inline bool record_matches_group(const AstralMemorySearchDesc* desc, const MemorySlot& slot) {
+  return desc->group_id == ASTRAL_MEMORY_GROUP_ANY || slot.record.group_id == desc->group_id;
 }
 
 inline bool result_better(const AstralMemorySearchResult& candidate,
@@ -274,6 +266,18 @@ inline bool result_better_values(float candidate_score, uint64_t candidate_key,
                                  const AstralMemorySearchResult& existing) {
   return candidate_score > existing.score ||
          (candidate_score == existing.score && candidate_key < existing.key);
+}
+
+inline void fill_result(AstralMemorySearchResult* out_result,
+                        const MemorySlot& slot,
+                        float score) {
+  out_result->size = sizeof(AstralMemorySearchResult);
+  out_result->group_id = slot.record.group_id;
+  out_result->key = slot.record.key;
+  out_result->document_id = slot.record.document_id;
+  out_result->chunk_id = slot.record.chunk_id;
+  out_result->flags = slot.record.flags;
+  out_result->score = score;
 }
 
 void insert_result(AstralMemorySearchResult* results, uint32_t top_k, uint32_t* filled,
@@ -292,6 +296,73 @@ void insert_result(AstralMemorySearchResult* results, uint32_t top_k, uint32_t* 
     --pos;
   }
   results[pos] = candidate;
+}
+
+void memory_search_dot(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
+                       AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  uint32_t filled = 0;
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = index->active_slots[active_pos];
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    const float score = dot_f32(query, vector_at(index, slot), index->dim);
+    if (filled == desc->top_k && !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+      continue;
+    }
+
+    AstralMemorySearchResult candidate{};
+    fill_result(&candidate, s, score);
+    insert_result(out_results, desc->top_k, &filled, candidate);
+  }
+  *out_count = filled;
+}
+
+void memory_search_cosine(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
+                          AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  uint32_t filled = 0;
+  const float query_scale = cosine_scale(query, index->dim);
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = index->active_slots[active_pos];
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale * s.score_scale;
+    if (filled == desc->top_k && !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+      continue;
+    }
+
+    AstralMemorySearchResult candidate{};
+    fill_result(&candidate, s, score);
+    insert_result(out_results, desc->top_k, &filled, candidate);
+  }
+  *out_count = filled;
+}
+
+void memory_search_l2(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
+                      AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  uint32_t filled = 0;
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = index->active_slots[active_pos];
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    const float score = l2_score_f32(query, vector_at(index, slot), index->dim);
+    if (filled == desc->top_k && !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+      continue;
+    }
+
+    AstralMemorySearchResult candidate{};
+    fill_result(&candidate, s, score);
+    insert_result(out_results, desc->top_k, &filled, candidate);
+  }
+  *out_count = filled;
 }
 
 void destroy_allocations(MemoryIndex* index) {
@@ -449,33 +520,13 @@ AstralErr memory_search(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
     return ASTRAL_E_NOMEM;
   }
 
-  uint32_t filled = 0;
-  const float query_scale =
-      index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 0.0f;
-  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
-    const uint32_t slot = index->active_slots[active_pos];
-    const MemorySlot& s = index->slots[slot];
-    if (desc->group_id != ASTRAL_MEMORY_GROUP_ANY && s.record.group_id != desc->group_id) {
-      continue;
-    }
-
-    const float score = score_vector(index, query, query_scale, slot);
-    if (filled == desc->top_k && !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
-      continue;
-    }
-
-    AstralMemorySearchResult candidate{};
-    candidate.size = sizeof(AstralMemorySearchResult);
-    candidate.group_id = s.record.group_id;
-    candidate.key = s.record.key;
-    candidate.document_id = s.record.document_id;
-    candidate.chunk_id = s.record.chunk_id;
-    candidate.flags = s.record.flags;
-    candidate.score = score;
-    insert_result(out_results, desc->top_k, &filled, candidate);
+  if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
+    memory_search_dot(index, desc, query, out_results, out_count);
+  } else if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+    memory_search_cosine(index, desc, query, out_results, out_count);
+  } else {
+    memory_search_l2(index, desc, query, out_results, out_count);
   }
-
-  *out_count = filled;
   return ASTRAL_OK;
 }
 
