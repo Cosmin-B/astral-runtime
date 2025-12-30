@@ -196,10 +196,11 @@ inline constexpr uint32_t kPromptCacheBytesPerKiB = 1024;
 inline constexpr uint32_t kPromptCacheDefaultTokenKiB = 64;
 inline constexpr uint32_t kPromptCacheDefaultMaxTokens = kPromptCacheDefaultTokenKiB * kPromptCacheBytesPerKiB;
 inline constexpr uint32_t kPromptCacheMinTableCapacity = 4;
-inline constexpr uint32_t kPromptCacheTableLoadFactorDen = 2;
+inline constexpr uint32_t kPromptCacheTableLoadFactorDen = 4;
 inline constexpr uint64_t kPromptCacheHashModelMul = 0x9E3779B185EBCA87ull;
-inline constexpr uint32_t kPromptCacheHashShift0 = 32;
-inline constexpr uint32_t kPromptCacheHashShift1 = 16;
+inline constexpr uint64_t kPromptCacheHashFinalMul = 0xD6E8FEB86659FD93ull;
+inline constexpr uint32_t kPromptCacheHashFinalShift = 32;
+inline constexpr uint32_t kPromptCacheHashGenerationShift = 32;
 inline constexpr uint8_t kPromptCacheSlotEmpty = 0;
 inline constexpr uint8_t kPromptCacheSlotOccupied = 1;
 inline constexpr uint32_t kPromptCacheNoSlot = 0xFFFFFFFFu;
@@ -269,10 +270,12 @@ inline bool prompt_cache_key_equal(const AstralPromptCacheKey& a, const AstralPr
 }
 
 inline uint32_t prompt_cache_hash(const AstralPromptCacheKey& key) {
-    uint64_t x = key.key ^ (key.model * kPromptCacheHashModelMul) ^
-                 (static_cast<uint64_t>(key.generation) << kPromptCacheHashShift0) ^ key.section_kind;
-    x ^= x >> kPromptCacheHashShift0;
-    x ^= x >> kPromptCacheHashShift1;
+    uint64_t x = key.key;
+    x ^= key.model * kPromptCacheHashModelMul;
+    x ^= static_cast<uint64_t>(key.generation) << kPromptCacheHashGenerationShift;
+    x ^= static_cast<uint64_t>(key.section_kind);
+    x *= kPromptCacheHashFinalMul;
+    x ^= x >> kPromptCacheHashFinalShift;
     return static_cast<uint32_t>(x);
 }
 
