@@ -25,8 +25,9 @@ ANN indexes.
 - `astral_memory_load()`
 
 The index is fixed-dimension and fixed-capacity. Add operations copy vectors
-into native storage. Search returns result metadata first; callers decide whether
-to fetch text or engine objects for the selected keys.
+into native storage and use a bounded native key table for update/remove lookup.
+Search returns result metadata first; callers decide whether to fetch text or
+engine objects for the selected keys.
 
 Incremental search cursors snapshot the top-k result set at begin time and let
 callers fetch fixed-size batches without re-running the vector scan. The cursor
@@ -52,6 +53,8 @@ Search keeps the top-k result set in the caller-provided output array, avoiding
 heap allocation during query execution. The flat scanner dispatches by metric
 before entering the vector loop, so dot, cosine, and L2 searches do not branch
 through a generic scorer for every stored vector.
+Batch ingest uses the same fixed-capacity vector storage and a free-slot cursor
+so sequential adds do not scan old slots to find the next open row.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, and `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`,
@@ -107,5 +110,6 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/b
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ./build/dev/benchmarks/astral_benchmarks --only features
 ```
 
-Expected markers include `features.memory flat_search_top1`,
-`features.memory flat_search`, and `features.memory cursor_begin_fetch`.
+Expected markers include `features.memory add_batch`,
+`features.memory flat_search_top1`, `features.memory flat_search`, and
+`features.memory cursor_begin_fetch`.
