@@ -763,6 +763,52 @@ static void fill_memory_query(std::vector<float>& query) {
     }
 }
 
+static BenchResult bench_memory_add_batch(uint64_t iters) {
+    (void)iters;
+    BenchResult r{};
+    r.name = "features.memory add_batch";
+    const uint32_t dim =
+        bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim);
+    const uint32_t capacity =
+        bounded_env_u32(kBenchMemoryCapacityEnv, kBenchMemoryCapacity, kBenchMemoryMinCapacity, UINT32_MAX / dim);
+    r.ops = capacity;
+    const AstralMemoryMetric metric = parse_memory_metric_env();
+
+    AstralMemoryIndexDesc desc{};
+    desc.size = sizeof(AstralMemoryIndexDesc);
+    desc.dim = dim;
+    desc.capacity = capacity;
+    desc.metric = metric;
+    desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+
+    AstralHandle index = 0;
+    AstralErr err = astral_memory_create(&desc, &index);
+    if (err != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<AstralMemoryRecord> records(capacity);
+    std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+    fill_memory_fixture(records, vectors, capacity, dim);
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+    if (err != ASTRAL_OK) {
+        astral_memory_destroy(index);
+        r.ops = 0;
+        return r;
+    }
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_memory_destroy(index);
+    return r;
+}
+
 static BenchResult bench_memory_flat_search(uint64_t iters) {
     BenchResult r{};
     r.name = "features.memory flat_search";
@@ -1437,6 +1483,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
         print_result(bench_toolset_parse(iters), clock_info().name);
         print_result(bench_chunk_word_ranges(iters), clock_info().name);
+        print_result(bench_memory_add_batch(iters), clock_info().name);
         print_result(bench_memory_flat_search_top1(iters), clock_info().name);
         print_result(bench_memory_flat_search(iters), clock_info().name);
         print_result(bench_memory_cursor_fetch(iters), clock_info().name);
@@ -1481,6 +1528,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
     print_result(bench_toolset_parse(iters), clock_info().name);
     print_result(bench_chunk_word_ranges(iters), clock_info().name);
+    print_result(bench_memory_add_batch(iters), clock_info().name);
     print_result(bench_memory_flat_search_top1(iters), clock_info().name);
     print_result(bench_memory_flat_search(iters), clock_info().name);
     print_result(bench_memory_cursor_fetch(iters), clock_info().name);

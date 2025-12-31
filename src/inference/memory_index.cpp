@@ -19,6 +19,17 @@ constexpr uint32_t kSaveMagic = 0x414D454Du;
 constexpr uint32_t kSaveVersion = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
+constexpr uint32_t kKeyTableMinCapacity = 4;
+constexpr uint32_t kKeyTableLoadFactorDen = 2;
+constexpr uint32_t kKeyTableEmpty = 0;
+constexpr uint32_t kKeyTableTombstone = kU32Max;
+constexpr uint32_t kKeyTableSlotRefBias = 1;
+constexpr uint32_t kSlotAdvance = 1;
+constexpr uint64_t kKeyHashMixMul0 = 0xBF58476D1CE4E5B9ull;
+constexpr uint64_t kKeyHashMixMul1 = 0x94D049BB133111EBull;
+constexpr uint32_t kKeyHashMixShift0 = 30;
+constexpr uint32_t kKeyHashMixShift1 = 27;
+constexpr uint32_t kKeyHashMixShift2 = 31;
 #if defined(__AVX2__)
 constexpr uint32_t kAvx2F32Lanes = 8;
 constexpr uint32_t kAvx2UnrollVectors = 4;
@@ -206,6 +217,10 @@ struct MemoryIndex {
   MemorySlot* slots;
   float* vectors;
   uint32_t* active_slots;
+  uint32_t* key_table;
+  uint32_t key_table_capacity;
+  uint32_t key_table_mask;
+  uint32_t free_slot_hint;
 };
 
 struct MemorySearchCursor {
@@ -234,22 +249,111 @@ inline const float* vector_at(const MemoryIndex* index, uint32_t slot) {
   return index->vectors + static_cast<size_t>(slot) * index->dim;
 }
 
+inline uint32_t slot_to_key_ref(uint32_t slot) {
+  return slot + kKeyTableSlotRefBias;
+}
+
+inline uint32_t key_ref_to_slot(uint32_t ref) {
+  return ref - kKeyTableSlotRefBias;
+}
+
+inline uint64_t key_hash_mix(uint64_t x) {
+  x ^= x >> kKeyHashMixShift0;
+  x *= kKeyHashMixMul0;
+  x ^= x >> kKeyHashMixShift1;
+  x *= kKeyHashMixMul1;
+  x ^= x >> kKeyHashMixShift2;
+  return x;
+}
+
+uint32_t key_table_capacity_for(uint32_t capacity) {
+  uint32_t table_capacity = 1;
+  const uint32_t target = capacity < kKeyTableLoadFactorDen
+      ? kKeyTableMinCapacity
+      : capacity * kKeyTableLoadFactorDen;
+  while (table_capacity < target) {
+    table_capacity <<= 1u;
+  }
+  return table_capacity;
+}
+
 uint32_t find_slot_by_key(const MemoryIndex* index, uint64_t key) {
-  for (uint32_t i = 0; i < index->capacity; ++i) {
-    if (index->slots[i].occupied != 0 && index->slots[i].record.key == key) {
-      return i;
+  uint32_t table_pos = static_cast<uint32_t>(key_hash_mix(key)) & index->key_table_mask;
+  for (uint32_t probe = 0; probe < index->key_table_capacity; ++probe) {
+    const uint32_t ref = index->key_table[table_pos];
+    if (ref == kKeyTableEmpty) {
+      return kU32Max;
     }
+    if (ref != kKeyTableTombstone) {
+      const uint32_t slot = key_ref_to_slot(ref);
+      if (index->slots[slot].occupied != 0 && index->slots[slot].record.key == key) {
+        return slot;
+      }
+    }
+    table_pos = (table_pos + 1u) & index->key_table_mask;
   }
   return kU32Max;
 }
 
 uint32_t find_free_slot(const MemoryIndex* index) {
-  for (uint32_t i = 0; i < index->capacity; ++i) {
-    if (index->slots[i].occupied == 0) {
-      return i;
+  uint32_t slot = index->free_slot_hint;
+  for (uint32_t probe = 0; probe < index->capacity; ++probe) {
+    if (index->slots[slot].occupied == 0) {
+      return slot;
+    }
+    slot += kSlotAdvance;
+    if (slot == index->capacity) {
+      slot = 0;
     }
   }
   return kU32Max;
+}
+
+AstralErr key_table_insert(MemoryIndex* index, uint64_t key, uint32_t slot) {
+  uint32_t table_pos = static_cast<uint32_t>(key_hash_mix(key)) & index->key_table_mask;
+  uint32_t tombstone_pos = kU32Max;
+  for (uint32_t probe = 0; probe < index->key_table_capacity; ++probe) {
+    const uint32_t ref = index->key_table[table_pos];
+    if (ref == kKeyTableEmpty) {
+      index->key_table[tombstone_pos != kU32Max ? tombstone_pos : table_pos] = slot_to_key_ref(slot);
+      return ASTRAL_OK;
+    }
+    if (ref == kKeyTableTombstone) {
+      if (tombstone_pos == kU32Max) {
+        tombstone_pos = table_pos;
+      }
+    } else {
+      const uint32_t existing_slot = key_ref_to_slot(ref);
+      if (index->slots[existing_slot].occupied != 0 && index->slots[existing_slot].record.key == key) {
+        index->key_table[table_pos] = slot_to_key_ref(slot);
+        return ASTRAL_OK;
+      }
+    }
+    table_pos = (table_pos + 1u) & index->key_table_mask;
+  }
+  if (tombstone_pos != kU32Max) {
+    index->key_table[tombstone_pos] = slot_to_key_ref(slot);
+    return ASTRAL_OK;
+  }
+  return ASTRAL_E_NOMEM;
+}
+
+void key_table_remove(MemoryIndex* index, uint64_t key) {
+  uint32_t table_pos = static_cast<uint32_t>(key_hash_mix(key)) & index->key_table_mask;
+  for (uint32_t probe = 0; probe < index->key_table_capacity; ++probe) {
+    const uint32_t ref = index->key_table[table_pos];
+    if (ref == kKeyTableEmpty) {
+      return;
+    }
+    if (ref != kKeyTableTombstone) {
+      const uint32_t slot = key_ref_to_slot(ref);
+      if (index->slots[slot].occupied != 0 && index->slots[slot].record.key == key) {
+        index->key_table[table_pos] = kKeyTableTombstone;
+        return;
+      }
+    }
+    table_pos = (table_pos + 1u) & index->key_table_mask;
+  }
 }
 
 inline bool record_matches_group(const AstralMemorySearchDesc* desc, const MemorySlot& slot) {
@@ -378,6 +482,10 @@ void destroy_allocations(MemoryIndex* index) {
     core::runtime_free_array(index->active_slots, index->capacity);
     index->active_slots = nullptr;
   }
+  if (index->key_table != nullptr) {
+    core::runtime_free_array(index->key_table, index->key_table_capacity);
+    index->key_table = nullptr;
+  }
 }
 
 void destroy_search_cursor(MemorySearchCursor* cursor) {
@@ -397,9 +505,10 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   if (!desc_valid(desc) || out_index == nullptr) {
     return ASTRAL_E_INVALID;
   }
-  if (desc->capacity > kU32Max / desc->dim) {
+  if (desc->capacity > kU32Max / desc->dim || desc->capacity > kU32Max / kKeyTableLoadFactorDen) {
     return ASTRAL_E_NOMEM;
   }
+  const uint32_t key_table_capacity = key_table_capacity_for(desc->capacity);
 
   MemoryIndex* index = core::runtime_new<MemoryIndex>();
   if (index == nullptr) {
@@ -413,7 +522,11 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->slots = core::runtime_alloc_array<MemorySlot>(desc->capacity);
   index->vectors = core::runtime_alloc_array<float>(desc->capacity * desc->dim);
   index->active_slots = core::runtime_alloc_array<uint32_t>(desc->capacity);
-  if (index->slots == nullptr || index->vectors == nullptr || index->active_slots == nullptr) {
+  index->key_table = core::runtime_alloc_array<uint32_t>(key_table_capacity);
+  index->key_table_capacity = key_table_capacity;
+  index->key_table_mask = key_table_capacity - 1u;
+  if (index->slots == nullptr || index->vectors == nullptr || index->active_slots == nullptr ||
+      index->key_table == nullptr) {
     destroy_allocations(index);
     core::runtime_delete(index);
     return ASTRAL_E_NOMEM;
@@ -421,6 +534,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
 
   std::memset(index->slots, 0, sizeof(MemorySlot) * desc->capacity);
   std::memset(index->active_slots, 0, sizeof(uint32_t) * desc->capacity);
+  std::memset(index->key_table, 0, sizeof(uint32_t) * key_table_capacity);
   const AstralHandle handle = core::register_handle(core::HandleKind::MemoryIndex, index);
   if (handle == 0) {
     destroy_allocations(index);
@@ -456,7 +570,9 @@ AstralErr memory_clear(MemoryIndex* index) {
   }
   std::memset(index->slots, 0, sizeof(MemorySlot) * index->capacity);
   std::memset(index->active_slots, 0, sizeof(uint32_t) * index->capacity);
+  std::memset(index->key_table, 0, sizeof(uint32_t) * index->key_table_capacity);
   index->count = 0;
+  index->free_slot_hint = 0;
   return ASTRAL_OK;
 }
 
@@ -480,6 +596,17 @@ AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records
       index->active_slots[index->count] = slot;
       index->slots[slot].occupied = 1;
       ++index->count;
+      index->free_slot_hint = slot + kSlotAdvance;
+      if (index->free_slot_hint == index->capacity) {
+        index->free_slot_hint = 0;
+      }
+      const AstralErr key_err = key_table_insert(index, records[i].key, slot);
+      if (key_err != ASTRAL_OK) {
+        --index->count;
+        index->slots[slot] = MemorySlot{};
+        index->free_slot_hint = slot;
+        return key_err;
+      }
     }
     index->slots[slot].record = records[i];
     float* dst = vector_at(index, slot);
@@ -502,6 +629,8 @@ AstralErr memory_remove(MemoryIndex* index, uint64_t key) {
   const uint32_t active_pos = index->slots[slot].active_pos;
   const uint32_t last_pos = index->count - 1u;
   const uint32_t last_slot = index->active_slots[last_pos];
+  key_table_remove(index, key);
+  index->free_slot_hint = slot;
   index->active_slots[active_pos] = last_slot;
   index->slots[last_slot].active_pos = active_pos;
   index->slots[slot] = MemorySlot{};
