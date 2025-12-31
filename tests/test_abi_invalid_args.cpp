@@ -26,6 +26,36 @@ AstralMutSpanU8 null_mut_span() {
     return s;
 }
 
+AstralMutSpanU8 mut_span(uint8_t* data, uint32_t len) {
+    AstralMutSpanU8 s{};
+    s.data = data;
+    s.len = len;
+    return s;
+}
+
+AstralModelPathResolveDesc path_resolve_desc(AstralModelPathRoot root, const char* path) {
+    AstralModelPathResolveDesc desc{};
+    desc.size = sizeof(AstralModelPathResolveDesc);
+    desc.root = root;
+    desc.path = span_from_cstr(path);
+    desc.content_root = span_from_cstr("/project/content");
+    desc.saved_root = span_from_cstr("/project/saved");
+    desc.cache_root = span_from_cstr("/project/cache");
+    desc.download_root = span_from_cstr("/project/downloads");
+    return desc;
+}
+
+void assert_path_resolves_to(AstralModelPathResolveDesc desc, const char* expected) {
+    constexpr uint32_t kResolveBufferBytes = 256;
+    uint8_t buffer[kResolveBufferBytes]{};
+    uint32_t written = 0;
+    const AstralSpanU8 expected_span = span_from_cstr(expected);
+
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(buffer, kResolveBufferBytes), &written), ASTRAL_OK);
+    ASSERT_EQ(written, expected_span.len);
+    ASSERT_EQ(std::memcmp(buffer, expected_span.data, expected_span.len), 0);
+}
+
 AstralInit small_init() {
     AstralInit cfg{};
     cfg.reserve_bytes = 16 * 1024 * 1024;
@@ -99,6 +129,58 @@ AstralAudioDesc invalid_audio_desc() {
 }
 
 } // namespace
+
+TEST(abi_model_path_resolve) {
+    assert_path_resolves_to(
+        path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_RAW, "Models/model.gguf"),
+        "Models/model.gguf");
+    assert_path_resolves_to(
+        path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_CONTENT, "Models/model.gguf"),
+        "/project/content/Models/model.gguf");
+    assert_path_resolves_to(
+        path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_CONTENT, "/absolute/model.gguf"),
+        "/absolute/model.gguf");
+    assert_path_resolves_to(
+        path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_CONTENT, "C:\\Models\\model.gguf"),
+        "C:\\Models\\model.gguf");
+
+    AstralModelPathResolveDesc slash_root = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_CACHE, "model.gguf");
+    slash_root.cache_root = span_from_cstr("/project/cache/");
+    assert_path_resolves_to(slash_root, "/project/cache/model.gguf");
+
+    AstralModelPathResolveDesc desc = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_DOWNLOAD, "model.gguf");
+    constexpr uint32_t kShortBufferBytes = 4;
+    uint8_t short_buffer[kShortBufferBytes]{};
+    uint32_t written = 0;
+    ASSERT_EQ(
+        astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written),
+        ASTRAL_E_NOMEM);
+    ASSERT_EQ(written, span_from_cstr("/project/downloads/model.gguf").len);
+
+    ASSERT_EQ(astral_model_path_resolve(nullptr, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), nullptr), ASTRAL_E_INVALID);
+
+    constexpr uint32_t kInvalidResolveDescSize = sizeof(AstralModelPathResolveDesc) - sizeof(uint32_t);
+    constexpr AstralModelPathResolveFlags kInvalidResolveFlags = ASTRAL_MODEL_PATH_RESOLVE_NONE + sizeof(uint32_t);
+    constexpr AstralModelPathRoot kInvalidPathRoot = ASTRAL_MODEL_PATH_ROOT_DOWNLOAD + sizeof(uint32_t);
+
+    desc.size = kInvalidResolveDescSize;
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+
+    desc = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_DOWNLOAD, "model.gguf");
+    desc.flags = kInvalidResolveFlags;
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+
+    desc = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_DOWNLOAD, "model.gguf");
+    desc.download_root = null_span();
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+
+    desc = path_resolve_desc(kInvalidPathRoot, "model.gguf");
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+
+    desc = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_RAW, "");
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+}
 
 TEST(abi_invalid_args_core_and_backend) {
     astral_version(nullptr, nullptr, nullptr);

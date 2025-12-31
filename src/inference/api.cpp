@@ -24,6 +24,7 @@
 #include "../core/model_sources.hpp"
 #include "../core/model_load_config.hpp"
 
+#include <cstdint>
 #include <cstring>
 
 namespace {
@@ -83,6 +84,113 @@ inline AstralErr require_model_ops(AstralHandle model, astral::inference::Model*
     }
 
     *out_model = m;
+    return ASTRAL_OK;
+}
+
+constexpr uint8_t kPosixPathSeparator = static_cast<uint8_t>('/');
+constexpr uint8_t kWindowsPathSeparator = static_cast<uint8_t>('\\');
+constexpr uint8_t kWindowsDriveSeparator = static_cast<uint8_t>(':');
+constexpr uint32_t kPathFirstByteOffset = 0;
+constexpr uint32_t kPathLastByteBackstep = 1;
+constexpr uint32_t kPathNoSeparatorBytes = 0;
+constexpr uint32_t kWindowsDriveLetterOffset = 1;
+constexpr uint32_t kWindowsDrivePathOffset = 2;
+constexpr uint32_t kMinimumWindowsDrivePathBytes = 3;
+constexpr uint32_t kPathJoinSeparatorBytes = 1;
+
+inline bool path_span_valid(AstralSpanU8 s) {
+    return s.len == 0 || s.data != nullptr;
+}
+
+inline bool path_span_has_bytes(AstralSpanU8 s) {
+    return s.data != nullptr && s.len != 0;
+}
+
+inline bool path_is_separator(uint8_t c) {
+    return c == kPosixPathSeparator || c == kWindowsPathSeparator;
+}
+
+inline bool path_is_windows_drive_letter(uint8_t c) {
+    return (c >= static_cast<uint8_t>('A') && c <= static_cast<uint8_t>('Z')) ||
+        (c >= static_cast<uint8_t>('a') && c <= static_cast<uint8_t>('z'));
+}
+
+inline bool path_is_absolute(AstralSpanU8 path) {
+    if (!path_span_has_bytes(path)) {
+        return false;
+    }
+
+    if (path_is_separator(path.data[kPathFirstByteOffset])) {
+        return true;
+    }
+
+    if (path.len < kMinimumWindowsDrivePathBytes) {
+        return false;
+    }
+
+    return path_is_windows_drive_letter(path.data[kPathFirstByteOffset]) &&
+        path.data[kWindowsDriveLetterOffset] == kWindowsDriveSeparator &&
+        path_is_separator(path.data[kWindowsDrivePathOffset]);
+}
+
+inline bool path_ends_with_separator(AstralSpanU8 path) {
+    return path_span_has_bytes(path) && path_is_separator(path.data[path.len - kPathLastByteBackstep]);
+}
+
+inline AstralErr path_resolve_root(const AstralModelPathResolveDesc& desc, AstralSpanU8* out_root) {
+    switch (desc.root) {
+    case ASTRAL_MODEL_PATH_ROOT_CONTENT:
+        *out_root = desc.content_root;
+        return ASTRAL_OK;
+    case ASTRAL_MODEL_PATH_ROOT_SAVED:
+        *out_root = desc.saved_root;
+        return ASTRAL_OK;
+    case ASTRAL_MODEL_PATH_ROOT_CACHE:
+        *out_root = desc.cache_root;
+        return ASTRAL_OK;
+    case ASTRAL_MODEL_PATH_ROOT_DOWNLOAD:
+        *out_root = desc.download_root;
+        return ASTRAL_OK;
+    default:
+        return ASTRAL_E_INVALID;
+    }
+}
+
+inline AstralErr path_copy_span(AstralSpanU8 src, AstralMutSpanU8 out_path, uint32_t* out_len) {
+    *out_len = src.len;
+    if (out_path.data == nullptr || out_path.len < src.len) {
+        return ASTRAL_E_NOMEM;
+    }
+    std::memcpy(out_path.data, src.data, src.len);
+    return ASTRAL_OK;
+}
+
+inline AstralErr path_join_spans(
+    AstralSpanU8 root,
+    AstralSpanU8 path,
+    AstralMutSpanU8 out_path,
+    uint32_t* out_len) {
+    const uint32_t separator_bytes = path_ends_with_separator(root) ? kPathNoSeparatorBytes : kPathJoinSeparatorBytes;
+    const uint64_t required =
+        static_cast<uint64_t>(root.len) + static_cast<uint64_t>(separator_bytes) + static_cast<uint64_t>(path.len);
+    if (required > UINT32_MAX) {
+        *out_len = UINT32_MAX;
+        return ASTRAL_E_NOMEM;
+    }
+
+    *out_len = static_cast<uint32_t>(required);
+    if (out_path.data == nullptr || out_path.len < *out_len) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    uint8_t* cursor = out_path.data;
+    std::memcpy(cursor, root.data, root.len);
+    cursor += root.len;
+    if (separator_bytes != kPathNoSeparatorBytes) {
+        *cursor = kPosixPathSeparator;
+        ++cursor;
+    }
+    std::memcpy(cursor, path.data, path.len);
     return ASTRAL_OK;
 }
 
@@ -534,6 +642,59 @@ extern "C" {
 // ============================================================================
 // Model API
 // ============================================================================
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_path_resolve(
+    const AstralModelPathResolveDesc* desc,
+    AstralMutSpanU8 out_path,
+    uint32_t* out_len
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (desc == nullptr || out_len == nullptr) {
+        set_err_invalid("desc/out_len");
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->size != sizeof(AstralModelPathResolveDesc)) {
+        set_err_invalid("desc.size");
+        return ASTRAL_E_INVALID;
+    }
+    if (desc->flags != ASTRAL_MODEL_PATH_RESOLVE_NONE || desc->_reserved0 != 0u) {
+        set_err_invalid("desc.flags");
+        return ASTRAL_E_INVALID;
+    }
+    if (!path_span_has_bytes(desc->path)) {
+        set_err_invalid("desc.path");
+        return ASTRAL_E_INVALID;
+    }
+    if (!path_span_valid(desc->content_root) ||
+        !path_span_valid(desc->saved_root) ||
+        !path_span_valid(desc->cache_root) ||
+        !path_span_valid(desc->download_root)) {
+        set_err_invalid("desc.root");
+        return ASTRAL_E_INVALID;
+    }
+
+    if (desc->root == ASTRAL_MODEL_PATH_ROOT_RAW || path_is_absolute(desc->path)) {
+        const AstralErr err = path_copy_span(desc->path, out_path, out_len);
+        if (err != ASTRAL_OK) {
+            set_err_code(err);
+        }
+        return err;
+    }
+
+    AstralSpanU8 root{};
+    AstralErr err = path_resolve_root(*desc, &root);
+    if (err != ASTRAL_OK || !path_span_has_bytes(root)) {
+        set_err_invalid("desc.root");
+        return ASTRAL_E_INVALID;
+    }
+
+    err = path_join_spans(root, desc->path, out_path, out_len);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_load(
     const AstralModelDesc* desc,
