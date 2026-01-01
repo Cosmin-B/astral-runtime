@@ -4,11 +4,12 @@ Memory allocators used by Astral's frame, pool, and tracking gates.
 
 ## Overview
 
-This subsystem provides three core components:
+This subsystem provides four core components:
 
 1. **FrameAllocator** - Linear/bump allocator for per-frame short-lived objects
-2. **ObjectPool** - Fixed-size object recycling with a small spinlock-protected intrusive freelist
-3. **MemoryStats** - POD structure for tracking allocator usage
+2. **ObjectPool** - Fixed-size shared recycling with a small spinlock-protected intrusive freelist
+3. **LocalObjectPool** - Fixed-size owner-local recycling with no atomics or locks
+4. **MemoryStats** - POD structure for tracking allocator usage
 
 ## Design Principles
 
@@ -99,6 +100,40 @@ if (tok) {
 - `memory_order_acquire` when taking the pool lock
 - `memory_order_release` when releasing the pool lock
 
+### LocalObjectPool
+
+Owner-local object pool using the same intrusive freelist layout without locks,
+atomics, syscalls, or dynamic allocation after construction.
+
+**Features**:
+- O(1) acquire and release
+- Fixed capacity
+- No synchronization
+- No null check on release; callers release objects acquired from the same pool
+
+**Usage**:
+```cpp
+#include "memory/object_pool.hpp"
+
+struct ScratchNode {
+    void* next;
+    uint64_t value;
+};
+
+constexpr size_t kScratchNodeCapacity = 1024;
+constexpr uint64_t kScratchValue = 42;
+
+LocalObjectPool<ScratchNode, kScratchNodeCapacity> pool;
+ScratchNode* node = pool.acquire();
+if (node != nullptr) {
+    node->value = kScratchValue;
+    pool.release(node);
+}
+```
+
+Use this for owner-local hot paths where ownership is already validated. Use
+`ObjectPool` when several threads must share the same backing storage.
+
 ### MemoryStats
 
 POD structure for tracking allocator usage (debugging, profiling, telemetry).
@@ -136,6 +171,7 @@ ctest --preset release-with-tests -R '^test_memory$' --output-on-failure
 Tests cover:
 - FrameAllocator: basic allocation, reset, aligned output from aligned and unaligned backing memory, out-of-memory
 - ObjectPool: basic acquire/release, capacity limits, thread-safety
+- LocalObjectPool: basic acquire/release, capacity limits, reuse order
 - MemoryStats: size validation, field access
 
 ## Performance Characteristics
@@ -151,6 +187,11 @@ Tests cover:
 - **Acquire/release (contended)**: measured by `--only alloc --mpsc-producers <threads>`
 - **Overhead**: 0 bytes (intrusive freelist)
 - **Cache**: Random access pattern (pointer chasing)
+
+### LocalObjectPool
+- **Acquire/release**: measured by `--only alloc`
+- **Overhead**: 0 bytes (intrusive freelist)
+- **Cache**: Owner-local freelist, no cache-line transfer from synchronization
 
 ## Integration with Platform VM API
 

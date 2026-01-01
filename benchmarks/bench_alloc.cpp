@@ -77,6 +77,8 @@ struct PoolNode {
     uint8_t payload[48];
 };
 
+constexpr size_t kPoolNodeCapacity = 4096;
+
 inline void do_not_optimize_ptr(const void* p) {
 #if defined(__GNUC__) || defined(__clang__)
     __asm__ __volatile__("" ::"r"(p) : "memory");
@@ -134,7 +136,7 @@ BenchResult bench_frame_allocator(uint64_t iters, uint32_t size) {
 }
 
 BenchResult bench_object_pool_single(uint64_t iters) {
-    astral::memory::ObjectPool<PoolNode, 4096> pool;
+    astral::memory::ObjectPool<PoolNode, kPoolNodeCapacity> pool;
     BenchResult r{};
     r.name = "object_pool acquire/release";
     r.ops = iters * 2;
@@ -162,9 +164,38 @@ BenchResult bench_object_pool_single(uint64_t iters) {
     return r;
 }
 
+BenchResult bench_local_object_pool_single(uint64_t iters) {
+    astral::memory::LocalObjectPool<PoolNode, kPoolNodeCapacity> pool;
+    BenchResult r{};
+    r.name = "local_object_pool acquire/release";
+    r.ops = iters * 2;
+
+    volatile PoolNode* sink = nullptr;
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+
+    for (uint64_t i = 0; i < iters; ++i) {
+        PoolNode* node = pool.acquire();
+        if (node != nullptr) {
+            node->a = i;
+            sink = node;
+            do_not_optimize_ptr(node);
+            pool.release(node);
+        }
+    }
+
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+    (void)sink;
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    return r;
+}
+
 BenchResult bench_object_pool_contended(uint64_t iters, uint32_t threads) {
     constexpr uint32_t kMaxThreads = 16;
-    astral::memory::ObjectPool<PoolNode, 4096> pool;
+    astral::memory::ObjectPool<PoolNode, kPoolNodeCapacity> pool;
     BenchResult r{};
     r.name = "object_pool contended";
 

@@ -10,6 +10,10 @@
 
 namespace astral::memory {
 
+inline constexpr size_t kObjectPoolCacheLineBytes = 64;
+inline constexpr size_t kObjectPoolPointerBitsForCounter = 24;
+inline constexpr size_t kObjectPoolMaxObjects = size_t{1} << kObjectPoolPointerBitsForCounter;
+
 /// ObjectPool - Thread-safe object pool using intrusive freelist
 ///
 /// Design:
@@ -44,7 +48,7 @@ public:
     static_assert(MaxObjects > 0,
                   "Pool must have at least one object");
 
-    static_assert(MaxObjects <= (1u << 24),
+    static_assert(MaxObjects <= kObjectPoolMaxObjects,
                   "Pool size limited to 16M objects (ABA counter uses upper bits)");
 
     /// Constructor - initializes pool with all objects in freelist
@@ -109,7 +113,7 @@ public:
 
 private:
     // Backing storage for objects (cache-line aligned)
-    alignas(64) T storage_[MaxObjects];
+    alignas(kObjectPoolCacheLineBytes) T storage_[MaxObjects];
 
     // Freelist head (protected by table_lock_)
     T* head_ = nullptr;
@@ -134,6 +138,61 @@ private:
         table_lock_.clear(std::memory_order_release);
         astral::platform::cpu_signal_event();
     }
+};
+
+template<typename T, size_t MaxObjects>
+class LocalObjectPool {
+public:
+    static_assert(sizeof(T) >= sizeof(void*),
+                  "Object type must be at least pointer-sized for intrusive freelist");
+
+    static_assert(alignof(T) >= alignof(void*),
+                  "Object type alignment must be at least pointer alignment");
+
+    static_assert(MaxObjects > 0,
+                  "Pool must have at least one object");
+
+    LocalObjectPool() noexcept {
+        for (size_t i = 0; i < MaxObjects; ++i) {
+            T* obj = &storage_[i];
+            void** next_ptr = reinterpret_cast<void**>(obj);
+
+            if (i + kNextObjectStep < MaxObjects) {
+                *next_ptr = &storage_[i + kNextObjectStep];
+            } else {
+                *next_ptr = nullptr;
+            }
+        }
+
+        head_ = &storage_[0];
+    }
+
+    T* acquire() noexcept {
+        T* obj = head_;
+        if (obj == nullptr) ASTRAL_UNLIKELY {
+            return nullptr;
+        }
+
+        void** next_ptr = reinterpret_cast<void**>(obj);
+        head_ = static_cast<T*>(*next_ptr);
+        return obj;
+    }
+
+    void release(T* obj) noexcept {
+        void** next_ptr = reinterpret_cast<void**>(obj);
+        *next_ptr = head_;
+        head_ = obj;
+    }
+
+    static constexpr size_t capacity() noexcept {
+        return MaxObjects;
+    }
+
+private:
+    static constexpr size_t kNextObjectStep = 1;
+
+    alignas(kObjectPoolCacheLineBytes) T storage_[MaxObjects];
+    T* head_ = nullptr;
 };
 
 } // namespace astral::memory
