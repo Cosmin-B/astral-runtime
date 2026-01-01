@@ -44,9 +44,9 @@ checksum validation.
 
 Unreal and Unity wrappers should use preset names only for setup tools,
 samples, and editor workflows. Runtime model loading still receives a concrete
-filesystem path through the native model descriptor. Packaged builds should
-resolve content or persistent-download paths in engine code before crossing the
-C ABI.
+filesystem path through the native model descriptor. Packaged builds can pass
+engine root directories to `astral_model_path_resolve` before load so Unity,
+Unreal, and native hosts share the same UTF-8 path sizing and join behavior.
 
 ## Validation
 
