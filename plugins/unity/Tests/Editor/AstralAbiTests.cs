@@ -59,6 +59,8 @@ namespace Astral.Runtime.Tests
 
             int expectedModelDesc = IntPtr.Size == 8 ? 168 : 116;
             Assert.AreEqual(expectedModelDesc, Marshal.SizeOf<AstralNative.AstralModelDesc>());
+            int expectedModelPathResolveDesc = IntPtr.Size == 8 ? 96 : 56;
+            Assert.AreEqual(expectedModelPathResolveDesc, Marshal.SizeOf<AstralNative.AstralModelPathResolveDesc>());
 
             int expectedImageDesc = IntPtr.Size == 8 ? 64 : 52;
             int expectedAudioDesc = IntPtr.Size == 8 ? 72 : 60;
@@ -73,6 +75,63 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(16, Marshal.SizeOf<AstralNative.AstralModelLimits>());
             Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralSamplerDesc>());
             Assert.AreEqual(40, Marshal.SizeOf<AstralNative.AstralStats>());
+        }
+
+        [Test]
+        public void ModelPath_Raw_ResolvesThroughNativeAbi()
+        {
+            RequireNative();
+
+            const string modelPath = "Models/model.gguf";
+            Assert.AreEqual(modelPath, AstralModelPath.Raw(modelPath).Resolve());
+        }
+
+        [Test]
+        public void ModelPath_NativeResolver_JoinsContentRoot()
+        {
+            RequireNative();
+
+            const string relativePath = "Models/model.gguf";
+            const string contentRoot = "/project/content";
+            const string expectedPath = "/project/content/Models/model.gguf";
+            using var pathBytes = new NativeArray<byte>(Encoding.UTF8.GetBytes(relativePath), Allocator.Temp);
+            using var contentRootBytes = new NativeArray<byte>(Encoding.UTF8.GetBytes(contentRoot), Allocator.Temp);
+
+            AstralNative.AstralModelPathResolveDesc desc = new AstralNative.AstralModelPathResolveDesc
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralModelPathResolveDesc>(),
+                root = AstralNative.AstralModelPathRoot.Content,
+                path = AstralNative.AstralSpanU8.FromNativeArray(pathBytes),
+                content_root = AstralNative.AstralSpanU8.FromNativeArray(contentRootBytes),
+                flags = AstralNative.AstralModelPathResolveFlags.None
+            };
+
+            uint requiredBytes = 0;
+            int err = AstralNative.astral_model_path_resolve(
+                ref desc,
+                new AstralNative.AstralMutSpanU8 { data = IntPtr.Zero, len = 0 },
+                out requiredBytes);
+            Assert.AreEqual(AstralNative.ASTRAL_E_NOMEM, err);
+            Assert.AreEqual(Encoding.UTF8.GetByteCount(expectedPath), requiredBytes);
+
+            byte[] output = new byte[(int)requiredBytes];
+            GCHandle handle = GCHandle.Alloc(output, GCHandleType.Pinned);
+            try
+            {
+                AstralNative.AstralMutSpanU8 outSpan = new AstralNative.AstralMutSpanU8
+                {
+                    data = handle.AddrOfPinnedObject(),
+                    len = requiredBytes
+                };
+                err = AstralNative.astral_model_path_resolve(ref desc, outSpan, out requiredBytes);
+            }
+            finally
+            {
+                handle.Free();
+            }
+
+            Assert.AreEqual(AstralNative.ASTRAL_OK, err);
+            Assert.AreEqual(expectedPath, Encoding.UTF8.GetString(output));
         }
 
         [Test]

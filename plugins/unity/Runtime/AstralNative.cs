@@ -381,6 +381,34 @@ namespace Astral.Runtime
             IO = 2
         }
 
+        public enum AstralModelPathRoot : uint
+        {
+            Raw = 0,
+            Content = 1,
+            Saved = 2,
+            Cache = 3,
+            Download = 4
+        }
+
+        public enum AstralModelPathResolveFlags : uint
+        {
+            None = 0
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralModelPathResolveDesc
+        {
+            public uint size;
+            public AstralModelPathRoot root;
+            public AstralSpanU8 path;
+            public AstralSpanU8 content_root;
+            public AstralSpanU8 saved_root;
+            public AstralSpanU8 cache_root;
+            public AstralSpanU8 download_root;
+            public AstralModelPathResolveFlags flags;
+            public uint _reserved0;
+        }
+
         [StructLayout(LayoutKind.Sequential)]
         public struct AstralModelIO
         {
@@ -487,6 +515,12 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_model_load2(ref AstralModelDesc desc, out AstralHandle out_model);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_path_resolve(
+            ref AstralModelPathResolveDesc desc,
+            AstralMutSpanU8 out_path,
+            out uint out_len);
 
         /// <summary>
         /// Release a model.
