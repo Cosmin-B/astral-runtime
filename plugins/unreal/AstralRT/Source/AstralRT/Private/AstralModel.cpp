@@ -2,6 +2,8 @@
 #include "AstralLog.h"
 #include "IAstralRT.h"
 
+#include "Containers/Array.h"
+#include "Containers/StringConv.h"
 #include "Containers/UnrealString.h"
 #include "HAL/Platform.h"
 #include "Misc/Paths.h"
@@ -10,6 +12,11 @@
 #include "astral_rt.h"
 
 namespace {
+
+static constexpr int32 kInlineResolvedPathBytes = 512;
+static constexpr int32 kInlineDetokenizedBytes = 512;
+static constexpr int32 kNoUtf8Chars = 0;
+static constexpr uint32 kNoUtf8Bytes = 0;
 
 static FString path_root_dir(EAstralUnrealPathRoot Root)
 {
@@ -27,20 +34,87 @@ static FString path_root_dir(EAstralUnrealPathRoot Root)
     }
 }
 
+static AstralModelPathRoot native_path_root(EAstralUnrealPathRoot Root)
+{
+    switch (Root)
+    {
+    case EAstralUnrealPathRoot::ProjectContent:
+        return ASTRAL_MODEL_PATH_ROOT_CONTENT;
+    case EAstralUnrealPathRoot::ProjectSaved:
+        return ASTRAL_MODEL_PATH_ROOT_SAVED;
+    case EAstralUnrealPathRoot::ProjectPersistentDownload:
+        return ASTRAL_MODEL_PATH_ROOT_DOWNLOAD;
+    case EAstralUnrealPathRoot::Raw:
+    default:
+        return ASTRAL_MODEL_PATH_ROOT_RAW;
+    }
+}
+
+static AstralSpanU8 utf8_span(const FTCHARToUTF8& Utf8)
+{
+    AstralSpanU8 Span{};
+    if (Utf8.Length() > kNoUtf8Chars)
+    {
+        Span.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+        Span.len = static_cast<uint32_t>(Utf8.Length());
+    }
+    return Span;
+}
+
 static FString resolve_unreal_path(const FString& Path, EAstralUnrealPathRoot RootKind)
 {
-    if (Path.IsEmpty() || FPaths::IsRelative(Path) == false)
+    if (Path.IsEmpty())
     {
         return Path;
     }
 
-    const FString Root = path_root_dir(RootKind);
-    if (Root.IsEmpty())
+    const FString ContentRoot = path_root_dir(EAstralUnrealPathRoot::ProjectContent);
+    const FString SavedRoot = path_root_dir(EAstralUnrealPathRoot::ProjectSaved);
+    const FString DownloadRoot = path_root_dir(EAstralUnrealPathRoot::ProjectPersistentDownload);
+
+    FTCHARToUTF8 PathUtf8(*Path);
+    FTCHARToUTF8 ContentRootUtf8(*ContentRoot);
+    FTCHARToUTF8 SavedRootUtf8(*SavedRoot);
+    FTCHARToUTF8 DownloadRootUtf8(*DownloadRoot);
+
+    AstralModelPathResolveDesc Desc{};
+    Desc.size = sizeof(AstralModelPathResolveDesc);
+    Desc.root = native_path_root(RootKind);
+    Desc.path = utf8_span(PathUtf8);
+    Desc.content_root = utf8_span(ContentRootUtf8);
+    Desc.saved_root = utf8_span(SavedRootUtf8);
+    Desc.cache_root = utf8_span(SavedRootUtf8);
+    Desc.download_root = utf8_span(DownloadRootUtf8);
+
+    uint32 RequiredBytes = kNoUtf8Bytes;
+    AstralMutSpanU8 EmptyOut{};
+    AstralErr Err = astral_model_path_resolve(&Desc, EmptyOut, &RequiredBytes);
+    if (Err != ASTRAL_E_NOMEM && Err != ASTRAL_OK)
     {
-        return FPaths::ConvertRelativePathToFull(Path);
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_model_path_resolve failed (%d)"), static_cast<int32>(Err));
+        return FString();
+    }
+    if (RequiredBytes > static_cast<uint32>(TNumericLimits<int32>::Max()))
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: resolved path is too large"));
+        return FString();
     }
 
-    return FPaths::ConvertRelativePathToFull(FPaths::Combine(Root, Path));
+    TArray<uint8, TInlineAllocator<kInlineResolvedPathBytes>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(RequiredBytes));
+
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = RequiredBytes;
+    Err = astral_model_path_resolve(&Desc, Out, &RequiredBytes);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_model_path_resolve copy failed (%d)"), static_cast<int32>(Err));
+        return FString();
+    }
+
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), static_cast<int32>(RequiredBytes));
+    return FString(Converted.Length(), Converted.Get());
 }
 
 static FString resolve_model_path(const FAstralModelDesc& Desc)
@@ -80,6 +154,8 @@ bool UAstralModel::IsValid() const
 
 bool UAstralModel::Load(const FAstralModelDesc& Desc)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_Load);
+
     Release();
 
     if (!IAstralRT::IsAvailable() || !IAstralRT::Get().IsInitialized())
@@ -340,7 +416,7 @@ bool UAstralModel::Detokenize(const TArray<int32>& Tokens, FString& OutText) con
         return true;
     }
 
-    TArray<uint8, TInlineAllocator<512>> Bytes;
+    TArray<uint8, TInlineAllocator<kInlineDetokenizedBytes>> Bytes;
     Bytes.SetNumUninitialized(static_cast<int32>(ByteCount));
     AstralMutSpanU8 Out{};
     Out.data = Bytes.GetData();
@@ -365,6 +441,8 @@ bool UAstralModel::Detokenize(const TArray<int32>& Tokens, FString& OutText) con
 
 bool UAstralModel::InitMedia(const FAstralModelMediaDesc& Desc)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_InitMedia);
+
     if (!IsValid())
     {
         return false;

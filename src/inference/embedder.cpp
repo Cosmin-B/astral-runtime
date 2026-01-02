@@ -13,8 +13,11 @@ namespace astral::inference {
 
 constexpr uint32_t kMaxEmbedTokens = 2048;
 constexpr uint32_t kMaxInflight = 8;
+constexpr uint32_t kTicketHistoryMultiplier = 2;
+constexpr uint32_t kCompletedTicketHistory = kMaxInflight * kTicketHistoryMultiplier;
 constexpr uint32_t kTicketIndexMask = 0xFFFFu;
 constexpr uint32_t kTicketIndexBits = 16;
+constexpr uint64_t kNoTicket = 0;
 
 struct Embedder {
     enum class SlotState : uint32_t {
@@ -49,6 +52,11 @@ struct Embedder {
         uint32_t media_buf_align;
     };
 
+    struct CompletedTicket {
+        uint64_t ticket;
+        AstralErr err;
+    };
+
     AstralHandle handle;
     Model* model;
     uint32_t dim;
@@ -63,6 +71,9 @@ struct Embedder {
     std::atomic_flag free_lock = ATOMIC_FLAG_INIT;
     uint32_t free_count;
     uint32_t free_stack[kMaxInflight];
+    std::atomic_flag completed_lock = ATOMIC_FLAG_INIT;
+    uint32_t completed_cursor;
+    CompletedTicket completed[kCompletedTicketHistory];
 
     Slot slots[kMaxInflight];
 };
@@ -90,6 +101,29 @@ static void unlock(std::atomic_flag* f) {
 
 static uint32_t ticket_index(uint64_t ticket) {
     return static_cast<uint32_t>(ticket & kTicketIndexMask);
+}
+
+static void completed_ticket_store(Embedder* e, uint64_t ticket, AstralErr err) {
+    lock(&e->completed_lock);
+    e->completed[e->completed_cursor] = Embedder::CompletedTicket{ticket, err};
+    ++e->completed_cursor;
+    if (e->completed_cursor == kCompletedTicketHistory) {
+        e->completed_cursor = 0;
+    }
+    unlock(&e->completed_lock);
+}
+
+static bool completed_ticket_find(Embedder* e, uint64_t ticket, AstralErr* out_err) {
+    lock(&e->completed_lock);
+    for (uint32_t i = 0; i < kCompletedTicketHistory; ++i) {
+        if (e->completed[i].ticket == ticket) {
+            *out_err = e->completed[i].err;
+            unlock(&e->completed_lock);
+            return true;
+        }
+    }
+    unlock(&e->completed_lock);
+    return false;
 }
 
 static void slot_clear_buffers(Embedder::Slot& slot) {
@@ -153,6 +187,10 @@ AstralErr embedder_create(Model* model, AstralHandle* out_embedder) {
     e->vectors = nullptr;
     e->ticket_counter.store(1, std::memory_order_relaxed);
     e->free_count = 0;
+    e->completed_cursor = 0;
+    for (uint32_t i = 0; i < kCompletedTicketHistory; ++i) {
+        e->completed[i] = Embedder::CompletedTicket{kNoTicket, ASTRAL_OK};
+    }
 
     for (uint32_t i = 0; i < kMaxInflight; ++i) {
         e->backend_ctx[i] = nullptr;
@@ -571,7 +609,7 @@ AstralErr embedder_cancel(Embedder* embedder, uint64_t ticket) {
 
     Embedder::Slot& slot = e->slots[idx];
     if (slot.ticket.load(std::memory_order_acquire) != ticket) {
-        return ASTRAL_E_INVALID;
+        return ASTRAL_E_NOT_FOUND;
     }
 
     lock(&slot.lock);
@@ -582,7 +620,8 @@ AstralErr embedder_cancel(Embedder* embedder, uint64_t ticket) {
     }
 
     slot_clear_buffers(slot);
-    slot.ticket.store(0, std::memory_order_release);
+    completed_ticket_store(e, ticket, ASTRAL_E_CANCELED);
+    slot.ticket.store(kNoTicket, std::memory_order_release);
     slot.state.store(static_cast<uint32_t>(Embedder::SlotState::Free), std::memory_order_release);
     unlock(&slot.lock);
 
@@ -607,7 +646,11 @@ AstralErr embedder_collect(Embedder* embedder, uint64_t ticket, AstralMutSpanU8 
 
     Embedder::Slot& slot = e->slots[idx];
     if (slot.ticket.load(std::memory_order_acquire) != ticket) {
-        return ASTRAL_E_INVALID;
+        AstralErr completed_err = ASTRAL_E_NOT_FOUND;
+        if (completed_ticket_find(e, ticket, &completed_err)) {
+            return completed_err;
+        }
+        return ASTRAL_E_NOT_FOUND;
     }
 
     lock(&slot.lock);
@@ -618,8 +661,8 @@ AstralErr embedder_collect(Embedder* embedder, uint64_t ticket, AstralMutSpanU8 
         unlock(&slot.lock);
 
         slot_clear_buffers(slot);
-        // Free slot before returning.
-        slot.ticket.store(0, std::memory_order_release);
+        completed_ticket_store(e, ticket, ASTRAL_E_NOT_FOUND);
+        slot.ticket.store(kNoTicket, std::memory_order_release);
         slot.state.store(static_cast<uint32_t>(Embedder::SlotState::Free), std::memory_order_release);
         lock(&e->free_lock);
         e->free_stack[e->free_count++] = idx;
@@ -695,7 +738,8 @@ AstralErr embedder_collect(Embedder* embedder, uint64_t ticket, AstralMutSpanU8 
     unlock(&slot.lock);
 
     slot_clear_buffers(slot);
-    slot.ticket.store(0, std::memory_order_release);
+    completed_ticket_store(e, ticket, ASTRAL_E_NOT_FOUND);
+    slot.ticket.store(kNoTicket, std::memory_order_release);
     slot.state.store(static_cast<uint32_t>(Embedder::SlotState::Free), std::memory_order_release);
     lock(&e->free_lock);
     e->free_stack[e->free_count++] = idx;
