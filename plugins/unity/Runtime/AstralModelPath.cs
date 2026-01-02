@@ -1,6 +1,7 @@
 using System;
-using System.IO;
+using System.Runtime.InteropServices;
 using UnityEngine;
+using Unity.Collections;
 
 namespace Astral.Runtime
 {
@@ -9,7 +10,8 @@ namespace Astral.Runtime
         Raw,
         StreamingAssets,
         PersistentData,
-        TemporaryCache
+        TemporaryCache,
+        Download
     }
 
     [Serializable]
@@ -44,33 +46,110 @@ namespace Astral.Runtime
             return new AstralModelPath(AstralModelPathRoot.TemporaryCache, path);
         }
 
+        public static AstralModelPath Download(string path)
+        {
+            return new AstralModelPath(AstralModelPathRoot.Download, path);
+        }
+
         public string Resolve()
         {
             if (string.IsNullOrEmpty(path))
             {
                 throw new ArgumentNullException(nameof(path));
             }
-            if (Path.IsPathRooted(path) || root == AstralModelPathRoot.Raw)
-            {
-                return path;
-            }
 
-            return Path.GetFullPath(Path.Combine(RootPath(root), path));
+            NativeArray<byte> pathBytes = default;
+            NativeArray<byte> contentRootBytes = default;
+            NativeArray<byte> savedRootBytes = default;
+            NativeArray<byte> cacheRootBytes = default;
+            NativeArray<byte> downloadRootBytes = default;
+
+            try
+            {
+                AstralNative.AstralModelPathResolveDesc desc = new AstralNative.AstralModelPathResolveDesc
+                {
+                    size = (uint)Marshal.SizeOf<AstralNative.AstralModelPathResolveDesc>(),
+                    root = ToNativeRoot(root),
+                    path = AstralNative.AstralSpanU8.FromString(path, out pathBytes),
+                    content_root = AstralNative.AstralSpanU8.FromString(Application.streamingAssetsPath, out contentRootBytes),
+                    saved_root = AstralNative.AstralSpanU8.FromString(Application.persistentDataPath, out savedRootBytes),
+                    cache_root = AstralNative.AstralSpanU8.FromString(Application.temporaryCachePath, out cacheRootBytes),
+                    download_root = AstralNative.AstralSpanU8.FromString(Application.persistentDataPath, out downloadRootBytes),
+                    flags = AstralNative.AstralModelPathResolveFlags.None
+                };
+
+                uint requiredBytes = 0;
+                int err = AstralNative.astral_model_path_resolve(
+                    ref desc,
+                    new AstralNative.AstralMutSpanU8 { data = IntPtr.Zero, len = 0 },
+                    out requiredBytes);
+                if (err != AstralNative.ASTRAL_E_NOMEM && err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"Failed to resolve model path '{path}': {AstralRuntime.GetErrorString(err)}", err);
+                }
+                if (requiredBytes > MaxManagedPathBytes)
+                {
+                    throw new AstralException("Resolved model path is too large for a managed string.", AstralNative.ASTRAL_E_NOMEM);
+                }
+
+                int outputBytes = (int)requiredBytes;
+                byte[] output = new byte[outputBytes];
+                GCHandle handle = GCHandle.Alloc(output, GCHandleType.Pinned);
+                try
+                {
+                    AstralNative.AstralMutSpanU8 outSpan = new AstralNative.AstralMutSpanU8
+                    {
+                        data = handle.AddrOfPinnedObject(),
+                        len = requiredBytes
+                    };
+                    err = AstralNative.astral_model_path_resolve(ref desc, outSpan, out requiredBytes);
+                    if (err != AstralNative.ASTRAL_OK)
+                    {
+                        throw new AstralException($"Failed to resolve model path '{path}': {AstralRuntime.GetErrorString(err)}", err);
+                    }
+                }
+                finally
+                {
+                    handle.Free();
+                }
+
+                return System.Text.Encoding.UTF8.GetString(output);
+            }
+            finally
+            {
+                DisposeIfCreated(pathBytes);
+                DisposeIfCreated(contentRootBytes);
+                DisposeIfCreated(savedRootBytes);
+                DisposeIfCreated(cacheRootBytes);
+                DisposeIfCreated(downloadRootBytes);
+            }
         }
 
-        private static string RootPath(AstralModelPathRoot root)
+        private const uint MaxManagedPathBytes = int.MaxValue;
+
+        private static AstralNative.AstralModelPathRoot ToNativeRoot(AstralModelPathRoot root)
         {
             switch (root)
             {
                 case AstralModelPathRoot.StreamingAssets:
-                    return Application.streamingAssetsPath;
+                    return AstralNative.AstralModelPathRoot.Content;
                 case AstralModelPathRoot.PersistentData:
-                    return Application.persistentDataPath;
+                    return AstralNative.AstralModelPathRoot.Saved;
                 case AstralModelPathRoot.TemporaryCache:
-                    return Application.temporaryCachePath;
+                    return AstralNative.AstralModelPathRoot.Cache;
+                case AstralModelPathRoot.Download:
+                    return AstralNative.AstralModelPathRoot.Download;
                 case AstralModelPathRoot.Raw:
                 default:
-                    return string.Empty;
+                    return AstralNative.AstralModelPathRoot.Raw;
+            }
+        }
+
+        private static void DisposeIfCreated(NativeArray<byte> bytes)
+        {
+            if (bytes.IsCreated)
+            {
+                bytes.Dispose();
             }
         }
     }
