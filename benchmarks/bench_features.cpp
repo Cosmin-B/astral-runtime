@@ -2,6 +2,7 @@
 #include "bench_common.hpp"
 
 #include "../include/astral_rt.h"
+#include "../src/platform/atomics.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -49,7 +50,7 @@ static constexpr uint32_t kBenchAgentMaxPromptBytes = 4096;
 static constexpr uint32_t kBenchAgentPromptCacheEntries = 4;
 static constexpr uint32_t kBenchAgentPromptCacheTokens = 256;
 static constexpr uint32_t kBenchAgentSeed = 11;
-static constexpr uint32_t kBenchAgentPollLimit = 1024;
+static constexpr uint32_t kBenchAgentPollLimit = 65536;
 static constexpr char kBenchMemoryCapacityEnv[] = "ASTRAL_BENCH_MEMORY_CAPACITY";
 static constexpr char kBenchMemoryDimEnv[] = "ASTRAL_BENCH_MEMORY_DIM";
 static constexpr char kBenchMemoryMetricEnv[] = "ASTRAL_BENCH_MEMORY_METRIC";
@@ -1098,6 +1099,7 @@ static BenchResult bench_agent_prompt_warmup_impl(uint64_t iters, bool use_promp
                 result.state == ASTRAL_SESSION_CANCELED) {
                 break;
             }
+            platform::cpu_pause();
         }
         if (result.state != ASTRAL_SESSION_COMPLETED) {
             r.ops = i;
