@@ -13,6 +13,8 @@ EXPECTED_ARG_COUNT = 2
 EXPECTED_QWEN_CONTEXT = 40960
 EXPECTED_QWEN_SIZE_BYTES = 639446688
 EXPECTED_EMBED_DIMENSION = 1024
+INVALID_CUSTOM_MIN_BYTES = 0
+VALID_CUSTOM_MIN_BYTES = 1
 MODEL_TYPE_EMBEDDING = "embedding"
 MODEL_TYPE_TEXT = "text"
 QWEN_TEXT_PRESET = "qwen3-0.6b-q8"
@@ -21,6 +23,10 @@ QWEN_TEXT_FILE = "Qwen3-0.6B-Q8_0.gguf"
 QWEN_TEXT_REPO = "Qwen/Qwen3-0.6B-GGUF"
 UNKNOWN_PRESET = "missing-preset"
 CUSTOM_OUTPUT_DIR = "build/model-preset-smoke"
+CUSTOM_MODEL_URL = "https://example.test/model.gguf"
+CUSTOM_MODEL_FILE = "model.gguf"
+CUSTOM_BAD_MODEL_FILE = "../model.gguf"
+CUSTOM_BAD_SHA256 = "abc"
 
 
 def run_tool(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -78,6 +84,51 @@ def main(argv: list[str]) -> int:
     unknown = run_tool(root, "download", "--preset", UNKNOWN_PRESET, "--dry-run", check=False)
     require(unknown.returncode == EXPECTED_USAGE_EXIT, "unknown preset should fail")
     require("Unknown preset" in unknown.stderr, "unknown preset error should name the problem")
+
+    bad_file = run_tool(
+        root,
+        "download",
+        "--url",
+        CUSTOM_MODEL_URL,
+        "--file",
+        CUSTOM_BAD_MODEL_FILE,
+        "--dry-run",
+        check=False,
+    )
+    require(bad_file.returncode == EXPECTED_USAGE_EXIT, "custom path traversal should fail")
+    require("custom filename" in bad_file.stderr, "custom path traversal error should name the filename")
+
+    bad_size = run_tool(
+        root,
+        "download",
+        "--url",
+        CUSTOM_MODEL_URL,
+        "--file",
+        CUSTOM_MODEL_FILE,
+        "--min-bytes",
+        str(INVALID_CUSTOM_MIN_BYTES),
+        "--dry-run",
+        check=False,
+    )
+    require(bad_size.returncode == EXPECTED_USAGE_EXIT, "custom non-positive min size should fail")
+    require("custom min-bytes" in bad_size.stderr, "custom min size error should name the field")
+
+    bad_sha = run_tool(
+        root,
+        "download",
+        "--url",
+        CUSTOM_MODEL_URL,
+        "--file",
+        CUSTOM_MODEL_FILE,
+        "--min-bytes",
+        str(VALID_CUSTOM_MIN_BYTES),
+        "--sha256",
+        CUSTOM_BAD_SHA256,
+        "--dry-run",
+        check=False,
+    )
+    require(bad_sha.returncode == EXPECTED_USAGE_EXIT, "custom short checksum should fail")
+    require("custom download" in bad_sha.stderr, "custom checksum error should name the download")
 
     return EXIT_OK
 

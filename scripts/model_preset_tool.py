@@ -18,6 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent
 DEFAULT_MANIFEST = SCRIPT_DIR / "model_presets.json"
+MANIFEST_VERSION = 1
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_RETRY_COUNT = 3
 DEFAULT_RETRY_BASE_SECONDS = 2
@@ -42,6 +43,7 @@ KNOWN_MODEL_TYPES = (MODEL_TYPE_TEXT, MODEL_TYPE_EMBEDDING, MODEL_TYPE_CUSTOM)
 LIST_FORMAT_TEXT = "text"
 LIST_FORMAT_JSON = "json"
 MODEL_TYPE_ALL = "all"
+SHA256_HEX_DIGITS = frozenset("0123456789abcdef")
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,25 @@ def _require_int(row: Dict[str, Any], key: str) -> int:
     return value
 
 
+def _require_sha256(value: str, owner: str) -> None:
+    if len(value) != SHA256_HEX_LENGTH:
+        raise ValueError(f"{owner} has invalid sha256 length")
+    if any(ch not in SHA256_HEX_DIGITS for ch in value):
+        raise ValueError(f"{owner} has non-lowercase sha256")
+
+
+def _require_positive_size(value: int, owner: str) -> None:
+    if value < MIN_CUSTOM_MODEL_BYTES:
+        raise ValueError(f"{owner} must be positive")
+
+
+def _require_gguf_filename(filename: str, owner: str) -> None:
+    if Path(filename).name != filename:
+        raise ValueError(f"{owner} must be a basename")
+    if not filename.endswith(GGUF_SUFFIX):
+        raise ValueError(f"{owner} must end with {GGUF_SUFFIX}")
+
+
 def _optional_int(row: Dict[str, Any], key: str) -> Optional[int]:
     value = row.get(key)
     if value is None:
@@ -129,8 +150,7 @@ def _load_presets(manifest_path: Path) -> List[Preset]:
             raise ValueError(f"duplicate preset name: {name}")
         seen.add(name)
         sha256 = _require_str(row, "sha256")
-        if len(sha256) != SHA256_HEX_LENGTH:
-            raise ValueError(f"preset {name} has invalid sha256 length")
+        _require_sha256(sha256, f"preset {name}")
         out.append(
             Preset(
                 name=name,
@@ -152,6 +172,14 @@ def _load_presets(manifest_path: Path) -> List[Preset]:
 
 
 def _validate_manifest(data: Dict[str, Any], presets: List[Preset]) -> None:
+    version = data.get("version")
+    if version != MANIFEST_VERSION:
+        raise ValueError(f"manifest has unsupported version: {version}")
+
+    download_dir = data.get("download_dir")
+    if not isinstance(download_dir, str) or not download_dir:
+        raise ValueError("manifest has invalid download_dir")
+
     default_name = data.get("default_preset")
     if not isinstance(default_name, str) or not default_name:
         raise ValueError("manifest has invalid default_preset")
@@ -163,13 +191,10 @@ def _validate_manifest(data: Dict[str, Any], presets: List[Preset]) -> None:
     for preset in presets:
         if preset.model_type not in KNOWN_MODEL_TYPES:
             raise ValueError(f"preset {preset.name} has unsupported model_type: {preset.model_type}")
-        if not preset.filename.endswith(GGUF_SUFFIX):
-            raise ValueError(f"preset {preset.name} filename must end with {GGUF_SUFFIX}")
+        _require_gguf_filename(preset.filename, f"preset {preset.name} filename")
         if preset.filename in filenames:
             raise ValueError(f"duplicate preset filename: {preset.filename}")
         filenames.add(preset.filename)
-        if any(ch not in "0123456789abcdef" for ch in preset.sha256):
-            raise ValueError(f"preset {preset.name} has non-lowercase sha256")
         if preset.model_type == MODEL_TYPE_EMBEDDING and preset.embedding_dimension is None:
             raise ValueError(f"embedding preset {preset.name} is missing embedding_dimension")
         if preset.model_type == MODEL_TYPE_TEXT and preset.embedding_dimension is not None:
@@ -386,6 +411,10 @@ def _select_download_preset(args: argparse.Namespace, presets: List[Preset], man
     if args.url or args.hf_repo or args.hf_file or args.file:
         if not args.file:
             raise ValueError("custom downloads require --file")
+        _require_gguf_filename(args.file, "custom filename")
+        _require_positive_size(args.min_bytes, "custom min-bytes")
+        if args.sha256:
+            _require_sha256(args.sha256, "custom download")
         if args.url:
             url = args.url
             repo = ""

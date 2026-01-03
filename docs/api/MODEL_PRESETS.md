@@ -33,6 +33,11 @@ command. `list --format json` prints the same records for every selected preset,
 optionally filtered by `--type text` or `--type embedding`. Engine setup tools
 can consume this output without scraping dry-run text.
 
+Custom downloads are accepted through `--url` or `--hf-repo` plus `--hf-file`.
+The wrapper rejects custom filenames that are not local `.gguf` basenames,
+non-positive minimum byte counts, and malformed SHA-256 pins before it touches
+the network.
+
 ## Ownership
 
 The preset manifest is source-controlled. GGUF files, partial downloads, and
