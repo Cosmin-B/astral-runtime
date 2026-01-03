@@ -259,7 +259,7 @@ TEST(embeddings_mock_queue_pressure) {
     err = astral_embed_cancel(emb, tickets[kCanceledIndex]);
     ASSERT_EQ(err, ASTRAL_OK);
     err = astral_embed_cancel(emb, tickets[kCanceledIndex]);
-    ASSERT_EQ(err, ASTRAL_E_INVALID);
+    ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
 
     uint64_t replacement_ticket = 0;
     err = astral_embed_enqueue(emb, span_from_cstr("replacement"), &replacement_ticket);
@@ -297,9 +297,9 @@ TEST(embeddings_mock_queue_pressure) {
     const auto end = std::chrono::steady_clock::now();
 
     err = astral_embed_collect(emb, tickets[0], out);
-    ASSERT_EQ(err, ASTRAL_E_INVALID);
+    ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
     err = astral_embed_collect(emb, tickets[kCanceledIndex], out);
-    ASSERT_EQ(err, ASTRAL_E_INVALID);
+    ASSERT_EQ(err, ASTRAL_E_CANCELED);
 
     uint64_t reuse_ticket = 0;
     err = astral_embed_enqueue(emb, span_from_cstr("reuse"), &reuse_ticket);

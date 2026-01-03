@@ -245,10 +245,6 @@ inline float* vector_at(MemoryIndex* index, uint32_t slot) {
   return index->vectors + static_cast<size_t>(slot) * index->dim;
 }
 
-inline const float* vector_at(const MemoryIndex* index, uint32_t slot) {
-  return index->vectors + static_cast<size_t>(slot) * index->dim;
-}
-
 inline uint32_t slot_to_key_ref(uint32_t slot) {
   return slot + kKeyTableSlotRefBias;
 }

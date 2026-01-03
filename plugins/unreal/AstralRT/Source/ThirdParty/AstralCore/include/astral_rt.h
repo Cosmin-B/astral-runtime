@@ -680,6 +680,37 @@ enum {
     ASTRAL_MODEL_SOURCE_IO = 2,     // `io`
 };
 
+typedef uint32_t AstralModelPathRoot;
+enum {
+    ASTRAL_MODEL_PATH_ROOT_RAW = 0,
+    ASTRAL_MODEL_PATH_ROOT_CONTENT = 1,
+    ASTRAL_MODEL_PATH_ROOT_SAVED = 2,
+    ASTRAL_MODEL_PATH_ROOT_CACHE = 3,
+    ASTRAL_MODEL_PATH_ROOT_DOWNLOAD = 4,
+};
+
+typedef uint32_t AstralModelPathResolveFlags;
+enum {
+    ASTRAL_MODEL_PATH_RESOLVE_NONE = 0,
+};
+
+typedef struct AstralModelPathResolveDesc {
+    uint32_t size;
+    AstralModelPathRoot root;
+    AstralSpanU8 path;
+    AstralSpanU8 content_root;
+    AstralSpanU8 saved_root;
+    AstralSpanU8 cache_root;
+    AstralSpanU8 download_root;
+    AstralModelPathResolveFlags flags;
+    uint32_t _reserved0;
+} AstralModelPathResolveDesc;
+
+enum {
+    ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_64 = 96,
+    ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_32 = 56,
+};
+
 /**
  * Model IO interface for embedded builds (no filesystem required).
  *
@@ -1056,6 +1087,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
     AstralHandle* out_index
 );
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_path_resolve(
+    const AstralModelPathResolveDesc* desc,
+    AstralMutSpanU8 out_path,
+    uint32_t* out_len);
+
 /**
  * Load a GGUF model.
  * Thread-safety: Safe to call from multiple threads.
@@ -1227,6 +1263,7 @@ typedef struct AstralAdapterDesc {
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 64, "AstralInit must be 64 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 168, "AstralModelDesc must be 168 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralModelPathResolveDesc) == ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_64, "AstralModelPathResolveDesc must be 96 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
@@ -1242,6 +1279,7 @@ typedef struct AstralAdapterDesc {
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 48, "AstralInit must be 48 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 116, "AstralModelDesc must be 116 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralModelPathResolveDesc) == ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_32, "AstralModelPathResolveDesc must be 56 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
