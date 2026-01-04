@@ -19,6 +19,7 @@ constexpr uint32_t kSaveMagic = 0x414D454Du;
 constexpr uint32_t kSaveVersion = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
+constexpr uint32_t kTopOne = 1;
 constexpr uint32_t kKeyTableMinCapacity = 4;
 constexpr uint32_t kKeyTableLoadFactorDen = 2;
 constexpr uint32_t kKeyTableEmpty = 0;
@@ -465,6 +466,94 @@ void memory_search_l2(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
   *out_count = filled;
 }
 
+void memory_search_dot_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
+                            AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  const MemorySlot* best_slot = nullptr;
+  float best_score = 0.0f;
+  uint64_t best_key = 0;
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = index->active_slots[active_pos];
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    const float score = dot_f32(query, vector_at(index, slot), index->dim);
+    if (best_slot == nullptr || score > best_score || (score == best_score && s.record.key < best_key)) {
+      best_slot = &s;
+      best_score = score;
+      best_key = s.record.key;
+    }
+  }
+
+  if (best_slot == nullptr) {
+    *out_count = kNoResults;
+    return;
+  }
+
+  fill_result(out_results, *best_slot, best_score);
+  *out_count = kTopOne;
+}
+
+void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
+                               AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  const float query_scale = cosine_scale(query, index->dim);
+  const MemorySlot* best_slot = nullptr;
+  float best_score = 0.0f;
+  uint64_t best_key = 0;
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = index->active_slots[active_pos];
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale * s.score_scale;
+    if (best_slot == nullptr || score > best_score || (score == best_score && s.record.key < best_key)) {
+      best_slot = &s;
+      best_score = score;
+      best_key = s.record.key;
+    }
+  }
+
+  if (best_slot == nullptr) {
+    *out_count = kNoResults;
+    return;
+  }
+
+  fill_result(out_results, *best_slot, best_score);
+  *out_count = kTopOne;
+}
+
+void memory_search_l2_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
+                           AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  const MemorySlot* best_slot = nullptr;
+  float best_score = 0.0f;
+  uint64_t best_key = 0;
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = index->active_slots[active_pos];
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    const float score = l2_score_f32(query, vector_at(index, slot), index->dim);
+    if (best_slot == nullptr || score > best_score || (score == best_score && s.record.key < best_key)) {
+      best_slot = &s;
+      best_score = score;
+      best_key = s.record.key;
+    }
+  }
+
+  if (best_slot == nullptr) {
+    *out_count = kNoResults;
+    return;
+  }
+
+  fill_result(out_results, *best_slot, best_score);
+  *out_count = kTopOne;
+}
+
 void destroy_allocations(MemoryIndex* index) {
   if (index->slots != nullptr) {
     core::runtime_free_array(index->slots, index->capacity);
@@ -645,7 +734,15 @@ AstralErr memory_search(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
     return ASTRAL_E_NOMEM;
   }
 
-  if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
+  if (desc->top_k == kTopOne) {
+    if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
+      memory_search_dot_top1(index, desc, query, out_results, out_count);
+    } else if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      memory_search_cosine_top1(index, desc, query, out_results, out_count);
+    } else {
+      memory_search_l2_top1(index, desc, query, out_results, out_count);
+    }
+  } else if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
     memory_search_dot(index, desc, query, out_results, out_count);
   } else if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
     memory_search_cosine(index, desc, query, out_results, out_count);
