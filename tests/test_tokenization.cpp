@@ -108,35 +108,52 @@ TEST(tokenization_empty_and_utf8_count) {
 }
 
 TEST(tokenization_batch_offsets_and_sizing) {
+    constexpr uint32_t kRequestCount = 3;
+    constexpr uint32_t kOffsetCount = kRequestCount + 1;
+    constexpr uint32_t kTotalTokens = 6;
+    constexpr uint32_t kFullTokenCapacity = 8;
+    constexpr uint32_t kSmallTokenCapacity = 5;
+    constexpr uint32_t kFirstOffset = 3;
+    constexpr uint32_t kSecondOffset = 3;
+    constexpr uint32_t kThirdOffset = kTotalTokens;
+
     init_runtime();
     AstralHandle model = load_mock_model();
 
-    AstralTokenizeRequest requests[3]{};
+    AstralTokenizeRequest requests[kRequestCount]{};
     requests[0].text = span_from_cstr("ab");
     requests[0].add_special = 1;
     requests[1].text = span_from_cstr("");
     requests[2].text = span_from_cstr("xyz");
 
-    uint32_t offsets[4]{};
+    uint32_t offsets[kOffsetCount]{};
     uint32_t total = 0;
-    ASSERT_EQ(astral_tokenize_batch(model, requests, 3, offsets, nullptr, 0, &total), ASTRAL_OK);
-    ASSERT_EQ(total, 6u);
+    ASSERT_EQ(astral_tokenize_batch(model, requests, kRequestCount, offsets, nullptr, 0, &total), ASTRAL_OK);
+    ASSERT_EQ(total, kTotalTokens);
     ASSERT_EQ(offsets[0], 0u);
-    ASSERT_EQ(offsets[1], 3u);
-    ASSERT_EQ(offsets[2], 3u);
-    ASSERT_EQ(offsets[3], 6u);
+    ASSERT_EQ(offsets[1], kFirstOffset);
+    ASSERT_EQ(offsets[2], kSecondOffset);
+    ASSERT_EQ(offsets[3], kThirdOffset);
 
-    int32_t tokens[8]{};
-    ASSERT_EQ(astral_tokenize_batch(model, requests, 3, offsets, tokens, 8, &total), ASTRAL_OK);
-    ASSERT_EQ(total, 6u);
+    int32_t tokens[kFullTokenCapacity]{};
+    ASSERT_EQ(astral_tokenize_batch(model, requests, kRequestCount, offsets, tokens, kFullTokenCapacity, &total), ASTRAL_OK);
+    ASSERT_EQ(total, kTotalTokens);
     ASSERT_EQ(tokens[0], 256);
     ASSERT_EQ(tokens[1], static_cast<int32_t>('a'));
     ASSERT_EQ(tokens[2], static_cast<int32_t>('b'));
     ASSERT_EQ(tokens[3], static_cast<int32_t>('x'));
     ASSERT_EQ(tokens[5], static_cast<int32_t>('z'));
 
-    ASSERT_EQ(astral_tokenize_batch(model, requests, 3, offsets, tokens, 5, &total), ASTRAL_E_NOMEM);
-    ASSERT_EQ(total, 6u);
+    offsets[0] = kTotalTokens;
+    offsets[1] = kTotalTokens;
+    offsets[2] = kTotalTokens;
+    offsets[3] = kTotalTokens;
+    ASSERT_EQ(astral_tokenize_batch(model, requests, kRequestCount, offsets, tokens, kSmallTokenCapacity, &total), ASTRAL_E_NOMEM);
+    ASSERT_EQ(total, kTotalTokens);
+    ASSERT_EQ(offsets[0], 0u);
+    ASSERT_EQ(offsets[1], kFirstOffset);
+    ASSERT_EQ(offsets[2], kSecondOffset);
+    ASSERT_EQ(offsets[3], kThirdOffset);
 
     astral_model_release(model);
     astral_shutdown();

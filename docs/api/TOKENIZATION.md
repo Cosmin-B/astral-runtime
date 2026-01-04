@@ -31,10 +31,13 @@ backend tokenizer is thread-safe, which is part of the Astral backend contract.
 
 ## Performance Model
 
-Sizing calls let callers allocate once. Batch tokenization computes offsets
-first, then writes directly into the supplied token buffer. The core API does
-not allocate per string or per token. Public ABI functions validate handles and
-buffer pointers; provider hot paths receive already-sized output spans.
+Sizing calls let callers allocate once. Batch tokenization has two paths:
+passing `NULL` tokens computes offsets and total count only, while passing a
+token buffer writes each request directly into the supplied storage and still
+returns the full offsets and required total on `ASTRAL_E_NOMEM`. The core API
+does not allocate per string or per token. Public ABI functions validate
+handles and buffer pointers; provider hot paths receive caller-owned output
+spans.
 
 ## Minimal Example
 

@@ -1665,64 +1665,81 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_batch(
         return err;
     }
 
+    if (out_tokens == nullptr) {
+        uint32_t total = 0;
+        out_offsets[0] = 0;
+        for (uint32_t i = 0; i < request_count; ++i) {
+            uint32_t count = 0;
+            err = m->backend->ops->tokenize(
+                m->backend_model_ctx,
+                requests[i].text,
+                nullptr,
+                0,
+                requests[i].add_special != 0,
+                requests[i].parse_special != 0,
+                &count
+            );
+            if (err != ASTRAL_OK) {
+                set_err_code(err);
+                return err;
+            }
+            if (UINT32_MAX - total < count) {
+                set_err_invalid("token count overflow");
+                return ASTRAL_E_INVALID;
+            }
+            total += count;
+            out_offsets[i + 1] = total;
+        }
+        *out_count = total;
+        return ASTRAL_OK;
+    }
+
     uint32_t total = 0;
+    AstralErr batch_err = ASTRAL_OK;
     out_offsets[0] = 0;
     for (uint32_t i = 0; i < request_count; ++i) {
-        uint32_t count = 0;
-        err = m->backend->ops->tokenize(
-            m->backend_model_ctx,
-            requests[i].text,
-            nullptr,
-            0,
-            requests[i].add_special != 0,
-            requests[i].parse_special != 0,
-            &count
-        );
-        if (err != ASTRAL_OK) {
-            set_err_code(err);
-            return err;
+        uint32_t written = 0;
+        int32_t* dst = nullptr;
+        uint32_t cap = 0;
+        if (batch_err == ASTRAL_OK && total < max_tokens) {
+            dst = out_tokens + total;
+            cap = max_tokens - total;
         }
-        if (UINT32_MAX - total < count) {
+        err = m->backend->ops->tokenize(m->backend_model_ctx,
+                                        requests[i].text,
+                                        dst,
+                                        cap,
+                                        requests[i].add_special != 0,
+                                        requests[i].parse_special != 0,
+                                        &written);
+        if (err != ASTRAL_OK) {
+            if (err != ASTRAL_E_NOMEM) {
+                set_err_code(err);
+                return err;
+            }
+            batch_err = ASTRAL_E_NOMEM;
+        }
+        if (err == ASTRAL_OK && dst == nullptr && written != 0) {
+            batch_err = ASTRAL_E_NOMEM;
+        }
+        if (err == ASTRAL_OK && dst != nullptr && written > cap) {
+            set_err_code(ASTRAL_E_BACKEND);
+            return ASTRAL_E_BACKEND;
+        }
+        if (UINT32_MAX - total < written) {
             set_err_invalid("token count overflow");
             return ASTRAL_E_INVALID;
         }
-        total += count;
+        total += written;
         out_offsets[i + 1] = total;
     }
 
     *out_count = total;
-    if (out_tokens == nullptr) {
-        return ASTRAL_OK;
-    }
-    if (total > max_tokens) {
-        set_err_code(ASTRAL_E_NOMEM);
-        return ASTRAL_E_NOMEM;
+    if (batch_err != ASTRAL_OK) {
+        set_err_code(batch_err);
     }
 
-    for (uint32_t i = 0; i < request_count; ++i) {
-        uint32_t written = 0;
-        const uint32_t begin = out_offsets[i];
-        const uint32_t cap = max_tokens - begin;
-        err = m->backend->ops->tokenize(
-            m->backend_model_ctx,
-            requests[i].text,
-            out_tokens + begin,
-            cap,
-            requests[i].add_special != 0,
-            requests[i].parse_special != 0,
-            &written
-        );
-        if (err != ASTRAL_OK) {
-            set_err_code(err);
-            return err;
-        }
-        if (written != out_offsets[i + 1] - begin) {
-            set_err_code(ASTRAL_E_BACKEND);
-            return ASTRAL_E_BACKEND;
-        }
-    }
-
-    return ASTRAL_OK;
+    return batch_err;
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
