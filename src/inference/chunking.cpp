@@ -14,6 +14,7 @@ constexpr uint32_t kUtf8ThreeByteMask = 0xF0u;
 constexpr uint32_t kUtf8ThreeByteLead = 0xE0u;
 constexpr uint32_t kUtf8FourByteMask = 0xF8u;
 constexpr uint32_t kUtf8FourByteLead = 0xF0u;
+constexpr uint8_t kAsciiWhitespaceMax = ' ';
 constexpr uint8_t kDefaultSentenceDelimiters[] = {'.', '!', '?', '\n'};
 
 struct UnitRange {
@@ -39,6 +40,10 @@ inline bool text_valid(AstralSpanU8 text) {
 
 inline bool is_space(uint8_t c) {
   return c == ' ' || c == '\n' || c == '\r' || c == '\t' || c == '\f' || c == '\v';
+}
+
+inline bool can_be_space(uint8_t c) {
+  return c <= kAsciiWhitespaceMax;
 }
 
 inline uint32_t utf8_step(AstralSpanU8 text, uint32_t pos) {
@@ -92,7 +97,11 @@ bool next_char_unit(AstralSpanU8 text, uint32_t* pos, UnitRange* out) {
 
 bool next_word_unit(AstralSpanU8 text, uint32_t* pos, UnitRange* out) {
   uint32_t p = *pos;
-  while (p < text.len && is_space(text.data[p])) {
+  while (p < text.len) {
+    const uint8_t c = text.data[p];
+    if (!can_be_space(c) || !is_space(c)) {
+      break;
+    }
     ++p;
   }
   if (p >= text.len) {
@@ -101,8 +110,12 @@ bool next_word_unit(AstralSpanU8 text, uint32_t* pos, UnitRange* out) {
   }
 
   out->begin = p;
-  while (p < text.len && !is_space(text.data[p])) {
-    p = utf8_step(text, p);
+  while (p < text.len) {
+    const uint8_t c = text.data[p];
+    if (can_be_space(c) && is_space(c)) {
+      break;
+    }
+    p = (c & kUtf8AsciiMask) == 0 ? p + 1u : utf8_step(text, p);
   }
   out->end = p;
   *pos = p;
@@ -170,6 +183,54 @@ inline void fill_token_range(const AstralChunkerDesc* desc, uint32_t chunk_id, u
   out->token_end = token_end;
 }
 
+AstralErr emit_word_chunks(const AstralChunkerDesc* desc, AstralSpanU8 text,
+                           AstralChunkRange* out_ranges, uint32_t max_ranges,
+                           uint32_t* out_count) {
+  const uint32_t max_units = desc->max_units;
+  const uint32_t overlap_units = desc->overlap_units;
+  uint32_t required = 0;
+  uint32_t pos = 0;
+  while (pos < text.len) {
+    UnitRange first{};
+    uint32_t scan = pos;
+    if (!next_word_unit(text, &scan, &first)) {
+      break;
+    }
+
+    const uint32_t chunk_begin = first.begin;
+    uint32_t chunk_end = first.end;
+    uint32_t units = 1;
+    uint32_t overlap_begin = first.begin;
+
+    while (units < max_units) {
+      UnitRange unit{};
+      const uint32_t before = scan;
+      if (!next_word_unit(text, &scan, &unit)) {
+        scan = before;
+        break;
+      }
+      if (overlap_units != 0 && units + overlap_units == max_units) {
+        overlap_begin = unit.begin;
+      }
+      chunk_end = unit.end;
+      ++units;
+    }
+
+    if (out_ranges != nullptr && required < max_ranges) {
+      fill_text_range(desc, required, chunk_begin, chunk_end, &out_ranges[required]);
+    }
+    ++required;
+
+    if (scan >= text.len) {
+      break;
+    }
+    pos = overlap_units != 0 ? overlap_begin : scan;
+  }
+
+  *out_count = required;
+  return (out_ranges != nullptr && max_ranges < required) ? ASTRAL_E_NOMEM : ASTRAL_OK;
+}
+
 AstralErr emit_text_chunks(const AstralChunkerDesc* desc, AstralSpanU8 text,
                            AstralChunkRange* out_ranges, uint32_t max_ranges, uint32_t* out_count) {
   uint32_t required = 0;
@@ -183,6 +244,10 @@ AstralErr emit_text_chunks(const AstralChunkerDesc* desc, AstralSpanU8 text,
     }
     *out_count = required;
     return (out_ranges != nullptr && max_ranges < required) ? ASTRAL_E_NOMEM : ASTRAL_OK;
+  }
+
+  if (desc->mode == ASTRAL_CHUNK_MODE_WORD) {
+    return emit_word_chunks(desc, text, out_ranges, max_ranges, out_count);
   }
 
   uint32_t pos = 0;
