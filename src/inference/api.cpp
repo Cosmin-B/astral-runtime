@@ -2175,6 +2175,33 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed(
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed_tokens(
+    AstralHandle session,
+    const int32_t* tokens,
+    uint32_t token_count,
+    uint8_t finalize
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (session == 0 || (token_count != 0 && tokens == nullptr)) {
+        set_err_invalid("session/tokens");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* s =
+        static_cast<astral::inference::Session*>(astral::core::lookup_handle(session, astral::core::HandleKind::Session));
+    if (s == nullptr) {
+        set_err_invalid("session (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::session_feed_tokens(s, tokens, token_count, finalize);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_system_prompt(AstralHandle session, AstralSpanU8 system_prompt) {
     ASTRAL_ABI_TRY_BEGIN
     if (session == 0) {
@@ -2972,6 +2999,33 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed(AstralHandle conv, AstralSpanU
     }
 
     const AstralErr err = astral::inference::conv_feed(c, prompt_chunk, finalize);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed_tokens(
+    AstralHandle conv,
+    const int32_t* tokens,
+    uint32_t token_count,
+    uint8_t finalize
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (conv == 0 || (token_count != 0 && tokens == nullptr)) {
+        set_err_invalid("conv/tokens");
+        return ASTRAL_E_INVALID;
+    }
+
+    auto* c = static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation));
+    if (c == nullptr) {
+        set_err_invalid("conv (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+
+    const AstralErr err = astral::inference::conv_feed_tokens(c, tokens, token_count, finalize);
     if (err != ASTRAL_OK) {
         set_err_code(err);
     }

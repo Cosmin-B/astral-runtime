@@ -1059,6 +1059,9 @@ namespace Astral.Runtime
         public static extern int astral_session_feed(AstralHandle session, AstralSpanU8 prompt_chunk, byte finalize);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_session_feed_tokens(AstralHandle session, int* tokens, uint token_count, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_set_system_prompt(AstralHandle session, AstralSpanU8 system_prompt);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
@@ -1175,6 +1178,9 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_conv_feed(AstralHandle conv, AstralSpanU8 prompt_chunk, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_conv_feed_tokens(AstralHandle conv, int* tokens, uint token_count, byte finalize);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_conv_set_system_prompt(AstralHandle conv, AstralSpanU8 system_prompt);

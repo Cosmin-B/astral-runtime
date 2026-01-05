@@ -265,3 +265,52 @@ TEST(system_prompt_feeds_before_user_prompt) {
     astral_model_release(model);
     astral_shutdown();
 }
+
+TEST(prompt_cache_view_feeds_session_and_conversation_tokens) {
+    constexpr uint32_t kTokenCount = 4;
+    constexpr int32_t kTokens[kTokenCount] = {256, 's', 'y', 's'};
+
+    init_runtime();
+    AstralHandle model = load_mock_model();
+
+    AstralHandle cache = 0;
+    const AstralPromptCacheDesc cacheDesc = cache_desc();
+    ASSERT_EQ(astral_prompt_cache_create(&cacheDesc, &cache), ASTRAL_OK);
+
+    const AstralPromptCacheKey key = cache_key(kSystemKey, 1);
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key, kTokens, kTokenCount), ASTRAL_OK);
+
+    const int32_t* view = nullptr;
+    uint32_t count = 0;
+    ASSERT_EQ(astral_prompt_cache_get_token_view(cache, &key, &view, &count), ASTRAL_OK);
+    ASSERT_NOT_NULL(view);
+    ASSERT_EQ(count, kTokenCount);
+
+    AstralSessionDesc session_desc{};
+    session_desc.model = model;
+    session_desc.max_tokens = kCacheTokens;
+    session_desc.temperature = 0.0f;
+
+    AstralHandle session = 0;
+    ASSERT_EQ(astral_session_create(&session_desc, &session), ASTRAL_OK);
+    ASSERT_EQ(astral_session_feed_tokens(session, view, count, 0), ASTRAL_OK);
+    ASSERT_EQ(astral_session_feed(session, span_from_cstr("user"), 1), ASTRAL_OK);
+    astral_session_destroy(session);
+
+    AstralConvDesc conv_desc{};
+    conv_desc.size = sizeof(AstralConvDesc);
+    conv_desc.model = model;
+    conv_desc.max_tokens = kCacheTokens;
+    conv_desc.temperature = 0.0f;
+    conv_desc.top_p = 1.0f;
+
+    AstralHandle conv = 0;
+    ASSERT_EQ(astral_conv_create(&conv_desc, &conv), ASTRAL_OK);
+    ASSERT_EQ(astral_conv_feed_tokens(conv, view, count, 0), ASTRAL_OK);
+    ASSERT_EQ(astral_conv_feed(conv, span_from_cstr("user"), 1), ASTRAL_OK);
+    astral_conv_destroy(conv);
+
+    astral_prompt_cache_destroy(cache);
+    astral_model_release(model);
+    astral_shutdown();
+}

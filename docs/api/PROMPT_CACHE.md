@@ -25,6 +25,10 @@ caller-defined sections.
   out_token_count)` returns a read-only token pointer owned by the cache.
 - `astral_prompt_cache_stats(cache, out_stats)` reports occupancy and optional
   hit/miss/eviction counters.
+- `astral_session_feed_tokens(session, tokens, token_count, finalize)` feeds
+  already-tokenized prompt data into a session.
+- `astral_conv_feed_tokens(conv, tokens, token_count, finalize)` feeds
+  already-tokenized prompt data into a conversation.
 - `astral_session_set_system_prompt(session, system_prompt)` tokenizes and
   feeds the system prompt before user prompt chunks.
 - `astral_conv_set_system_prompt(conv, system_prompt)` does the same for a
@@ -47,10 +51,10 @@ Unity exposes `AstralPromptCache` as an owned handle. The wrapper keeps token
 input/output in `NativeArray<int>` and serializes cache snapshots through
 managed byte arrays; native lookup and eviction behavior remain unchanged.
 
-Agents may bind a prompt cache through `AstralAgentDesc::prompt_cache`. The
-agent uses the native view path during chat setup, so repeated identical prompt
-assemblies can skip tokenization and feed cached tokens directly into the
-conversation prompt buffer.
+Agents may bind a prompt cache through `AstralAgentDesc::prompt_cache`. Native
+callers can also use the view path with `astral_session_feed_tokens()` or
+`astral_conv_feed_tokens()` so repeated prompt sections skip tokenization and
+copy only once into the prompt buffer.
 
 System prompts must be set before normal prompt text is fed. A late call returns
 `ASTRAL_E_STATE`.
@@ -63,8 +67,10 @@ does not write hit/miss counters; enable `ASTRAL_PROMPT_CACHE_FLAG_TRACK_STATS`
 only for diagnostics because counters add hot-path stores.
 
 Use `astral_prompt_cache_get_token_view()` for native prompt assembly when the
-cache lifetime is already controlled. Use `astral_prompt_cache_get_tokens()`
-when crossing ABI or engine ownership boundaries.
+cache lifetime is already controlled. Feed that view directly with
+`astral_session_feed_tokens()` or `astral_conv_feed_tokens()`. Use
+`astral_prompt_cache_get_tokens()` when crossing ABI or engine ownership
+boundaries.
 
 ## Minimal Example
 
@@ -94,6 +100,9 @@ Fast native lookup:
 const int32_t* view = NULL;
 uint32_t count = 0;
 err = astral_prompt_cache_get_token_view(cache, &key, &view, &count);
+if (err == ASTRAL_OK) {
+    err = astral_session_feed_tokens(session, view, count, 0);
+}
 ```
 
 ## Validation

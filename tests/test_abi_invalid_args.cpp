@@ -426,6 +426,7 @@ TEST(abi_invalid_args_session_surface) {
     ASSERT_EQ(astral_session_clear_toolset(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_slot(0, 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_feed(0, null_span(), 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_feed_tokens(0, tokens, 2, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_feed_image(0, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_feed_audio(0, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_decode(0), ASTRAL_E_INVALID);
@@ -527,6 +528,7 @@ TEST(abi_invalid_args_conversation_surface) {
     ASSERT_EQ(astral_conv_create(nullptr, &conv), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_create(&conv_desc, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_feed(0, null_span(), 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_feed_tokens(0, tokens, 2, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_feed_image(0, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_feed_audio(0, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_decode(0), ASTRAL_E_INVALID);

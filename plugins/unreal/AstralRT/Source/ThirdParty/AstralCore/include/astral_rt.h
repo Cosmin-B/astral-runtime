@@ -1678,6 +1678,12 @@ ASTRAL_API void ASTRAL_CALL astral_session_destroy(AstralHandle session);
  * @return ASTRAL_OK on success; ASTRAL_E_INVALID if session is NULL; error code on failure
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed(AstralHandle session, AstralSpanU8 prompt_chunk, uint8_t finalize);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed_tokens(
+    AstralHandle session,
+    const int32_t* tokens,
+    uint32_t token_count,
+    uint8_t finalize
+);
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_system_prompt(AstralHandle session, AstralSpanU8 system_prompt);
 
 /**
@@ -1767,6 +1773,12 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_create(const AstralConvDesc* desc, 
 ASTRAL_API void ASTRAL_CALL astral_conv_destroy(AstralHandle conv);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed(AstralHandle conv, AstralSpanU8 prompt_chunk, uint8_t finalize);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed_tokens(
+    AstralHandle conv,
+    const int32_t* tokens,
+    uint32_t token_count,
+    uint8_t finalize
+);
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_system_prompt(AstralHandle conv, AstralSpanU8 system_prompt);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed_image(

@@ -197,6 +197,7 @@ void session_destroy(Session* session);
 ///
 /// Thread-safety: Not thread-safe (single-threaded access per session)
 AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t finalize);
+AstralErr session_feed_tokens(Session* session, const int32_t* tokens, uint32_t token_count, uint8_t finalize);
 /// Feed an image prompt chunk.
 AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uint8_t finalize);
 /// Feed an audio prompt chunk.

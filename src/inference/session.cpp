@@ -872,6 +872,37 @@ AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t fina
     return ASTRAL_OK;
 }
 
+AstralErr session_feed_tokens(Session* session, const int32_t* tokens, uint32_t token_count, uint8_t finalize) {
+    if (session == nullptr || (token_count != 0 && tokens == nullptr)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    SessionState state = session->state.load(std::memory_order_acquire);
+    if (state != SessionState::Idle && state != SessionState::FeedingPrompt) {
+        return ASTRAL_E_STATE;
+    }
+
+    if (state == SessionState::Idle) {
+        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
+    }
+
+    if (token_count == 0) {
+        return ASTRAL_OK;
+    }
+    if (session->prompt_chunk_count >= kMaxPromptChunks) {
+        return ASTRAL_E_NOMEM;
+    }
+    const uint32_t space = session->prompt_capacity - session->prompt_count;
+    if (token_count >= space) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    const uint32_t token_start = session->prompt_count;
+    std::memcpy(session->prompt_tokens + session->prompt_count, tokens, static_cast<size_t>(token_count) * sizeof(int32_t));
+    session->prompt_count += token_count;
+    return session_push_text_chunk(session, token_start, token_count, finalize);
+}
+
 AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uint8_t finalize) {
     if (session == nullptr || !image_desc_valid(image)) {
         return ASTRAL_E_INVALID;
