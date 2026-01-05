@@ -1326,6 +1326,7 @@ void* cpu_session_create_ex(void* model_ctx, const AstralSessionDesc* desc, uint
     session->active_slot = 0;
     session->last_batch_outputs = 0;
     session->last_batch_token_count = 0;
+    session->adapter_count = 0;
 
     for (uint32_t i = 0; i < kCpuMaxSlots; ++i) {
         session->slot_pos[i] = 0;
@@ -1333,6 +1334,10 @@ void* cpu_session_create_ex(void* model_ctx, const AstralSessionDesc* desc, uint
         session->slot_has_logits[i] = false;
         session->slot_last_token_valid[i] = false;
         session->grammar[i] = nullptr;
+    }
+    for (uint32_t i = 0; i < ASTRAL_SESSION_ADAPTERS_MAX; ++i) {
+        session->adapters[i] = nullptr;
+        session->adapter_scales[i] = 0.0f;
     }
 
     // Preallocate batch scratch.
@@ -2388,7 +2393,15 @@ AstralErr cpu_session_adapter_clear(void* session_ctx) {
         return ASTRAL_E_BACKEND;
     }
     const int32_t rc = llama_set_adapters_lora(session->ctx, nullptr, 0, nullptr);
-    return rc == 0 ? ASTRAL_OK : ASTRAL_E_BACKEND;
+    if (rc != 0) {
+        return ASTRAL_E_BACKEND;
+    }
+    session->adapter_count = 0;
+    for (uint32_t i = 0; i < ASTRAL_SESSION_ADAPTERS_MAX; ++i) {
+        session->adapters[i] = nullptr;
+        session->adapter_scales[i] = 0.0f;
+    }
+    return ASTRAL_OK;
 }
 
 AstralErr cpu_session_adapter_add(void* session_ctx, void* adapter_ctx, float scale) {
@@ -2399,10 +2412,22 @@ AstralErr cpu_session_adapter_add(void* session_ctx, void* adapter_ctx, float sc
     if (session->ctx == nullptr) {
         return ASTRAL_E_BACKEND;
     }
+    if (session->adapter_count >= ASTRAL_SESSION_ADAPTERS_MAX) {
+        return ASTRAL_E_NOMEM;
+    }
 
-    llama_adapter_lora* adapter = static_cast<llama_adapter_lora*>(adapter_ctx);
-    const int32_t rc = llama_set_adapters_lora(session->ctx, &adapter, 1, &scale);
-    return rc == 0 ? ASTRAL_OK : ASTRAL_E_BACKEND;
+    const uint32_t index = session->adapter_count;
+    session->adapters[index] = static_cast<llama_adapter_lora*>(adapter_ctx);
+    session->adapter_scales[index] = scale;
+    const uint32_t next_count = index + 1u;
+    const int32_t rc = llama_set_adapters_lora(session->ctx, session->adapters, next_count, session->adapter_scales);
+    if (rc != 0) {
+        session->adapters[index] = nullptr;
+        session->adapter_scales[index] = 0.0f;
+        return ASTRAL_E_BACKEND;
+    }
+    session->adapter_count = next_count;
+    return ASTRAL_OK;
 }
 
 void* cpu_embedder_create(void* model_ctx, AstralErr* out_err) {
