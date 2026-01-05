@@ -51,6 +51,15 @@ static constexpr uint32_t kBenchAgentPromptCacheEntries = 4;
 static constexpr uint32_t kBenchAgentPromptCacheTokens = 256;
 static constexpr uint32_t kBenchAgentSeed = 11;
 static constexpr uint32_t kBenchAgentPollLimit = 65536;
+static constexpr uint32_t kBenchSystemPromptCacheEntries = 4;
+static constexpr uint32_t kBenchSystemPromptCacheTokens = 256;
+static constexpr uint32_t kBenchSystemPromptTokenCapacity = 256;
+static constexpr uint32_t kBenchSystemPromptSessionTokens = 256;
+static constexpr uint64_t kBenchSystemPromptKey = 0xA57A5000ull;
+static constexpr uint32_t kBenchSystemPromptGeneration = 1;
+static constexpr char kBenchSystemPromptText[] =
+    "You are a low-latency native assistant. Answer with precise steps, preserve caller-owned buffers, "
+    "and keep repeated prompt sections reusable.";
 static constexpr char kBenchMemoryCapacityEnv[] = "ASTRAL_BENCH_MEMORY_CAPACITY";
 static constexpr char kBenchMemoryDimEnv[] = "ASTRAL_BENCH_MEMORY_DIM";
 static constexpr char kBenchMemoryMetricEnv[] = "ASTRAL_BENCH_MEMORY_METRIC";
@@ -1235,6 +1244,162 @@ static AstralHandle create_session(AstralHandle model, uint32_t max_tokens, floa
     return session;
 }
 
+static BenchResult bench_system_prompt_text(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.system_prompt text";
+    r.ops = iters;
+
+    AstralHandle model = load_mock_model_for_agent_bench();
+    if (!astral_handle_valid(model)) {
+        r.ops = 0;
+        return r;
+    }
+
+    AstralHandle session = create_session(
+        model,
+        kBenchSystemPromptSessionTokens,
+        /*temperature=*/0.0f,
+        /*top_k=*/0,
+        /*top_p=*/1.0f,
+        kBenchAgentSeed
+    );
+    if (!astral_handle_valid(session)) {
+        astral_model_release(model);
+        r.ops = 0;
+        return r;
+    }
+
+    const AstralSpanU8 system_prompt = span_from_cstr(kBenchSystemPromptText);
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        AstralErr err = astral_session_reset(session, nullptr);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+        err = astral_session_set_system_prompt(session, system_prompt);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_session_destroy(session);
+    astral_model_release(model);
+    return r;
+}
+
+static BenchResult bench_system_prompt_cached_tokens(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.system_prompt cached_tokens";
+    r.ops = iters;
+
+    AstralHandle model = load_mock_model_for_agent_bench();
+    if (!astral_handle_valid(model)) {
+        r.ops = 0;
+        return r;
+    }
+
+    AstralHandle session = create_session(
+        model,
+        kBenchSystemPromptSessionTokens,
+        /*temperature=*/0.0f,
+        /*top_k=*/0,
+        /*top_p=*/1.0f,
+        kBenchAgentSeed
+    );
+    if (!astral_handle_valid(session)) {
+        astral_model_release(model);
+        r.ops = 0;
+        return r;
+    }
+
+    AstralPromptCacheDesc desc{};
+    desc.size = sizeof(AstralPromptCacheDesc);
+    desc.max_entries = kBenchSystemPromptCacheEntries;
+    desc.max_tokens = kBenchSystemPromptCacheTokens;
+    desc.eviction_policy = ASTRAL_PROMPT_CACHE_EVICT_FIFO;
+
+    AstralHandle cache = 0;
+    if (astral_prompt_cache_create(&desc, &cache) != ASTRAL_OK) {
+        astral_session_destroy(session);
+        astral_model_release(model);
+        r.ops = 0;
+        return r;
+    }
+
+    int32_t tokens[kBenchSystemPromptTokenCapacity]{};
+    uint32_t cached_token_count = 0;
+    const AstralSpanU8 system_prompt = span_from_cstr(kBenchSystemPromptText);
+    if (astral_tokenize(
+            model,
+            system_prompt,
+            tokens,
+            kBenchSystemPromptTokenCapacity,
+            /*add_special=*/1,
+            /*parse_special=*/0,
+            &cached_token_count
+        ) != ASTRAL_OK ||
+        cached_token_count == 0) {
+        astral_prompt_cache_destroy(cache);
+        astral_session_destroy(session);
+        astral_model_release(model);
+        r.ops = 0;
+        return r;
+    }
+
+    AstralPromptCacheKey key{};
+    key.size = sizeof(AstralPromptCacheKey);
+    key.section_kind = ASTRAL_PROMPT_SECTION_SYSTEM;
+    key.model = model;
+    key.generation = kBenchSystemPromptGeneration;
+    key.key = kBenchSystemPromptKey;
+
+    if (astral_prompt_cache_put_tokens(cache, &key, tokens, cached_token_count) != ASTRAL_OK) {
+        astral_prompt_cache_destroy(cache);
+        astral_session_destroy(session);
+        astral_model_release(model);
+        r.ops = 0;
+        return r;
+    }
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        AstralErr err = astral_session_reset(session, nullptr);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+        const int32_t* view = nullptr;
+        uint32_t token_count = 0;
+        err = astral_prompt_cache_get_token_view(cache, &key, &view, &token_count);
+        if (err != ASTRAL_OK || token_count != cached_token_count || view == nullptr) {
+            r.ops = i;
+            break;
+        }
+        err = astral_session_feed_tokens(session, view, token_count, 0);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_prompt_cache_destroy(cache);
+    astral_session_destroy(session);
+    astral_model_release(model);
+    return r;
+}
+
 static bool session_decode_n(AstralHandle session, const char* prompt) {
     const AstralErr e1 = astral_session_feed(session, span_from_cstr(prompt), 1);
     if (e1 != ASTRAL_OK) {
@@ -1483,6 +1648,8 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_prompt_cache_view(iters), clock_info().name);
         print_result(bench_prompt_cache_miss(iters), clock_info().name);
         print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
+        print_result(bench_system_prompt_text(iters), clock_info().name);
+        print_result(bench_system_prompt_cached_tokens(iters), clock_info().name);
         print_result(bench_toolset_parse(iters), clock_info().name);
         print_result(bench_chunk_word_ranges(iters), clock_info().name);
         print_result(bench_memory_add_batch(iters), clock_info().name);
@@ -1528,6 +1695,8 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_prompt_cache_view(iters), clock_info().name);
     print_result(bench_prompt_cache_miss(iters), clock_info().name);
     print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
+    print_result(bench_system_prompt_text(iters), clock_info().name);
+    print_result(bench_system_prompt_cached_tokens(iters), clock_info().name);
     print_result(bench_toolset_parse(iters), clock_info().name);
     print_result(bench_chunk_word_ranges(iters), clock_info().name);
     print_result(bench_memory_add_batch(iters), clock_info().name);
