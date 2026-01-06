@@ -16,6 +16,9 @@ constexpr uint32_t kJsonQuotedKeyScanOverhead = 3u;
 constexpr char kJsonNameKey[] = "name";
 constexpr char kJsonToolKey[] = "tool";
 constexpr char kJsonArgumentsKey[] = "arguments";
+constexpr uint32_t kJsonNameKeyLen = sizeof(kJsonNameKey) - 1u;
+constexpr uint32_t kJsonToolKeyLen = sizeof(kJsonToolKey) - 1u;
+constexpr uint32_t kJsonArgumentsKeyLen = sizeof(kJsonArgumentsKey) - 1u;
 
 inline bool choice_mode_valid(AstralToolChoiceMode mode) {
   return mode == ASTRAL_TOOL_CHOICE_AUTO || mode == ASTRAL_TOOL_CHOICE_REQUIRED ||
@@ -51,11 +54,10 @@ inline bool is_ws(uint8_t c) {
   return c == ' ' || c == '\n' || c == '\r' || c == '\t';
 }
 
-bool find_json_string_key(AstralSpanU8 text, const char* key, AstralSpanU8* out_value) {
-  if (text.data == nullptr || key == nullptr || out_value == nullptr) {
+bool find_json_string_key(AstralSpanU8 text, const char* key, uint32_t key_len, AstralSpanU8* out_value) {
+  if (text.data == nullptr || out_value == nullptr) {
     return false;
   }
-  const uint32_t key_len = static_cast<uint32_t>(std::strlen(key));
   if (key_len == 0 || text.len < key_len + kJsonQuotedKeyMinOverhead) {
     return false;
   }
@@ -98,11 +100,10 @@ bool find_json_string_key(AstralSpanU8 text, const char* key, AstralSpanU8* out_
   return false;
 }
 
-bool find_json_object_key(AstralSpanU8 text, const char* key, AstralSpanU8* out_value) {
-  if (text.data == nullptr || key == nullptr || out_value == nullptr) {
+bool find_json_object_key(AstralSpanU8 text, const char* key, uint32_t key_len, AstralSpanU8* out_value) {
+  if (text.data == nullptr || out_value == nullptr) {
     return false;
   }
-  const uint32_t key_len = static_cast<uint32_t>(std::strlen(key));
   if (key_len == 0 || text.len < key_len + kJsonQuotedKeyMinOverhead) {
     return false;
   }
@@ -315,8 +316,8 @@ AstralErr toolset_parse_call(Toolset* toolset, AstralSpanU8 generated_text,
   out_result->arguments_json = {};
 
   AstralSpanU8 name{};
-  if (!find_json_string_key(generated_text, kJsonNameKey, &name) &&
-      !find_json_string_key(generated_text, kJsonToolKey, &name)) {
+  if (!find_json_string_key(generated_text, kJsonNameKey, kJsonNameKeyLen, &name) &&
+      !find_json_string_key(generated_text, kJsonToolKey, kJsonToolKeyLen, &name)) {
     return ASTRAL_E_NOT_FOUND;
   }
 
@@ -328,7 +329,7 @@ AstralErr toolset_parse_call(Toolset* toolset, AstralSpanU8 generated_text,
   out_result->tool_id = tool->tool_id;
   out_result->name = tool_span(toolset, tool->name_off, tool->name_len);
   out_result->parse_status = ASTRAL_OK;
-  if (!find_json_object_key(generated_text, kJsonArgumentsKey, &out_result->arguments_json)) {
+  if (!find_json_object_key(generated_text, kJsonArgumentsKey, kJsonArgumentsKeyLen, &out_result->arguments_json)) {
     out_result->parse_status = ASTRAL_E_INVALID;
   }
   return ASTRAL_OK;
