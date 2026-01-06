@@ -17,6 +17,8 @@ constexpr uint32_t kTicketHistoryMultiplier = 2;
 constexpr uint32_t kCompletedTicketHistory = kMaxInflight * kTicketHistoryMultiplier;
 constexpr uint32_t kTicketIndexMask = 0xFFFFu;
 constexpr uint32_t kTicketIndexBits = 16;
+constexpr uint32_t kNoFreeSlot = 0xFFFFFFFFu;
+constexpr uint32_t kAllFreeSlotsMask = (1u << kMaxInflight) - 1u;
 constexpr uint64_t kNoTicket = 0;
 
 struct Embedder {
@@ -68,9 +70,7 @@ struct Embedder {
     float* vectors; // kMaxInflight * dim
 
     std::atomic<uint64_t> ticket_counter;
-    std::atomic_flag free_lock = ATOMIC_FLAG_INIT;
-    uint32_t free_count;
-    uint32_t free_stack[kMaxInflight];
+    std::atomic<uint32_t> free_mask;
     std::atomic_flag completed_lock = ATOMIC_FLAG_INIT;
     uint32_t completed_cursor;
     CompletedTicket completed[kCompletedTicketHistory];
@@ -101,6 +101,37 @@ static void unlock(std::atomic_flag* f) {
 
 static uint32_t ticket_index(uint64_t ticket) {
     return static_cast<uint32_t>(ticket & kTicketIndexMask);
+}
+
+static uint32_t free_slot_bit(uint32_t idx) {
+    return 1u << idx;
+}
+
+static uint32_t first_free_slot(uint32_t mask) {
+    for (uint32_t idx = 0; idx < kMaxInflight; ++idx) {
+        if ((mask & free_slot_bit(idx)) != 0) {
+            return idx;
+        }
+    }
+    return kNoFreeSlot;
+}
+
+static uint32_t acquire_free_slot(Embedder* e) {
+    uint32_t mask = e->free_mask.load(std::memory_order_acquire);
+    while (mask != 0) {
+        const uint32_t idx = first_free_slot(mask);
+        const uint32_t bit = free_slot_bit(idx);
+        const uint32_t prior = e->free_mask.fetch_and(~bit, std::memory_order_acq_rel);
+        if ((prior & bit) != 0) {
+            return idx;
+        }
+        mask = prior & ~bit;
+    }
+    return kNoFreeSlot;
+}
+
+static void release_free_slot(Embedder* e, uint32_t idx) {
+    e->free_mask.fetch_or(free_slot_bit(idx), std::memory_order_release);
 }
 
 static void completed_ticket_store(Embedder* e, uint64_t ticket, AstralErr err) {
@@ -186,7 +217,7 @@ AstralErr embedder_create(Model* model, AstralHandle* out_embedder) {
     e->dim = dim;
     e->vectors = nullptr;
     e->ticket_counter.store(1, std::memory_order_relaxed);
-    e->free_count = 0;
+    e->free_mask.store(0, std::memory_order_relaxed);
     e->completed_cursor = 0;
     for (uint32_t i = 0; i < kCompletedTicketHistory; ++i) {
         e->completed[i] = Embedder::CompletedTicket{kNoTicket, ASTRAL_OK};
@@ -232,11 +263,7 @@ AstralErr embedder_create(Model* model, AstralHandle* out_embedder) {
         e->backend_ctx[i] = ctx;
     }
 
-    // Initialize free list (all slots free).
-    e->free_count = kMaxInflight;
-    for (uint32_t i = 0; i < kMaxInflight; ++i) {
-        e->free_stack[i] = i;
-    }
+    e->free_mask.store(kAllFreeSlotsMask, std::memory_order_release);
 
     e->handle = core::register_handle(core::HandleKind::Embedder, e);
     if (e->handle == 0) {
@@ -314,14 +341,8 @@ AstralErr embedder_enqueue(Embedder* embedder, AstralSpanU8 text, uint64_t* out_
         return ASTRAL_E_STATE;
     }
 
-    uint32_t idx = UINT32_MAX;
-    lock(&e->free_lock);
-    if (e->free_count > 0) {
-        idx = e->free_stack[--e->free_count];
-    }
-    unlock(&e->free_lock);
-
-    if (idx == UINT32_MAX || idx >= kMaxInflight) {
+    uint32_t idx = acquire_free_slot(e);
+    if (idx == kNoFreeSlot) {
         return ASTRAL_E_BUSY;
     }
 
@@ -347,9 +368,7 @@ AstralErr embedder_enqueue(Embedder* embedder, AstralSpanU8 text, uint64_t* out_
     );
 
     if (tok_err != ASTRAL_OK || token_count == 0) {
-        lock(&e->free_lock);
-        e->free_stack[e->free_count++] = idx;
-        unlock(&e->free_lock);
+        release_free_slot(e, idx);
         return tok_err != ASTRAL_OK ? tok_err : ASTRAL_E_BACKEND;
     }
 
@@ -377,13 +396,8 @@ AstralErr embedder_enqueue_image(Embedder* embedder, const AstralImageDesc* imag
         return ASTRAL_E_INVALID;
     }
 
-    uint32_t idx = UINT32_MAX;
-    lock(&e->free_lock);
-    if (e->free_count > 0) {
-        idx = e->free_stack[--e->free_count];
-    }
-    unlock(&e->free_lock);
-    if (idx == UINT32_MAX || idx >= kMaxInflight) {
+    uint32_t idx = acquire_free_slot(e);
+    if (idx == kNoFreeSlot) {
         return ASTRAL_E_BUSY;
     }
 
@@ -398,9 +412,7 @@ AstralErr embedder_enqueue_image(Embedder* embedder, const AstralImageDesc* imag
 
     uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(static_cast<size_t>(image->pixels.len), 1));
     if (buf == nullptr) {
-        lock(&e->free_lock);
-        e->free_stack[e->free_count++] = idx;
-        unlock(&e->free_lock);
+        release_free_slot(e, idx);
         return ASTRAL_E_NOMEM;
     }
     std::memcpy(buf, image->pixels.data, image->pixels.len);
@@ -436,13 +448,8 @@ AstralErr embedder_enqueue_audio(Embedder* embedder, const AstralAudioDesc* audi
         return ASTRAL_E_INVALID;
     }
 
-    uint32_t idx = UINT32_MAX;
-    lock(&e->free_lock);
-    if (e->free_count > 0) {
-        idx = e->free_stack[--e->free_count];
-    }
-    unlock(&e->free_lock);
-    if (idx == UINT32_MAX || idx >= kMaxInflight) {
+    uint32_t idx = acquire_free_slot(e);
+    if (idx == kNoFreeSlot) {
         return ASTRAL_E_BUSY;
     }
 
@@ -457,9 +464,7 @@ AstralErr embedder_enqueue_audio(Embedder* embedder, const AstralAudioDesc* audi
 
     uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(static_cast<size_t>(audio->samples.len), 1));
     if (buf == nullptr) {
-        lock(&e->free_lock);
-        e->free_stack[e->free_count++] = idx;
-        unlock(&e->free_lock);
+        release_free_slot(e, idx);
         return ASTRAL_E_NOMEM;
     }
     std::memcpy(buf, audio->samples.data, audio->samples.len);
@@ -499,13 +504,8 @@ AstralErr embedder_enqueue_multimodal(Embedder* embedder,
         return ASTRAL_E_INVALID;
     }
 
-    uint32_t idx = UINT32_MAX;
-    lock(&e->free_lock);
-    if (e->free_count > 0) {
-        idx = e->free_stack[--e->free_count];
-    }
-    unlock(&e->free_lock);
-    if (idx == UINT32_MAX || idx >= kMaxInflight) {
+    uint32_t idx = acquire_free_slot(e);
+    if (idx == kNoFreeSlot) {
         return ASTRAL_E_BUSY;
     }
 
@@ -521,9 +521,7 @@ AstralErr embedder_enqueue_multimodal(Embedder* embedder,
     if (text.data != nullptr && text.len > 0) {
         uint8_t* tbuf = static_cast<uint8_t*>(core::runtime_alloc(static_cast<size_t>(text.len), 1));
         if (tbuf == nullptr) {
-            lock(&e->free_lock);
-            e->free_stack[e->free_count++] = idx;
-            unlock(&e->free_lock);
+            release_free_slot(e, idx);
             return ASTRAL_E_NOMEM;
         }
         std::memcpy(tbuf, text.data, text.len);
@@ -539,17 +537,13 @@ AstralErr embedder_enqueue_multimodal(Embedder* embedder,
     if (image != nullptr) {
         if (image->size != sizeof(AstralImageDesc) || image->pixels.data == nullptr || image->pixels.len == 0) {
             slot_clear_buffers(slot);
-            lock(&e->free_lock);
-            e->free_stack[e->free_count++] = idx;
-            unlock(&e->free_lock);
+            release_free_slot(e, idx);
             return ASTRAL_E_INVALID;
         }
         uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(static_cast<size_t>(image->pixels.len), 1));
         if (buf == nullptr) {
             slot_clear_buffers(slot);
-            lock(&e->free_lock);
-            e->free_stack[e->free_count++] = idx;
-            unlock(&e->free_lock);
+            release_free_slot(e, idx);
             return ASTRAL_E_NOMEM;
         }
         std::memcpy(buf, image->pixels.data, image->pixels.len);
@@ -562,17 +556,13 @@ AstralErr embedder_enqueue_multimodal(Embedder* embedder,
     } else if (audio != nullptr) {
         if (audio->size != sizeof(AstralAudioDesc) || audio->samples.data == nullptr || audio->samples.len == 0) {
             slot_clear_buffers(slot);
-            lock(&e->free_lock);
-            e->free_stack[e->free_count++] = idx;
-            unlock(&e->free_lock);
+            release_free_slot(e, idx);
             return ASTRAL_E_INVALID;
         }
         uint8_t* buf = static_cast<uint8_t*>(core::runtime_alloc(static_cast<size_t>(audio->samples.len), 1));
         if (buf == nullptr) {
             slot_clear_buffers(slot);
-            lock(&e->free_lock);
-            e->free_stack[e->free_count++] = idx;
-            unlock(&e->free_lock);
+            release_free_slot(e, idx);
             return ASTRAL_E_NOMEM;
         }
         std::memcpy(buf, audio->samples.data, audio->samples.len);
@@ -625,9 +615,7 @@ AstralErr embedder_cancel(Embedder* embedder, uint64_t ticket) {
     slot.state.store(static_cast<uint32_t>(Embedder::SlotState::Free), std::memory_order_release);
     unlock(&slot.lock);
 
-    lock(&e->free_lock);
-    e->free_stack[e->free_count++] = idx;
-    unlock(&e->free_lock);
+    release_free_slot(e, idx);
     return ASTRAL_OK;
 }
 
@@ -664,9 +652,7 @@ AstralErr embedder_collect(Embedder* embedder, uint64_t ticket, AstralMutSpanU8 
         completed_ticket_store(e, ticket, ASTRAL_E_NOT_FOUND);
         slot.ticket.store(kNoTicket, std::memory_order_release);
         slot.state.store(static_cast<uint32_t>(Embedder::SlotState::Free), std::memory_order_release);
-        lock(&e->free_lock);
-        e->free_stack[e->free_count++] = idx;
-        unlock(&e->free_lock);
+        release_free_slot(e, idx);
         return ASTRAL_E_NOMEM;
     }
 
@@ -738,12 +724,9 @@ AstralErr embedder_collect(Embedder* embedder, uint64_t ticket, AstralMutSpanU8 
     unlock(&slot.lock);
 
     slot_clear_buffers(slot);
-    completed_ticket_store(e, ticket, ASTRAL_E_NOT_FOUND);
     slot.ticket.store(kNoTicket, std::memory_order_release);
     slot.state.store(static_cast<uint32_t>(Embedder::SlotState::Free), std::memory_order_release);
-    lock(&e->free_lock);
-    e->free_stack[e->free_count++] = idx;
-    unlock(&e->free_lock);
+    release_free_slot(e, idx);
 
     return err;
 }
