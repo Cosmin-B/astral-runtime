@@ -468,6 +468,32 @@ void memory_search_l2(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
 
 void memory_search_dot_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                             AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY) {
+    if (index->count == 0) {
+      *out_count = kNoResults;
+      return;
+    }
+
+    const uint32_t first_slot = index->active_slots[0];
+    const MemorySlot* best_slot = &index->slots[first_slot];
+    float best_score = dot_f32(query, vector_at(index, first_slot), index->dim);
+    uint64_t best_key = best_slot->record.key;
+    for (uint32_t active_pos = 1; active_pos < index->count; ++active_pos) {
+      const uint32_t slot = index->active_slots[active_pos];
+      const MemorySlot& s = index->slots[slot];
+      const float score = dot_f32(query, vector_at(index, slot), index->dim);
+      if (score > best_score || (score == best_score && s.record.key < best_key)) {
+        best_slot = &s;
+        best_score = score;
+        best_key = s.record.key;
+      }
+    }
+
+    fill_result(out_results, *best_slot, best_score);
+    *out_count = kTopOne;
+    return;
+  }
+
   const MemorySlot* best_slot = nullptr;
   float best_score = 0.0f;
   uint64_t best_key = 0;
@@ -498,6 +524,32 @@ void memory_search_dot_top1(MemoryIndex* index, const AstralMemorySearchDesc* de
 void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                                AstralMemorySearchResult* out_results, uint32_t* out_count) {
   const float query_scale = cosine_scale(query, index->dim);
+  if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY) {
+    if (index->count == 0) {
+      *out_count = kNoResults;
+      return;
+    }
+
+    const uint32_t first_slot = index->active_slots[0];
+    const MemorySlot* best_slot = &index->slots[first_slot];
+    float best_score = dot_f32(query, vector_at(index, first_slot), index->dim) * query_scale * best_slot->score_scale;
+    uint64_t best_key = best_slot->record.key;
+    for (uint32_t active_pos = 1; active_pos < index->count; ++active_pos) {
+      const uint32_t slot = index->active_slots[active_pos];
+      const MemorySlot& s = index->slots[slot];
+      const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale * s.score_scale;
+      if (score > best_score || (score == best_score && s.record.key < best_key)) {
+        best_slot = &s;
+        best_score = score;
+        best_key = s.record.key;
+      }
+    }
+
+    fill_result(out_results, *best_slot, best_score);
+    *out_count = kTopOne;
+    return;
+  }
+
   const MemorySlot* best_slot = nullptr;
   float best_score = 0.0f;
   uint64_t best_key = 0;
@@ -527,6 +579,32 @@ void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc*
 
 void memory_search_l2_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                            AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY) {
+    if (index->count == 0) {
+      *out_count = kNoResults;
+      return;
+    }
+
+    const uint32_t first_slot = index->active_slots[0];
+    const MemorySlot* best_slot = &index->slots[first_slot];
+    float best_score = l2_score_f32(query, vector_at(index, first_slot), index->dim);
+    uint64_t best_key = best_slot->record.key;
+    for (uint32_t active_pos = 1; active_pos < index->count; ++active_pos) {
+      const uint32_t slot = index->active_slots[active_pos];
+      const MemorySlot& s = index->slots[slot];
+      const float score = l2_score_f32(query, vector_at(index, slot), index->dim);
+      if (score > best_score || (score == best_score && s.record.key < best_key)) {
+        best_slot = &s;
+        best_score = score;
+        best_key = s.record.key;
+      }
+    }
+
+    fill_result(out_results, *best_slot, best_score);
+    *out_count = kTopOne;
+    return;
+  }
+
   const MemorySlot* best_slot = nullptr;
   float best_score = 0.0f;
   uint64_t best_key = 0;
