@@ -150,6 +150,8 @@ struct Agent {
     AgentMessageStorage* messages;
     uint32_t message_count;
     uint32_t message_capacity;
+    uint8_t* prompt_scratch;
+    uint32_t prompt_scratch_capacity;
     uint32_t max_messages;
     uint32_t max_prompt_bytes;
     uint32_t last_prompt_bytes;
@@ -198,6 +200,8 @@ void destroy_agent_allocations(Agent* agent) {
     agent->summary_len = 0;
     free_bytes(agent->memory_context, agent->memory_context_len);
     agent->memory_context_len = 0;
+    free_bytes(agent->prompt_scratch, agent->prompt_scratch_capacity);
+    agent->prompt_scratch_capacity = 0;
     release_messages(agent);
 }
 
@@ -297,6 +301,34 @@ AstralErr apply_prompt_overflow(Agent* agent, AstralSpanU8 user_message, uint32_
     return ASTRAL_OK;
 }
 
+AstralErr ensure_prompt_scratch(Agent* agent, uint32_t required) {
+    if (agent == nullptr || required > agent->max_prompt_bytes) {
+        return ASTRAL_E_NOMEM;
+    }
+    if (required <= agent->prompt_scratch_capacity) {
+        return ASTRAL_OK;
+    }
+
+    uint32_t next_capacity = agent->prompt_scratch_capacity != 0 ? agent->prompt_scratch_capacity : required;
+    while (next_capacity < required) {
+        const uint32_t grown = next_capacity * kCapacityGrowthFactor;
+        if (grown <= next_capacity || grown > agent->max_prompt_bytes) {
+            next_capacity = agent->max_prompt_bytes;
+            break;
+        }
+        next_capacity = grown;
+    }
+
+    uint8_t* next = core::runtime_alloc_array<uint8_t>(next_capacity);
+    if (next == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+    free_bytes(agent->prompt_scratch, agent->prompt_scratch_capacity);
+    agent->prompt_scratch = next;
+    agent->prompt_scratch_capacity = next_capacity;
+    return ASTRAL_OK;
+}
+
 void append_bytes(uint8_t*& dst, const void* src, uint32_t len) {
     if (len == 0) {
         return;
@@ -328,12 +360,12 @@ AstralErr build_prompt(Agent* agent, AstralSpanU8 user_message, uint8_t** out_by
         return overflow_err;
     }
 
-    uint8_t* prompt = core::runtime_alloc_array<uint8_t>(bytes);
-    if (prompt == nullptr) {
-        return ASTRAL_E_NOMEM;
+    const AstralErr scratch_err = ensure_prompt_scratch(agent, bytes);
+    if (scratch_err != ASTRAL_OK) {
+        return scratch_err;
     }
 
-    uint8_t* cursor = prompt;
+    uint8_t* cursor = agent->prompt_scratch;
     if (agent->system_prompt_len != 0) {
         append_role_line(cursor, ASTRAL_AGENT_ROLE_SYSTEM, agent->system_prompt, agent->system_prompt_len);
     }
@@ -360,8 +392,8 @@ AstralErr build_prompt(Agent* agent, AstralSpanU8 user_message, uint8_t** out_by
     }
     append_bytes(cursor, kAssistantLabel, static_cast<uint32_t>(sizeof(kAssistantLabel) - 1u));
 
-    *out_bytes = prompt;
-    *out_len = static_cast<uint32_t>(cursor - prompt);
+    *out_bytes = agent->prompt_scratch;
+    *out_len = static_cast<uint32_t>(cursor - agent->prompt_scratch);
     return ASTRAL_OK;
 }
 
@@ -1028,7 +1060,6 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
         err = astral_conv_decode(agent->conv);
     }
 
-    free_bytes(prompt, prompt_len);
     if (err != ASTRAL_OK) {
         agent->last_error = err;
         return err;
