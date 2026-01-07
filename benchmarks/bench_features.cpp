@@ -1644,6 +1644,12 @@ void bench_feature_surfaces_print(void) {
         }
 
         std::printf("%-28s  %8s  %12s  %12s  %12s\n", "benchmark", "clock", "ops", "ns/op", "ticks/op");
+        const AstralHandle model = load_mock_model_for_agent_bench();
+        if (astral_handle_valid(model)) {
+            print_result(bench_tokenize_count(model, iters), clock_info().name);
+            print_result(bench_tokenize_batch(model, iters), clock_info().name);
+            astral_model_release(model);
+        }
         print_result(bench_prompt_cache_get(iters), clock_info().name);
         print_result(bench_prompt_cache_view(iters), clock_info().name);
         print_result(bench_prompt_cache_miss(iters), clock_info().name);
