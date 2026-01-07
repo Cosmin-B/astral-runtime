@@ -72,13 +72,12 @@ inline bool desc_valid(const AstralMemoryIndexDesc* desc) {
 
 #if defined(__AVX2__)
 inline float reduce_avx2_f32(__m256 acc) {
-  alignas(kAvx2AlignmentBytes) float lanes[kAvx2F32Lanes];
-  _mm256_store_ps(lanes, acc);
-  float sum = 0.0f;
-  for (uint32_t lane = 0; lane < kAvx2F32Lanes; ++lane) {
-    sum += lanes[lane];
-  }
-  return sum;
+  const __m128 lo = _mm256_castps256_ps128(acc);
+  const __m128 hi = _mm256_extractf128_ps(acc, 1);
+  __m128 sum = _mm_add_ps(lo, hi);
+  sum = _mm_hadd_ps(sum, sum);
+  sum = _mm_hadd_ps(sum, sum);
+  return _mm_cvtss_f32(sum);
 }
 #endif
 
