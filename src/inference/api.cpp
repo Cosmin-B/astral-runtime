@@ -374,7 +374,7 @@ inline bool prompt_cache_key_valid(const AstralPromptCacheKey* key) {
 }
 
 inline bool prompt_cache_key_equal(const AstralPromptCacheKey& a, const AstralPromptCacheKey& b) {
-    return a.model == b.model && a.section_kind == b.section_kind && a.key == b.key && a.generation == b.generation;
+    return a.key == b.key && a.model == b.model && a.generation == b.generation && a.section_kind == b.section_kind;
 }
 
 inline uint32_t prompt_cache_hash(const AstralPromptCacheKey& key) {
@@ -537,20 +537,23 @@ inline void prompt_cache_destroy_impl(PromptCache* cache) {
     astral::core::runtime_delete(cache);
 }
 
-inline PromptCacheEntry* prompt_cache_find(PromptCache* cache, const AstralPromptCacheKey* key) {
-    const uint32_t hash = prompt_cache_hash(*key);
+inline PromptCacheEntry* prompt_cache_find_hashed(PromptCache* cache, const AstralPromptCacheKey* key, uint32_t hash) {
     uint32_t slot = hash & cache->table_mask;
     for (uint32_t probe = 0; probe < cache->table_capacity; ++probe) {
         PromptCacheEntry& entry = cache->entries[slot];
         if (entry.state == kPromptCacheSlotEmpty) {
             return nullptr;
         }
-        if (entry.state == kPromptCacheSlotOccupied && entry.hash == hash && prompt_cache_key_equal(entry.key, *key)) {
+        if (entry.hash == hash && prompt_cache_key_equal(entry.key, *key)) {
             return &entry;
         }
         slot = (slot + 1u) & cache->table_mask;
     }
     return nullptr;
+}
+
+inline PromptCacheEntry* prompt_cache_find(PromptCache* cache, const AstralPromptCacheKey* key) {
+    return prompt_cache_find_hashed(cache, key, prompt_cache_hash(*key));
 }
 
 inline PromptCacheEntry* prompt_cache_empty_entry(PromptCache* cache, uint32_t hash) {
@@ -1147,7 +1150,8 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_put_tokens(
         return ASTRAL_E_INVALID;
     }
 
-    PromptCacheEntry* entry = prompt_cache_find(c, key);
+    const uint32_t hash = prompt_cache_hash(*key);
+    PromptCacheEntry* entry = prompt_cache_find_hashed(c, key, hash);
     if (entry != nullptr) {
         prompt_cache_remove_entry(c, entry);
         --c->entry_count;
@@ -1159,7 +1163,6 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_put_tokens(
         return ASTRAL_E_NOMEM;
     }
 
-    const uint32_t hash = prompt_cache_hash(*key);
     entry = prompt_cache_empty_entry(c, hash);
     if (entry == nullptr) {
         set_err_code(ASTRAL_E_NOMEM);
