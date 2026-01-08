@@ -51,6 +51,9 @@ static constexpr uint32_t kBenchAgentPromptCacheEntries = 4;
 static constexpr uint32_t kBenchAgentPromptCacheTokens = 256;
 static constexpr uint32_t kBenchAgentSeed = 11;
 static constexpr uint32_t kBenchAgentPollLimit = 65536;
+static constexpr float kBenchAdapterScale = 1.0f;
+static constexpr float kBenchAdapterUpdatedScale = 0.5f;
+static constexpr char kBenchAdapterPath[] = "bench-adapter";
 static constexpr uint32_t kBenchSystemPromptCacheEntries = 4;
 static constexpr uint32_t kBenchSystemPromptCacheTokens = 256;
 static constexpr uint32_t kBenchSystemPromptTokenCapacity = 256;
@@ -1244,6 +1247,73 @@ static AstralHandle create_session(AstralHandle model, uint32_t max_tokens, floa
     return session;
 }
 
+static BenchResult bench_adapter_attach_clear(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.adapter attach_clear";
+    r.ops = iters;
+
+    AstralHandle model = load_mock_model_for_agent_bench();
+    if (!astral_handle_valid(model)) {
+        r.ops = 0;
+        return r;
+    }
+
+    AstralHandle session = create_session(
+        model,
+        kBenchSystemPromptSessionTokens,
+        /*temperature=*/0.0f,
+        /*top_k=*/0,
+        /*top_p=*/1.0f,
+        kBenchAgentSeed
+    );
+    if (!astral_handle_valid(session)) {
+        astral_model_release(model);
+        r.ops = 0;
+        return r;
+    }
+
+    AstralAdapterDesc desc{};
+    desc.size = sizeof(AstralAdapterDesc);
+    desc.path = span_from_cstr(kBenchAdapterPath);
+
+    AstralHandle adapter = 0;
+    if (astral_model_adapter_load(model, &desc, &adapter) != ASTRAL_OK) {
+        astral_session_destroy(session);
+        astral_model_release(model);
+        r.ops = 0;
+        return r;
+    }
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        AstralErr err = astral_session_adapters_add(session, adapter, kBenchAdapterScale);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+        err = astral_session_adapters_set_scale(session, 0, kBenchAdapterUpdatedScale);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+        err = astral_session_adapters_clear(session);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_model_adapter_release(adapter);
+    astral_session_destroy(session);
+    astral_model_release(model);
+    return r;
+}
+
 static BenchResult bench_system_prompt_text(uint64_t iters) {
     BenchResult r{};
     r.name = "features.system_prompt text";
@@ -1656,6 +1726,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
         print_result(bench_system_prompt_text(iters), clock_info().name);
         print_result(bench_system_prompt_cached_tokens(iters), clock_info().name);
+        print_result(bench_adapter_attach_clear(iters), clock_info().name);
         print_result(bench_toolset_parse(iters), clock_info().name);
         print_result(bench_chunk_word_ranges(iters), clock_info().name);
         print_result(bench_memory_add_batch(iters), clock_info().name);
@@ -1703,6 +1774,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
     print_result(bench_system_prompt_text(iters), clock_info().name);
     print_result(bench_system_prompt_cached_tokens(iters), clock_info().name);
+    print_result(bench_adapter_attach_clear(iters), clock_info().name);
     print_result(bench_toolset_parse(iters), clock_info().name);
     print_result(bench_chunk_word_ranges(iters), clock_info().name);
     print_result(bench_memory_add_batch(iters), clock_info().name);
