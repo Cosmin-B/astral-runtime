@@ -15,6 +15,8 @@ constexpr uint32_t kUtf8ThreeByteLead = 0xE0u;
 constexpr uint32_t kUtf8FourByteMask = 0xF8u;
 constexpr uint32_t kUtf8FourByteLead = 0xF0u;
 constexpr uint8_t kAsciiWhitespaceMax = ' ';
+constexpr uint64_t kByteHighBits = 0x8080808080808080ull;
+constexpr uint64_t kAsciiWhitespaceLimitBytes = 0x2121212121212121ull;
 constexpr uint8_t kDefaultSentenceDelimiters[] = {'.', '!', '?', '\n'};
 
 struct UnitRange {
@@ -44,6 +46,25 @@ inline bool is_space(uint8_t c) {
 
 inline bool can_be_space(uint8_t c) {
   return c <= kAsciiWhitespaceMax;
+}
+
+inline bool has_ascii_space_candidate(uint64_t word) {
+  return ((word - kAsciiWhitespaceLimitBytes) & ~word & kByteHighBits) != 0;
+}
+
+uint32_t find_ascii_space_candidate(AstralSpanU8 text, uint32_t pos) {
+  while (pos + sizeof(uint64_t) <= text.len) {
+    uint64_t word = 0;
+    std::memcpy(&word, text.data + pos, sizeof(word));
+    if (has_ascii_space_candidate(word)) {
+      break;
+    }
+    pos += static_cast<uint32_t>(sizeof(uint64_t));
+  }
+  while (pos < text.len && !can_be_space(text.data[pos])) {
+    ++pos;
+  }
+  return pos;
 }
 
 inline uint32_t utf8_step(AstralSpanU8 text, uint32_t pos) {
@@ -111,11 +132,14 @@ bool next_word_unit(AstralSpanU8 text, uint32_t* pos, UnitRange* out) {
 
   out->begin = p;
   while (p < text.len) {
-    const uint8_t c = text.data[p];
-    if (can_be_space(c) && is_space(c)) {
+    p = find_ascii_space_candidate(text, p);
+    if (p >= text.len) {
       break;
     }
-    p = (c & kUtf8AsciiMask) == 0 ? p + 1u : utf8_step(text, p);
+    if (is_space(text.data[p])) {
+      break;
+    }
+    ++p;
   }
   out->end = p;
   *pos = p;
