@@ -221,6 +221,7 @@ struct MemoryIndex {
   uint32_t key_table_capacity;
   uint32_t key_table_mask;
   uint32_t free_slot_hint;
+  uint8_t dense_active;
 };
 
 struct MemorySearchCursor {
@@ -243,6 +244,10 @@ namespace {
 
 inline float* vector_at(MemoryIndex* index, uint32_t slot) {
   return index->vectors + static_cast<size_t>(slot) * index->dim;
+}
+
+inline uint32_t active_slot_at(const MemoryIndex* index, uint32_t active_pos) {
+  return index->dense_active != 0 ? active_pos : index->active_slots[active_pos];
 }
 
 inline uint32_t slot_to_key_ref(uint32_t slot) {
@@ -273,8 +278,8 @@ uint32_t key_table_capacity_for(uint32_t capacity) {
   return table_capacity;
 }
 
-uint32_t find_slot_by_key(const MemoryIndex* index, uint64_t key) {
-  uint32_t table_pos = static_cast<uint32_t>(key_hash_mix(key)) & index->key_table_mask;
+uint32_t find_slot_by_key_hashed(const MemoryIndex* index, uint64_t key, uint64_t hash) {
+  uint32_t table_pos = static_cast<uint32_t>(hash) & index->key_table_mask;
   for (uint32_t probe = 0; probe < index->key_table_capacity; ++probe) {
     const uint32_t ref = index->key_table[table_pos];
     if (ref == kKeyTableEmpty) {
@@ -291,6 +296,10 @@ uint32_t find_slot_by_key(const MemoryIndex* index, uint64_t key) {
   return kU32Max;
 }
 
+uint32_t find_slot_by_key(const MemoryIndex* index, uint64_t key) {
+  return find_slot_by_key_hashed(index, key, key_hash_mix(key));
+}
+
 uint32_t find_free_slot(const MemoryIndex* index) {
   uint32_t slot = index->free_slot_hint;
   for (uint32_t probe = 0; probe < index->capacity; ++probe) {
@@ -305,8 +314,8 @@ uint32_t find_free_slot(const MemoryIndex* index) {
   return kU32Max;
 }
 
-AstralErr key_table_insert(MemoryIndex* index, uint64_t key, uint32_t slot) {
-  uint32_t table_pos = static_cast<uint32_t>(key_hash_mix(key)) & index->key_table_mask;
+AstralErr key_table_insert_new_hashed(MemoryIndex* index, uint64_t hash, uint32_t slot) {
+  uint32_t table_pos = static_cast<uint32_t>(hash) & index->key_table_mask;
   uint32_t tombstone_pos = kU32Max;
   for (uint32_t probe = 0; probe < index->key_table_capacity; ++probe) {
     const uint32_t ref = index->key_table[table_pos];
@@ -317,12 +326,6 @@ AstralErr key_table_insert(MemoryIndex* index, uint64_t key, uint32_t slot) {
     if (ref == kKeyTableTombstone) {
       if (tombstone_pos == kU32Max) {
         tombstone_pos = table_pos;
-      }
-    } else {
-      const uint32_t existing_slot = key_ref_to_slot(ref);
-      if (index->slots[existing_slot].occupied != 0 && index->slots[existing_slot].record.key == key) {
-        index->key_table[table_pos] = slot_to_key_ref(slot);
-        return ASTRAL_OK;
       }
     }
     table_pos = (table_pos + 1u) & index->key_table_mask;
@@ -402,7 +405,7 @@ void memory_search_dot(MemoryIndex* index, const AstralMemorySearchDesc* desc, c
                        AstralMemorySearchResult* out_results, uint32_t* out_count) {
   uint32_t filled = 0;
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
-    const uint32_t slot = index->active_slots[active_pos];
+    const uint32_t slot = active_slot_at(index, active_pos);
     const MemorySlot& s = index->slots[slot];
     if (!record_matches_group(desc, s)) {
       continue;
@@ -425,7 +428,7 @@ void memory_search_cosine(MemoryIndex* index, const AstralMemorySearchDesc* desc
   uint32_t filled = 0;
   const float query_scale = cosine_scale(query, index->dim);
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
-    const uint32_t slot = index->active_slots[active_pos];
+    const uint32_t slot = active_slot_at(index, active_pos);
     const MemorySlot& s = index->slots[slot];
     if (!record_matches_group(desc, s)) {
       continue;
@@ -447,7 +450,7 @@ void memory_search_l2(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
                       AstralMemorySearchResult* out_results, uint32_t* out_count) {
   uint32_t filled = 0;
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
-    const uint32_t slot = index->active_slots[active_pos];
+    const uint32_t slot = active_slot_at(index, active_pos);
     const MemorySlot& s = index->slots[slot];
     if (!record_matches_group(desc, s)) {
       continue;
@@ -473,12 +476,12 @@ void memory_search_dot_top1(MemoryIndex* index, const AstralMemorySearchDesc* de
       return;
     }
 
-    const uint32_t first_slot = index->active_slots[0];
+    const uint32_t first_slot = active_slot_at(index, 0);
     const MemorySlot* best_slot = &index->slots[first_slot];
     float best_score = dot_f32(query, vector_at(index, first_slot), index->dim);
     uint64_t best_key = best_slot->record.key;
     for (uint32_t active_pos = 1; active_pos < index->count; ++active_pos) {
-      const uint32_t slot = index->active_slots[active_pos];
+      const uint32_t slot = active_slot_at(index, active_pos);
       const MemorySlot& s = index->slots[slot];
       const float score = dot_f32(query, vector_at(index, slot), index->dim);
       if (score > best_score || (score == best_score && s.record.key < best_key)) {
@@ -497,7 +500,7 @@ void memory_search_dot_top1(MemoryIndex* index, const AstralMemorySearchDesc* de
   float best_score = 0.0f;
   uint64_t best_key = 0;
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
-    const uint32_t slot = index->active_slots[active_pos];
+    const uint32_t slot = active_slot_at(index, active_pos);
     const MemorySlot& s = index->slots[slot];
     if (!record_matches_group(desc, s)) {
       continue;
@@ -529,12 +532,12 @@ void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc*
       return;
     }
 
-    const uint32_t first_slot = index->active_slots[0];
+    const uint32_t first_slot = active_slot_at(index, 0);
     const MemorySlot* best_slot = &index->slots[first_slot];
     float best_score = dot_f32(query, vector_at(index, first_slot), index->dim) * query_scale * best_slot->score_scale;
     uint64_t best_key = best_slot->record.key;
     for (uint32_t active_pos = 1; active_pos < index->count; ++active_pos) {
-      const uint32_t slot = index->active_slots[active_pos];
+      const uint32_t slot = active_slot_at(index, active_pos);
       const MemorySlot& s = index->slots[slot];
       const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale * s.score_scale;
       if (score > best_score || (score == best_score && s.record.key < best_key)) {
@@ -553,7 +556,7 @@ void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc*
   float best_score = 0.0f;
   uint64_t best_key = 0;
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
-    const uint32_t slot = index->active_slots[active_pos];
+    const uint32_t slot = active_slot_at(index, active_pos);
     const MemorySlot& s = index->slots[slot];
     if (!record_matches_group(desc, s)) {
       continue;
@@ -584,12 +587,12 @@ void memory_search_l2_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
       return;
     }
 
-    const uint32_t first_slot = index->active_slots[0];
+    const uint32_t first_slot = active_slot_at(index, 0);
     const MemorySlot* best_slot = &index->slots[first_slot];
     float best_score = l2_score_f32(query, vector_at(index, first_slot), index->dim);
     uint64_t best_key = best_slot->record.key;
     for (uint32_t active_pos = 1; active_pos < index->count; ++active_pos) {
-      const uint32_t slot = index->active_slots[active_pos];
+      const uint32_t slot = active_slot_at(index, active_pos);
       const MemorySlot& s = index->slots[slot];
       const float score = l2_score_f32(query, vector_at(index, slot), index->dim);
       if (score > best_score || (score == best_score && s.record.key < best_key)) {
@@ -608,7 +611,7 @@ void memory_search_l2_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
   float best_score = 0.0f;
   uint64_t best_key = 0;
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
-    const uint32_t slot = index->active_slots[active_pos];
+    const uint32_t slot = active_slot_at(index, active_pos);
     const MemorySlot& s = index->slots[slot];
     if (!record_matches_group(desc, s)) {
       continue;
@@ -687,6 +690,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->key_table = core::runtime_alloc_array<uint32_t>(key_table_capacity);
   index->key_table_capacity = key_table_capacity;
   index->key_table_mask = key_table_capacity - 1u;
+  index->dense_active = 1u;
   if (index->slots == nullptr || index->vectors == nullptr || index->active_slots == nullptr ||
       index->key_table == nullptr) {
     destroy_allocations(index);
@@ -735,6 +739,7 @@ AstralErr memory_clear(MemoryIndex* index) {
   std::memset(index->key_table, 0, sizeof(uint32_t) * index->key_table_capacity);
   index->count = 0;
   index->free_slot_hint = 0;
+  index->dense_active = 1u;
   return ASTRAL_OK;
 }
 
@@ -748,11 +753,15 @@ AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records
     if (records[i].size != sizeof(AstralMemoryRecord) || records[i].key == 0) {
       return ASTRAL_E_INVALID;
     }
-    uint32_t slot = find_slot_by_key(index, records[i].key);
+    const uint64_t key_hash = key_hash_mix(records[i].key);
+    uint32_t slot = find_slot_by_key_hashed(index, records[i].key, key_hash);
     if (slot == kU32Max) {
       slot = find_free_slot(index);
       if (slot == kU32Max) {
         return ASTRAL_E_NOMEM;
+      }
+      if (index->dense_active != 0 && slot != index->count) {
+        index->dense_active = 0;
       }
       index->slots[slot].active_pos = index->count;
       index->active_slots[index->count] = slot;
@@ -762,7 +771,7 @@ AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records
       if (index->free_slot_hint == index->capacity) {
         index->free_slot_hint = 0;
       }
-      const AstralErr key_err = key_table_insert(index, records[i].key, slot);
+      const AstralErr key_err = key_table_insert_new_hashed(index, key_hash, slot);
       if (key_err != ASTRAL_OK) {
         --index->count;
         index->slots[slot] = MemorySlot{};
@@ -797,6 +806,9 @@ AstralErr memory_remove(MemoryIndex* index, uint64_t key) {
   index->slots[last_slot].active_pos = active_pos;
   index->slots[slot] = MemorySlot{};
   --index->count;
+  if (active_pos != last_pos) {
+    index->dense_active = 0;
+  }
   return ASTRAL_OK;
 }
 
@@ -940,7 +952,7 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
   cursor += sizeof(header);
 
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
-    const uint32_t slot = index->active_slots[active_pos];
+    const uint32_t slot = active_slot_at(index, active_pos);
     std::memcpy(cursor, &index->slots[slot].record, sizeof(AstralMemoryRecord));
     cursor += sizeof(AstralMemoryRecord);
     std::memcpy(cursor, vector_at(index, slot), sizeof(float) * index->dim);
