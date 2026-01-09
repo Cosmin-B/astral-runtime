@@ -2,6 +2,10 @@
 
 #include <cstring>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 namespace astral::inference {
 
 namespace {
@@ -17,6 +21,7 @@ constexpr uint32_t kUtf8FourByteLead = 0xF0u;
 constexpr uint8_t kAsciiWhitespaceMax = ' ';
 constexpr uint64_t kByteHighBits = 0x8080808080808080ull;
 constexpr uint64_t kAsciiWhitespaceLimitBytes = 0x2121212121212121ull;
+constexpr uint32_t kBitsPerByte = 8u;
 constexpr uint8_t kDefaultSentenceDelimiters[] = {'.', '!', '?', '\n'};
 
 struct UnitRange {
@@ -48,16 +53,27 @@ inline bool can_be_space(uint8_t c) {
   return c <= kAsciiWhitespaceMax;
 }
 
-inline bool has_ascii_space_candidate(uint64_t word) {
-  return ((word - kAsciiWhitespaceLimitBytes) & ~word & kByteHighBits) != 0;
+inline uint64_t ascii_space_candidate_mask(uint64_t word) {
+  return (word - kAsciiWhitespaceLimitBytes) & ~word & kByteHighBits;
+}
+
+inline uint32_t trailing_zero_bits(uint64_t mask) {
+#if defined(_MSC_VER)
+  unsigned long index = 0;
+  _BitScanForward64(&index, mask);
+  return static_cast<uint32_t>(index);
+#else
+  return static_cast<uint32_t>(__builtin_ctzll(mask));
+#endif
 }
 
 uint32_t find_ascii_space_candidate(AstralSpanU8 text, uint32_t pos) {
   while (pos + sizeof(uint64_t) <= text.len) {
     uint64_t word = 0;
     std::memcpy(&word, text.data + pos, sizeof(word));
-    if (has_ascii_space_candidate(word)) {
-      break;
+    const uint64_t mask = ascii_space_candidate_mask(word);
+    if (mask != 0) {
+      return pos + trailing_zero_bits(mask) / kBitsPerByte;
     }
     pos += static_cast<uint32_t>(sizeof(uint64_t));
   }
