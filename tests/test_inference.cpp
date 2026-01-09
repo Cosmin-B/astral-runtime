@@ -1399,6 +1399,13 @@ TEST(inference_toolset_parse_and_bind_mock) {
 
     call = {};
     call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr("{\"arguments\":{\"query\":\"early\"},\"name\":\"search\"}"), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSearchToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
     err = astral_toolset_parse_call(toolset, span_from_cstr("{\"name\":\"search\",\"arguments\":\"bad\"}"), &call);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(call.tool_id, kSearchToolId);

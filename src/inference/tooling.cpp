@@ -54,7 +54,13 @@ inline bool is_ws(uint8_t c) {
   return c == ' ' || c == '\n' || c == '\r' || c == '\t';
 }
 
-bool find_json_string_key(AstralSpanU8 text, const char* key, uint32_t key_len, AstralSpanU8* out_value) {
+bool find_json_string_key(
+    AstralSpanU8 text,
+    const char* key,
+    uint32_t key_len,
+    AstralSpanU8* out_value,
+    uint32_t* out_end
+) {
   if (text.data == nullptr || out_value == nullptr) {
     return false;
   }
@@ -91,6 +97,9 @@ bool find_json_string_key(AstralSpanU8 text, const char* key, uint32_t key_len, 
       if (data[p] == '"') {
         out_value->data = data + begin;
         out_value->len = p - begin;
+        if (out_end != nullptr) {
+          *out_end = p + 1u;
+        }
         return true;
       }
       ++p;
@@ -316,8 +325,9 @@ AstralErr toolset_parse_call(Toolset* toolset, AstralSpanU8 generated_text,
   out_result->arguments_json = {};
 
   AstralSpanU8 name{};
-  if (!find_json_string_key(generated_text, kJsonNameKey, kJsonNameKeyLen, &name) &&
-      !find_json_string_key(generated_text, kJsonToolKey, kJsonToolKeyLen, &name)) {
+  uint32_t name_end = 0;
+  if (!find_json_string_key(generated_text, kJsonNameKey, kJsonNameKeyLen, &name, &name_end) &&
+      !find_json_string_key(generated_text, kJsonToolKey, kJsonToolKeyLen, &name, &name_end)) {
     return ASTRAL_E_NOT_FOUND;
   }
 
@@ -329,7 +339,13 @@ AstralErr toolset_parse_call(Toolset* toolset, AstralSpanU8 generated_text,
   out_result->tool_id = tool->tool_id;
   out_result->name = tool_span(toolset, tool->name_off, tool->name_len);
   out_result->parse_status = ASTRAL_OK;
-  if (!find_json_object_key(generated_text, kJsonArgumentsKey, kJsonArgumentsKeyLen, &out_result->arguments_json)) {
+  AstralSpanU8 argument_scan = generated_text;
+  if (name_end < generated_text.len) {
+    argument_scan.data = generated_text.data + name_end;
+    argument_scan.len = generated_text.len - name_end;
+  }
+  if (!find_json_object_key(argument_scan, kJsonArgumentsKey, kJsonArgumentsKeyLen, &out_result->arguments_json) &&
+      !find_json_object_key(generated_text, kJsonArgumentsKey, kJsonArgumentsKeyLen, &out_result->arguments_json)) {
     out_result->parse_status = ASTRAL_E_INVALID;
   }
   return ASTRAL_OK;
