@@ -1227,15 +1227,39 @@ int32_t conv_stream_read(Conversation* conv, AstralMutSpanU8 out_buf, uint32_t t
     while (true) {
         concurrency::StreamToken tok{};
         if (conv->token_ring.pop(&tok)) {
-            const uint32_t n = (tok.utf8_len > out_buf.len) ? out_buf.len : tok.utf8_len;
-            std::memcpy(out_buf.data, tok.utf8_data, n);
-            if (n < tok.utf8_len) {
-                std::memcpy(conv->pending_utf8, tok.utf8_data, tok.utf8_len);
-                conv->pending_len = static_cast<uint8_t>(tok.utf8_len);
-                conv->pending_off = static_cast<uint8_t>(n);
+            uint8_t* dst = out_buf.data;
+            uint32_t remaining = out_buf.len;
+            uint32_t total = 0;
+            for (;;) {
+                const uint32_t tok_len = tok.utf8_len;
+                if (tok_len <= remaining) {
+                    if (tok_len != 0) {
+                        std::memcpy(dst, tok.utf8_data, tok_len);
+                        dst += tok_len;
+                        remaining -= tok_len;
+                        total += tok_len;
+                    }
+                } else {
+                    std::memcpy(dst, tok.utf8_data, remaining);
+                    std::memcpy(conv->pending_utf8, tok.utf8_data, tok_len);
+                    conv->pending_len = static_cast<uint8_t>(tok_len);
+                    conv->pending_off = static_cast<uint8_t>(remaining);
+                    total += remaining;
+                    platform::cpu_signal_event();
+                    return static_cast<int32_t>(total);
+                }
+
+                if (remaining == 0) {
+                    break;
+                }
+                if (!conv->token_ring.pop(&tok)) {
+                    break;
+                }
             }
-            platform::cpu_signal_event();
-            return static_cast<int32_t>(n);
+            if (total != 0) {
+                platform::cpu_signal_event();
+                return static_cast<int32_t>(total);
+            }
         }
 
         const ConvState st = conv->state.load(std::memory_order_acquire);
