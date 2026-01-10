@@ -1667,14 +1667,16 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_batch(
     if (err != ASTRAL_OK) {
         return err;
     }
+    auto* const model_ctx = m->backend_model_ctx;
+    auto* const tokenize = m->backend->ops->tokenize;
 
     if (out_tokens == nullptr) {
         uint32_t total = 0;
         out_offsets[0] = 0;
         for (uint32_t i = 0; i < request_count; ++i) {
             uint32_t count = 0;
-            err = m->backend->ops->tokenize(
-                m->backend_model_ctx,
+            err = tokenize(
+                model_ctx,
                 requests[i].text,
                 nullptr,
                 0,
@@ -1708,13 +1710,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_batch(
             dst = out_tokens + total;
             cap = max_tokens - total;
         }
-        err = m->backend->ops->tokenize(m->backend_model_ctx,
-                                        requests[i].text,
-                                        dst,
-                                        cap,
-                                        requests[i].add_special != 0,
-                                        requests[i].parse_special != 0,
-                                        &written);
+        err = tokenize(model_ctx,
+                       requests[i].text,
+                       dst,
+                       cap,
+                       requests[i].add_special != 0,
+                       requests[i].parse_special != 0,
+                       &written);
         if (err != ASTRAL_OK) {
             if (err != ASTRAL_E_NOMEM) {
                 set_err_code(err);
