@@ -100,13 +100,12 @@ inline bool overflow_policy_valid(AstralAgentOverflowPolicy policy) {
     return policy == ASTRAL_AGENT_OVERFLOW_REJECT || policy == ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST;
 }
 
-uint64_t hash_bytes(AstralSpanU8 bytes) {
-    uint64_t hash = kFnvOffsetBasis;
-    for (uint32_t i = 0; i < bytes.len; ++i) {
-        hash ^= static_cast<uint64_t>(bytes.data[i]);
-        hash *= kFnvPrime;
+void hash_bytes_into(uint64_t* hash, const void* src, uint32_t len) {
+    const uint8_t* bytes = static_cast<const uint8_t*>(src);
+    for (uint32_t i = 0; i < len; ++i) {
+        *hash ^= static_cast<uint64_t>(bytes[i]);
+        *hash *= kFnvPrime;
     }
-    return hash;
 }
 
 uint8_t* copy_span(AstralSpanU8 span) {
@@ -337,8 +336,17 @@ void append_bytes(uint8_t*& dst, const void* src, uint32_t len) {
     dst += len;
 }
 
+void append_bytes_hashed(uint8_t*& dst, const void* src, uint32_t len, uint64_t* hash) {
+    append_bytes(dst, src, len);
+    hash_bytes_into(hash, src, len);
+}
+
 void append_span(uint8_t*& dst, AstralSpanU8 span) {
     append_bytes(dst, span.data, span.len);
+}
+
+void append_span_hashed(uint8_t*& dst, AstralSpanU8 span, uint64_t* hash) {
+    append_bytes_hashed(dst, span.data, span.len, hash);
 }
 
 void append_role_line(uint8_t*& dst, AstralAgentRole role, const uint8_t* content, uint32_t len) {
@@ -349,7 +357,21 @@ void append_role_line(uint8_t*& dst, AstralAgentRole role, const uint8_t* conten
     append_bytes(dst, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
 }
 
-AstralErr build_prompt(Agent* agent, AstralSpanU8 user_message, uint8_t** out_bytes, uint32_t* out_len) {
+void append_role_line_hashed(uint8_t*& dst, AstralAgentRole role, const uint8_t* content, uint32_t len, uint64_t* hash) {
+    uint32_t label_len = 0;
+    const char* label = role_label(role, &label_len);
+    append_bytes_hashed(dst, label, label_len, hash);
+    append_bytes_hashed(dst, content, len, hash);
+    append_bytes_hashed(dst, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u), hash);
+}
+
+AstralErr build_prompt(
+    Agent* agent,
+    AstralSpanU8 user_message,
+    uint8_t** out_bytes,
+    uint32_t* out_len,
+    uint64_t* out_hash
+) {
     if (agent == nullptr || out_bytes == nullptr || out_len == nullptr || !span_valid(user_message)) {
         return ASTRAL_E_INVALID;
     }
@@ -366,43 +388,81 @@ AstralErr build_prompt(Agent* agent, AstralSpanU8 user_message, uint8_t** out_by
     }
 
     uint8_t* cursor = agent->prompt_scratch;
+    uint64_t hash = kFnvOffsetBasis;
     if (agent->system_prompt_len != 0) {
-        append_role_line(cursor, ASTRAL_AGENT_ROLE_SYSTEM, agent->system_prompt, agent->system_prompt_len);
+        if (out_hash != nullptr) {
+            append_role_line_hashed(cursor, ASTRAL_AGENT_ROLE_SYSTEM, agent->system_prompt, agent->system_prompt_len, &hash);
+        } else {
+            append_role_line(cursor, ASTRAL_AGENT_ROLE_SYSTEM, agent->system_prompt, agent->system_prompt_len);
+        }
     }
     if (agent->summary_len != 0) {
-        append_bytes(cursor, kSummaryLabel, static_cast<uint32_t>(sizeof(kSummaryLabel) - 1u));
-        append_bytes(cursor, agent->summary, agent->summary_len);
-        append_bytes(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
+        if (out_hash != nullptr) {
+            append_bytes_hashed(cursor, kSummaryLabel, static_cast<uint32_t>(sizeof(kSummaryLabel) - 1u), &hash);
+            append_bytes_hashed(cursor, agent->summary, agent->summary_len, &hash);
+            append_bytes_hashed(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u), &hash);
+        } else {
+            append_bytes(cursor, kSummaryLabel, static_cast<uint32_t>(sizeof(kSummaryLabel) - 1u));
+            append_bytes(cursor, agent->summary, agent->summary_len);
+            append_bytes(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
+        }
     }
     if (agent->memory_context_len != 0) {
-        append_bytes(cursor, kMemoryLabel, static_cast<uint32_t>(sizeof(kMemoryLabel) - 1u));
-        append_bytes(cursor, agent->memory_context, agent->memory_context_len);
-        append_bytes(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
+        if (out_hash != nullptr) {
+            append_bytes_hashed(cursor, kMemoryLabel, static_cast<uint32_t>(sizeof(kMemoryLabel) - 1u), &hash);
+            append_bytes_hashed(cursor, agent->memory_context, agent->memory_context_len, &hash);
+            append_bytes_hashed(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u), &hash);
+        } else {
+            append_bytes(cursor, kMemoryLabel, static_cast<uint32_t>(sizeof(kMemoryLabel) - 1u));
+            append_bytes(cursor, agent->memory_context, agent->memory_context_len);
+            append_bytes(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
+        }
     }
     for (uint32_t i = 0; i < agent->message_count; ++i) {
-        append_role_line(cursor, agent->messages[i].role, agent->messages[i].content, agent->messages[i].len);
+        if (out_hash != nullptr) {
+            append_role_line_hashed(
+                cursor,
+                agent->messages[i].role,
+                agent->messages[i].content,
+                agent->messages[i].len,
+                &hash
+            );
+        } else {
+            append_role_line(cursor, agent->messages[i].role, agent->messages[i].content, agent->messages[i].len);
+        }
     }
     if (user_message.len != 0) {
         AstralSpanU8 user_label{};
         user_label.data = reinterpret_cast<const uint8_t*>(kUserLabel);
         user_label.len = static_cast<uint32_t>(sizeof(kUserLabel) - 1u);
-        append_span(cursor, user_label);
-        append_span(cursor, user_message);
-        append_bytes(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
+        if (out_hash != nullptr) {
+            append_span_hashed(cursor, user_label, &hash);
+            append_span_hashed(cursor, user_message, &hash);
+            append_bytes_hashed(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u), &hash);
+        } else {
+            append_span(cursor, user_label);
+            append_span(cursor, user_message);
+            append_bytes(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
+        }
     }
-    append_bytes(cursor, kAssistantLabel, static_cast<uint32_t>(sizeof(kAssistantLabel) - 1u));
+    if (out_hash != nullptr) {
+        append_bytes_hashed(cursor, kAssistantLabel, static_cast<uint32_t>(sizeof(kAssistantLabel) - 1u), &hash);
+        *out_hash = hash;
+    } else {
+        append_bytes(cursor, kAssistantLabel, static_cast<uint32_t>(sizeof(kAssistantLabel) - 1u));
+    }
 
     *out_bytes = agent->prompt_scratch;
     *out_len = static_cast<uint32_t>(cursor - agent->prompt_scratch);
     return ASTRAL_OK;
 }
 
-AstralPromptCacheKey prompt_cache_key(const Agent* agent, AstralSpanU8 prompt) {
+AstralPromptCacheKey prompt_cache_key(const Agent* agent, uint64_t prompt_hash) {
     AstralPromptCacheKey key{};
     key.size = sizeof(AstralPromptCacheKey);
     key.section_kind = ASTRAL_PROMPT_SECTION_RAW;
     key.model = agent->desc.model;
-    key.key = hash_bytes(prompt);
+    key.key = prompt_hash;
     key.generation = kPromptCacheGeneration;
     return key;
 }
@@ -420,8 +480,8 @@ void reset_prompt_cache_stats(Agent* agent) {
     agent->last_prompt_cache_misses = 0;
 }
 
-AstralErr feed_prompt_with_cache(Agent* agent, AstralSpanU8 prompt) {
-    const AstralPromptCacheKey key = prompt_cache_key(agent, prompt);
+AstralErr feed_prompt_with_cache(Agent* agent, AstralSpanU8 prompt, uint64_t prompt_hash) {
+    const AstralPromptCacheKey key = prompt_cache_key(agent, prompt_hash);
     const int32_t* cached_tokens = nullptr;
     uint32_t cached_count = 0;
 
@@ -1027,7 +1087,9 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
 
     uint8_t* prompt = nullptr;
     uint32_t prompt_len = 0;
-    err = build_prompt(agent, desc->user_message, &prompt, &prompt_len);
+    uint64_t prompt_hash = 0;
+    uint64_t* prompt_hash_out = agent->desc.prompt_cache != 0 ? &prompt_hash : nullptr;
+    err = build_prompt(agent, desc->user_message, &prompt, &prompt_len, prompt_hash_out);
     if (err != ASTRAL_OK) {
         agent->last_error = err;
         return err;
@@ -1049,7 +1111,7 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
         AstralSpanU8 prompt_span{};
         prompt_span.data = prompt;
         prompt_span.len = prompt_len;
-        err = feed_prompt_with_cache(agent, prompt_span);
+        err = feed_prompt_with_cache(agent, prompt_span, prompt_hash);
     } else if (err == ASTRAL_OK) {
         AstralSpanU8 prompt_span{};
         prompt_span.data = prompt;
