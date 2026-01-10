@@ -9,6 +9,9 @@
 #if defined(__AVX2__)
 #include <immintrin.h>
 #endif
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 namespace astral::inference {
 
@@ -39,6 +42,14 @@ constexpr uint32_t kAvx2AlignmentBytes = 32;
 constexpr uint32_t kAvx2Offset1 = kAvx2F32Lanes;
 constexpr uint32_t kAvx2Offset2 = kAvx2F32Lanes * 2u;
 constexpr uint32_t kAvx2Offset3 = kAvx2F32Lanes * 3u;
+#endif
+#if defined(__aarch64__) && defined(__ARM_NEON)
+constexpr uint32_t kNeonF32Lanes = 4;
+constexpr uint32_t kNeonUnrollVectors = 4;
+constexpr uint32_t kNeonUnrollF32 = kNeonF32Lanes * kNeonUnrollVectors;
+constexpr uint32_t kNeonOffset1 = kNeonF32Lanes;
+constexpr uint32_t kNeonOffset2 = kNeonF32Lanes * 2u;
+constexpr uint32_t kNeonOffset3 = kNeonF32Lanes * 3u;
 #endif
 
 struct MemorySlot {
@@ -124,6 +135,35 @@ float dot_f32(const float* a, const float* b, uint32_t dim) {
     sum += a[i] * b[i];
   }
   return sum;
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+  float32x4_t acc0 = vdupq_n_f32(0.0f);
+  float32x4_t acc1 = vdupq_n_f32(0.0f);
+  float32x4_t acc2 = vdupq_n_f32(0.0f);
+  float32x4_t acc3 = vdupq_n_f32(0.0f);
+  uint32_t i = 0;
+  for (; i + kNeonUnrollF32 <= dim; i += kNeonUnrollF32) {
+    const float32x4_t a0 = vld1q_f32(a + i);
+    const float32x4_t b0 = vld1q_f32(b + i);
+    const float32x4_t a1 = vld1q_f32(a + i + kNeonOffset1);
+    const float32x4_t b1 = vld1q_f32(b + i + kNeonOffset1);
+    const float32x4_t a2 = vld1q_f32(a + i + kNeonOffset2);
+    const float32x4_t b2 = vld1q_f32(b + i + kNeonOffset2);
+    const float32x4_t a3 = vld1q_f32(a + i + kNeonOffset3);
+    const float32x4_t b3 = vld1q_f32(b + i + kNeonOffset3);
+    acc0 = vfmaq_f32(acc0, a0, b0);
+    acc1 = vfmaq_f32(acc1, a1, b1);
+    acc2 = vfmaq_f32(acc2, a2, b2);
+    acc3 = vfmaq_f32(acc3, a3, b3);
+  }
+  acc0 = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+  for (; i + kNeonF32Lanes <= dim; i += kNeonF32Lanes) {
+    acc0 = vfmaq_f32(acc0, vld1q_f32(a + i), vld1q_f32(b + i));
+  }
+  float sum = vaddvq_f32(acc0);
+  for (; i < dim; ++i) {
+    sum += a[i] * b[i];
+  }
+  return sum;
 #else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
@@ -181,6 +221,33 @@ float l2_score_f32(const float* a, const float* b, uint32_t dim) {
 #endif
   }
   float sum = reduce_avx2_f32(acc0);
+  for (; i < dim; ++i) {
+    const float d = a[i] - b[i];
+    sum += d * d;
+  }
+  return -sum;
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+  float32x4_t acc0 = vdupq_n_f32(0.0f);
+  float32x4_t acc1 = vdupq_n_f32(0.0f);
+  float32x4_t acc2 = vdupq_n_f32(0.0f);
+  float32x4_t acc3 = vdupq_n_f32(0.0f);
+  uint32_t i = 0;
+  for (; i + kNeonUnrollF32 <= dim; i += kNeonUnrollF32) {
+    const float32x4_t d0 = vsubq_f32(vld1q_f32(a + i), vld1q_f32(b + i));
+    const float32x4_t d1 = vsubq_f32(vld1q_f32(a + i + kNeonOffset1), vld1q_f32(b + i + kNeonOffset1));
+    const float32x4_t d2 = vsubq_f32(vld1q_f32(a + i + kNeonOffset2), vld1q_f32(b + i + kNeonOffset2));
+    const float32x4_t d3 = vsubq_f32(vld1q_f32(a + i + kNeonOffset3), vld1q_f32(b + i + kNeonOffset3));
+    acc0 = vfmaq_f32(acc0, d0, d0);
+    acc1 = vfmaq_f32(acc1, d1, d1);
+    acc2 = vfmaq_f32(acc2, d2, d2);
+    acc3 = vfmaq_f32(acc3, d3, d3);
+  }
+  acc0 = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+  for (; i + kNeonF32Lanes <= dim; i += kNeonF32Lanes) {
+    const float32x4_t d = vsubq_f32(vld1q_f32(a + i), vld1q_f32(b + i));
+    acc0 = vfmaq_f32(acc0, d, d);
+  }
+  float sum = vaddvq_f32(acc0);
   for (; i < dim; ++i) {
     const float d = a[i] - b[i];
     sum += d * d;

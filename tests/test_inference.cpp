@@ -1785,6 +1785,72 @@ TEST(inference_memory_index_flat_mock) {
     astral_memory_destroy(index);
 }
 
+TEST(inference_memory_index_dot_l2_tail_mock) {
+    constexpr uint32_t kDim = 17;
+    constexpr uint32_t kCapacity = 4;
+    constexpr uint32_t kRecordCount = 3;
+    constexpr uint32_t kTopOne = 1;
+    constexpr uint64_t kKeyA = 101;
+    constexpr uint64_t kKeyB = 202;
+    constexpr uint64_t kKeyC = 303;
+    constexpr float kQueryBias = 1.0f;
+    constexpr float kFarOffset = 16.0f;
+
+    AstralMemoryRecord records[kRecordCount]{};
+    records[0].size = sizeof(AstralMemoryRecord);
+    records[0].key = kKeyA;
+    records[1].size = sizeof(AstralMemoryRecord);
+    records[1].key = kKeyB;
+    records[2].size = sizeof(AstralMemoryRecord);
+    records[2].key = kKeyC;
+
+    float query[kDim]{};
+    float vectors[kRecordCount * kDim]{};
+    for (uint32_t i = 0; i < kDim; ++i) {
+        query[i] = static_cast<float>(i) + kQueryBias;
+        vectors[i] = query[i];
+        vectors[kDim + i] = query[i] * kQueryBias;
+        vectors[kDim * 2u + i] = query[i] + kFarOffset;
+    }
+
+    AstralMemorySearchDesc search{};
+    search.size = sizeof(AstralMemorySearchDesc);
+    search.top_k = kTopOne;
+    search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    AstralMemorySearchResult results[kTopOne]{};
+    uint32_t count = 0;
+
+    AstralMemoryIndexDesc desc{};
+    desc.size = sizeof(AstralMemoryIndexDesc);
+    desc.dim = kDim;
+    desc.capacity = kCapacity;
+    desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+    desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+
+    AstralHandle index = 0;
+    AstralErr err = astral_memory_create(&desc, &index);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_add_batch(index, records, vectors, kRecordCount);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_search(index, &search, query, results, kTopOne, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopOne);
+    ASSERT_EQ(results[0].key, kKeyC);
+    astral_memory_destroy(index);
+
+    desc.metric = ASTRAL_MEMORY_METRIC_L2;
+    index = 0;
+    err = astral_memory_create(&desc, &index);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_add_batch(index, records, vectors, kRecordCount);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_search(index, &search, query, results, kTopOne, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopOne);
+    ASSERT_EQ(results[0].key, kKeyA);
+    astral_memory_destroy(index);
+}
+
 TEST(inference_adapters_mock) {
     constexpr float kPrimaryAdapterScale = 1.0f;
     constexpr float kSecondaryAdapterScale = 0.5f;
