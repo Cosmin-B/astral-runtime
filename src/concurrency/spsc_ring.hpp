@@ -306,10 +306,12 @@ private:
 /// - utf8_data: UTF-8 encoded text for this token
 ///
 /// Memory layout: Trivially copyable for efficient ring buffer operations.
+static constexpr uint32_t kStreamTokenUtf8Capacity = 32;
+
 struct StreamToken {
     uint32_t token_id;
     uint16_t utf8_len;
-    uint8_t utf8_data[32]; // Max 32 bytes per token (typical: 1-4 bytes)
+    uint8_t utf8_data[kStreamTokenUtf8Capacity]; // Max bytes per token (typical: 1-4)
 };
 
 static_assert(std::is_trivially_copyable_v<StreamToken>,

@@ -76,8 +76,56 @@ Session::Session(Model* model_,
 
 namespace {
 
+constexpr uint32_t kStreamReadBatchCap = 16;
+
 inline uint64_t get_ticks() {
     return platform::ticks_now();
+}
+
+inline uint32_t max_stream_read_batch(uint32_t remaining) {
+    uint32_t count = remaining / concurrency::kStreamTokenUtf8Capacity;
+    if (count == 0) {
+        count = 1;
+    }
+    return count < kStreamReadBatchCap ? count : kStreamReadBatchCap;
+}
+
+int32_t session_stream_drain(Session* session, AstralMutSpanU8 out_buf) {
+    uint8_t* dst = out_buf.data;
+    uint32_t remaining = out_buf.len;
+    uint32_t total = 0;
+
+    while (remaining != 0) {
+        concurrency::StreamToken batch[kStreamReadBatchCap];
+        const size_t popped = session->token_ring.pop_batch(batch, max_stream_read_batch(remaining));
+        if (popped == 0) {
+            break;
+        }
+
+        for (size_t i = 0; i < popped; ++i) {
+            const concurrency::StreamToken& token = batch[i];
+            const uint32_t tok_len = token.utf8_len;
+            if (tok_len == 0) {
+                continue;
+            }
+            if (tok_len <= remaining) {
+                std::memcpy(dst, token.utf8_data, tok_len);
+                dst += tok_len;
+                remaining -= tok_len;
+                total += tok_len;
+                continue;
+            }
+
+            std::memcpy(dst, token.utf8_data, remaining);
+            std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
+            session->pending_len = static_cast<uint8_t>(tok_len);
+            session->pending_off = static_cast<uint8_t>(remaining);
+            total += remaining;
+            return static_cast<int32_t>(total);
+        }
+    }
+
+    return static_cast<int32_t>(total);
 }
 
 inline bool session_stream_flush_one(Session* session, const concurrency::StreamToken& tok) {
@@ -2044,44 +2092,9 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
         return static_cast<int32_t>(n);
     }
 
-    // Try to read from token ring (fast path).
-    concurrency::StreamToken token{};
-    if (session->token_ring.pop(&token)) {
-        uint8_t* dst = out_buf.data;
-        uint32_t remaining = out_buf.len;
-        uint32_t total = 0;
-
-        for (;;) {
-            const uint32_t tok_len = token.utf8_len;
-            if (tok_len == 0) {
-                // Skip empty tokens (e.g. BOS/EOS detokenize to empty). Returning 0 is reserved for EOF.
-            } else if (tok_len <= remaining) {
-                std::memcpy(dst, token.utf8_data, tok_len);
-                dst += tok_len;
-                remaining -= tok_len;
-                total += tok_len;
-            } else {
-                // Partial token: copy what we can and store the remainder.
-                std::memcpy(dst, token.utf8_data, remaining);
-                std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
-                session->pending_len = static_cast<uint8_t>(tok_len);
-                session->pending_off = static_cast<uint8_t>(remaining);
-                total += remaining;
-                return static_cast<int32_t>(total);
-            }
-
-            if (remaining == 0) {
-                break;
-            }
-            if (!session->token_ring.pop(&token)) {
-                break;
-            }
-        }
-
-        if (total > 0) {
-            return static_cast<int32_t>(total);
-        }
-        // Only empty tokens were available; fall through to the regular empty-ring behavior.
+    int32_t drained = session_stream_drain(session, out_buf);
+    if (drained > 0) {
+        return drained;
     }
 
     // Ring is empty; check if decoding is complete
@@ -2105,43 +2118,9 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
         uint32_t spins = 0;
 
         while (true) {
-            // Try to pop again
-            if (session->token_ring.pop(&token)) {
-                uint8_t* dst = out_buf.data;
-                uint32_t remaining = out_buf.len;
-                uint32_t total = 0;
-
-                for (;;) {
-                    const uint32_t tok_len = token.utf8_len;
-                    if (tok_len == 0) {
-                        // Skip empty tokens (e.g. BOS/EOS detokenize to empty). Returning 0 is reserved for EOF.
-                    } else if (tok_len <= remaining) {
-                        std::memcpy(dst, token.utf8_data, tok_len);
-                        dst += tok_len;
-                        remaining -= tok_len;
-                        total += tok_len;
-                    } else {
-                        std::memcpy(dst, token.utf8_data, remaining);
-                        std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
-                        session->pending_len = static_cast<uint8_t>(tok_len);
-                        session->pending_off = static_cast<uint8_t>(remaining);
-                        total += remaining;
-                        return static_cast<int32_t>(total);
-                    }
-
-                    if (remaining == 0) {
-                        break;
-                    }
-                    if (!session->token_ring.pop(&token)) {
-                        break;
-                    }
-                }
-
-                if (total > 0) {
-                    return static_cast<int32_t>(total);
-                }
-                // Only empty tokens were available; continue waiting.
-                continue;
+            drained = session_stream_drain(session, out_buf);
+            if (drained > 0) {
+                return drained;
             }
 
             // Check if completed

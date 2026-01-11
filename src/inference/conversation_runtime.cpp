@@ -17,8 +17,61 @@ namespace astral::inference {
 
 namespace {
 
+constexpr uint32_t kStreamReadBatchCap = 16;
+constexpr size_t kDefaultAllocatorCapacity = 2 * 1024 * 1024;
+
 inline uint64_t get_ticks() {
     return platform::ticks_now();
+}
+
+inline uint32_t max_stream_read_batch(uint32_t remaining) {
+    uint32_t count = remaining / concurrency::kStreamTokenUtf8Capacity;
+    if (count == 0) {
+        count = 1;
+    }
+    return count < kStreamReadBatchCap ? count : kStreamReadBatchCap;
+}
+
+int32_t conv_stream_drain(Conversation* conv, AstralMutSpanU8 out_buf) {
+    uint8_t* dst = out_buf.data;
+    uint32_t remaining = out_buf.len;
+    uint32_t total = 0;
+
+    while (remaining != 0) {
+        concurrency::StreamToken batch[kStreamReadBatchCap];
+        const size_t popped = conv->token_ring.pop_batch(batch, max_stream_read_batch(remaining));
+        if (popped == 0) {
+            break;
+        }
+
+        for (size_t i = 0; i < popped; ++i) {
+            const concurrency::StreamToken& tok = batch[i];
+            const uint32_t tok_len = tok.utf8_len;
+            if (tok_len == 0) {
+                continue;
+            }
+            if (tok_len <= remaining) {
+                std::memcpy(dst, tok.utf8_data, tok_len);
+                dst += tok_len;
+                remaining -= tok_len;
+                total += tok_len;
+                continue;
+            }
+
+            std::memcpy(dst, tok.utf8_data, remaining);
+            std::memcpy(conv->pending_utf8, tok.utf8_data, tok_len);
+            conv->pending_len = static_cast<uint8_t>(tok_len);
+            conv->pending_off = static_cast<uint8_t>(remaining);
+            total += remaining;
+            platform::cpu_signal_event();
+            return static_cast<int32_t>(total);
+        }
+    }
+
+    if (total != 0) {
+        platform::cpu_signal_event();
+    }
+    return static_cast<int32_t>(total);
 }
 
 struct ScopedAtomicFlagGuard {
@@ -40,8 +93,6 @@ struct ScopedAtomicFlagGuard {
         }
     }
 };
-
-constexpr size_t kDefaultAllocatorCapacity = 2 * 1024 * 1024;
 
 inline void lock_flag(std::atomic_flag& f) {
     uint32_t spins = 0;
@@ -1225,41 +1276,9 @@ int32_t conv_stream_read(Conversation* conv, AstralMutSpanU8 out_buf, uint32_t t
     uint32_t spins = 0;
 
     while (true) {
-        concurrency::StreamToken tok{};
-        if (conv->token_ring.pop(&tok)) {
-            uint8_t* dst = out_buf.data;
-            uint32_t remaining = out_buf.len;
-            uint32_t total = 0;
-            for (;;) {
-                const uint32_t tok_len = tok.utf8_len;
-                if (tok_len <= remaining) {
-                    if (tok_len != 0) {
-                        std::memcpy(dst, tok.utf8_data, tok_len);
-                        dst += tok_len;
-                        remaining -= tok_len;
-                        total += tok_len;
-                    }
-                } else {
-                    std::memcpy(dst, tok.utf8_data, remaining);
-                    std::memcpy(conv->pending_utf8, tok.utf8_data, tok_len);
-                    conv->pending_len = static_cast<uint8_t>(tok_len);
-                    conv->pending_off = static_cast<uint8_t>(remaining);
-                    total += remaining;
-                    platform::cpu_signal_event();
-                    return static_cast<int32_t>(total);
-                }
-
-                if (remaining == 0) {
-                    break;
-                }
-                if (!conv->token_ring.pop(&tok)) {
-                    break;
-                }
-            }
-            if (total != 0) {
-                platform::cpu_signal_event();
-                return static_cast<int32_t>(total);
-            }
+        const int32_t drained = conv_stream_drain(conv, out_buf);
+        if (drained > 0) {
+            return drained;
         }
 
         const ConvState st = conv->state.load(std::memory_order_acquire);
