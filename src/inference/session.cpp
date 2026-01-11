@@ -68,6 +68,7 @@ Session::Session(Model* model_,
     , stop_max_len(0)
     , adapter_count(0)
     , adapter_handles{}
+    , adapter_refs{}
     , adapter_scales{}
     , toolset(nullptr)
     , tool_choice_mode(ASTRAL_TOOL_CHOICE_AUTO)
@@ -458,6 +459,19 @@ inline void session_prompt_chunks_clear(Session* session) {
     session->prompt_chunk_token_off = 0;
 }
 
+inline void session_adapter_refs_clear(Session* session) {
+    for (uint32_t i = 0; i < session->adapter_count; ++i) {
+        Adapter* adapter = session->adapter_refs[i];
+        if (adapter != nullptr) {
+            adapter_release(adapter);
+        }
+    }
+    session->adapter_count = 0;
+    std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
+    std::memset(session->adapter_refs, 0, sizeof(session->adapter_refs));
+    std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
+}
+
 inline bool image_desc_valid(const AstralImageDesc* image) {
     return image != nullptr && image->size == sizeof(AstralImageDesc) && image->pixels.data != nullptr &&
            image->pixels.len != 0 && image->width != 0 && image->height != 0;
@@ -741,6 +755,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     // Adapters.
     session->adapter_count = 0;
     std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
+    std::memset(session->adapter_refs, 0, sizeof(session->adapter_refs));
     std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
 
     // Slot id.
@@ -829,6 +844,8 @@ void session_destroy(Session* session) {
         toolset_release(session->toolset);
         session->toolset = nullptr;
     }
+
+    session_adapter_refs_clear(session);
 
     // Release allocator memory
     if (session->allocator_memory != nullptr) {
@@ -1196,7 +1213,7 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     if (ops->session_adapter_clear != nullptr && ops->session_adapter_add != nullptr) {
         (void)ops->session_adapter_clear(session->backend_session_ctx);
         for (uint32_t i = 0; i < session->adapter_count; ++i) {
-            auto* a = static_cast<Adapter*>(core::lookup_handle(session->adapter_handles[i], core::HandleKind::Adapter));
+            Adapter* a = session->adapter_refs[i];
             if (a != nullptr && a->backend_adapter_ctx != nullptr) {
                 (void)ops->session_adapter_add(session->backend_session_ctx, a->backend_adapter_ctx, session->adapter_scales[i]);
             }
@@ -1570,15 +1587,7 @@ AstralErr session_adapters_clear(Session* session) {
         return err;
     }
 
-    for (uint32_t i = 0; i < session->adapter_count; ++i) {
-        auto* a = static_cast<Adapter*>(core::lookup_handle(session->adapter_handles[i], core::HandleKind::Adapter));
-        if (a != nullptr) {
-            adapter_release(a);
-        }
-    }
-    session->adapter_count = 0;
-    std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
-    std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
+    session_adapter_refs_clear(session);
     return ASTRAL_OK;
 }
 
@@ -1616,6 +1625,7 @@ AstralErr session_adapters_add(Session* session, AstralHandle adapter, float sca
 
     const uint32_t idx = session->adapter_count++;
     session->adapter_handles[idx] = adapter;
+    session->adapter_refs[idx] = a;
     session->adapter_scales[idx] = scale;
     return ASTRAL_OK;
 }
@@ -1665,7 +1675,7 @@ AstralErr session_adapters_set_scale(Session* session, uint32_t index, float sca
     }
 
     for (uint32_t i = 0; i < session->adapter_count; ++i) {
-        auto* a = static_cast<Adapter*>(core::lookup_handle(session->adapter_handles[i], core::HandleKind::Adapter));
+        Adapter* a = session->adapter_refs[i];
         if (a == nullptr || a->model != session->model || a->backend_adapter_ctx == nullptr) {
             return ASTRAL_E_INVALID;
         }

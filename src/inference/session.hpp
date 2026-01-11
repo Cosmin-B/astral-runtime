@@ -139,6 +139,7 @@ struct Session {
     // Adapters (fixed-size list; session-scoped).
     uint32_t adapter_count;
     AstralHandle adapter_handles[ASTRAL_SESSION_ADAPTERS_MAX];
+    Adapter* adapter_refs[ASTRAL_SESSION_ADAPTERS_MAX];
     float adapter_scales[ASTRAL_SESSION_ADAPTERS_MAX];
 
     // Structured output toolset (setup-time only; decode reads provider grammar state).
