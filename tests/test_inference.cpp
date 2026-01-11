@@ -1979,6 +1979,57 @@ TEST(inference_adapters_mock) {
     astral_shutdown();
 }
 
+TEST(inference_adapter_release_after_session_destroy_mock) {
+    constexpr uint64_t kReserveBytes = 64ull * 1024ull * 1024ull;
+    constexpr uint32_t kThreadCount = 2u;
+    constexpr uint32_t kMaxTokens = 4u;
+    constexpr float kTemperature = 0.0f;
+    constexpr uint32_t kTopK = 0u;
+    constexpr float kTopP = 1.0f;
+    constexpr uint32_t kSeed = 1u;
+    constexpr float kAdapterScale = 1.0f;
+
+    AstralInit cfg = {};
+    cfg.reserve_bytes = kReserveBytes;
+    cfg.thread_count = kThreadCount;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const AstralHandle model = load_mock_model(nullptr);
+
+    AstralSessionDesc sd{};
+    sd.model = model;
+    sd.max_tokens = kMaxTokens;
+    sd.temperature = kTemperature;
+    sd.top_k = kTopK;
+    sd.top_p = kTopP;
+    sd.stream_enabled = 1;
+    sd.seed = kSeed;
+
+    AstralHandle session = 0;
+    err = astral_session_create(&sd, &session);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralAdapterDesc ad{};
+    ad.size = sizeof(AstralAdapterDesc);
+    ad.path = span_from_cstr("adapter-release-after-session-destroy");
+
+    AstralHandle adapter = 0;
+    err = astral_model_adapter_load(model, &ad, &adapter);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(adapter));
+
+    err = astral_session_adapters_add(session, adapter, kAdapterScale);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    astral_session_destroy(session);
+    astral_model_adapter_release(adapter);
+    ASSERT_FALSE(astral_handle_valid(adapter));
+
+    astral_model_release(model);
+    astral_shutdown();
+}
+
 TEST(inference_kv_state_roundtrip_mock) {
     AstralInit cfg = {};
     cfg.reserve_bytes = 64 * 1024 * 1024;
