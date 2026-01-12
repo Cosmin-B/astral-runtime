@@ -19,6 +19,7 @@ constexpr char kJsonArgumentsKey[] = "arguments";
 constexpr uint32_t kJsonNameKeyLen = sizeof(kJsonNameKey) - 1u;
 constexpr uint32_t kJsonToolKeyLen = sizeof(kJsonToolKey) - 1u;
 constexpr uint32_t kJsonArgumentsKeyLen = sizeof(kJsonArgumentsKey) - 1u;
+constexpr uint32_t kToolNameTagBytes = 4u;
 
 inline bool choice_mode_valid(AstralToolChoiceMode mode) {
   return mode == ASTRAL_TOOL_CHOICE_AUTO || mode == ASTRAL_TOOL_CHOICE_REQUIRED ||
@@ -48,6 +49,15 @@ inline AstralSpanU8 tool_span(const Toolset* toolset, uint32_t off, uint32_t len
 
 inline bool span_equals(AstralSpanU8 a, const uint8_t* b, uint32_t b_len) {
   return a.len == b_len && (a.len == 0 || std::memcmp(a.data, b, a.len) == 0);
+}
+
+inline uint32_t name_tag(const uint8_t* data, uint32_t len) {
+  uint32_t tag = 0;
+  const uint32_t n = len < kToolNameTagBytes ? len : kToolNameTagBytes;
+  for (uint32_t i = 0; i < n; ++i) {
+    tag |= static_cast<uint32_t>(data[i]) << (i * 8u);
+  }
+  return tag;
 }
 
 inline bool is_ws(uint8_t c) {
@@ -180,9 +190,10 @@ ToolRecord* find_tool_by_name(Toolset* toolset, AstralSpanU8 name) {
   if (toolset == nullptr || name.data == nullptr) {
     return nullptr;
   }
+  const uint32_t tag = name_tag(name.data, name.len);
   for (uint32_t i = 0; i < toolset->tool_count; ++i) {
     ToolRecord& tool = toolset->tools[i];
-    if (span_equals(name, toolset->bytes + tool.name_off, tool.name_len)) {
+    if (tool.name_tag == tag && span_equals(name, toolset->bytes + tool.name_off, tool.name_len)) {
       return &tool;
     }
   }
@@ -240,6 +251,7 @@ AstralErr toolset_create(const AstralToolsetDesc* desc, Toolset** out_toolset) {
     const AstralToolDesc& src = desc->tools[i];
     ToolRecord& dst = toolset->tools[i];
     dst.tool_id = src.tool_id;
+    dst.name_tag = name_tag(src.name.data, src.name.len);
     dst.name_off = cursor;
     dst.name_len = src.name.len;
     std::memcpy(toolset->bytes + cursor, src.name.data, src.name.len);

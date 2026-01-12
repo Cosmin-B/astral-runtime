@@ -1324,8 +1324,11 @@ TEST(inference_toolset_parse_and_bind_mock) {
     constexpr uint64_t kRuntimeReserveBytes = 64 * 1024 * 1024;
     constexpr uint32_t kRuntimeThreads = 2;
     constexpr uint32_t kToolCount = 2;
+    constexpr uint32_t kCollisionToolCount = 2;
     constexpr uint32_t kSearchToolId = 101;
     constexpr uint32_t kOpenToolId = 202;
+    constexpr uint32_t kFirstCollisionToolId = 303;
+    constexpr uint32_t kSecondCollisionToolId = 404;
     constexpr uint32_t kOpenToolIndex = 1;
     constexpr uint32_t kSessionMaxTokens = 4;
     constexpr uint32_t kExecutorMaxBatchTokens = 8;
@@ -1415,6 +1418,34 @@ TEST(inference_toolset_parse_and_bind_mock) {
     call.size = sizeof(AstralToolCallResult);
     err = astral_toolset_parse_call(toolset, span_from_cstr("plain text"), &call);
     ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
+
+    AstralToolDesc collision_tools[kCollisionToolCount]{};
+    collision_tools[0].size = sizeof(AstralToolDesc);
+    collision_tools[0].tool_id = kFirstCollisionToolId;
+    collision_tools[0].name = span_from_cstr("same_alpha");
+    collision_tools[0].json_schema = span_from_cstr("{\"type\":\"object\"}");
+    collision_tools[1].size = sizeof(AstralToolDesc);
+    collision_tools[1].tool_id = kSecondCollisionToolId;
+    collision_tools[1].name = span_from_cstr("same_beta");
+    collision_tools[1].json_schema = span_from_cstr("{\"type\":\"object\"}");
+
+    AstralToolsetDesc collision_td{};
+    collision_td.size = sizeof(AstralToolsetDesc);
+    collision_td.tool_count = kCollisionToolCount;
+    collision_td.choice_mode = ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL;
+    collision_td.tools = collision_tools;
+
+    AstralHandle collision_toolset = 0;
+    err = astral_toolset_create(&collision_td, &collision_toolset);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(collision_toolset, span_from_cstr("{\"name\":\"same_beta\",\"arguments\":{}}"), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSecondCollisionToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+    astral_toolset_destroy(collision_toolset);
 
     AstralSessionDesc sd{};
     sd.model = model;
