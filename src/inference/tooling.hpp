@@ -9,6 +9,7 @@ namespace astral::inference {
 
 struct ToolRecord {
     uint32_t tool_id;
+    uint32_t name_tag;
     uint32_t name_off;
     uint32_t name_len;
     uint32_t desc_off;

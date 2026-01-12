@@ -23,6 +23,9 @@ static constexpr char kDisabledEnvValue[] = "0";
 static constexpr uint32_t kBenchToolSearchId = 1;
 static constexpr uint32_t kBenchToolOpenId = 2;
 static constexpr uint32_t kBenchToolCount = 2;
+static constexpr uint32_t kBenchToolManyCount = 16;
+static constexpr uint32_t kBenchToolManyTargetIndex = kBenchToolManyCount - 1u;
+static constexpr uint32_t kBenchToolManyIdBase = 100;
 static constexpr uint32_t kBenchChunkMaxWords = 32;
 static constexpr uint32_t kBenchChunkOverlapWords = 4;
 static constexpr uint32_t kBenchChunkRangeCapacity = 64;
@@ -69,6 +72,12 @@ static constexpr char kBenchMemoryMetricEnv[] = "ASTRAL_BENCH_MEMORY_METRIC";
 static constexpr char kBenchMemoryMetricDot[] = "dot";
 static constexpr char kBenchMemoryMetricL2[] = "l2";
 static constexpr char kBenchMemoryMetricCosine[] = "cosine";
+static constexpr const char* kBenchToolManyNames[kBenchToolManyCount] = {
+    "a000", "b001", "c002", "d003",
+    "e004", "f005", "g006", "h007",
+    "i008", "j009", "k010", "l011",
+    "m012", "n013", "o014", "p015",
+};
 
 static uint32_t parse_u32_env(const char* key, uint32_t fallback) {
     const char* v = std::getenv(key);
@@ -697,6 +706,55 @@ static BenchResult bench_toolset_parse(uint64_t iters) {
     for (uint64_t i = 0; i < iters; ++i) {
         const AstralErr err = astral_toolset_parse_call(toolset, text, &call);
         if (err != ASTRAL_OK || call.tool_id != kBenchToolSearchId || call.parse_status != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_toolset_destroy(toolset);
+    return r;
+}
+
+static BenchResult bench_toolset_parse_many(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.toolset parse_many";
+    r.ops = iters;
+
+    AstralToolDesc tools[kBenchToolManyCount]{};
+    for (uint32_t i = 0; i < kBenchToolManyCount; ++i) {
+        tools[i].size = sizeof(AstralToolDesc);
+        tools[i].tool_id = kBenchToolManyIdBase + i;
+        tools[i].name = span_from_cstr(kBenchToolManyNames[i]);
+        tools[i].description = span_from_cstr("Synthetic lookup fixture");
+        tools[i].json_schema = span_from_cstr("{\"type\":\"object\"}");
+    }
+
+    AstralToolsetDesc desc{};
+    desc.size = sizeof(AstralToolsetDesc);
+    desc.tool_count = kBenchToolManyCount;
+    desc.choice_mode = ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL;
+    desc.tools = tools;
+
+    AstralHandle toolset = 0;
+    if (astral_toolset_create(&desc, &toolset) != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    const AstralSpanU8 text = span_from_cstr("{\"name\":\"p015\",\"arguments\":{\"query\":\"latency\",\"k\":4}}");
+    AstralToolCallResult call{};
+    call.size = sizeof(AstralToolCallResult);
+    const uint32_t expected_id = kBenchToolManyIdBase + kBenchToolManyTargetIndex;
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        const AstralErr err = astral_toolset_parse_call(toolset, text, &call);
+        if (err != ASTRAL_OK || call.tool_id != expected_id || call.parse_status != ASTRAL_OK) {
             r.ops = i;
             break;
         }
@@ -1728,6 +1786,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_system_prompt_cached_tokens(iters), clock_info().name);
         print_result(bench_adapter_attach_clear(iters), clock_info().name);
         print_result(bench_toolset_parse(iters), clock_info().name);
+        print_result(bench_toolset_parse_many(iters), clock_info().name);
         print_result(bench_chunk_word_ranges(iters), clock_info().name);
         print_result(bench_memory_add_batch(iters), clock_info().name);
         print_result(bench_memory_flat_search_top1(iters), clock_info().name);
@@ -1776,6 +1835,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_system_prompt_cached_tokens(iters), clock_info().name);
     print_result(bench_adapter_attach_clear(iters), clock_info().name);
     print_result(bench_toolset_parse(iters), clock_info().name);
+    print_result(bench_toolset_parse_many(iters), clock_info().name);
     print_result(bench_chunk_word_ranges(iters), clock_info().name);
     print_result(bench_memory_add_batch(iters), clock_info().name);
     print_result(bench_memory_flat_search_top1(iters), clock_info().name);
