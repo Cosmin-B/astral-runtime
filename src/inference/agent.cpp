@@ -139,6 +139,7 @@ struct Agent {
     AstralHandle handle;
     AstralAgentDesc desc;
     AstralHandle conv;
+    Conversation* conv_ptr;
     Toolset* toolset;
     uint8_t* system_prompt;
     uint32_t system_prompt_len;
@@ -188,6 +189,7 @@ void destroy_agent_allocations(Agent* agent) {
     if (agent->conv != 0) {
         astral_conv_destroy(agent->conv);
         agent->conv = 0;
+        agent->conv_ptr = nullptr;
     }
     if (agent->toolset != nullptr) {
         toolset_release(agent->toolset);
@@ -467,12 +469,6 @@ AstralPromptCacheKey prompt_cache_key(const Agent* agent, uint64_t prompt_hash) 
     return key;
 }
 
-Conversation* agent_conversation(Agent* agent) {
-    return static_cast<Conversation*>(
-        core::lookup_handle(agent->conv, core::HandleKind::Conversation)
-    );
-}
-
 void reset_prompt_cache_stats(Agent* agent) {
     agent->last_prompt_cache_reused_tokens = 0;
     agent->last_prompt_cache_new_tokens = 0;
@@ -490,7 +486,7 @@ AstralErr feed_prompt_with_cache(Agent* agent, AstralSpanU8 prompt, uint64_t pro
     if (err == ASTRAL_OK) {
         agent->last_prompt_cache_reused_tokens = cached_count;
         agent->last_prompt_cache_hits = kPromptCacheHitCount;
-        return conv_feed_tokens(agent_conversation(agent), cached_tokens, cached_count, kPromptFinalize);
+        return conv_feed_tokens(agent->conv_ptr, cached_tokens, cached_count, kPromptFinalize);
     }
     if (err != ASTRAL_E_NOT_FOUND) {
         return err;
@@ -529,7 +525,7 @@ AstralErr feed_prompt_with_cache(Agent* agent, AstralSpanU8 prompt, uint64_t pro
     if (err == ASTRAL_OK) {
         agent->last_prompt_cache_new_tokens = written;
         agent->last_prompt_cache_misses = kPromptCacheMissCount;
-        err = conv_feed_tokens(agent_conversation(agent), tokens, written, kPromptFinalize);
+        err = conv_feed_tokens(agent->conv_ptr, tokens, written, kPromptFinalize);
     }
 
     if (tokens != nullptr) {
@@ -640,6 +636,14 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
         core::runtime_delete(agent);
         return err;
     }
+    agent->conv_ptr = static_cast<Conversation*>(
+        core::lookup_handle(agent->conv, core::HandleKind::Conversation)
+    );
+    if (agent->conv_ptr == nullptr) {
+        destroy_agent_allocations(agent);
+        core::runtime_delete(agent);
+        return ASTRAL_E_BUSY;
+    }
     if (desc->toolset != 0) {
         auto* toolset = static_cast<Toolset*>(core::lookup_handle(desc->toolset, core::HandleKind::Toolset));
         if (toolset == nullptr) {
@@ -647,7 +651,7 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
             core::runtime_delete(agent);
             return ASTRAL_E_INVALID;
         }
-        err = astral_conv_set_toolset(agent->conv, desc->toolset, desc->tool_choice_mode);
+        err = conv_set_toolset(agent->conv_ptr, toolset, desc->tool_choice_mode);
         if (err != ASTRAL_OK) {
             destroy_agent_allocations(agent);
             core::runtime_delete(agent);
@@ -702,7 +706,7 @@ AstralErr agent_set_system_prompt(Agent* agent, AstralSpanU8 system_prompt) {
         return ASTRAL_E_INVALID;
     }
     AstralSessionState state = ASTRAL_SESSION_FAILED;
-    const AstralErr state_err = astral_conv_state(agent->conv, &state);
+    const AstralErr state_err = conv_state(agent->conv_ptr, &state);
     if (state_err != ASTRAL_OK) {
         return state_err;
     }
@@ -740,7 +744,7 @@ AstralErr agent_set_summary(Agent* agent, AstralSpanU8 summary) {
         return ASTRAL_E_INVALID;
     }
     AstralSessionState state = ASTRAL_SESSION_FAILED;
-    const AstralErr state_err = astral_conv_state(agent->conv, &state);
+    const AstralErr state_err = conv_state(agent->conv_ptr, &state);
     if (state_err != ASTRAL_OK) {
         return state_err;
     }
@@ -778,7 +782,7 @@ AstralErr agent_set_memory_context(Agent* agent, AstralSpanU8 memory_context) {
         return ASTRAL_E_INVALID;
     }
     AstralSessionState state = ASTRAL_SESSION_FAILED;
-    const AstralErr state_err = astral_conv_state(agent->conv, &state);
+    const AstralErr state_err = conv_state(agent->conv_ptr, &state);
     if (state_err != ASTRAL_OK) {
         return state_err;
     }
@@ -1074,7 +1078,7 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
     }
 
     AstralSessionState state = ASTRAL_SESSION_FAILED;
-    AstralErr err = astral_conv_state(agent->conv, &state);
+    AstralErr err = conv_state(agent->conv_ptr, &state);
     if (err != ASTRAL_OK) {
         agent->last_error = err;
         return err;
@@ -1106,7 +1110,7 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
     conv_desc.stream_enabled = agent->desc.stream_enabled;
     conv_desc.seed = agent->desc.seed;
 
-    err = astral_conv_reset(agent->conv, &conv_desc);
+    err = conv_reset(agent->conv_ptr, &conv_desc);
     if (err == ASTRAL_OK && agent->desc.prompt_cache != 0) {
         AstralSpanU8 prompt_span{};
         prompt_span.data = prompt;
@@ -1116,10 +1120,10 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
         AstralSpanU8 prompt_span{};
         prompt_span.data = prompt;
         prompt_span.len = prompt_len;
-        err = astral_conv_feed(agent->conv, prompt_span, kPromptFinalize);
+        err = conv_feed(agent->conv_ptr, prompt_span, kPromptFinalize);
     }
     if (err == ASTRAL_OK) {
-        err = astral_conv_decode(agent->conv);
+        err = conv_decode(agent->conv_ptr);
     }
 
     if (err != ASTRAL_OK) {
@@ -1136,7 +1140,7 @@ AstralErr agent_chat_cancel(Agent* agent) {
     if (agent == nullptr) {
         return ASTRAL_E_INVALID;
     }
-    const AstralErr err = astral_conv_cancel(agent->conv);
+    const AstralErr err = conv_cancel(agent->conv_ptr);
     agent->last_error = err;
     return err;
 }
@@ -1145,7 +1149,7 @@ int32_t agent_chat_stream_read(Agent* agent, AstralMutSpanU8 out_buf, uint32_t t
     if (agent == nullptr) {
         return ASTRAL_E_INVALID;
     }
-    const int32_t result = astral_conv_stream_read(agent->conv, out_buf, timeout_ms);
+    const int32_t result = conv_stream_read(agent->conv_ptr, out_buf, timeout_ms);
     if (result < 0 && result != ASTRAL_E_TIMEOUT) {
         agent->last_error = static_cast<AstralErr>(result);
     }
@@ -1157,9 +1161,9 @@ AstralErr agent_chat_result(Agent* agent, AstralAgentChatResult* out_result) {
         return ASTRAL_E_INVALID;
     }
     AstralConvStats stats{};
-    AstralErr stats_err = astral_conv_stats(agent->conv, &stats);
+    AstralErr stats_err = conv_stats(agent->conv_ptr, &stats);
     AstralSessionState state = ASTRAL_SESSION_FAILED;
-    const AstralErr state_err = astral_conv_state(agent->conv, &state);
+    const AstralErr state_err = conv_state(agent->conv_ptr, &state);
     if (state_err != ASTRAL_OK) {
         return state_err;
     }
