@@ -23,6 +23,8 @@
 #include "../core/runtime_state.hpp"
 #include "../core/model_sources.hpp"
 #include "../core/model_load_config.hpp"
+#include "../platform/atomics.h"
+#include "../platform/time.h"
 
 #include <cstdint>
 #include <cstring>
@@ -69,6 +71,143 @@ inline astral::inference::Agent* lookup_agent(AstralHandle agent) {
     return static_cast<astral::inference::Agent*>(
         astral::core::lookup_handle(agent, astral::core::HandleKind::Agent)
     );
+}
+
+inline astral::inference::Embedder* lookup_embedder(AstralHandle emb) {
+    return static_cast<astral::inference::Embedder*>(
+        astral::core::lookup_handle(emb, astral::core::HandleKind::Embedder)
+    );
+}
+
+inline astral::inference::Session* lookup_session(AstralHandle session) {
+    return static_cast<astral::inference::Session*>(
+        astral::core::lookup_handle(session, astral::core::HandleKind::Session)
+    );
+}
+
+inline astral::inference::Conversation* lookup_conversation(AstralHandle conv) {
+    return static_cast<astral::inference::Conversation*>(
+        astral::core::lookup_handle(conv, astral::core::HandleKind::Conversation)
+    );
+}
+
+inline AstralRequestState request_state_from_session(AstralSessionState state) {
+    switch (state) {
+    case ASTRAL_SESSION_IDLE:
+        return ASTRAL_REQUEST_QUEUED;
+    case ASTRAL_SESSION_FEEDING_PROMPT:
+    case ASTRAL_SESSION_DECODING:
+        return ASTRAL_REQUEST_RUNNING;
+    case ASTRAL_SESSION_COMPLETED:
+        return ASTRAL_REQUEST_COMPLETED;
+    case ASTRAL_SESSION_CANCELED:
+        return ASTRAL_REQUEST_CANCELED;
+    case ASTRAL_SESSION_FAILED:
+        return ASTRAL_REQUEST_FAILED;
+    default:
+        return ASTRAL_REQUEST_INVALID;
+    }
+}
+
+inline bool request_state_terminal(AstralRequestState state) {
+    return state == ASTRAL_REQUEST_COMPLETED || state == ASTRAL_REQUEST_CANCELED || state == ASTRAL_REQUEST_FAILED ||
+        state == ASTRAL_REQUEST_INVALID;
+}
+
+inline AstralErr request_ref_make(AstralRequestKind kind, AstralHandle owner, uint64_t ticket, AstralRequestRef* out) {
+    if (out == nullptr) {
+        set_err_invalid("out_request");
+        return ASTRAL_E_INVALID;
+    }
+    out->size = sizeof(AstralRequestRef);
+    out->kind = kind;
+    out->owner = owner;
+    out->ticket = ticket;
+    return ASTRAL_OK;
+}
+
+inline bool request_ref_valid(const AstralRequestRef* request) {
+    return request != nullptr && request->size == sizeof(AstralRequestRef) && request->owner != 0;
+}
+
+inline void request_status_init(const AstralRequestRef& request, AstralRequestStatus* out_status) {
+    out_status->kind = request.kind;
+    out_status->state = ASTRAL_REQUEST_INVALID;
+    out_status->flags = request.ticket != 0 ? ASTRAL_REQUEST_FLAG_TICKET : ASTRAL_REQUEST_FLAG_STREAM;
+    out_status->owner = request.owner;
+    out_status->ticket = request.ticket;
+    out_status->result = ASTRAL_OK;
+    out_status->queue_depth = 0;
+}
+
+AstralErr request_state_impl(const AstralRequestRef* request, AstralRequestStatus* out_status) {
+    if (!request_ref_valid(request) || out_status == nullptr || out_status->size != sizeof(AstralRequestStatus)) {
+        set_err_invalid("request/out_status");
+        return ASTRAL_E_INVALID;
+    }
+
+    request_status_init(*request, out_status);
+
+    switch (request->kind) {
+    case ASTRAL_REQUEST_SESSION: {
+        auto* s = lookup_session(request->owner);
+        if (s == nullptr) {
+            out_status->result = ASTRAL_E_INVALID;
+            return ASTRAL_E_INVALID;
+        }
+        astral::inference::SessionState internal_state{};
+        const AstralErr err = astral::inference::session_state(s, &internal_state);
+        if (err != ASTRAL_OK) {
+            out_status->result = err;
+            return err;
+        }
+        out_status->state = request_state_from_session(static_cast<AstralSessionState>(internal_state));
+        return ASTRAL_OK;
+    }
+    case ASTRAL_REQUEST_CONVERSATION: {
+        auto* c = lookup_conversation(request->owner);
+        if (c == nullptr) {
+            out_status->result = ASTRAL_E_INVALID;
+            return ASTRAL_E_INVALID;
+        }
+        AstralSessionState state = ASTRAL_SESSION_FAILED;
+        const AstralErr err = astral::inference::conv_state(c, &state);
+        if (err != ASTRAL_OK) {
+            out_status->result = err;
+            return err;
+        }
+        out_status->state = request_state_from_session(state);
+        return ASTRAL_OK;
+    }
+    case ASTRAL_REQUEST_AGENT_CHAT: {
+        auto* a = lookup_agent(request->owner);
+        if (a == nullptr) {
+            out_status->result = ASTRAL_E_INVALID;
+            return ASTRAL_E_INVALID;
+        }
+        AstralAgentChatResult result{};
+        result.size = sizeof(AstralAgentChatResult);
+        const AstralErr err = astral::inference::agent_chat_result(a, &result);
+        if (err != ASTRAL_OK) {
+            out_status->result = err;
+            return err;
+        }
+        out_status->state = request_state_from_session(result.state);
+        out_status->result = result.last_error;
+        return ASTRAL_OK;
+    }
+    case ASTRAL_REQUEST_EMBEDDING: {
+        auto* e = lookup_embedder(request->owner);
+        if (e == nullptr) {
+            out_status->result = ASTRAL_E_INVALID;
+            return ASTRAL_E_INVALID;
+        }
+        return astral::inference::embedder_request_state(e, request->ticket, out_status);
+    }
+    default:
+        out_status->result = ASTRAL_E_INVALID;
+        return ASTRAL_E_INVALID;
+    }
 }
 
 inline AstralErr require_model_ops(AstralHandle model, astral::inference::Model** out_model) {
@@ -2768,6 +2907,166 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_slot(AstralHandle session, u
 
     const AstralErr err = astral::inference::session_set_slot(s, slot_id);
     if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_session(AstralHandle session, AstralRequestRef* out_request) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (lookup_session(session) == nullptr) {
+        set_err_invalid("session");
+        return ASTRAL_E_INVALID;
+    }
+    return request_ref_make(ASTRAL_REQUEST_SESSION, session, 0, out_request);
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_conversation(AstralHandle conv, AstralRequestRef* out_request) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (lookup_conversation(conv) == nullptr) {
+        set_err_invalid("conv");
+        return ASTRAL_E_INVALID;
+    }
+    return request_ref_make(ASTRAL_REQUEST_CONVERSATION, conv, 0, out_request);
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_agent_chat(AstralHandle agent, AstralRequestRef* out_request) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (lookup_agent(agent) == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    return request_ref_make(ASTRAL_REQUEST_AGENT_CHAT, agent, 0, out_request);
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_embedding(
+    AstralHandle emb,
+    uint64_t ticket,
+    AstralRequestRef* out_request
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (lookup_embedder(emb) == nullptr || ticket == 0) {
+        set_err_invalid("emb/ticket");
+        return ASTRAL_E_INVALID;
+    }
+    return request_ref_make(ASTRAL_REQUEST_EMBEDDING, emb, ticket, out_request);
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_state(
+    const AstralRequestRef* request,
+    AstralRequestStatus* out_status
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    const AstralErr err = request_state_impl(request, out_status);
+    if (err != ASTRAL_OK && err != ASTRAL_E_NOT_FOUND) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_cancel(const AstralRequestRef* request) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (!request_ref_valid(request)) {
+        set_err_invalid("request");
+        return ASTRAL_E_INVALID;
+    }
+
+    AstralErr err = ASTRAL_E_INVALID;
+    switch (request->kind) {
+    case ASTRAL_REQUEST_SESSION: {
+        auto* s = lookup_session(request->owner);
+        err = s != nullptr ? astral::inference::session_cancel(s) : ASTRAL_E_INVALID;
+        break;
+    }
+    case ASTRAL_REQUEST_CONVERSATION: {
+        auto* c = lookup_conversation(request->owner);
+        err = c != nullptr ? astral::inference::conv_cancel(c) : ASTRAL_E_INVALID;
+        break;
+    }
+    case ASTRAL_REQUEST_AGENT_CHAT: {
+        auto* a = lookup_agent(request->owner);
+        err = a != nullptr ? astral::inference::agent_chat_cancel(a) : ASTRAL_E_INVALID;
+        break;
+    }
+    case ASTRAL_REQUEST_EMBEDDING: {
+        auto* e = lookup_embedder(request->owner);
+        err = e != nullptr ? astral::inference::embedder_cancel(e, request->ticket) : ASTRAL_E_INVALID;
+        break;
+    }
+    default:
+        err = ASTRAL_E_INVALID;
+        break;
+    }
+
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_wait(
+    const AstralRequestRef* request,
+    uint32_t timeout_ms,
+    AstralRequestStatus* out_status
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (!request_ref_valid(request) || out_status == nullptr || out_status->size != sizeof(AstralRequestStatus)) {
+        set_err_invalid("request/out_status");
+        return ASTRAL_E_INVALID;
+    }
+
+    AstralErr err = ASTRAL_E_INVALID;
+    switch (request->kind) {
+    case ASTRAL_REQUEST_SESSION: {
+        auto* s = lookup_session(request->owner);
+        err = s != nullptr ? astral::inference::session_wait(s, timeout_ms) : ASTRAL_E_INVALID;
+        (void)request_state_impl(request, out_status);
+        break;
+    }
+    case ASTRAL_REQUEST_CONVERSATION: {
+        auto* c = lookup_conversation(request->owner);
+        err = c != nullptr ? astral::inference::conv_wait(c, timeout_ms) : ASTRAL_E_INVALID;
+        (void)request_state_impl(request, out_status);
+        break;
+    }
+    case ASTRAL_REQUEST_AGENT_CHAT:
+    case ASTRAL_REQUEST_EMBEDDING: {
+        const uint64_t timeout_ns = static_cast<uint64_t>(timeout_ms) * 1000000ull;
+        const uint64_t start_ns = astral::platform::monotonic_time_ns();
+        uint32_t spins = 0;
+        for (;;) {
+            err = request_state_impl(request, out_status);
+            if (err != ASTRAL_OK || request_state_terminal(out_status->state)) {
+                break;
+            }
+            if (timeout_ms == 0 || astral::platform::monotonic_time_ns() - start_ns >= timeout_ns) {
+                err = ASTRAL_E_TIMEOUT;
+                break;
+            }
+            if (spins < 64) {
+                astral::platform::cpu_pause();
+            } else {
+                astral::platform::cpu_wait_for_event();
+            }
+            if (spins < 1024) {
+                ++spins;
+            }
+        }
+        break;
+    }
+    default:
+        err = ASTRAL_E_INVALID;
+        break;
+    }
+
+    if (err != ASTRAL_OK && err != ASTRAL_E_TIMEOUT) {
         set_err_code(err);
     }
     return err;

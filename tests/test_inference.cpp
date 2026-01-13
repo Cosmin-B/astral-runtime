@@ -266,6 +266,52 @@ TEST(inference_session_create_destroy) {
     astral_shutdown();
 }
 
+TEST(inference_request_lifecycle_session_mock) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 32 * 1024 * 1024;
+    cfg.thread_count = 2;
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralHandle model = load_mock_model(nullptr);
+
+    AstralSessionDesc session_desc = {};
+    session_desc.model = model;
+    session_desc.max_tokens = 8;
+    session_desc.temperature = 0.0f;
+    session_desc.top_k = 1;
+    session_desc.top_p = 1.0f;
+    session_desc.stream_enabled = 1;
+
+    AstralHandle session = 0;
+    ASSERT_EQ(astral_session_create(&session_desc, &session), ASTRAL_OK);
+
+    AstralRequestRef request{};
+    ASSERT_EQ(astral_request_from_session(session, &request), ASTRAL_OK);
+    ASSERT_EQ(request.kind, ASTRAL_REQUEST_SESSION);
+    ASSERT_EQ(request.owner, session);
+
+    AstralRequestStatus status{};
+    status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_state(&request, &status), ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_QUEUED);
+
+    ASSERT_EQ(astral_session_feed(session, span_from_cstr("hello"), 1), ASTRAL_OK);
+    ASSERT_EQ(astral_session_decode(session), ASTRAL_OK);
+
+    const std::string output = read_stream_all(session);
+    ASSERT_FALSE(output.empty());
+
+    status = AstralRequestStatus{};
+    status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_wait(&request, 1000, &status), ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_COMPLETED);
+    ASSERT_EQ(status.result, ASTRAL_OK);
+
+    astral_session_destroy(session);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
 TEST(inference_mock_lifecycle_churn) {
     constexpr uint32_t kRuntimeCycles = 8;
     constexpr uint32_t kModelsPerRuntime = 2;

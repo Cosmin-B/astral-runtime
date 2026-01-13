@@ -116,6 +116,14 @@ static uint32_t first_free_slot(uint32_t mask) {
     return kNoFreeSlot;
 }
 
+static uint32_t free_slot_count(uint32_t mask) {
+    uint32_t count = 0;
+    for (uint32_t idx = 0; idx < kMaxInflight; ++idx) {
+        count += (mask & free_slot_bit(idx)) != 0 ? 1u : 0u;
+    }
+    return count;
+}
+
 static uint32_t acquire_free_slot(Embedder* e) {
     uint32_t mask = e->free_mask.load(std::memory_order_acquire);
     while (mask != 0) {
@@ -617,6 +625,54 @@ AstralErr embedder_cancel(Embedder* embedder, uint64_t ticket) {
 
     release_free_slot(e, idx);
     return ASTRAL_OK;
+}
+
+AstralErr embedder_request_state(Embedder* embedder, uint64_t ticket, AstralRequestStatus* out_status) {
+    ASTRAL_ZONE_N("astral.embedder_request_state");
+
+    auto* e = embedder;
+    if (e == nullptr || ticket == 0 || out_status == nullptr || out_status->size != sizeof(AstralRequestStatus)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const uint32_t idx = ticket_index(ticket);
+    if (idx >= kMaxInflight) {
+        return ASTRAL_E_INVALID;
+    }
+
+    out_status->kind = ASTRAL_REQUEST_EMBEDDING;
+    out_status->flags = ASTRAL_REQUEST_FLAG_TICKET;
+    out_status->owner = e->handle;
+    out_status->ticket = ticket;
+    out_status->queue_depth = kMaxInflight - free_slot_count(e->free_mask.load(std::memory_order_acquire));
+
+    Embedder::Slot& slot = e->slots[idx];
+    if (slot.ticket.load(std::memory_order_acquire) != ticket) {
+        AstralErr completed_err = ASTRAL_E_NOT_FOUND;
+        if (completed_ticket_find(e, ticket, &completed_err)) {
+            out_status->result = completed_err;
+            out_status->state = completed_err == ASTRAL_E_CANCELED ? ASTRAL_REQUEST_CANCELED : ASTRAL_REQUEST_FAILED;
+            return ASTRAL_OK;
+        }
+        out_status->result = ASTRAL_E_NOT_FOUND;
+        out_status->state = ASTRAL_REQUEST_INVALID;
+        return ASTRAL_E_NOT_FOUND;
+    }
+
+    const uint32_t state = slot.state.load(std::memory_order_acquire);
+    out_status->result = static_cast<AstralErr>(slot.result.load(std::memory_order_acquire));
+    if (state == static_cast<uint32_t>(Embedder::SlotState::Ready)) {
+        out_status->state = ASTRAL_REQUEST_QUEUED;
+        return ASTRAL_OK;
+    }
+    if (state == static_cast<uint32_t>(Embedder::SlotState::Running)) {
+        out_status->state = ASTRAL_REQUEST_RUNNING;
+        return ASTRAL_OK;
+    }
+
+    out_status->state = ASTRAL_REQUEST_INVALID;
+    out_status->result = ASTRAL_E_NOT_FOUND;
+    return ASTRAL_E_NOT_FOUND;
 }
 
 AstralErr embedder_collect(Embedder* embedder, uint64_t ticket, AstralMutSpanU8 out_vector) {

@@ -209,6 +209,54 @@ TEST(embeddings_mock_e2e) {
     astral_shutdown();
 }
 
+TEST(embeddings_request_ticket_state_mock) {
+    AstralInit cfg{};
+    cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
+    cfg.thread_count = 2;
+    cfg.numa_node = 0xFFFFFFFFu;
+
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    const AstralHandle model = load_mock_embedding_model();
+
+    AstralHandle emb = 0;
+    ASSERT_EQ(astral_embed_create(model, &emb), ASTRAL_OK);
+
+    uint64_t ticket = 0;
+    ASSERT_EQ(astral_embed_enqueue(emb, span_from_cstr("request"), &ticket), ASTRAL_OK);
+
+    AstralRequestRef request{};
+    ASSERT_EQ(astral_request_from_embedding(emb, ticket, &request), ASTRAL_OK);
+    ASSERT_EQ(request.kind, ASTRAL_REQUEST_EMBEDDING);
+    ASSERT_EQ(request.owner, emb);
+    ASSERT_EQ(request.ticket, ticket);
+
+    AstralRequestStatus status{};
+    status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_state(&request, &status), ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_QUEUED);
+    ASSERT_EQ(status.flags & ASTRAL_REQUEST_FLAG_TICKET, ASTRAL_REQUEST_FLAG_TICKET);
+    ASSERT_GT(status.queue_depth, 0u);
+
+    ASSERT_EQ(astral_request_cancel(&request), ASTRAL_OK);
+
+    status = AstralRequestStatus{};
+    status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_state(&request, &status), ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_CANCELED);
+    ASSERT_EQ(status.result, ASTRAL_E_CANCELED);
+
+    float vec[64] = {};
+    AstralMutSpanU8 out{};
+    out.data = reinterpret_cast<uint8_t*>(vec);
+    out.len = static_cast<uint32_t>(sizeof(vec));
+    ASSERT_EQ(astral_embed_collect(emb, ticket, out), ASTRAL_E_CANCELED);
+
+    astral_embed_destroy(emb);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
 TEST(embeddings_mock_queue_pressure) {
     constexpr uint32_t kInflight = 8;
     constexpr uint32_t kCanceledIndex = 3;

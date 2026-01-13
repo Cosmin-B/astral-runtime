@@ -6,6 +6,16 @@ tickets, or stream bytes instead of invoking callbacks from runtime hot paths.
 
 ## C ABI
 
+Unified request refs:
+
+- `astral_request_from_session()`
+- `astral_request_from_conversation()`
+- `astral_request_from_agent_chat()`
+- `astral_request_from_embedding()`
+- `astral_request_state()`
+- `astral_request_cancel()`
+- `astral_request_wait()`
+
 Generation sessions:
 
 - `astral_session_decode()`
@@ -47,6 +57,10 @@ streams have one consumer. Embedding enqueue calls return a ticket that remains
 valid until `astral_embed_collect()` consumes the result or `astral_embed_cancel()`
 releases queued work.
 
+`AstralRequestRef` is a value type for engine queues. It carries the owner
+handle, request kind, and embedding ticket when one exists. It does not extend
+the lifetime of the owner handle.
+
 ## Error Behavior
 
 Bounded queues report `ASTRAL_E_BUSY` when capacity is exhausted. Polling calls
@@ -66,13 +80,16 @@ to shed queued work without growing memory.
 `AstralSession` exposes `Decode()`, `Cancel()`, `GetState()`, `WaitResult()`,
 and `ReadStream()`. `AstralAgent` exposes chat enqueue, cancel, result, and
 stream reads. `AstralEmbedder` exposes ticketed enqueue, `Collect()`, and
-`Cancel()` for queued embedding work.
+`Cancel()` for queued embedding work. Wrappers can store `AstralRequestRef` in
+their managed queues and poll `AstralRequestStatus` before dispatching callbacks.
 
 ## Unreal
 
 Unreal result structs carry native error codes, tickets, and backpressure flags.
 Blueprint delegates are delivered by the plugin on the game thread; native C++
-callers can keep using direct poll and wait calls.
+callers can keep using direct poll and wait calls. `AstralRequestStatus` gives
+Blueprint queues one state enum across generation, conversations, agent chat,
+and embedding tickets.
 
 ## Validation
 

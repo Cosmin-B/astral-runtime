@@ -1308,6 +1308,49 @@ enum {
     ASTRAL_SESSION_FAILED = 5,    /** Completed due to error */
 };
 
+typedef uint32_t AstralRequestKind;
+enum {
+    ASTRAL_REQUEST_NONE = 0,
+    ASTRAL_REQUEST_SESSION = 1,
+    ASTRAL_REQUEST_CONVERSATION = 2,
+    ASTRAL_REQUEST_AGENT_CHAT = 3,
+    ASTRAL_REQUEST_EMBEDDING = 4,
+};
+
+typedef uint32_t AstralRequestState;
+enum {
+    ASTRAL_REQUEST_INVALID = 0,
+    ASTRAL_REQUEST_QUEUED = 1,
+    ASTRAL_REQUEST_RUNNING = 2,
+    ASTRAL_REQUEST_COMPLETED = 3,
+    ASTRAL_REQUEST_CANCELED = 4,
+    ASTRAL_REQUEST_FAILED = 5,
+};
+
+typedef uint32_t AstralRequestFlags;
+enum {
+    ASTRAL_REQUEST_FLAG_STREAM = 1u << 0,
+    ASTRAL_REQUEST_FLAG_TICKET = 1u << 1,
+};
+
+typedef struct AstralRequestRef {
+    uint32_t size;
+    AstralRequestKind kind;
+    AstralHandle owner;
+    uint64_t ticket;
+} AstralRequestRef;
+
+typedef struct AstralRequestStatus {
+    uint32_t size;
+    AstralRequestKind kind;
+    AstralRequestState state;
+    AstralRequestFlags flags;
+    AstralHandle owner;
+    uint64_t ticket;
+    AstralErr result;
+    uint32_t queue_depth;
+} AstralRequestStatus;
+
 typedef uint32_t AstralAgentRole;
 enum {
     ASTRAL_AGENT_ROLE_SYSTEM = 1,
@@ -1383,16 +1426,53 @@ typedef struct AstralAgentChatResult {
 } AstralAgentChatResult;
 
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestStatus) == 40, "AstralRequestStatus must be 40 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 88, "AstralAgentDesc must be 88 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 24, "AstralAgentMessage must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 24, "AstralAgentChatDesc must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 64-bit");
 #else
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestStatus) == 40, "AstralRequestStatus must be 40 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 84, "AstralAgentDesc must be 84 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 16, "AstralAgentMessage must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 16, "AstralAgentChatDesc must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 32-bit");
 #endif
+
+/**
+ * Build request references for existing async owners.
+ *
+ * `AstralRequestRef` is a small value type for engine queues. It does not own
+ * the underlying handle or embedding ticket.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_session(AstralHandle session, AstralRequestRef* out_request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_conversation(AstralHandle conv, AstralRequestRef* out_request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_agent_chat(AstralHandle agent, AstralRequestRef* out_request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_embedding(
+    AstralHandle emb,
+    uint64_t ticket,
+    AstralRequestRef* out_request
+);
+
+/**
+ * Query, cancel, or wait for a request through one API shape.
+ *
+ * Embedding requests are ticketed. `astral_request_wait()` reports the current
+ * embedding ticket state; collection still happens through `astral_embed_collect()`
+ * because the caller owns the vector buffer.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_state(
+    const AstralRequestRef* request,
+    AstralRequestStatus* out_status
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_cancel(const AstralRequestRef* request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_wait(
+    const AstralRequestRef* request,
+    uint32_t timeout_ms,
+    AstralRequestStatus* out_status
+);
 
 /**
  * Request cancellation for an in-flight session decode.

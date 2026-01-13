@@ -281,6 +281,11 @@ TEST(abi_invalid_args_model_surface) {
     AstralMutSpanU8 text_out{};
     text_out.data = text_buf;
     text_out.len = static_cast<uint32_t>(sizeof(text_buf));
+    AstralRequestRef request{};
+    request.size = sizeof(AstralRequestRef);
+    request.kind = ASTRAL_REQUEST_SESSION;
+    AstralRequestStatus request_status{};
+    request_status.size = sizeof(AstralRequestStatus);
     uint32_t dim = 0;
 
     ASSERT_EQ(astral_model_info(0, &info), ASTRAL_E_INVALID);
@@ -365,6 +370,15 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_agent_chat_cancel(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_chat_stream_read(0, text_out, 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_chat_result(0, &agent_result), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_session(0, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_conversation(0, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_agent_chat(0, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_embedding(0, 1, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_state(nullptr, &request_status), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_state(&request, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_cancel(nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_wait(nullptr, 0, &request_status), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_wait(&request, 0, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_configure(0, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_tune(0, nullptr), ASTRAL_E_INVALID);
 
