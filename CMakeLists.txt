@@ -106,6 +106,18 @@ if(NOT ASTRAL_ENABLE_VIRTUAL_MEMORY)
         message(WARNING "ASTRAL_ENABLE_VIRTUAL_MEMORY=OFF disables temp-file mmap model loading for MEMORY/IO sources; forcing ASTRAL_CPU_MEMORY_SOURCE_MMAP=OFF")
         set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: materialize MEMORY/IO sources to temp files so llama.cpp can use mmap" FORCE)
     endif()
+elseif(WIN32)
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/vm_(linux|macos)\\.cpp$")
+elseif(APPLE)
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/vm_(linux|win32)\\.cpp$")
+else()
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/vm_(macos|win32)\\.cpp$")
+endif()
+
+if(WIN32)
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/thread_posix\\.cpp$")
+else()
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/thread_win32\\.cpp$")
 endif()
 
 # Mobile platforms: avoid temp-file-based mmap paths by default (sandboxed filesystems, non-standard temp locations).
