@@ -16,7 +16,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 1024,
       "embedding_dimension": null,
-      "include_in_unreal_sample_matrix": false
+      "include_in_unreal_sample_matrix": false,
+      "include_in_package": true
     },
     {
       "name": "embed-minilm-q2k",
@@ -30,7 +31,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 512,
       "embedding_dimension": 384,
-      "include_in_unreal_sample_matrix": false
+      "include_in_unreal_sample_matrix": false,
+      "include_in_package": true
     },
     {
       "name": "embed-bge-small-q4km",
@@ -44,7 +46,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 512,
       "embedding_dimension": 384,
-      "include_in_unreal_sample_matrix": false
+      "include_in_unreal_sample_matrix": false,
+      "include_in_package": false
     },
     {
       "name": "embed-nomic-v1-5-q2k",
@@ -58,7 +61,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 8192,
       "embedding_dimension": 768,
-      "include_in_unreal_sample_matrix": false
+      "include_in_unreal_sample_matrix": false,
+      "include_in_package": false
     },
     {
       "name": "liquid-lfm2-350m-q4km",
@@ -72,7 +76,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 32768,
       "embedding_dimension": null,
-      "include_in_unreal_sample_matrix": false
+      "include_in_unreal_sample_matrix": false,
+      "include_in_package": false
     },
     {
       "name": "gemma3-270m-q4km",
@@ -86,7 +91,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 32768,
       "embedding_dimension": null,
-      "include_in_unreal_sample_matrix": true
+      "include_in_unreal_sample_matrix": true,
+      "include_in_package": false
     },
     {
       "name": "gemma3-1b-it-q4km",
@@ -100,7 +106,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 32768,
       "embedding_dimension": null,
-      "include_in_unreal_sample_matrix": true
+      "include_in_unreal_sample_matrix": true,
+      "include_in_package": false
     },
     {
       "name": "smollm3-3b-q4km",
@@ -114,7 +121,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 65536,
       "embedding_dimension": null,
-      "include_in_unreal_sample_matrix": true
+      "include_in_unreal_sample_matrix": true,
+      "include_in_package": false
     },
     {
       "name": "qwen3-0.6b-q8",
@@ -128,7 +136,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 40960,
       "embedding_dimension": null,
-      "include_in_unreal_sample_matrix": true
+      "include_in_unreal_sample_matrix": true,
+      "include_in_package": false
     },
     {
       "name": "qwen3-1.7b-q8",
@@ -142,7 +151,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 40960,
       "embedding_dimension": null,
-      "include_in_unreal_sample_matrix": true
+      "include_in_unreal_sample_matrix": true,
+      "include_in_package": false
     },
     {
       "name": "qwen3-embed-0.6b-q8",
@@ -156,7 +166,8 @@
       "license_note": "See the Hugging Face model repository for license terms.",
       "context_length": 32768,
       "embedding_dimension": 1024,
-      "include_in_unreal_sample_matrix": false
+      "include_in_unreal_sample_matrix": false,
+      "include_in_package": false
     }
   ]
 }

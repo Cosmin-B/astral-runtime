@@ -27,6 +27,7 @@ CUSTOM_MODEL_URL = "https://example.test/model.gguf"
 CUSTOM_MODEL_FILE = "model.gguf"
 CUSTOM_BAD_MODEL_FILE = "../model.gguf"
 CUSTOM_BAD_SHA256 = "abc"
+PACKAGE_PRESET = "gpt2-q2k"
 
 
 def run_tool(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -62,12 +63,14 @@ def main(argv: list[str]) -> int:
     require(info["filename"] == QWEN_TEXT_FILE, "wrong filename")
     require(info["context_length"] == EXPECTED_QWEN_CONTEXT, "wrong context length")
     require(info["size_bytes"] == EXPECTED_QWEN_SIZE_BYTES, "wrong size")
+    require(info["include_in_package"] is False, "Qwen preset should not package by default")
     require(info["path"].endswith(f"{CUSTOM_OUTPUT_DIR}/{QWEN_TEXT_FILE}"), "wrong resolved path")
     require(QWEN_TEXT_PRESET in info["download_command"], "download command does not name preset")
 
     embed = json.loads(run_tool(root, "info", QWEN_EMBED_PRESET).stdout)
     require(embed["embedding_dimension"] == EXPECTED_EMBED_DIMENSION, "wrong embedding dimension")
     require(embed["model_type"] == MODEL_TYPE_EMBEDDING, "wrong embedding model type")
+    require(embed["include_in_package"] is False, "Qwen embedding preset should not package by default")
 
     embedding_presets = json.loads(run_tool(root, "list", "--type", MODEL_TYPE_EMBEDDING, "--format", "json").stdout)
     require(any(row["name"] == QWEN_EMBED_PRESET for row in embedding_presets), "embedding list missed Qwen embed preset")
@@ -76,6 +79,10 @@ def main(argv: list[str]) -> int:
     text_presets = run_tool(root, "list", "--type", MODEL_TYPE_TEXT).stdout
     require(QWEN_TEXT_PRESET in text_presets, "text list missed Qwen text preset")
     require(QWEN_EMBED_PRESET not in text_presets, "text list included embedding preset")
+
+    package_presets = json.loads(run_tool(root, "list", "--package", "--format", "json").stdout)
+    require(any(row["name"] == PACKAGE_PRESET for row in package_presets), "package list missed default text preset")
+    require(all(row["include_in_package"] is True for row in package_presets), "package list included disabled preset")
 
     dry_run = run_tool(root, "download", "--preset", QWEN_TEXT_PRESET, "--dry-run").stdout
     for marker in ("preset:", "path:", "url:", "size_bytes:", "sha256:", "command:"):

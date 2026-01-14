@@ -4,11 +4,12 @@ Astral model presets describe known GGUF fixtures and sample models without
 committing model files. The manifest lives at `scripts/model_presets.json` and
 records preset name, label, model type, Hugging Face repository, filename,
 revision, size, SHA-256, license note, context length, embedding dimension, and
-sample-matrix eligibility.
+package/sample-matrix eligibility.
 
 ## Tooling
 
 - `scripts/model_preset_tool.py list`
+- `scripts/model_preset_tool.py list --package`
 - `scripts/model_preset_tool.py list --type embedding --format json`
 - `scripts/model_preset_tool.py filename <preset>`
 - `scripts/model_preset_tool.py path <preset> --dir <dir>`
@@ -19,6 +20,7 @@ sample-matrix eligibility.
 - `tests/model_downloader.sh --preset <preset> --info`
 - `tests/model_downloader.sh --preset <preset> --print-path`
 - `tests/model_downloader.sh --list-presets --list-type text`
+- `tests/model_downloader.sh --list-package --list-format json`
 - `tests/model_downloader.sh --list-presets --list-type embedding --list-format json`
 
 `--dry-run` prints the resolved preset, output path, URL, byte size, checksum,
@@ -28,10 +30,11 @@ non-zero exit code for missing, truncated, or checksum-drifted files.
 
 `info` prints a stable JSON record with the preset name, model type, repository,
 revision, URL, resolved local path, byte size, checksum, context length,
-embedding dimension, sample-matrix flag, license note, and repeatable downloader
-command. `list --format json` prints the same records for every selected preset,
-optionally filtered by `--type text` or `--type embedding`. Engine setup tools
-can consume this output without scraping dry-run text.
+embedding dimension, package flag, sample-matrix flag, license note, and
+repeatable downloader command. `list --format json` prints the same records for
+every selected preset, optionally filtered by `--type text` or `--type
+embedding`. Engine setup tools can consume this output without scraping dry-run
+text.
 
 Custom downloads are accepted through `--url` or `--hf-repo` plus `--hf-file`.
 The wrapper rejects custom filenames that are not local `.gguf` basenames,
@@ -49,19 +52,22 @@ checksum validation.
 
 Unreal and Unity wrappers should use preset names only for setup tools,
 samples, and editor workflows. Runtime model loading still receives a concrete
-filesystem path through the native model descriptor. Packaged builds can pass
-engine root directories to `astral_model_path_resolve` before load so Unity,
-Unreal, and native hosts share the same UTF-8 path sizing and join behavior.
+filesystem path through the native model descriptor. Packaged builds can read
+`include_in_package` from the shared manifest, then pass engine root directories
+to `astral_model_path_resolve` before load so Unity, Unreal, and native hosts
+share the same UTF-8 path sizing and join behavior.
 
 ## Validation
 
 ```bash
 python3 scripts/model_preset_tool.py validate-manifest
 python3 scripts/model_preset_tool.py list --type embedding --format json
+python3 scripts/model_preset_tool.py list --package --format json
 python3 scripts/model_preset_tool.py info qwen3-0.6b-q8 --dir tests/models
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --list-presets --list-type text
+./tests/model_downloader.sh --list-package --list-format json
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --print-path
 ```
 

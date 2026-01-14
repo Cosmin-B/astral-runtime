@@ -59,6 +59,7 @@ class Preset:
     license_note: str
     context_length: Optional[int]
     embedding_dimension: Optional[int]
+    include_in_package: bool
     include_in_unreal_sample_matrix: bool
     huggingface_base_url: str
     direct_url: str = ""
@@ -164,6 +165,7 @@ def _load_presets(manifest_path: Path) -> List[Preset]:
                 license_note=_require_str(row, "license_note"),
                 context_length=_optional_int(row, "context_length"),
                 embedding_dimension=_optional_int(row, "embedding_dimension"),
+                include_in_package=bool(row.get("include_in_package", False)),
                 include_in_unreal_sample_matrix=bool(row.get("include_in_unreal_sample_matrix", False)),
                 huggingface_base_url=base_url.rstrip("/"),
             )
@@ -199,6 +201,11 @@ def _validate_manifest(data: Dict[str, Any], presets: List[Preset]) -> None:
             raise ValueError(f"embedding preset {preset.name} is missing embedding_dimension")
         if preset.model_type == MODEL_TYPE_TEXT and preset.embedding_dimension is not None:
             raise ValueError(f"text preset {preset.name} should not set embedding_dimension")
+        row = next(item for item in data["presets"] if item["name"] == preset.name)
+        if not isinstance(row.get("include_in_package"), bool):
+            raise ValueError(f"preset {preset.name} has invalid include_in_package")
+        if not isinstance(row.get("include_in_unreal_sample_matrix"), bool):
+            raise ValueError(f"preset {preset.name} has invalid include_in_unreal_sample_matrix")
 
 
 def _default_preset_name(manifest_path: Path) -> str:
@@ -291,6 +298,7 @@ def _preset_record(preset: Preset, output_dir: Path) -> Dict[str, Any]:
         "license_note": preset.license_note,
         "context_length": preset.context_length,
         "embedding_dimension": preset.embedding_dimension,
+        "include_in_package": preset.include_in_package,
         "include_in_unreal_sample_matrix": preset.include_in_unreal_sample_matrix,
         "download_command": _format_download_command(preset, output_dir),
     }
@@ -381,6 +389,8 @@ def cmd_list(args: argparse.Namespace) -> int:
     selected = presets
     if args.unreal_matrix:
         selected = [preset for preset in presets if preset.include_in_unreal_sample_matrix]
+    if args.package:
+        selected = [preset for preset in selected if preset.include_in_package]
     if args.type != MODEL_TYPE_ALL:
         selected = [preset for preset in selected if preset.model_type == args.type]
     if args.format == LIST_FORMAT_JSON:
@@ -442,6 +452,7 @@ def _select_download_preset(args: argparse.Namespace, presets: List[Preset], man
             license_note="Custom model; verify license terms before redistribution.",
             context_length=None,
             embedding_dimension=None,
+            include_in_package=False,
             include_in_unreal_sample_matrix=False,
             huggingface_base_url="https://huggingface.co",
             direct_url=url,
@@ -528,6 +539,7 @@ def main(argv: List[str]) -> int:
 
     list_parser = sub.add_parser("list")
     list_parser.add_argument("--unreal-matrix", action="store_true")
+    list_parser.add_argument("--package", action="store_true")
     list_parser.add_argument("--type", choices=(MODEL_TYPE_ALL, MODEL_TYPE_TEXT, MODEL_TYPE_EMBEDDING), default=MODEL_TYPE_ALL)
     list_parser.add_argument("--format", choices=(LIST_FORMAT_TEXT, LIST_FORMAT_JSON), default=LIST_FORMAT_TEXT)
     list_parser.add_argument("--dir", default="tests/models")

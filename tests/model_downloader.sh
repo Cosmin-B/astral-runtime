@@ -19,6 +19,7 @@ Options:
   --print-path          Print the resolved local path for a preset
   --info                Print resolved preset metadata as JSON
   --list-presets        Print available presets
+  --list-package        Print presets marked for packaged samples
   --list-type <type>    Filter --list-presets by all, text, or embedding
   --list-format <fmt>   Print --list-presets as text or json
   --token <token>       Hugging Face token, otherwise HF_TOKEN/HUGGINGFACE_HUB_TOKEN is used
@@ -59,6 +60,7 @@ fi
 print_path=0
 print_info=0
 list_presets=0
+list_package=0
 preset_name=""
 output_dir="tests/models"
 list_type="all"
@@ -86,6 +88,11 @@ while [[ $# -gt 0 ]]; do
       list_presets=1
       shift
       ;;
+    --list-package)
+      list_presets=1
+      list_package=1
+      shift
+      ;;
     --help|-h)
       usage
       exit "${exit_ok}"
@@ -99,7 +106,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "${list_presets}" -eq 1 ]]; then
-  exec python3 "${tool}" list --type "${list_type}" --format "${list_format}" --dir "${output_dir}"
+  list_args=(list --type "${list_type}" --format "${list_format}" --dir "${output_dir}")
+  if [[ "${list_package}" -eq 1 ]]; then
+    list_args+=(--package)
+  fi
+  exec python3 "${tool}" "${list_args[@]}"
 fi
 
 if [[ "${print_path}" -eq 1 ]]; then
