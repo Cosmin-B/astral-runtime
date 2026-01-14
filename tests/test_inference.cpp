@@ -1970,6 +1970,24 @@ TEST(inference_adapters_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_TRUE(astral_handle_valid(adapter));
 
+    AstralAdapterInfo adapter_info{};
+    adapter_info.size = sizeof(AstralAdapterInfo);
+    err = astral_model_adapter_info(adapter, &adapter_info);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(adapter_info.model, model);
+    ASSERT_EQ(adapter_info.path_bytes, path_span.len);
+    ASSERT_EQ(adapter_info.refcount, 1u);
+
+    uint8_t adapter_path_buf[32] = {};
+    AstralMutSpanU8 adapter_path_out{};
+    adapter_path_out.data = adapter_path_buf;
+    adapter_path_out.len = static_cast<uint32_t>(sizeof(adapter_path_buf));
+    uint32_t adapter_path_len = 0;
+    err = astral_model_adapter_path_copy(adapter, adapter_path_out, &adapter_path_len);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(adapter_path_len, path_span.len);
+    ASSERT_EQ(std::memcmp(adapter_path_buf, path, path_span.len), 0);
+
     const char* other_path = "adapter-other";
     AstralSpanU8 other_path_span{};
     other_path_span.data = reinterpret_cast<const uint8_t*>(other_path);
@@ -1998,6 +2016,11 @@ TEST(inference_adapters_mock) {
 
     err = astral_session_adapters_add(session, adapter, kPrimaryAdapterScale);
     ASSERT_EQ(err, ASTRAL_OK);
+    adapter_info = AstralAdapterInfo{};
+    adapter_info.size = sizeof(AstralAdapterInfo);
+    err = astral_model_adapter_info(adapter, &adapter_info);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(adapter_info.refcount, 2u);
 
     err = astral_session_adapters_count(session, &adapter_count);
     ASSERT_EQ(err, ASTRAL_OK);

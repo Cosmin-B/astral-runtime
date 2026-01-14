@@ -1259,6 +1259,13 @@ typedef struct AstralAdapterDesc {
     AstralSpanU8 path;  // UTF-8 path to adapter file
 } AstralAdapterDesc;
 
+typedef struct AstralAdapterInfo {
+    uint32_t size;
+    AstralHandle model;
+    uint32_t path_bytes;
+    uint32_t refcount;
+} AstralAdapterInfo;
+
 // Compile-time layout validation for configs.
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 64, "AstralInit must be 64 bytes on 64-bit");
@@ -1272,6 +1279,7 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 24, "AstralAdapterDesc must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 24, "AstralAdapterInfo must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 64, "AstralImageDesc must be 64 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 72, "AstralAudioDesc must be 72 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 104, "AstralModelMediaDesc must be 104 bytes on 64-bit");
@@ -1288,6 +1296,7 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12, "AstralAdapterDesc must be 12 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 20, "AstralAdapterInfo must be 20 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 52, "AstralImageDesc must be 52 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 60, "AstralAudioDesc must be 60 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 72, "AstralModelMediaDesc must be 72 bytes on 32-bit");
@@ -1634,6 +1643,12 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_load(
     AstralHandle model,
     const AstralAdapterDesc* desc,
     AstralHandle* out_adapter
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_info(AstralHandle adapter, AstralAdapterInfo* out_info);
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_path_copy(
+    AstralHandle adapter,
+    AstralMutSpanU8 out_path,
+    uint32_t* out_len
 );
 ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter);
 

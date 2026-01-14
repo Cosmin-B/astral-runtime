@@ -7,7 +7,10 @@ be canceled or completed before changing the active adapter set.
 ## C ABI
 
 - `AstralAdapterDesc`
+- `AstralAdapterInfo`
 - `astral_model_adapter_load()`
+- `astral_model_adapter_info()`
+- `astral_model_adapter_path_copy()`
 - `astral_model_adapter_release()`
 - `astral_session_adapters_clear()`
 - `astral_session_adapters_add()`
@@ -17,7 +20,7 @@ be canceled or completed before changing the active adapter set.
 
 `AstralAdapterDesc::path` is a UTF-8 path span owned by the caller for the
 duration of `astral_model_adapter_load()`. The returned adapter handle retains
-the native model until released.
+the native model and a path copy until released.
 
 ## Ownership
 
@@ -49,7 +52,7 @@ Use `AstralModel.LoadAdapter()` to load an adapter, then
 
 `UAstralModel::LoadAdapter()` returns an adapter handle for
 `UAstralSession::AddAdapter()`. Blueprint callers can inspect adapter count,
-adapter handle, and scale without using comma-separated strings.
+adapter handle, path, and scale without using comma-separated strings.
 
 ## Example
 
@@ -69,6 +72,9 @@ AstralErr err = astral_model_adapter_load(model, &desc, &adapter);
 if (err == ASTRAL_OK) {
     err = astral_session_adapters_add(session, adapter, kInitialAdapterScale);
     err = astral_session_adapters_set_scale(session, kPrimaryAdapterIndex, kUpdatedAdapterScale);
+    AstralAdapterInfo info = {0};
+    info.size = sizeof(AstralAdapterInfo);
+    err = astral_model_adapter_info(adapter, &info);
     astral_model_adapter_release(adapter);
 }
 ```

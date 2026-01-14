@@ -919,6 +919,50 @@ ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter) {
     ASTRAL_ABI_CATCH_END_VOID()
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_info(AstralHandle adapter, AstralAdapterInfo* out_info) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (adapter == 0 || out_info == nullptr) {
+        set_err_invalid("adapter/out_info");
+        return ASTRAL_E_INVALID;
+    }
+    auto* a =
+        static_cast<astral::inference::Adapter*>(astral::core::lookup_handle(adapter, astral::core::HandleKind::Adapter));
+    if (a == nullptr) {
+        set_err_invalid("adapter (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::adapter_info(a, out_info);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_path_copy(
+    AstralHandle adapter,
+    AstralMutSpanU8 out_path,
+    uint32_t* out_len
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (adapter == 0 || out_len == nullptr) {
+        set_err_invalid("adapter/out_len");
+        return ASTRAL_E_INVALID;
+    }
+    auto* a =
+        static_cast<astral::inference::Adapter*>(astral::core::lookup_handle(adapter, astral::core::HandleKind::Adapter));
+    if (a == nullptr) {
+        set_err_invalid("adapter (invalid handle)");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::adapter_path_copy(a, out_path, out_len);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_create(const AstralToolsetDesc* desc, AstralHandle* out_toolset) {
     ASTRAL_ABI_TRY_BEGIN
     if (desc == nullptr || out_toolset == nullptr) {

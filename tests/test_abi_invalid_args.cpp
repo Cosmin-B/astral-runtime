@@ -219,6 +219,8 @@ TEST(abi_invalid_args_model_surface) {
     AstralMediaInfo media_info{};
     AstralAdapterDesc adapter_desc{};
     AstralHandle adapter = 0;
+    AstralAdapterInfo adapter_info{};
+    adapter_info.size = sizeof(AstralAdapterInfo);
     constexpr uint32_t kToolId = 1;
     constexpr uint32_t kToolCount = 1;
     AstralToolDesc tool_desc{};
@@ -315,6 +317,10 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_model_adapter_load(0, &adapter_desc, &adapter), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, nullptr, &adapter), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, &adapter_desc, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_adapter_info(0, &adapter_info), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_adapter_info(0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_adapter_path_copy(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_adapter_path_copy(0, text_out, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_toolset_create(nullptr, &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_toolset_create(&toolset_desc, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_toolset_count(0, &token_count), ASTRAL_E_INVALID);
