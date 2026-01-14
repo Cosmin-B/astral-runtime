@@ -1687,6 +1687,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_load(
     AstralSpanU8 bytes,
     AstralHandle* out_cache
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_key_from_bytes(
+    AstralHandle model,
+    AstralPromptSectionKind section_kind,
+    uint32_t generation,
+    AstralSpanU8 bytes,
+    AstralPromptCacheKey* out_key
+);
 ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_put_tokens(
     AstralHandle cache,
     const AstralPromptCacheKey* key,

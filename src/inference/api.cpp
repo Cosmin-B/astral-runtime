@@ -448,6 +448,8 @@ inline constexpr uint64_t kPromptCacheHashModelMul = 0x9E3779B185EBCA87ull;
 inline constexpr uint64_t kPromptCacheHashFinalMul = 0xD6E8FEB86659FD93ull;
 inline constexpr uint32_t kPromptCacheHashFinalShift = 32;
 inline constexpr uint32_t kPromptCacheHashGenerationShift = 32;
+inline constexpr uint64_t kPromptCacheSectionHashOffset = 14695981039346656037ull;
+inline constexpr uint64_t kPromptCacheSectionHashPrime = 1099511628211ull;
 inline constexpr uint8_t kPromptCacheSlotEmpty = 0;
 inline constexpr uint8_t kPromptCacheSlotOccupied = 1;
 inline constexpr uint32_t kPromptCacheNoSlot = 0xFFFFFFFFu;
@@ -524,6 +526,17 @@ inline uint32_t prompt_cache_hash(const AstralPromptCacheKey& key) {
     x *= kPromptCacheHashFinalMul;
     x ^= x >> kPromptCacheHashFinalShift;
     return static_cast<uint32_t>(x);
+}
+
+inline uint64_t prompt_cache_hash_bytes(AstralSpanU8 bytes) {
+    uint64_t hash = kPromptCacheSectionHashOffset;
+    for (uint32_t i = 0; i < bytes.len; ++i) {
+        hash ^= static_cast<uint64_t>(bytes.data[i]);
+        hash *= kPromptCacheSectionHashPrime;
+    }
+    hash ^= static_cast<uint64_t>(bytes.len);
+    hash *= kPromptCacheSectionHashPrime;
+    return hash;
 }
 
 inline uint32_t prompt_cache_table_capacity(uint32_t max_entries) {
@@ -1312,6 +1325,29 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_load(
     }
 
     *out_cache = cache;
+    return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_key_from_bytes(
+    AstralHandle model,
+    AstralPromptSectionKind section_kind,
+    uint32_t generation,
+    AstralSpanU8 bytes,
+    AstralPromptCacheKey* out_key
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (model == 0 || out_key == nullptr || !prompt_section_kind_valid(section_kind) ||
+        (bytes.len != 0 && bytes.data == nullptr)) {
+        set_err_invalid("model/section_kind/bytes/out_key");
+        return ASTRAL_E_INVALID;
+    }
+    out_key->size = sizeof(AstralPromptCacheKey);
+    out_key->section_kind = section_kind;
+    out_key->model = model;
+    out_key->key = prompt_cache_hash_bytes(bytes);
+    out_key->generation = generation;
+    out_key->_reserved0 = 0;
     return ASTRAL_OK;
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }

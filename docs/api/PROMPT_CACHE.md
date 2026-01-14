@@ -17,6 +17,8 @@ caller-defined sections.
   into a caller-owned byte buffer.
 - `astral_prompt_cache_load(desc, bytes, out_cache)` restores a snapshot into a
   newly created bounded cache.
+- `astral_prompt_cache_key_from_bytes(model, section_kind, generation, bytes,
+  out_key)` builds a stable key for a prompt section.
 - `astral_prompt_cache_put_tokens(cache, key, tokens, token_count)` copies a
   caller-owned token span into the cache.
 - `astral_prompt_cache_get_tokens(cache, key, out_tokens, max_tokens,
@@ -41,6 +43,11 @@ Cache descriptors define `max_entries`, `max_tokens`, and optionally
 until the entry is replaced, evicted, cleared, or the cache is destroyed.
 Save/load stores token entries and keys only; callers are responsible for using
 snapshots with compatible model identity and tokenizer behavior.
+
+Use `astral_prompt_cache_key_from_bytes()` for system, tools, memory, history,
+user, and raw sections instead of wrapper-local hash code. The section kind and
+generation stay explicit, so callers can invalidate one section family without
+clearing unrelated cached tokens.
 
 `astral_prompt_cache_get_token_view()` is the fastest path because it avoids a
 token copy. The returned pointer is valid only until the next cache mutation or
@@ -90,6 +97,13 @@ key.section_kind = ASTRAL_PROMPT_SECTION_SYSTEM;
 key.model = model;
 key.key = 42;
 key.generation = 1;
+
+err = astral_prompt_cache_key_from_bytes(
+    model,
+    ASTRAL_PROMPT_SECTION_SYSTEM,
+    1,
+    system_prompt,
+    &key);
 
 err = astral_prompt_cache_put_tokens(cache, &key, tokens, token_count);
 ```

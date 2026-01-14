@@ -119,6 +119,53 @@ TEST(prompt_cache_hit_miss_and_stats) {
     astral_shutdown();
 }
 
+TEST(prompt_cache_key_from_bytes_scopes_sections_and_generations) {
+    init_runtime();
+
+    AstralPromptCacheKey system_v1{};
+    AstralPromptCacheKey system_v1_again{};
+    AstralPromptCacheKey system_v2{};
+    AstralPromptCacheKey user_v1{};
+    AstralErr err = astral_prompt_cache_key_from_bytes(
+        kModelHandle, ASTRAL_PROMPT_SECTION_SYSTEM, 1, span_from_cstr("stable"), &system_v1);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_prompt_cache_key_from_bytes(
+        kModelHandle, ASTRAL_PROMPT_SECTION_SYSTEM, 1, span_from_cstr("stable"), &system_v1_again);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_prompt_cache_key_from_bytes(
+        kModelHandle, ASTRAL_PROMPT_SECTION_SYSTEM, 2, span_from_cstr("stable"), &system_v2);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_prompt_cache_key_from_bytes(
+        kModelHandle, ASTRAL_PROMPT_SECTION_USER, 1, span_from_cstr("stable"), &user_v1);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    ASSERT_EQ(system_v1.key, system_v1_again.key);
+    ASSERT_EQ(system_v1.generation, 1u);
+    ASSERT_EQ(system_v2.generation, 2u);
+    ASSERT_EQ(system_v1.section_kind, ASTRAL_PROMPT_SECTION_SYSTEM);
+    ASSERT_EQ(user_v1.section_kind, ASTRAL_PROMPT_SECTION_USER);
+
+    AstralHandle cache = 0;
+    const AstralPromptCacheDesc desc = cache_desc();
+    ASSERT_EQ(astral_prompt_cache_create(&desc, &cache), ASTRAL_OK);
+
+    const int32_t system_tokens[] = {10, 20};
+    const int32_t user_tokens[] = {30, 40};
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &system_v1, system_tokens, 2), ASTRAL_OK);
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &user_v1, user_tokens, 2), ASTRAL_OK);
+
+    int32_t out[2]{};
+    uint32_t count = 0;
+    ASSERT_EQ(astral_prompt_cache_get_tokens(cache, &system_v1_again, out, 2, &count), ASTRAL_OK);
+    ASSERT_EQ(out[0], system_tokens[0]);
+    ASSERT_EQ(astral_prompt_cache_get_tokens(cache, &system_v2, out, 2, &count), ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(astral_prompt_cache_get_tokens(cache, &user_v1, out, 2, &count), ASTRAL_OK);
+    ASSERT_EQ(out[0], user_tokens[0]);
+
+    astral_prompt_cache_destroy(cache);
+    astral_shutdown();
+}
+
 TEST(prompt_cache_eviction_keeps_lookup_cluster_valid) {
     init_runtime();
 

@@ -252,6 +252,7 @@ TEST(abi_invalid_args_model_surface) {
     constexpr uint64_t kMemoryKey = 1;
     constexpr uint32_t kMemoryTopK = 1;
     constexpr uint32_t kMemoryFetchCapacity = 1;
+    constexpr AstralHandle kPromptModelHandle = 0x0100000100000001ull;
     AstralMemoryIndexDesc memory_desc{};
     memory_desc.size = sizeof(AstralMemoryIndexDesc);
     memory_desc.dim = kMemoryDim;
@@ -283,6 +284,8 @@ TEST(abi_invalid_args_model_surface) {
     AstralMutSpanU8 text_out{};
     text_out.data = text_buf;
     text_out.len = static_cast<uint32_t>(sizeof(text_buf));
+    AstralPromptCacheKey prompt_key{};
+    prompt_key.size = sizeof(AstralPromptCacheKey);
     AstralRequestRef request{};
     request.size = sizeof(AstralRequestRef);
     request.kind = ASTRAL_REQUEST_SESSION;
@@ -353,6 +356,14 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_memory_save(0, null_mut_span(), nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(nullptr, null_span(), &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(&memory_desc, null_span(), nullptr), ASTRAL_E_INVALID);
+    AstralErr prompt_key_err =
+        astral_prompt_cache_key_from_bytes(0, ASTRAL_PROMPT_SECTION_SYSTEM, 1, null_span(), &prompt_key);
+    ASSERT_EQ(prompt_key_err, ASTRAL_E_INVALID);
+    prompt_key_err = astral_prompt_cache_key_from_bytes(kPromptModelHandle, 0, 1, null_span(), &prompt_key);
+    ASSERT_EQ(prompt_key_err, ASTRAL_E_INVALID);
+    prompt_key_err = astral_prompt_cache_key_from_bytes(
+        kPromptModelHandle, ASTRAL_PROMPT_SECTION_SYSTEM, 1, null_span(), nullptr);
+    ASSERT_EQ(prompt_key_err, ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_create(nullptr, &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_create(&agent_desc, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_set_system_prompt(0, null_span()), ASTRAL_E_INVALID);
