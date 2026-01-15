@@ -23,11 +23,17 @@ ANN indexes.
 - `astral_memory_save_size()`
 - `astral_memory_save()`
 - `astral_memory_load()`
+- `astral_memory_record_from_chunk()`
 
 The index is fixed-dimension and fixed-capacity. Add operations copy vectors
 into native storage and use a bounded native key table for update/remove lookup.
 Search returns result metadata first; callers decide whether to fetch text or
 engine objects for the selected keys.
+
+`astral_memory_record_from_chunk()` maps an `AstralChunkRange` into an
+`AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
+chunk, and group metadata consistent with the native chunker while the caller
+supplies the stable record key and any application flags.
 
 Incremental search cursors snapshot the top-k result set at begin time and let
 callers fetch fixed-size batches without re-running the vector scan. The cursor

@@ -356,6 +356,8 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_memory_save(0, null_mut_span(), nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(nullptr, null_span(), &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(&memory_desc, null_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_record_from_chunk(nullptr, kMemoryKey, 0, &memory_record), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_record_from_chunk(&chunk_range, kMemoryKey, 0, nullptr), ASTRAL_E_INVALID);
     AstralErr prompt_key_err =
         astral_prompt_cache_key_from_bytes(0, ASTRAL_PROMPT_SECTION_SYSTEM, 1, null_span(), &prompt_key);
     ASSERT_EQ(prompt_key_err, ASTRAL_E_INVALID);

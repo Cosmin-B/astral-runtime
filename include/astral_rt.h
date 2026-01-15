@@ -1086,6 +1086,12 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
     AstralSpanU8 bytes,
     AstralHandle* out_index
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_record_from_chunk(
+    const AstralChunkRange* range,
+    uint64_t key,
+    uint32_t flags,
+    AstralMemoryRecord* out_record
+);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_path_resolve(
     const AstralModelPathResolveDesc* desc,

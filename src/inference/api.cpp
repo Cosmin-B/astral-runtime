@@ -2326,6 +2326,28 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_record_from_chunk(
+    const AstralChunkRange* range,
+    uint64_t key,
+    uint32_t flags,
+    AstralMemoryRecord* out_record
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (range == nullptr || range->size != sizeof(AstralChunkRange) || out_record == nullptr) {
+        set_err_invalid("range/out_record");
+        return ASTRAL_E_INVALID;
+    }
+    out_record->size = sizeof(AstralMemoryRecord);
+    out_record->group_id = range->group_id;
+    out_record->key = key;
+    out_record->document_id = range->document_id;
+    out_record->chunk_id = range->chunk_id;
+    out_record->flags = flags;
+    out_record->_reserved0 = 0;
+    return ASTRAL_OK;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 // ============================================================================
 // Session API
 // ============================================================================

@@ -27,6 +27,11 @@ Text chunk ranges fill `byte_begin` and `byte_end`. Token chunk ranges fill
 `token_begin` and `token_end`. The unused half of the range is set to a sentinel
 value for text ranges and zero for token ranges.
 
+Use `astral_memory_record_from_chunk()` to convert a chunk range into an
+`AstralMemoryRecord` for RAG ingest. The helper preserves document id, chunk id,
+and group id so native, Unreal, and Unity callers do not duplicate metadata
+mapping code.
+
 ## Ownership
 
 All range buffers are caller-owned. The native chunker does not retain the input

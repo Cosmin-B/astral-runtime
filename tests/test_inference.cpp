@@ -1650,6 +1650,28 @@ TEST(inference_chunking_ranges_mock) {
     ASSERT_EQ(copied_len, kFirstWordRangeEnd);
     ASSERT_EQ(std::string(reinterpret_cast<const char*>(copied), copied_len), std::string("alpha beta"));
 
+    constexpr uint64_t kChunkRecordKey = 9001;
+    constexpr uint32_t kChunkRecordFlags = 5;
+    AstralMemoryRecord chunk_record{};
+    err = astral_memory_record_from_chunk(&ranges[1], kChunkRecordKey, kChunkRecordFlags, &chunk_record);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(chunk_record.group_id, kGroupId);
+    ASSERT_EQ(chunk_record.key, kChunkRecordKey);
+    ASSERT_EQ(chunk_record.document_id, kDocId);
+    ASSERT_EQ(chunk_record.chunk_id, ranges[1].chunk_id);
+    ASSERT_EQ(chunk_record.flags, kChunkRecordFlags);
+
+    desc.mode = ASTRAL_CHUNK_MODE_NONE;
+    desc.max_units = 1;
+    desc.overlap_units = 0;
+    err = astral_chunk_ranges(&desc, span_from_cstr("full document"), ranges, kRangeCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, 1u);
+    ASSERT_EQ(ranges[0].document_id, kDocId);
+    ASSERT_EQ(ranges[0].chunk_id, 0u);
+    ASSERT_EQ(ranges[0].byte_begin, 0u);
+    ASSERT_EQ(ranges[0].byte_end, static_cast<uint32_t>(std::strlen("full document")));
+
     desc.mode = ASTRAL_CHUNK_MODE_CHAR;
     desc.max_units = kUtf8MaxUnits;
     desc.overlap_units = 0;
