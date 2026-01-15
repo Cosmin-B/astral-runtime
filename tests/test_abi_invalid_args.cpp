@@ -393,6 +393,7 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_request_from_conversation(0, &request), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_request_from_agent_chat(0, &request), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_request_from_embedding(0, 1, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_memory_search(0, &request), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_request_state(nullptr, &request_status), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_request_state(&request, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_request_cancel(nullptr), ASTRAL_E_INVALID);

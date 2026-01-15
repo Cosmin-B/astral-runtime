@@ -973,6 +973,14 @@ AstralErr memory_search_fetch(MemorySearchCursor* cursor, AstralMemorySearchResu
   return ASTRAL_OK;
 }
 
+AstralErr memory_search_cursor_remaining(MemorySearchCursor* cursor, uint32_t* out_remaining) {
+  if (cursor == nullptr || out_remaining == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
+  *out_remaining = cursor->offset < cursor->count ? cursor->count - cursor->offset : kNoResults;
+  return ASTRAL_OK;
+}
+
 void memory_search_end(MemorySearchCursor* cursor) {
   if (cursor == nullptr) {
     return;

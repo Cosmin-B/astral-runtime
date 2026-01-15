@@ -1806,12 +1806,32 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_TRUE(astral_handle_valid(cursor));
 
+    AstralRequestRef request{};
+    err = astral_request_from_memory_search(cursor, &request);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(request.kind, ASTRAL_REQUEST_MEMORY_SEARCH);
+    ASSERT_EQ(request.owner, cursor);
+
+    AstralRequestStatus status{};
+    status.size = sizeof(AstralRequestStatus);
+    err = astral_request_state(&request, &status);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_COMPLETED);
+    ASSERT_EQ(status.queue_depth, kTopK);
+
     AstralMemorySearchResult cursor_results[kFirstFetchCapacity]{};
     err = astral_memory_search_fetch(cursor, cursor_results, kFirstFetchCapacity, &count);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(count, kFirstFetchCount);
     ASSERT_EQ(cursor_results[0].key, kKeyA);
     ASSERT_EQ(cursor_results[1].key, kKeyD);
+
+    status = AstralRequestStatus{};
+    status.size = sizeof(AstralRequestStatus);
+    err = astral_request_wait(&request, 0, &status);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_COMPLETED);
+    ASSERT_EQ(status.queue_depth, kTopK - kFirstFetchCount);
 
     err = astral_memory_search_fetch(cursor, cursor_results, kSecondFetchCapacity, &count);
     ASSERT_EQ(err, ASTRAL_OK);

@@ -1330,6 +1330,7 @@ enum {
     ASTRAL_REQUEST_CONVERSATION = 2,
     ASTRAL_REQUEST_AGENT_CHAT = 3,
     ASTRAL_REQUEST_EMBEDDING = 4,
+    ASTRAL_REQUEST_MEMORY_SEARCH = 5,
 };
 
 typedef uint32_t AstralRequestState;
@@ -1468,6 +1469,10 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_agent_chat(AstralHandle age
 ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_embedding(
     AstralHandle emb,
     uint64_t ticket,
+    AstralRequestRef* out_request
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_memory_search(
+    AstralHandle cursor,
     AstralRequestRef* out_request
 );
 

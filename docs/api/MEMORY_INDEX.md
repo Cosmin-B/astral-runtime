@@ -20,6 +20,7 @@ ANN indexes.
 - `astral_memory_search_begin()`
 - `astral_memory_search_fetch()`
 - `astral_memory_search_end()`
+- `astral_request_from_memory_search()`
 - `astral_memory_save_size()`
 - `astral_memory_save()`
 - `astral_memory_load()`
@@ -38,7 +39,8 @@ supplies the stable record key and any application flags.
 Incremental search cursors snapshot the top-k result set at begin time and let
 callers fetch fixed-size batches without re-running the vector scan. The cursor
 owns its compact native result buffer and must be released with
-`astral_memory_search_end()`.
+`astral_memory_search_end()`. Use `astral_request_from_memory_search()` when an
+engine queue needs to track a cursor through the unified request status API.
 
 ## Metrics
 

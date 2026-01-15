@@ -23,6 +23,7 @@ AstralErr memory_search_begin(MemoryIndex* index, const AstralMemorySearchDesc* 
                               const float* query, MemorySearchCursor** out_cursor);
 AstralErr memory_search_fetch(MemorySearchCursor* cursor, AstralMemorySearchResult* out_results,
                               uint32_t max_results, uint32_t* out_count);
+AstralErr memory_search_cursor_remaining(MemorySearchCursor* cursor, uint32_t* out_remaining);
 void memory_search_end(MemorySearchCursor* cursor);
 AstralErr memory_save_size(MemoryIndex* index, uint64_t* out_bytes);
 AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* out_written);

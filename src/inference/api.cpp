@@ -204,6 +204,22 @@ AstralErr request_state_impl(const AstralRequestRef* request, AstralRequestStatu
         }
         return astral::inference::embedder_request_state(e, request->ticket, out_status);
     }
+    case ASTRAL_REQUEST_MEMORY_SEARCH: {
+        auto* cursor = lookup_memory_search_cursor(request->owner);
+        if (cursor == nullptr) {
+            out_status->result = ASTRAL_E_INVALID;
+            return ASTRAL_E_INVALID;
+        }
+        uint32_t remaining = 0;
+        const AstralErr err = astral::inference::memory_search_cursor_remaining(cursor, &remaining);
+        if (err != ASTRAL_OK) {
+            out_status->result = err;
+            return err;
+        }
+        out_status->state = ASTRAL_REQUEST_COMPLETED;
+        out_status->queue_depth = remaining;
+        return ASTRAL_OK;
+    }
     default:
         out_status->result = ASTRAL_E_INVALID;
         return ASTRAL_E_INVALID;
@@ -3059,6 +3075,19 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_embedding(
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_memory_search(
+    AstralHandle cursor,
+    AstralRequestRef* out_request
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    if (lookup_memory_search_cursor(cursor) == nullptr) {
+        set_err_invalid("cursor");
+        return ASTRAL_E_INVALID;
+    }
+    return request_ref_make(ASTRAL_REQUEST_MEMORY_SEARCH, cursor, 0, out_request);
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_request_state(
     const AstralRequestRef* request,
     AstralRequestStatus* out_status
@@ -3101,6 +3130,9 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_request_cancel(const AstralRequestRef* r
         err = e != nullptr ? astral::inference::embedder_cancel(e, request->ticket) : ASTRAL_E_INVALID;
         break;
     }
+    case ASTRAL_REQUEST_MEMORY_SEARCH:
+        err = lookup_memory_search_cursor(request->owner) != nullptr ? ASTRAL_E_UNSUPPORTED : ASTRAL_E_INVALID;
+        break;
     default:
         err = ASTRAL_E_INVALID;
         break;
@@ -3139,7 +3171,8 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_request_wait(
         break;
     }
     case ASTRAL_REQUEST_AGENT_CHAT:
-    case ASTRAL_REQUEST_EMBEDDING: {
+    case ASTRAL_REQUEST_EMBEDDING:
+    case ASTRAL_REQUEST_MEMORY_SEARCH: {
         const uint64_t timeout_ns = static_cast<uint64_t>(timeout_ms) * 1000000ull;
         const uint64_t start_ns = astral::platform::monotonic_time_ns();
         uint32_t spins = 0;

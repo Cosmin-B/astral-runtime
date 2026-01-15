@@ -12,6 +12,7 @@ Unified request refs:
 - `astral_request_from_conversation()`
 - `astral_request_from_agent_chat()`
 - `astral_request_from_embedding()`
+- `astral_request_from_memory_search()`
 - `astral_request_state()`
 - `astral_request_cancel()`
 - `astral_request_wait()`
@@ -50,6 +51,13 @@ Embeddings:
 - `astral_embed_collect()`
 - `astral_embed_cancel()`
 
+Memory search:
+
+- `astral_memory_search_begin()`
+- `astral_memory_search_fetch()`
+- `astral_memory_search_end()`
+- `astral_request_from_memory_search()`
+
 ## Ownership
 
 Stream buffers and embedding vectors are caller-owned. Session and conversation
@@ -58,8 +66,10 @@ valid until `astral_embed_collect()` consumes the result or `astral_embed_cancel
 releases queued work.
 
 `AstralRequestRef` is a value type for engine queues. It carries the owner
-handle, request kind, and embedding ticket when one exists. It does not extend
-the lifetime of the owner handle.
+handle, request kind, and embedding ticket when one exists. Memory search refs
+carry the cursor handle and report remaining cursor results in
+`AstralRequestStatus::queue_depth`. The ref does not extend the lifetime of the
+owner handle.
 
 ## Error Behavior
 
@@ -67,6 +77,9 @@ Bounded queues report `ASTRAL_E_BUSY` when capacity is exhausted. Polling calls
 use `ASTRAL_E_TIMEOUT` when no data is ready before the requested deadline.
 Canceled operations return `ASTRAL_E_CANCELED` at the wait/result boundary.
 Stale or unknown tickets return `ASTRAL_E_INVALID`.
+Memory search cursors are completed once created; canceling a cursor request
+returns `ASTRAL_E_UNSUPPORTED`, and callers release cursor storage with
+`astral_memory_search_end()`.
 
 ## Performance
 
@@ -74,6 +87,8 @@ The native runtime avoids callback invocation from token, stream, embedding, and
 queue hot paths. Engines poll or wait at their boundary and then marshal only the
 data they need. Ticketed embedding queues keep capacity bounded and allow callers
 to shed queued work without growing memory.
+Memory search cursor polling reads cursor metadata only and does not re-run
+vector search.
 
 ## Unity
 
@@ -89,7 +104,7 @@ Unreal result structs carry native error codes, tickets, and backpressure flags.
 Blueprint delegates are delivered by the plugin on the game thread; native C++
 callers can keep using direct poll and wait calls. `AstralRequestStatus` gives
 Blueprint queues one state enum across generation, conversations, agent chat,
-and embedding tickets.
+embedding tickets, and memory search cursors.
 
 ## Validation
 
