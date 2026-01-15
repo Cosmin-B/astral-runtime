@@ -1086,6 +1086,12 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
     AstralSpanU8 bytes,
     AstralHandle* out_index
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_record_from_chunk(
+    const AstralChunkRange* range,
+    uint64_t key,
+    uint32_t flags,
+    AstralMemoryRecord* out_record
+);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_path_resolve(
     const AstralModelPathResolveDesc* desc,
@@ -1259,6 +1265,13 @@ typedef struct AstralAdapterDesc {
     AstralSpanU8 path;  // UTF-8 path to adapter file
 } AstralAdapterDesc;
 
+typedef struct AstralAdapterInfo {
+    uint32_t size;
+    AstralHandle model;
+    uint32_t path_bytes;
+    uint32_t refcount;
+} AstralAdapterInfo;
+
 // Compile-time layout validation for configs.
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 64, "AstralInit must be 64 bytes on 64-bit");
@@ -1272,6 +1285,7 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 24, "AstralAdapterDesc must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 24, "AstralAdapterInfo must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 64, "AstralImageDesc must be 64 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 72, "AstralAudioDesc must be 72 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 104, "AstralModelMediaDesc must be 104 bytes on 64-bit");
@@ -1288,6 +1302,7 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12, "AstralAdapterDesc must be 12 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 20, "AstralAdapterInfo must be 20 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 52, "AstralImageDesc must be 52 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 60, "AstralAudioDesc must be 60 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 72, "AstralModelMediaDesc must be 72 bytes on 32-bit");
@@ -1307,6 +1322,50 @@ enum {
     ASTRAL_SESSION_CANCELED = 4,  /** Completed due to cancellation */
     ASTRAL_SESSION_FAILED = 5,    /** Completed due to error */
 };
+
+typedef uint32_t AstralRequestKind;
+enum {
+    ASTRAL_REQUEST_NONE = 0,
+    ASTRAL_REQUEST_SESSION = 1,
+    ASTRAL_REQUEST_CONVERSATION = 2,
+    ASTRAL_REQUEST_AGENT_CHAT = 3,
+    ASTRAL_REQUEST_EMBEDDING = 4,
+    ASTRAL_REQUEST_MEMORY_SEARCH = 5,
+};
+
+typedef uint32_t AstralRequestState;
+enum {
+    ASTRAL_REQUEST_INVALID = 0,
+    ASTRAL_REQUEST_QUEUED = 1,
+    ASTRAL_REQUEST_RUNNING = 2,
+    ASTRAL_REQUEST_COMPLETED = 3,
+    ASTRAL_REQUEST_CANCELED = 4,
+    ASTRAL_REQUEST_FAILED = 5,
+};
+
+typedef uint32_t AstralRequestFlags;
+enum {
+    ASTRAL_REQUEST_FLAG_STREAM = 1u << 0,
+    ASTRAL_REQUEST_FLAG_TICKET = 1u << 1,
+};
+
+typedef struct AstralRequestRef {
+    uint32_t size;
+    AstralRequestKind kind;
+    AstralHandle owner;
+    uint64_t ticket;
+} AstralRequestRef;
+
+typedef struct AstralRequestStatus {
+    uint32_t size;
+    AstralRequestKind kind;
+    AstralRequestState state;
+    AstralRequestFlags flags;
+    AstralHandle owner;
+    uint64_t ticket;
+    AstralErr result;
+    uint32_t queue_depth;
+} AstralRequestStatus;
 
 typedef uint32_t AstralAgentRole;
 enum {
@@ -1383,16 +1442,57 @@ typedef struct AstralAgentChatResult {
 } AstralAgentChatResult;
 
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestStatus) == 40, "AstralRequestStatus must be 40 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 88, "AstralAgentDesc must be 88 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 24, "AstralAgentMessage must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 24, "AstralAgentChatDesc must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 64-bit");
 #else
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestStatus) == 40, "AstralRequestStatus must be 40 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 84, "AstralAgentDesc must be 84 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 16, "AstralAgentMessage must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 16, "AstralAgentChatDesc must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 32-bit");
 #endif
+
+/**
+ * Build request references for existing async owners.
+ *
+ * `AstralRequestRef` is a small value type for engine queues. It does not own
+ * the underlying handle or embedding ticket.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_session(AstralHandle session, AstralRequestRef* out_request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_conversation(AstralHandle conv, AstralRequestRef* out_request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_agent_chat(AstralHandle agent, AstralRequestRef* out_request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_embedding(
+    AstralHandle emb,
+    uint64_t ticket,
+    AstralRequestRef* out_request
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_memory_search(
+    AstralHandle cursor,
+    AstralRequestRef* out_request
+);
+
+/**
+ * Query, cancel, or wait for a request through one API shape.
+ *
+ * Embedding requests are ticketed. `astral_request_wait()` reports the current
+ * embedding ticket state; collection still happens through `astral_embed_collect()`
+ * because the caller owns the vector buffer.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_state(
+    const AstralRequestRef* request,
+    AstralRequestStatus* out_status
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_cancel(const AstralRequestRef* request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_wait(
+    const AstralRequestRef* request,
+    uint32_t timeout_ms,
+    AstralRequestStatus* out_status
+);
 
 /**
  * Request cancellation for an in-flight session decode.
@@ -1555,6 +1655,12 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_load(
     const AstralAdapterDesc* desc,
     AstralHandle* out_adapter
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_info(AstralHandle adapter, AstralAdapterInfo* out_info);
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_path_copy(
+    AstralHandle adapter,
+    AstralMutSpanU8 out_path,
+    uint32_t* out_len
+);
 ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter);
 
 /**
@@ -1591,6 +1697,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_load(
     const AstralPromptCacheDesc* desc,
     AstralSpanU8 bytes,
     AstralHandle* out_cache
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_key_from_bytes(
+    AstralHandle model,
+    AstralPromptSectionKind section_kind,
+    uint32_t generation,
+    AstralSpanU8 bytes,
+    AstralPromptCacheKey* out_key
 );
 ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_put_tokens(
     AstralHandle cache,
