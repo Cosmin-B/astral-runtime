@@ -523,6 +523,27 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestFalse(TEXT("invalid agent cancel fails"), InvalidAgentCancel.bSuccess);
     TestEqual(TEXT("invalid agent cancel error"), InvalidAgentCancel.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
 
+    FAstralRequestRef InvalidRequest;
+    const FAstralOperationResult InvalidSessionRequest =
+        UAstralBlueprintLibrary::CreateSessionRequestResult(nullptr, InvalidRequest);
+    TestFalse(TEXT("invalid session request fails"), InvalidSessionRequest.bSuccess);
+    TestEqual(TEXT("invalid session request error"), InvalidSessionRequest.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidConversationRequest =
+        UAstralBlueprintLibrary::CreateConversationRequestResult(InvalidHandle, InvalidRequest);
+    TestFalse(TEXT("invalid conversation request fails"), InvalidConversationRequest.bSuccess);
+    TestEqual(TEXT("invalid conversation request error"), InvalidConversationRequest.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidAgentRequest =
+        UAstralBlueprintLibrary::CreateAgentChatRequestResult(InvalidHandle, InvalidRequest);
+    TestFalse(TEXT("invalid agent request fails"), InvalidAgentRequest.bSuccess);
+    TestEqual(TEXT("invalid agent request error"), InvalidAgentRequest.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidEmbeddingRequest =
+        UAstralBlueprintLibrary::CreateEmbeddingRequestResult(nullptr, InvalidHandle, InvalidRequest);
+    TestFalse(TEXT("invalid embedding request fails"), InvalidEmbeddingRequest.bSuccess);
+    TestEqual(TEXT("invalid embedding request error"), InvalidEmbeddingRequest.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
     TArray<uint8> AgentHistoryBytes;
     const FAstralOperationResult InvalidAgentSave = UAstralBlueprintLibrary::SaveAgentHistoryResult(InvalidHandle, AgentHistoryBytes);
     TestFalse(TEXT("invalid agent history save fails"), InvalidAgentSave.bSuccess);
@@ -640,6 +661,19 @@ bool FAstralRTModuleRuntimeGenerationInvalidationTest::RunTest(const FString& Pa
     ok = Session->Create(Model, SessionDesc);
     TestTrue(TEXT("session creates before runtime generation change"), ok);
     TestTrue(TEXT("session valid before runtime generation change"), Session->IsValid());
+
+    FAstralRequestRef SessionRequest;
+    const FAstralOperationResult CreateSessionRequest =
+        UAstralBlueprintLibrary::CreateSessionRequestResult(Session, SessionRequest);
+    TestTrue(TEXT("session request succeeds before runtime generation change"), CreateSessionRequest.bSuccess);
+    TestEqual(TEXT("session request kind"), SessionRequest.Kind, EAstralRequestKind::Session);
+    TestTrue(TEXT("session request owner valid"), SessionRequest.OwnerHandle != 0);
+
+    FAstralRequestStatus SessionRequestStatus;
+    const FAstralOperationResult GetSessionRequestStatus =
+        UAstralBlueprintLibrary::GetRequestStatusResult(SessionRequest, SessionRequestStatus);
+    TestTrue(TEXT("session request status succeeds"), GetSessionRequestStatus.bSuccess);
+    TestEqual(TEXT("session request status state"), SessionRequestStatus.State, EAstralRequestState::Queued);
 
     UAstralModel* EmbeddingModel = NewObject<UAstralModel>();
     TestNotNull(TEXT("embedding model allocated"), EmbeddingModel);
@@ -1338,6 +1372,20 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
         TestTrue(TEXT("enqueue inflight ticket"), ok);
         TestTrue(TEXT("ticket valid"), Tickets[i] > 0);
     }
+
+    FAstralRequestRef EmbeddingRequest;
+    const FAstralOperationResult CreateEmbeddingRequest =
+        UAstralBlueprintLibrary::CreateEmbeddingRequestResult(Embedder, Tickets[0], EmbeddingRequest);
+    TestTrue(TEXT("embedding request succeeds"), CreateEmbeddingRequest.bSuccess);
+    TestEqual(TEXT("embedding request kind"), EmbeddingRequest.Kind, EAstralRequestKind::Embedding);
+    TestEqual(TEXT("embedding request ticket"), EmbeddingRequest.Ticket, Tickets[0]);
+
+    FAstralRequestStatus EmbeddingRequestStatus;
+    const FAstralOperationResult GetEmbeddingRequestStatus =
+        UAstralBlueprintLibrary::GetRequestStatusResult(EmbeddingRequest, EmbeddingRequestStatus);
+    TestTrue(TEXT("embedding request status succeeds"), GetEmbeddingRequestStatus.bSuccess);
+    TestEqual(TEXT("embedding request status ticket"), EmbeddingRequestStatus.Ticket, Tickets[0]);
+    TestTrue(TEXT("embedding request has ticket flag"), EmbeddingRequestStatus.bHasTicket);
 
     int64 OverflowTicket = InvalidTicket;
     append_ascii(Bytes, "overflow");

@@ -55,7 +55,9 @@ result-returning helpers:
   `ClearMemoryIndexResult`, `SaveMemoryIndexResult`,
   `SearchMemoryIndexResult`, `BeginMemorySearchResult`, and
   `FetchMemorySearchResult`
-- `CreateMemorySearchRequestResult`, `GetRequestStatusResult`,
+- `CreateSessionRequestResult`, `CreateConversationRequestResult`,
+  `CreateAgentChatRequestResult`, `CreateEmbeddingRequestResult`,
+  `CreateMemorySearchRequestResult`, `GetRequestStatusResult`,
   `WaitRequestResult`, and `CancelRequestResult`
 - `CreatePromptCacheResult`, `LoadPromptCacheResult`,
   `ClearPromptCacheResult`, `GetPromptCacheStatsResult`,
@@ -84,11 +86,12 @@ descriptor shape, and remove/clear helpers update the native index without
 rebuilding it from Blueprint arrays.
 
 Request status helpers expose the native `AstralRequestRef` /
-`AstralRequestStatus` shape to Blueprint. Memory search cursors can be wrapped
-with `CreateMemorySearchRequestResult`, then polled with
-`GetRequestStatusResult` or `WaitRequestResult`; `QueueDepth` reports remaining
-cursor results. Cursor cancellation returns unsupported, and storage is still
-released with `EndMemorySearch`.
+`AstralRequestStatus` shape to Blueprint. Sessions, conversations, agent chat,
+embedding tickets, and memory search cursors can be wrapped and then polled with
+`GetRequestStatusResult` or `WaitRequestResult`. Embedding refs carry the native
+ticket; memory search refs report remaining cursor results in `QueueDepth`.
+Cursor cancellation returns unsupported, and storage is still released with
+`EndMemorySearch`.
 
 ## Layout
 

@@ -37,6 +37,8 @@ public:
     UFUNCTION(BlueprintPure, Category = "Astral")
     int32 GetDim() const;
 
+    uint64 GetHandle() const { return IsValid() ? EmbedderHandle : 0; }
+
     /** Enqueue caller-owned UTF-8 bytes and return a native ticket. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool EnqueueUtf8Bytes(const TArray<uint8>& Utf8Bytes, int64& OutTicket);

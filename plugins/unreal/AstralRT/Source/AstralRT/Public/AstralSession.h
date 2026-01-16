@@ -132,6 +132,8 @@ public:
     UFUNCTION(BlueprintPure, Category = "Astral")
     bool IsValid() const;
 
+    uint64 GetHandle() const { return IsValid() ? SessionHandle : 0; }
+
     /** Raw bytes streaming (UTF-8). Recommended for low-overhead C++ consumers. */
     FAstralStreamBytesNative& OnStreamBytesNative() { return StreamBytesNative; }
 

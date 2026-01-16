@@ -1041,6 +1041,149 @@ void UAstralBlueprintLibrary::EndMemorySearch(int64 CursorHandle)
     }
 }
 
+bool UAstralBlueprintLibrary::CreateSessionRequest(
+    UAstralSession* Session,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateSessionRequestResult(Session, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateSessionRequestResult(
+    UAstralSession* Session,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateSessionRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (Session == nullptr || !Session->IsValid())
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err = astral_request_from_session(static_cast<AstralHandle>(Session->GetHandle()), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, OutRequest.OwnerHandle);
+}
+
+bool UAstralBlueprintLibrary::CreateConversationRequest(
+    int64 ConversationHandle,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateConversationRequestResult(ConversationHandle, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateConversationRequestResult(
+    int64 ConversationHandle,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateConversationRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (ConversationHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err = astral_request_from_conversation(static_cast<AstralHandle>(ConversationHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, OutRequest.OwnerHandle);
+}
+
+bool UAstralBlueprintLibrary::CreateAgentChatRequest(
+    int64 AgentHandle,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateAgentChatRequestResult(AgentHandle, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateAgentChatRequestResult(
+    int64 AgentHandle,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateAgentChatRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err = astral_request_from_agent_chat(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, OutRequest.OwnerHandle);
+}
+
+bool UAstralBlueprintLibrary::CreateEmbeddingRequest(
+    UAstralEmbedder* Embedder,
+    int64 Ticket,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateEmbeddingRequestResult(Embedder, Ticket, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateEmbeddingRequestResult(
+    UAstralEmbedder* Embedder,
+    int64 Ticket,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateEmbeddingRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (Embedder == nullptr || !Embedder->IsValid() || Ticket <= 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err =
+        astral_request_from_embedding(static_cast<AstralHandle>(Embedder->GetHandle()), static_cast<uint64_t>(Ticket), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, OutRequest.OwnerHandle);
+}
+
 bool UAstralBlueprintLibrary::CreateMemorySearchRequest(
     int64 CursorHandle,
     FAstralRequestRef& OutRequest,

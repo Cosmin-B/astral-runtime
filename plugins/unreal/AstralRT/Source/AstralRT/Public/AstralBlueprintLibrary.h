@@ -188,6 +188,39 @@ public:
     static void EndMemorySearch(int64 CursorHandle);
 
     UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static bool CreateSessionRequest(UAstralSession* Session, FAstralRequestRef& OutRequest, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static FAstralOperationResult CreateSessionRequestResult(UAstralSession* Session, FAstralRequestRef& OutRequest);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static bool CreateConversationRequest(int64 ConversationHandle, FAstralRequestRef& OutRequest, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static FAstralOperationResult CreateConversationRequestResult(int64 ConversationHandle, FAstralRequestRef& OutRequest);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static bool CreateAgentChatRequest(int64 AgentHandle, FAstralRequestRef& OutRequest, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static FAstralOperationResult CreateAgentChatRequestResult(int64 AgentHandle, FAstralRequestRef& OutRequest);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static bool CreateEmbeddingRequest(
+        UAstralEmbedder* Embedder,
+        int64 Ticket,
+        FAstralRequestRef& OutRequest,
+        int32& OutErrorCode
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static FAstralOperationResult CreateEmbeddingRequestResult(
+        UAstralEmbedder* Embedder,
+        int64 Ticket,
+        FAstralRequestRef& OutRequest
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
     static bool CreateMemorySearchRequest(int64 CursorHandle, FAstralRequestRef& OutRequest, int32& OutErrorCode);
 
     UFUNCTION(BlueprintCallable, Category = "Astral|Async")
