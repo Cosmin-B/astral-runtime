@@ -282,6 +282,56 @@ namespace Astral.Runtime
         public const uint ASTRAL_TOOL_CHOICE_REQUIRED = 1;
         public const uint ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL = 2;
 
+        public enum AstralRequestKind : uint
+        {
+            None = 0,
+            Session = 1,
+            Conversation = 2,
+            AgentChat = 3,
+            Embedding = 4,
+            MemorySearch = 5
+        }
+
+        public enum AstralRequestState : uint
+        {
+            Invalid = 0,
+            Queued = 1,
+            Running = 2,
+            Completed = 3,
+            Canceled = 4,
+            Failed = 5
+        }
+
+        [Flags]
+        public enum AstralRequestFlags : uint
+        {
+            None = 0,
+            Stream = 1u << 0,
+            Ticket = 1u << 1
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralRequestRef
+        {
+            public uint size;
+            public AstralRequestKind kind;
+            public AstralHandle owner;
+            public ulong ticket;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralRequestStatus
+        {
+            public uint size;
+            public AstralRequestKind kind;
+            public AstralRequestState state;
+            public AstralRequestFlags flags;
+            public AstralHandle owner;
+            public ulong ticket;
+            public int result;
+            public uint queue_depth;
+        }
+
         // ====================================================================
         // Allocator
         // ====================================================================
@@ -1358,6 +1408,30 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_agent_chat_result(AstralHandle agent, ref AstralAgentChatResult out_result);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_session(AstralHandle session, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_conversation(AstralHandle conv, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_agent_chat(AstralHandle agent, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_embedding(AstralHandle emb, ulong ticket, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_memory_search(AstralHandle cursor, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_state(ref AstralRequestRef request, ref AstralRequestStatus out_status);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_cancel(ref AstralRequestRef request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_wait(ref AstralRequestRef request, uint timeout_ms, ref AstralRequestStatus out_status);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_memory_save_size(AstralHandle index, out ulong out_bytes);

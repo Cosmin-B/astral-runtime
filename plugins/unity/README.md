@@ -301,6 +301,24 @@ embedder.Collect(mmTicket, outVec);
 `Cancel(ticket)` releases queued embedding work that no longer needs to be
 collected.
 
+### Request Status
+
+`AstralRequest` wraps the native request lifecycle for sessions, conversations,
+agent chat, embedding tickets, and memory search cursors. The wrapper returns
+the same native status fields Unity jobs or main-thread dispatchers need without
+owning prompt assembly, vector storage, or stream buffers.
+
+```csharp
+ulong ticket = embedder.Enqueue(textBytes);
+var request = AstralRequest.FromEmbedding(embedder, ticket);
+
+if (AstralRequest.TryGetStatus(request, out var status, out int err))
+{
+    bool queued = status.state == AstralNative.AstralRequestState.Queued;
+    bool ticketed = (status.flags & AstralNative.AstralRequestFlags.Ticket) != 0;
+}
+```
+
 ## Configuration
 
 ### Runtime Configuration

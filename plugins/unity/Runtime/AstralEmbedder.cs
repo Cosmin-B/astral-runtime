@@ -21,6 +21,7 @@ namespace Astral.Runtime
 
         public bool IsValid => !m_disposed && m_handle.IsValid;
         public uint Dimension => m_dim;
+        internal AstralNative.AstralHandle Handle => m_handle;
 
         public static AstralEmbedder Create(AstralModel model)
         {

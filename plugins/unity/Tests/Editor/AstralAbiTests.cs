@@ -75,6 +75,8 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(16, Marshal.SizeOf<AstralNative.AstralModelLimits>());
             Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralSamplerDesc>());
             Assert.AreEqual(40, Marshal.SizeOf<AstralNative.AstralStats>());
+            Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralRequestRef>());
+            Assert.AreEqual(40, Marshal.SizeOf<AstralNative.AstralRequestStatus>());
         }
 
         [Test]
@@ -142,6 +144,35 @@ namespace Astral.Runtime.Tests
             var h = new AstralNative.AstralHandle { value = 0 };
             Assert.False(h.IsValid);
             Assert.AreEqual(0, AstralNative.astral_handle_valid(h));
+        }
+
+        [Test]
+        public void RequestLifecycle_InvalidHandles_ReturnNativeErrors()
+        {
+            RequireNative();
+
+            var invalidHandle = AstralNative.AstralHandle.Invalid;
+            var request = new AstralNative.AstralRequestRef();
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_from_session(invalidHandle, out request));
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_from_conversation(invalidHandle, out request));
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_from_agent_chat(invalidHandle, out request));
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_from_embedding(invalidHandle, 1, out request));
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_from_memory_search(invalidHandle, out request));
+
+            request = new AstralNative.AstralRequestRef
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralRequestRef>(),
+                kind = AstralNative.AstralRequestKind.Session,
+                owner = invalidHandle,
+                ticket = 0
+            };
+            var status = new AstralNative.AstralRequestStatus
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralRequestStatus>()
+            };
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_state(ref request, ref status));
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_wait(ref request, 0, ref status));
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_cancel(ref request));
         }
 
         [Test]
