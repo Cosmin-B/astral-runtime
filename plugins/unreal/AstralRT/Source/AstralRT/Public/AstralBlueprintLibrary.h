@@ -187,6 +187,39 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static void EndMemorySearch(int64 CursorHandle);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static bool CreateMemorySearchRequest(int64 CursorHandle, FAstralRequestRef& OutRequest, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static FAstralOperationResult CreateMemorySearchRequestResult(int64 CursorHandle, FAstralRequestRef& OutRequest);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static bool GetRequestStatus(const FAstralRequestRef& Request, FAstralRequestStatus& OutStatus, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static FAstralOperationResult GetRequestStatusResult(const FAstralRequestRef& Request, FAstralRequestStatus& OutStatus);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static bool WaitRequest(
+        const FAstralRequestRef& Request,
+        int32 TimeoutMs,
+        FAstralRequestStatus& OutStatus,
+        int32& OutErrorCode
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static FAstralOperationResult WaitRequestResult(
+        const FAstralRequestRef& Request,
+        int32 TimeoutMs,
+        FAstralRequestStatus& OutStatus
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static bool CancelRequest(const FAstralRequestRef& Request, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Async")
+    static FAstralOperationResult CancelRequestResult(const FAstralRequestRef& Request);
+
     /** Create a native prompt cache. Release it with DestroyPromptCache. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
     static bool CreatePromptCache(const FAstralPromptCacheDesc& Desc, int64& OutCacheHandle, int32& OutErrorCode);

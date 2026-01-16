@@ -55,6 +55,8 @@ result-returning helpers:
   `ClearMemoryIndexResult`, `SaveMemoryIndexResult`,
   `SearchMemoryIndexResult`, `BeginMemorySearchResult`, and
   `FetchMemorySearchResult`
+- `CreateMemorySearchRequestResult`, `GetRequestStatusResult`,
+  `WaitRequestResult`, and `CancelRequestResult`
 - `CreatePromptCacheResult`, `LoadPromptCacheResult`,
   `ClearPromptCacheResult`, `GetPromptCacheStatsResult`,
   `PutPromptCacheTokensResult`, `GetPromptCacheTokensResult`, and
@@ -80,6 +82,13 @@ snapshot save/load for staged RAG data. `SaveMemoryIndexResult` writes an
 engine-owned byte array, `LoadMemoryIndexResult` restores it with the same
 descriptor shape, and remove/clear helpers update the native index without
 rebuilding it from Blueprint arrays.
+
+Request status helpers expose the native `AstralRequestRef` /
+`AstralRequestStatus` shape to Blueprint. Memory search cursors can be wrapped
+with `CreateMemorySearchRequestResult`, then polled with
+`GetRequestStatusResult` or `WaitRequestResult`; `QueueDepth` reports remaining
+cursor results. Cursor cancellation returns unsupported, and storage is still
+released with `EndMemorySearch`.
 
 ## Layout
 

@@ -160,6 +160,99 @@ static AstralPromptCacheKey to_native_prompt_cache_key(const FAstralPromptCacheK
     return Native;
 }
 
+static AstralRequestKind to_native_request_kind(EAstralRequestKind Kind)
+{
+    switch (Kind)
+    {
+    case EAstralRequestKind::Session:
+        return ASTRAL_REQUEST_SESSION;
+    case EAstralRequestKind::Conversation:
+        return ASTRAL_REQUEST_CONVERSATION;
+    case EAstralRequestKind::AgentChat:
+        return ASTRAL_REQUEST_AGENT_CHAT;
+    case EAstralRequestKind::Embedding:
+        return ASTRAL_REQUEST_EMBEDDING;
+    case EAstralRequestKind::MemorySearch:
+        return ASTRAL_REQUEST_MEMORY_SEARCH;
+    case EAstralRequestKind::None:
+    default:
+        return ASTRAL_REQUEST_NONE;
+    }
+}
+
+static EAstralRequestKind from_native_request_kind(AstralRequestKind Kind)
+{
+    switch (Kind)
+    {
+    case ASTRAL_REQUEST_SESSION:
+        return EAstralRequestKind::Session;
+    case ASTRAL_REQUEST_CONVERSATION:
+        return EAstralRequestKind::Conversation;
+    case ASTRAL_REQUEST_AGENT_CHAT:
+        return EAstralRequestKind::AgentChat;
+    case ASTRAL_REQUEST_EMBEDDING:
+        return EAstralRequestKind::Embedding;
+    case ASTRAL_REQUEST_MEMORY_SEARCH:
+        return EAstralRequestKind::MemorySearch;
+    case ASTRAL_REQUEST_NONE:
+    default:
+        return EAstralRequestKind::None;
+    }
+}
+
+static EAstralRequestState from_native_request_state(AstralRequestState State)
+{
+    switch (State)
+    {
+    case ASTRAL_REQUEST_QUEUED:
+        return EAstralRequestState::Queued;
+    case ASTRAL_REQUEST_RUNNING:
+        return EAstralRequestState::Running;
+    case ASTRAL_REQUEST_COMPLETED:
+        return EAstralRequestState::Completed;
+    case ASTRAL_REQUEST_CANCELED:
+        return EAstralRequestState::Canceled;
+    case ASTRAL_REQUEST_FAILED:
+        return EAstralRequestState::Failed;
+    case ASTRAL_REQUEST_INVALID:
+    default:
+        return EAstralRequestState::Invalid;
+    }
+}
+
+static AstralRequestRef to_native_request_ref(const FAstralRequestRef& Request)
+{
+    AstralRequestRef Native{};
+    Native.size = sizeof(AstralRequestRef);
+    Native.kind = to_native_request_kind(Request.Kind);
+    Native.owner = static_cast<AstralHandle>(Request.OwnerHandle);
+    Native.ticket = static_cast<uint64_t>(Request.Ticket);
+    return Native;
+}
+
+static FAstralRequestRef from_native_request_ref(const AstralRequestRef& Native)
+{
+    FAstralRequestRef Request;
+    Request.Kind = from_native_request_kind(Native.kind);
+    Request.OwnerHandle = static_cast<int64>(Native.owner);
+    Request.Ticket = static_cast<int64>(Native.ticket);
+    return Request;
+}
+
+static FAstralRequestStatus from_native_request_status(const AstralRequestStatus& Native)
+{
+    FAstralRequestStatus Status;
+    Status.Kind = from_native_request_kind(Native.kind);
+    Status.State = from_native_request_state(Native.state);
+    Status.ErrorCode = static_cast<int32>(Native.result);
+    Status.OwnerHandle = static_cast<int64>(Native.owner);
+    Status.Ticket = static_cast<int64>(Native.ticket);
+    Status.QueueDepth = static_cast<int32>(Native.queue_depth);
+    Status.bHasTicket = (Native.flags & ASTRAL_REQUEST_FLAG_TICKET) != 0u;
+    Status.bStream = (Native.flags & ASTRAL_REQUEST_FLAG_STREAM) != 0u;
+    return Status;
+}
+
 static FAstralPromptCacheStats from_native_prompt_cache_stats(const AstralPromptCacheStats& Native)
 {
     FAstralPromptCacheStats Stats;
@@ -946,6 +1039,128 @@ void UAstralBlueprintLibrary::EndMemorySearch(int64 CursorHandle)
     {
         astral_memory_search_end(static_cast<AstralHandle>(CursorHandle));
     }
+}
+
+bool UAstralBlueprintLibrary::CreateMemorySearchRequest(
+    int64 CursorHandle,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateMemorySearchRequestResult(CursorHandle, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateMemorySearchRequestResult(
+    int64 CursorHandle,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateMemorySearchRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (CursorHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err = astral_request_from_memory_search(static_cast<AstralHandle>(CursorHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, CursorHandle);
+}
+
+bool UAstralBlueprintLibrary::GetRequestStatus(
+    const FAstralRequestRef& Request,
+    FAstralRequestStatus& OutStatus,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = GetRequestStatusResult(Request, OutStatus);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetRequestStatusResult(
+    const FAstralRequestRef& Request,
+    FAstralRequestStatus& OutStatus
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetRequestStatus);
+
+    OutStatus = FAstralRequestStatus{};
+    AstralRequestRef NativeRequest = to_native_request_ref(Request);
+    AstralRequestStatus NativeStatus{};
+    NativeStatus.size = sizeof(AstralRequestStatus);
+    const AstralErr Err = astral_request_state(&NativeRequest, &NativeStatus);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutStatus = from_native_request_status(NativeStatus);
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(NativeStatus.owner), static_cast<int32>(NativeStatus.queue_depth));
+}
+
+bool UAstralBlueprintLibrary::WaitRequest(
+    const FAstralRequestRef& Request,
+    int32 TimeoutMs,
+    FAstralRequestStatus& OutStatus,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = WaitRequestResult(Request, TimeoutMs, OutStatus);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::WaitRequestResult(
+    const FAstralRequestRef& Request,
+    int32 TimeoutMs,
+    FAstralRequestStatus& OutStatus
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_WaitRequest);
+
+    OutStatus = FAstralRequestStatus{};
+    if (TimeoutMs < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef NativeRequest = to_native_request_ref(Request);
+    AstralRequestStatus NativeStatus{};
+    NativeStatus.size = sizeof(AstralRequestStatus);
+    const AstralErr Err = astral_request_wait(&NativeRequest, static_cast<uint32_t>(TimeoutMs), &NativeStatus);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutStatus = from_native_request_status(NativeStatus);
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(NativeStatus.owner), static_cast<int32>(NativeStatus.queue_depth));
+}
+
+bool UAstralBlueprintLibrary::CancelRequest(const FAstralRequestRef& Request, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = CancelRequestResult(Request);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CancelRequestResult(const FAstralRequestRef& Request)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CancelRequest);
+
+    AstralRequestRef NativeRequest = to_native_request_ref(Request);
+    const AstralErr Err = astral_request_cancel(&NativeRequest);
+    return make_operation_result(Err, Request.OwnerHandle);
 }
 
 bool UAstralBlueprintLibrary::CreatePromptCache(const FAstralPromptCacheDesc& Desc, int64& OutCacheHandle, int32& OutErrorCode)

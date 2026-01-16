@@ -18,6 +18,28 @@ enum class EAstralError : int32
     NotFound = -9
 };
 
+UENUM(BlueprintType)
+enum class EAstralRequestKind : uint8
+{
+    None = 0,
+    Session = 1,
+    Conversation = 2,
+    AgentChat = 3,
+    Embedding = 4,
+    MemorySearch = 5
+};
+
+UENUM(BlueprintType)
+enum class EAstralRequestState : uint8
+{
+    Invalid = 0,
+    Queued = 1,
+    Running = 2,
+    Completed = 3,
+    Canceled = 4,
+    Failed = 5
+};
+
 /** Blueprint-safe status for native ticketed operations. */
 USTRUCT(BlueprintType)
 struct ASTRALRT_API FAstralAsyncResult
@@ -44,6 +66,51 @@ struct ASTRALRT_API FAstralAsyncResult
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral")
     bool bUnsupported = false;
+};
+
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralRequestRef
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    EAstralRequestKind Kind = EAstralRequestKind::None;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int64 OwnerHandle = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int64 Ticket = 0;
+};
+
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralRequestStatus
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    EAstralRequestKind Kind = EAstralRequestKind::None;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    EAstralRequestState State = EAstralRequestState::Invalid;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int32 ErrorCode = static_cast<int32>(EAstralError::OK);
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int64 OwnerHandle = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int64 Ticket = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    int32 QueueDepth = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bHasTicket = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral")
+    bool bStream = false;
 };
 
 /** Blueprint-safe status for native handle and polling operations. */
