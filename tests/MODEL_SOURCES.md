@@ -17,6 +17,9 @@ These are encoder/embedding GGUFs (typically 384-dim class):
 - Preset: `embed-nomic-v1-5-q2k`
   - Repo: `nomic-ai/nomic-embed-text-v1.5-GGUF`
   - File: `nomic-embed-text-v1.5.Q2_K.gguf`
+- Preset: `qwen3-embed-0.6b-q8`
+  - Repo: `Qwen/Qwen3-Embedding-0.6B-GGUF`
+  - File: `Qwen3-Embedding-0.6B-Q8_0.gguf`
 
 ## LiquidAI (generative)
 These are “small” relative to multi-billions, but still much larger than GPT-2:
@@ -59,6 +62,7 @@ Download helpers:
 ### Presets (recommended)
 - `./tests/model_downloader.sh --preset gpt2-q2k`
 - `./tests/model_downloader.sh --preset embed-minilm-q2k`
+- `./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8`
 - `./tests/model_downloader.sh --preset gemma3-270m-q4km`
 - `./tests/model_downloader.sh --preset gemma3-1b-it-q4km`
 - `./tests/model_downloader.sh --preset qwen3-0.6b-q8`
