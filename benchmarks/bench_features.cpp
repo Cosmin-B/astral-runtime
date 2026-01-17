@@ -37,6 +37,10 @@ static constexpr uint32_t kBenchMemoryFetchK = 4;
 static constexpr uint32_t kBenchMemoryMinDim = 1;
 static constexpr uint32_t kBenchMemoryMaxDim = 8192;
 static constexpr uint32_t kBenchMemoryMinCapacity = 1;
+static constexpr uint32_t kBenchMemorySweepTiny = 100;
+static constexpr uint32_t kBenchMemorySweepSmall = 1000;
+static constexpr uint32_t kBenchMemorySweepMedium = 10000;
+static constexpr uint32_t kBenchMemorySweepLarge = 100000;
 static constexpr uint32_t kBenchMemoryValueMask = 0xFu;
 static constexpr uint32_t kBenchMemoryColumnBias = 3;
 static constexpr uint32_t kBenchMemoryQueryMask = 7u;
@@ -69,9 +73,40 @@ static constexpr char kBenchSystemPromptText[] =
 static constexpr char kBenchMemoryCapacityEnv[] = "ASTRAL_BENCH_MEMORY_CAPACITY";
 static constexpr char kBenchMemoryDimEnv[] = "ASTRAL_BENCH_MEMORY_DIM";
 static constexpr char kBenchMemoryMetricEnv[] = "ASTRAL_BENCH_MEMORY_METRIC";
+static constexpr char kBenchMemorySweepEnv[] = "ASTRAL_BENCH_MEMORY_SWEEP";
 static constexpr char kBenchMemoryMetricDot[] = "dot";
 static constexpr char kBenchMemoryMetricL2[] = "l2";
 static constexpr char kBenchMemoryMetricCosine[] = "cosine";
+static constexpr const char* kBenchMemorySweepAddNames[] = {
+    "features.memory add_batch_100",
+    "features.memory add_batch_1k",
+    "features.memory add_batch_10k",
+    "features.memory add_batch_100k",
+};
+static constexpr const char* kBenchMemorySweepTopOneNames[] = {
+    "features.memory top1_100",
+    "features.memory top1_1k",
+    "features.memory top1_10k",
+    "features.memory top1_100k",
+};
+static constexpr const char* kBenchMemorySweepTopKNames[] = {
+    "features.memory topk_100",
+    "features.memory topk_1k",
+    "features.memory topk_10k",
+    "features.memory topk_100k",
+};
+static constexpr const char* kBenchMemorySweepCursorNames[] = {
+    "features.memory cursor_100",
+    "features.memory cursor_1k",
+    "features.memory cursor_10k",
+    "features.memory cursor_100k",
+};
+static constexpr uint32_t kBenchMemorySweepCapacities[] = {
+    kBenchMemorySweepTiny,
+    kBenchMemorySweepSmall,
+    kBenchMemorySweepMedium,
+    kBenchMemorySweepLarge,
+};
 static constexpr const char* kBenchToolManyNames[kBenchToolManyCount] = {
     "a000", "b001", "c002", "d003",
     "e004", "f005", "g006", "h007",
@@ -144,6 +179,14 @@ static AstralMemoryMetric parse_memory_metric_env() {
         return ASTRAL_MEMORY_METRIC_L2;
     }
     return ASTRAL_MEMORY_METRIC_COSINE;
+}
+
+static uint32_t memory_bench_dim() {
+    return bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim);
+}
+
+static uint32_t memory_bench_capacity(uint32_t fallback, uint32_t dim) {
+    return bounded_env_u32(kBenchMemoryCapacityEnv, fallback, kBenchMemoryMinCapacity, UINT32_MAX / dim);
 }
 
 static const char* find_model_path() {
@@ -834,14 +877,10 @@ static void fill_memory_query(std::vector<float>& query) {
     }
 }
 
-static BenchResult bench_memory_add_batch(uint64_t iters) {
-    (void)iters;
+static BenchResult bench_memory_add_batch_impl(uint32_t capacity, const char* name) {
     BenchResult r{};
-    r.name = "features.memory add_batch";
-    const uint32_t dim =
-        bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim);
-    const uint32_t capacity =
-        bounded_env_u32(kBenchMemoryCapacityEnv, kBenchMemoryCapacity, kBenchMemoryMinCapacity, UINT32_MAX / dim);
+    r.name = name;
+    const uint32_t dim = memory_bench_dim();
     r.ops = capacity;
     const AstralMemoryMetric metric = parse_memory_metric_env();
 
@@ -880,14 +919,17 @@ static BenchResult bench_memory_add_batch(uint64_t iters) {
     return r;
 }
 
-static BenchResult bench_memory_flat_search(uint64_t iters) {
+static BenchResult bench_memory_add_batch(uint64_t iters) {
+    (void)iters;
+    const uint32_t dim = memory_bench_dim();
+    return bench_memory_add_batch_impl(memory_bench_capacity(kBenchMemoryCapacity, dim), "features.memory add_batch");
+}
+
+static BenchResult bench_memory_flat_search_impl(uint64_t iters, uint32_t capacity, const char* name) {
     BenchResult r{};
-    r.name = "features.memory flat_search";
+    r.name = name;
     r.ops = iters;
-    const uint32_t dim =
-        bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim);
-    const uint32_t capacity =
-        bounded_env_u32(kBenchMemoryCapacityEnv, kBenchMemoryCapacity, kBenchMemoryMinCapacity, UINT32_MAX / dim);
+    const uint32_t dim = memory_bench_dim();
     const AstralMemoryMetric metric = parse_memory_metric_env();
 
     AstralMemoryIndexDesc desc{};
@@ -941,14 +983,16 @@ static BenchResult bench_memory_flat_search(uint64_t iters) {
     return r;
 }
 
-static BenchResult bench_memory_flat_search_top1(uint64_t iters) {
+static BenchResult bench_memory_flat_search(uint64_t iters) {
+    const uint32_t dim = memory_bench_dim();
+    return bench_memory_flat_search_impl(iters, memory_bench_capacity(kBenchMemoryCapacity, dim), "features.memory flat_search");
+}
+
+static BenchResult bench_memory_flat_search_top1_impl(uint64_t iters, uint32_t capacity, const char* name) {
     BenchResult r{};
-    r.name = "features.memory flat_search_top1";
+    r.name = name;
     r.ops = iters;
-    const uint32_t dim =
-        bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim);
-    const uint32_t capacity =
-        bounded_env_u32(kBenchMemoryCapacityEnv, kBenchMemoryCapacity, kBenchMemoryMinCapacity, UINT32_MAX / dim);
+    const uint32_t dim = memory_bench_dim();
     const AstralMemoryMetric metric = parse_memory_metric_env();
 
     AstralMemoryIndexDesc desc{};
@@ -1002,14 +1046,20 @@ static BenchResult bench_memory_flat_search_top1(uint64_t iters) {
     return r;
 }
 
-static BenchResult bench_memory_cursor_fetch(uint64_t iters) {
+static BenchResult bench_memory_flat_search_top1(uint64_t iters) {
+    const uint32_t dim = memory_bench_dim();
+    return bench_memory_flat_search_top1_impl(
+        iters,
+        memory_bench_capacity(kBenchMemoryCapacity, dim),
+        "features.memory flat_search_top1"
+    );
+}
+
+static BenchResult bench_memory_cursor_fetch_impl(uint64_t iters, uint32_t capacity, const char* name) {
     BenchResult r{};
-    r.name = "features.memory cursor_begin_fetch";
+    r.name = name;
     r.ops = iters;
-    const uint32_t dim =
-        bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim);
-    const uint32_t capacity =
-        bounded_env_u32(kBenchMemoryCapacityEnv, kBenchMemoryCapacity, kBenchMemoryMinCapacity, UINT32_MAX / dim);
+    const uint32_t dim = memory_bench_dim();
     const AstralMemoryMetric metric = parse_memory_metric_env();
 
     AstralMemoryIndexDesc desc{};
@@ -1068,6 +1118,34 @@ static BenchResult bench_memory_cursor_fetch(uint64_t iters) {
     r.ns = n1 - n0;
     astral_memory_destroy(index);
     return r;
+}
+
+static BenchResult bench_memory_cursor_fetch(uint64_t iters) {
+    const uint32_t dim = memory_bench_dim();
+    return bench_memory_cursor_fetch_impl(
+        iters,
+        memory_bench_capacity(kBenchMemoryCapacity, dim),
+        "features.memory cursor_begin_fetch"
+    );
+}
+
+static void print_memory_benchmarks(uint64_t iters) {
+    if (!env_enabled(kBenchMemorySweepEnv)) {
+        print_result(bench_memory_add_batch(iters), clock_info().name);
+        print_result(bench_memory_flat_search_top1(iters), clock_info().name);
+        print_result(bench_memory_flat_search(iters), clock_info().name);
+        print_result(bench_memory_cursor_fetch(iters), clock_info().name);
+        return;
+    }
+
+    constexpr size_t sweep_count = sizeof(kBenchMemorySweepCapacities) / sizeof(kBenchMemorySweepCapacities[0]);
+    for (size_t i = 0; i < sweep_count; ++i) {
+        const uint32_t capacity = kBenchMemorySweepCapacities[i];
+        print_result(bench_memory_add_batch_impl(capacity, kBenchMemorySweepAddNames[i]), clock_info().name);
+        print_result(bench_memory_flat_search_top1_impl(iters, capacity, kBenchMemorySweepTopOneNames[i]), clock_info().name);
+        print_result(bench_memory_flat_search_impl(iters, capacity, kBenchMemorySweepTopKNames[i]), clock_info().name);
+        print_result(bench_memory_cursor_fetch_impl(iters, capacity, kBenchMemorySweepCursorNames[i]), clock_info().name);
+    }
 }
 
 static AstralHandle load_mock_model_for_agent_bench() {
@@ -1745,6 +1823,8 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
                 bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim));
     std::printf("  ASTRAL_BENCH_MEMORY_METRIC=%s\n",
                 std::getenv(kBenchMemoryMetricEnv) ? std::getenv(kBenchMemoryMetricEnv) : kBenchMemoryMetricCosine);
+    std::printf("  ASTRAL_BENCH_MEMORY_SWEEP=%s\n",
+                std::getenv(kBenchMemorySweepEnv) ? std::getenv(kBenchMemorySweepEnv) : "");
     std::printf("  ASTRAL_BENCH_EMBED_MODEL=%s\n", std::getenv("ASTRAL_BENCH_EMBED_MODEL") ? std::getenv("ASTRAL_BENCH_EMBED_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MODEL=%s\n", std::getenv("ASTRAL_BENCH_VISION_MODEL") ? std::getenv("ASTRAL_BENCH_VISION_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MEDIA=%s\n", std::getenv("ASTRAL_BENCH_VISION_MEDIA") ? std::getenv("ASTRAL_BENCH_VISION_MEDIA") : "");
@@ -1788,10 +1868,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_toolset_parse(iters), clock_info().name);
         print_result(bench_toolset_parse_many(iters), clock_info().name);
         print_result(bench_chunk_word_ranges(iters), clock_info().name);
-        print_result(bench_memory_add_batch(iters), clock_info().name);
-        print_result(bench_memory_flat_search_top1(iters), clock_info().name);
-        print_result(bench_memory_flat_search(iters), clock_info().name);
-        print_result(bench_memory_cursor_fetch(iters), clock_info().name);
+        print_memory_benchmarks(iters);
         print_result(bench_agent_prompt_warmup(iters), clock_info().name);
         print_result(bench_agent_prompt_cache_warmup(iters), clock_info().name);
         astral_shutdown();
@@ -1837,10 +1914,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_toolset_parse(iters), clock_info().name);
     print_result(bench_toolset_parse_many(iters), clock_info().name);
     print_result(bench_chunk_word_ranges(iters), clock_info().name);
-    print_result(bench_memory_add_batch(iters), clock_info().name);
-    print_result(bench_memory_flat_search_top1(iters), clock_info().name);
-    print_result(bench_memory_flat_search(iters), clock_info().name);
-    print_result(bench_memory_cursor_fetch(iters), clock_info().name);
+    print_memory_benchmarks(iters);
     print_result(bench_agent_prompt_warmup(iters), clock_info().name);
     print_result(bench_agent_prompt_cache_warmup(iters), clock_info().name);
 

@@ -67,7 +67,8 @@ so sequential adds do not scan old slots to find the next open row.
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, and `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`,
 or `l2`) so local runs can cover 100, 1k, 10k, and 100k vector scans without
-changing source.
+changing source. Set `ASTRAL_BENCH_MEMORY_SWEEP=1` to run the built-in
+100/1k/10k/100k flat-index sweep in one invocation.
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
@@ -116,8 +117,11 @@ cmake --build --preset dev -j8 --target test_inference test_abi_invalid_args ast
 ctest --preset dev -R '^(test_inference|test_abi_invalid_args|gate_abi_layout_report|gate_source_scans|gate_doc_links)$' --output-on-failure
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
 ```
 
 Expected markers include `features.memory add_batch`,
 `features.memory flat_search_top1`, `features.memory flat_search`, and
-`features.memory cursor_begin_fetch`.
+`features.memory cursor_begin_fetch`. Sweep runs also include
+`features.memory top1_100`, `features.memory top1_1k`,
+`features.memory top1_10k`, and `features.memory top1_100k`.
