@@ -49,9 +49,10 @@ the duration of the call. Chat enqueue assembles one bounded prompt buffer in
 this order: system prompt, summary, memory context, history, current user turn,
 assistant prefix. The temporary buffer is released before the call returns.
 When `AstralAgentDesc::prompt_cache` is set, the agent looks up the assembled
-prompt in the native prompt cache during request setup. Cache hits feed cached
-token spans directly into the conversation prompt buffer; misses tokenize once,
-insert the token span, and then feed those tokens.
+prompt in the native prompt cache during request setup. Exact hits feed cached
+token spans directly into the conversation prompt buffer. Misses also cache the
+stable system, summary, memory, and history prefix so later turns with different
+user text can reuse that prefix while tokenizing only the current suffix.
 
 `astral_agent_history_save()` serializes the system prompt and history entries
 into a caller-provided buffer. Current snapshots include the rolling summary and
