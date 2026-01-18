@@ -513,6 +513,8 @@ struct PromptCache {
     uint32_t max_bytes = 0;
     uint32_t fifo_head = kPromptCacheNoSlot;
     uint32_t fifo_tail = kPromptCacheNoSlot;
+    uint32_t last_hit_slot = kPromptCacheNoSlot;
+    uint32_t last_hit_hash = 0;
     uint8_t token_arena_fragmented = 0;
     uint8_t track_stats = 0;
     uint64_t next_sequence = 1;
@@ -574,6 +576,16 @@ inline PromptCacheEntry* prompt_cache_empty_entry(PromptCache* cache, uint32_t h
 
 inline uint32_t prompt_cache_slot_index(const PromptCache* cache, const PromptCacheEntry* entry) {
     return static_cast<uint32_t>(entry - cache->entries);
+}
+
+inline void prompt_cache_forget_last_hit(PromptCache* cache) {
+    cache->last_hit_slot = kPromptCacheNoSlot;
+    cache->last_hit_hash = 0;
+}
+
+inline void prompt_cache_remember_last_hit(PromptCache* cache, PromptCacheEntry* entry) {
+    cache->last_hit_slot = prompt_cache_slot_index(cache, entry);
+    cache->last_hit_hash = entry->hash;
 }
 
 inline void prompt_cache_fifo_append(PromptCache* cache, PromptCacheEntry& entry) {
@@ -662,6 +674,7 @@ inline void prompt_cache_remove_entry(PromptCache* cache, PromptCacheEntry* entr
         return;
     }
 
+    prompt_cache_forget_last_hit(cache);
     if (prompt_cache_slot_index(cache, entry) != cache->fifo_head) {
         cache->token_arena_fragmented = 1u;
     }
@@ -691,6 +704,7 @@ inline void prompt_cache_clear_impl(PromptCache* cache) {
     cache->token_write_offset = 0;
     cache->token_arena_fragmented = 0;
     cache->entry_count = 0;
+    prompt_cache_forget_last_hit(cache);
 }
 
 inline void prompt_cache_destroy_impl(PromptCache* cache) {
@@ -706,6 +720,13 @@ inline void prompt_cache_destroy_impl(PromptCache* cache) {
 }
 
 inline PromptCacheEntry* prompt_cache_find_hashed(PromptCache* cache, const AstralPromptCacheKey* key, uint32_t hash) {
+    if (cache->last_hit_slot != kPromptCacheNoSlot && cache->last_hit_hash == hash) {
+        PromptCacheEntry& cached = cache->entries[cache->last_hit_slot];
+        if (cached.state == kPromptCacheSlotOccupied && prompt_cache_key_equal(cached.key, *key)) {
+            return &cached;
+        }
+    }
+
     uint32_t slot = hash & cache->table_mask;
     for (uint32_t probe = 0; probe < cache->table_capacity; ++probe) {
         PromptCacheEntry& entry = cache->entries[slot];
@@ -713,6 +734,7 @@ inline PromptCacheEntry* prompt_cache_find_hashed(PromptCache* cache, const Astr
             return nullptr;
         }
         if (entry.hash == hash && prompt_cache_key_equal(entry.key, *key)) {
+            prompt_cache_remember_last_hit(cache, &entry);
             return &entry;
         }
         slot = (slot + 1u) & cache->table_mask;
@@ -1418,6 +1440,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_put_tokens(
     entry->sequence = c->next_sequence++;
     entry->state = kPromptCacheSlotOccupied;
     prompt_cache_fifo_append(c, *entry);
+    prompt_cache_remember_last_hit(c, entry);
     c->token_count += token_count;
     ++c->entry_count;
     return ASTRAL_OK;
