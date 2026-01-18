@@ -460,6 +460,7 @@ TEST(inference_agent_history_and_chat_mock) {
     constexpr char kSystemPrompt[] = "reply tersely";
     constexpr char kSummary[] = "user likes short answers";
     constexpr char kMemoryContext[] = "Retrieved: alpha document says use compact output.";
+    constexpr char kSecondChatMessage[] = "different";
     constexpr uint32_t kSystemBytes = static_cast<uint32_t>(sizeof(kSystemPrompt) - 1);
     constexpr uint32_t kSummaryBytes = static_cast<uint32_t>(sizeof(kSummary) - 1);
     constexpr uint32_t kMemoryContextBytes = static_cast<uint32_t>(sizeof(kMemoryContext) - 1);
@@ -632,6 +633,7 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(result.prompt_cache_misses, kPromptCacheFirstMisses);
 
     chat.flags = ASTRAL_AGENT_CHAT_FLAG_WARMUP;
+    chat.user_message = span_from_cstr(kSecondChatMessage);
     ASSERT_EQ(astral_agent_chat_enqueue(agent, &chat), ASTRAL_OK);
     (void)read_agent_stream_all(agent);
     result = AstralAgentChatResult{};
