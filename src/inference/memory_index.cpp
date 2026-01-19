@@ -38,7 +38,6 @@ constexpr uint32_t kKeyHashMixShift2 = 31;
 constexpr uint32_t kAvx2F32Lanes = 8;
 constexpr uint32_t kAvx2UnrollVectors = 4;
 constexpr uint32_t kAvx2UnrollF32 = kAvx2F32Lanes * kAvx2UnrollVectors;
-constexpr uint32_t kAvx2AlignmentBytes = 32;
 constexpr uint32_t kAvx2Offset1 = kAvx2F32Lanes;
 constexpr uint32_t kAvx2Offset2 = kAvx2F32Lanes * 2u;
 constexpr uint32_t kAvx2Offset3 = kAvx2F32Lanes * 3u;
