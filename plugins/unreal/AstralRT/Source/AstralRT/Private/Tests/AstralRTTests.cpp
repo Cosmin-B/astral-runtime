@@ -256,6 +256,46 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("json schema grammar cap"), UAstralBlueprintLibrary::HasJsonSchemaGrammar(Caps));
     TestFalse(TEXT("empty caps"), UAstralBlueprintLibrary::HasEmbeddings(0));
 
+    constexpr int32 MockTokenCount = 3;
+    constexpr int32 MockTokenA = static_cast<int32>('a');
+    constexpr int32 MockTokenB = static_cast<int32>('b');
+    constexpr int32 MockTokenC = static_cast<int32>('c');
+    constexpr int32 MockDetokenizedBytes = 3;
+    int32 InvalidTokenCount = 0;
+    const FAstralOperationResult InvalidCountTokens = Model->CountTokensResult(TEXT("abc"), false, false, InvalidTokenCount);
+    TestFalse(TEXT("invalid model token count fails"), InvalidCountTokens.bSuccess);
+    TestEqual(TEXT("invalid model token count error"), InvalidCountTokens.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+    const bool ModelLoaded = Model->Load(ModelDesc);
+    TestTrue(TEXT("Blueprint model loads for tokenization"), ModelLoaded);
+
+    int32 TokenCount = 0;
+    const FAstralOperationResult CountTokens = Model->CountTokensResult(TEXT("abc"), false, false, TokenCount);
+    TestTrue(TEXT("token count result succeeds"), CountTokens.bSuccess);
+    TestEqual(TEXT("token count result count"), CountTokens.Count, MockTokenCount);
+    TestEqual(TEXT("token count out count"), TokenCount, MockTokenCount);
+
+    TArray<int32> Tokens;
+    const FAstralOperationResult Tokenize = Model->TokenizeResult(TEXT("abc"), false, false, Tokens);
+    TestTrue(TEXT("tokenize result succeeds"), Tokenize.bSuccess);
+    TestEqual(TEXT("tokenize result count"), Tokenize.Count, MockTokenCount);
+    TestEqual(TEXT("tokenize token count"), Tokens.Num(), MockTokenCount);
+    if (Tokens.Num() == MockTokenCount) {
+        TestEqual(TEXT("tokenize token a"), Tokens[0], MockTokenA);
+        TestEqual(TEXT("tokenize token b"), Tokens[1], MockTokenB);
+        TestEqual(TEXT("tokenize token c"), Tokens[2], MockTokenC);
+    }
+
+    FString Detokenized;
+    const FAstralOperationResult Detokenize = Model->DetokenizeResult(Tokens, Detokenized);
+    TestTrue(TEXT("detokenize result succeeds"), Detokenize.bSuccess);
+    TestEqual(TEXT("detokenize byte count"), Detokenize.Count, MockDetokenizedBytes);
+    TestEqual(TEXT("detokenize text"), Detokenized, FString(TEXT("abc")));
+    Model->Release();
+
     TArray<uint8> EmptyBytes;
     constexpr int64 InvalidTicket = 0;
     constexpr int64 InvalidHandle = 0;

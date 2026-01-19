@@ -22,6 +22,10 @@ Unity exposes the same flow on `AstralModel`: `CountTokens()` for sizing,
 `Tokenize()` for caller-owned or newly allocated `NativeArray<int>` output, and
 `Detokenize()` for managed string conversion outside hot paths.
 
+Unreal exposes compatibility bool helpers on `UAstralModel` plus
+`CountTokensResult()`, `TokenizeResult()`, and `DetokenizeResult()` for
+Blueprint graphs that need the native error code and output count.
+
 ## Ownership And Lifetime
 
 The model handle owns tokenizer metadata. Text spans, token arrays, offsets, and
