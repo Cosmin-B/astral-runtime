@@ -132,6 +132,21 @@ static FString resolve_adapter_path(const FAstralAdapterDesc& Desc)
     return resolve_unreal_path(Desc.AdapterPath, Desc.PathRoot);
 }
 
+static FAstralOperationResult make_operation_result(AstralErr Err, int64 Handle, int32 Count = 0)
+{
+    FAstralOperationResult Result;
+    Result.bSuccess = Err == ASTRAL_OK;
+    Result.ErrorCode = static_cast<int32>(Err);
+    Result.Handle = Handle;
+    Result.Count = Count;
+    Result.bBackpressure = Err == ASTRAL_E_BUSY;
+    Result.bTimeout = Err == ASTRAL_E_TIMEOUT;
+    Result.bCanceled = Err == ASTRAL_E_CANCELED;
+    Result.bUnsupported = Err == ASTRAL_E_UNSUPPORTED;
+    Result.bNotFound = Err == ASTRAL_E_NOT_FOUND;
+    return Result;
+}
+
 } // namespace
 
 void UAstralModel::BeginDestroy()
@@ -328,10 +343,22 @@ bool UAstralModel::GetLimits(FAstralModelLimits& OutLimits) const
 
 bool UAstralModel::CountTokens(const FString& Text, bool bAddSpecial, bool bParseSpecial, int32& OutCount) const
 {
+    return CountTokensResult(Text, bAddSpecial, bParseSpecial, OutCount).bSuccess;
+}
+
+FAstralOperationResult UAstralModel::CountTokensResult(
+    const FString& Text,
+    bool bAddSpecial,
+    bool bParseSpecial,
+    int32& OutCount
+) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_CountTokens);
+
     OutCount = 0;
     if (!IsValid())
     {
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID, static_cast<int64>(ModelHandle));
     }
 
     FTCHARToUTF8 TextUtf8(*Text);
@@ -348,24 +375,37 @@ bool UAstralModel::CountTokens(const FString& Text, bool bAddSpecial, bool bPars
         &Count);
     if (Err != ASTRAL_OK)
     {
-        return false;
+        return make_operation_result(Err, static_cast<int64>(ModelHandle));
     }
 
     OutCount = static_cast<int32>(Count);
-    return true;
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle), OutCount);
 }
 
 bool UAstralModel::Tokenize(const FString& Text, bool bAddSpecial, bool bParseSpecial, TArray<int32>& OutTokens) const
 {
+    return TokenizeResult(Text, bAddSpecial, bParseSpecial, OutTokens).bSuccess;
+}
+
+FAstralOperationResult UAstralModel::TokenizeResult(
+    const FString& Text,
+    bool bAddSpecial,
+    bool bParseSpecial,
+    TArray<int32>& OutTokens
+) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_Tokenize);
+
     OutTokens.Reset();
     int32 Count = 0;
-    if (!CountTokens(Text, bAddSpecial, bParseSpecial, Count))
+    const FAstralOperationResult CountResult = CountTokensResult(Text, bAddSpecial, bParseSpecial, Count);
+    if (!CountResult.bSuccess)
     {
-        return false;
+        return CountResult;
     }
     if (Count == 0)
     {
-        return true;
+        return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle));
     }
 
     OutTokens.SetNumUninitialized(Count);
@@ -386,19 +426,26 @@ bool UAstralModel::Tokenize(const FString& Text, bool bAddSpecial, bool bParseSp
     if (Err != ASTRAL_OK)
     {
         OutTokens.Reset();
-        return false;
+        return make_operation_result(Err, static_cast<int64>(ModelHandle));
     }
 
     OutTokens.SetNum(static_cast<int32>(Written), EAllowShrinking::No);
-    return true;
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle), static_cast<int32>(Written));
 }
 
 bool UAstralModel::Detokenize(const TArray<int32>& Tokens, FString& OutText) const
 {
+    return DetokenizeResult(Tokens, OutText).bSuccess;
+}
+
+FAstralOperationResult UAstralModel::DetokenizeResult(const TArray<int32>& Tokens, FString& OutText) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_Detokenize);
+
     OutText.Reset();
     if (!IsValid())
     {
-        return false;
+        return make_operation_result(ASTRAL_E_INVALID, static_cast<int64>(ModelHandle));
     }
 
     uint32_t ByteCount = 0;
@@ -409,11 +456,11 @@ bool UAstralModel::Detokenize(const TArray<int32>& Tokens, FString& OutText) con
         &ByteCount);
     if (CountErr != ASTRAL_OK)
     {
-        return false;
+        return make_operation_result(CountErr, static_cast<int64>(ModelHandle));
     }
     if (ByteCount == 0)
     {
-        return true;
+        return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle));
     }
 
     TArray<uint8, TInlineAllocator<kInlineDetokenizedBytes>> Bytes;
@@ -431,12 +478,12 @@ bool UAstralModel::Detokenize(const TArray<int32>& Tokens, FString& OutText) con
         &Written);
     if (Err != ASTRAL_OK)
     {
-        return false;
+        return make_operation_result(Err, static_cast<int64>(ModelHandle));
     }
 
     FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), static_cast<int32>(Written));
     OutText = FString(Converted.Length(), Converted.Get());
-    return true;
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle), static_cast<int32>(Written));
 }
 
 bool UAstralModel::InitMedia(const FAstralModelMediaDesc& Desc)

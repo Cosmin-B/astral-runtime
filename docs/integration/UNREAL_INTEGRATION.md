@@ -49,6 +49,7 @@ still follow the contracts on `UAstralModel`, `UAstralSession`, and
 For Blueprint graphs that manage native handles directly, prefer the
 result-returning helpers:
 
+- `UAstralModel::CountTokensResult`, `TokenizeResult`, and `DetokenizeResult`
 - `CreateToolsetResult` and `ParseToolCallResult`
 - `CreateMemoryIndexResult`, `LoadMemoryIndexResult`,
   `AddMemoryBatchResult`, `RemoveMemoryRecordResult`,
