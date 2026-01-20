@@ -18,6 +18,7 @@ BASE_TOKENS = (
     "Astral sample: packaged content memory model loaded",
     "Astral sample: saved cache bytes read",
     "Astral sample: saved cache memory model loaded",
+    "Astral sample: RAG search top key",
 )
 
 REAL_MODEL_TOKENS = (
@@ -40,6 +41,7 @@ FAILURE_TOKENS = (
     "saved cache write failed",
     "saved cache read failed",
     "memory model load failed",
+    "memory search demo failed",
     "media feed demo failed",
 )
 

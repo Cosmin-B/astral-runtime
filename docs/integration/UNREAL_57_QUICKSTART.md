@@ -63,7 +63,7 @@ To create a sidecar UE 5.7 sample project without committing generated files:
 The script creates `AstralSample.uproject`, links the local `AstralRT` plugin,
 stages a small mock model payload as UFS content, and writes C++ code that
 demonstrates model load, streaming, cancellation, embeddings, packaged content
-bytes, Saved cache bytes, and expected failure logging through
+bytes, Saved cache bytes, native memory search, and expected failure logging through
 `LogAstralSample`. Use `--plugin-mode copy` when the project must be packaged on
 a machine without access to the Astral checkout. Real sign-off still requires
 packaging that generated project in UE 5.7 and keeping the logs as release
@@ -85,7 +85,7 @@ For a packaged runtime smoke, launch the archived binary with
 `-NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout`.
 The sample GameMode spawns `AAstralSampleActor` on the default engine entry map;
 the log should include successful packaged-content and Saved-cache memory model
-loads before exit.
+loads plus `Astral sample: RAG search top key` before exit.
 
 To package and immediately launch the sample against local real text and
 embedding GGUFs:
