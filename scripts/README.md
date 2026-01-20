@@ -389,7 +389,6 @@ UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
-UNITY_EDITOR=/opt/Unity/Editor/Unity \
   ./scripts/run_release_required_gates.sh --cuda-arch native --cuda-strict --mtmd-bench
 ```
 
@@ -413,7 +412,6 @@ UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
-UNITY_EDITOR=/opt/Unity/Editor/Unity \
   ./scripts/run_release_required_gates.sh --print-plan --cuda-arch native --cuda-strict --mtmd-bench
 ```
 
@@ -542,6 +540,11 @@ under the `windows_large_pages` lane.
 `run_unity_ci_tests.sh` validates `editmode-results.xml` after Unity exits. The
 XML must be well-formed, report zero failures, and include at least one passing
 test case.
+
+`run_unity_gameci_tests.sh` runs the same EditMode ABI lane through the GameCI
+Unity Editor container for the pinned Unity 6 CI project. Use `--dry-run` to
+inspect the resolved `unityci/editor` image and Docker command without launching
+the container.
 
 ## Interpreting Results
 

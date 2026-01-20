@@ -21,7 +21,7 @@
     },
     "release_required_gates": {
       "status": "pass",
-      "command": "ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNREAL_RUNUAT=... UNITY_EDITOR=... ./scripts/run_release_required_gates.sh --cuda-arch <deployed-arch-list> --cuda-strict --mtmd-bench",
+      "command": "ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNREAL_RUNUAT=... ./scripts/run_release_required_gates.sh --cuda-arch <deployed-arch-list> --cuda-strict --mtmd-bench",
       "artifacts": [
         "logs/release-required-gates.log"
       ]
@@ -130,7 +130,7 @@
     },
     "unity_editmode_abi": {
       "status": "pass",
-      "command": "UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh",
+      "command": "./scripts/run_unity_gameci_tests.sh --image unityci/editor:ubuntu-6000.0.57f1-base-3.1.0",
       "artifacts": [
         "logs/unity-editmode-abi.log"
       ]

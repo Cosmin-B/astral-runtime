@@ -156,7 +156,7 @@ file(WRITE "${out_dir}/release-evidence.json"
     },
     \"unity_editmode_abi\": {
       \"status\": \"pass\",
-      \"command\": \"UNITY_EDITOR=... ./scripts/run_unity_ci_tests.sh\",
+      \"command\": \"./scripts/run_unity_gameci_tests.sh --image unityci/editor:ubuntu-6000.0.57f1-base-3.1.0\",
       \"artifacts\": [\"logs/unity_editmode_abi.log\"]
     },
     \"cuda_parity_matrix\": {

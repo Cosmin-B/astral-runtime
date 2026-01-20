@@ -102,7 +102,7 @@ REQUIRED_COMMAND_TOKENS = {
         "--sample-memory-backend mock",
         "--sample-media-backend mock",
     ),
-    "unity_editmode_abi": ("UNITY_EDITOR", "run_unity_ci_tests.sh"),
+    "unity_editmode_abi": ("run_unity_gameci_tests.sh", "unityci/editor", "6000.0.57f1"),
     "cuda_parity_matrix": (
         "ASTRAL_TEST_CUDA_PARITY_INFER=1",
         "ASTRAL_TEST_CUDA_E2E=1",

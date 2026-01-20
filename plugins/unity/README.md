@@ -460,6 +460,18 @@ Release and CI runs must provide a native `astral_rt` library for the Editor.
 binary is missing or empty, then validates the EditMode XML result after Unity
 exits.
 
+For Linux container validation, use the GameCI wrapper:
+
+```bash
+./scripts/run_unity_gameci_tests.sh
+```
+
+The wrapper reads the Unity version from the CI project, defaults to
+`unityci/editor:ubuntu-6000.0.57f1-base-3.1.0`, builds the native Unity plugin
+on the host, then runs the same EditMode ABI lane inside the container. License
+environment variables are forwarded by name only when already set; license files
+and activation responses are not read or written by the wrapper.
+
 ## License
 
 See [LICENSE](../../LICENSE) for details.
