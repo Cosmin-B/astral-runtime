@@ -44,7 +44,7 @@ set(common_notes [=[
 
 ## Engine Evidence
 
-- Unity Editor ABI tests: Unity 6000.0.57f1, `scripts/run_unity_ci_tests.sh` passed
+- Unity Editor ABI tests: Unity 6000.0.57f1, `scripts/run_unity_gameci_tests.sh` passed
 - Unreal Automation tests: UE 5.4/5.5/5.6/5.7, `scripts/run_unreal_ci_tests.sh` passed
 - Unreal container images: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce
 

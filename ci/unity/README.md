@@ -36,3 +36,13 @@ license secrets as repository or environment secrets:
 Run it from GitHub Actions with a Unity 6 editor version and the native plugin
 build enabled. The workflow builds `cmake --preset unity-plugin` before invoking
 GameCI so the package tests load the current native library.
+
+For local Linux container validation, use:
+
+```bash
+./scripts/run_unity_gameci_tests.sh
+```
+
+The script resolves the checked-in Unity version and uses
+`unityci/editor:ubuntu-6000.0.57f1-base-3.1.0` unless `--image` or
+`ASTRAL_UNITY_GAMECI_IMAGE` overrides it.
