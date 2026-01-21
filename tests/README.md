@@ -101,6 +101,7 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_unreal_compatibility_matrix`: checks that the UE 5.4-5.7 matrix runner fails clearly for missing required editors, rejects unsupported versions, and does not accept all-skipped discovery runs as release evidence.
 - `gate_unreal_sample_scaffold`: generates a temporary UE sample project and checks that it includes model load, streaming, cancellation, embeddings, and error-reporting sample code.
 - `gate_unity_editmode_results`: smoke-checks the Unity EditMode XML validator for pass, failed-result, and malformed-result cases.
+- `gate_unity_mobile_package_layout`: checks that Unity Android/iOS presets, package paths, and static-link binding docs stay aligned.
 - `gate_hf_matrix_log`: checks that HF matrix logs can be parsed and that failed, empty, skipped-only, or incomplete feature logs are rejected when pass evidence is required.
 - `gate_mtmd_fixture_manifest`: checks that the MTMD fixture manifest uses pinned revisions, license metadata, required vision/audio model/projector files, manifest-driven path resolution, and the runner's fast fixture preflight.
 - `gate_cuda_parity_runner`: checks that CUDA parity runners require real inference/e2e flags and GPU/toolkit runner visibility unless probe-only mode is explicit, and that the release matrix still covers auto, cuBLAS, and MMQ presets.
