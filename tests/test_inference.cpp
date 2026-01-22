@@ -653,6 +653,121 @@ TEST(inference_agent_history_and_chat_mock) {
     astral_shutdown();
 }
 
+TEST(inference_agents_share_model_executor_mock) {
+    constexpr uint32_t kBytesPerMiB = 1024 * 1024;
+    constexpr uint32_t kReserveMiB = 32;
+    constexpr uint32_t kExecutorSlots = 2;
+    constexpr uint32_t kBatchTokens = 8;
+    constexpr uint32_t kMaxTokens = 6;
+    constexpr uint32_t kMaxMessages = 4;
+    constexpr uint32_t kMaxPromptKiB = 4;
+    constexpr uint32_t kMaxPromptBytes = kMaxPromptKiB * 1024;
+    constexpr uint32_t kAgentASeed = 11;
+    constexpr uint32_t kAgentBSeed = 29;
+    constexpr uint32_t kExpectedHistoryMessages = 1;
+    constexpr uint32_t kRequestTimeoutMs = 1000;
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = kReserveMiB * kBytesPerMiB;
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralHandle model = load_mock_model(nullptr);
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = kExecutorSlots;
+    ex.max_batch_tokens = kBatchTokens;
+    ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
+
+    AstralAgentDesc desc{};
+    desc.size = sizeof(AstralAgentDesc);
+    desc.model = model;
+    desc.max_tokens = kMaxTokens;
+    desc.temperature = 0.0f;
+    desc.top_p = 1.0f;
+    desc.stream_enabled = 1;
+    desc.max_messages = kMaxMessages;
+    desc.max_prompt_bytes = kMaxPromptBytes;
+
+    AstralAgentDesc desc_a = desc;
+    desc_a.seed = kAgentASeed;
+    AstralAgentDesc desc_b = desc;
+    desc_b.seed = kAgentBSeed;
+
+    AstralHandle agent_a = 0;
+    AstralHandle agent_b = 0;
+    ASSERT_EQ(astral_agent_create(&desc_a, &agent_a), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_create(&desc_b, &agent_b), ASTRAL_OK);
+
+    AstralHandle overflow_agent = 0;
+    ASSERT_EQ(astral_agent_create(&desc, &overflow_agent), ASTRAL_E_NOMEM);
+    ASSERT_FALSE(astral_handle_valid(overflow_agent));
+
+    ASSERT_EQ(astral_agent_set_system_prompt(agent_a, span_from_cstr("speak as pilot")), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_set_system_prompt(agent_b, span_from_cstr("speak as medic")), ASTRAL_OK);
+
+    AstralAgentMessage msg_a{};
+    msg_a.size = sizeof(AstralAgentMessage);
+    msg_a.role = ASTRAL_AGENT_ROLE_USER;
+    msg_a.content = span_from_cstr("ship status");
+    ASSERT_EQ(astral_agent_message_add(agent_a, &msg_a), ASTRAL_OK);
+
+    AstralAgentMessage msg_b{};
+    msg_b.size = sizeof(AstralAgentMessage);
+    msg_b.role = ASTRAL_AGENT_ROLE_USER;
+    msg_b.content = span_from_cstr("injury status");
+    ASSERT_EQ(astral_agent_message_add(agent_b, &msg_b), ASTRAL_OK);
+
+    AstralAgentChatDesc chat_a{};
+    chat_a.size = sizeof(AstralAgentChatDesc);
+    chat_a.user_message = span_from_cstr("next action");
+    AstralAgentChatDesc chat_b{};
+    chat_b.size = sizeof(AstralAgentChatDesc);
+    chat_b.user_message = span_from_cstr("triage action");
+
+    ASSERT_EQ(astral_agent_chat_enqueue(agent_a, &chat_a), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_chat_enqueue(agent_b, &chat_b), ASTRAL_OK);
+
+    AstralRequestRef request_a{};
+    AstralRequestRef request_b{};
+    ASSERT_EQ(astral_request_from_agent_chat(agent_a, &request_a), ASTRAL_OK);
+    ASSERT_EQ(astral_request_from_agent_chat(agent_b, &request_b), ASTRAL_OK);
+    ASSERT_EQ(request_a.kind, ASTRAL_REQUEST_AGENT_CHAT);
+    ASSERT_EQ(request_b.kind, ASTRAL_REQUEST_AGENT_CHAT);
+    ASSERT_EQ(request_a.owner, agent_a);
+    ASSERT_EQ(request_b.owner, agent_b);
+
+    AstralRequestStatus status_a{};
+    status_a.size = sizeof(AstralRequestStatus);
+    AstralRequestStatus status_b{};
+    status_b.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_wait(&request_a, kRequestTimeoutMs, &status_a), ASTRAL_OK);
+    ASSERT_EQ(astral_request_wait(&request_b, kRequestTimeoutMs, &status_b), ASTRAL_OK);
+    ASSERT_EQ(status_a.state, ASTRAL_REQUEST_COMPLETED);
+    ASSERT_EQ(status_b.state, ASTRAL_REQUEST_COMPLETED);
+    (void)read_agent_stream_all(agent_a);
+    (void)read_agent_stream_all(agent_b);
+
+    AstralAgentChatResult result_a{};
+    result_a.size = sizeof(AstralAgentChatResult);
+    AstralAgentChatResult result_b{};
+    result_b.size = sizeof(AstralAgentChatResult);
+    ASSERT_EQ(astral_agent_chat_result(agent_a, &result_a), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_chat_result(agent_b, &result_b), ASTRAL_OK);
+    ASSERT_EQ(result_a.state, ASTRAL_SESSION_COMPLETED);
+    ASSERT_EQ(result_b.state, ASTRAL_SESSION_COMPLETED);
+    ASSERT_EQ(result_a.history_messages, kExpectedHistoryMessages);
+    ASSERT_EQ(result_b.history_messages, kExpectedHistoryMessages);
+    ASSERT_GT(result_a.prompt_bytes, 0u);
+    ASSERT_GT(result_b.prompt_bytes, 0u);
+    ASSERT_GT(result_a.generated_tokens, 0ull);
+    ASSERT_GT(result_b.generated_tokens, 0ull);
+
+    astral_agent_destroy(agent_a);
+    astral_agent_destroy(agent_b);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
 TEST(inference_agent_overflow_truncate_mock) {
     constexpr uint32_t kReserveBytes = 32 * 1024 * 1024;
     constexpr uint32_t kMaxTokens = 0;
