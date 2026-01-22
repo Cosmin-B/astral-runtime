@@ -2021,6 +2021,118 @@ TEST(inference_memory_index_flat_mock) {
     astral_memory_destroy(index);
 }
 
+TEST(inference_rag_ingest_chunk_search_mock) {
+    constexpr uint32_t kDocId = 7001;
+    constexpr uint32_t kGroupId = 42;
+    constexpr uint32_t kWordsPerChunk = 2;
+    constexpr uint32_t kRangeCount = 3;
+    constexpr uint32_t kDim = 4;
+    constexpr uint32_t kCapacity = 4;
+    constexpr uint32_t kTopK = 2;
+    constexpr uint32_t kResultCapacity = 2;
+    constexpr uint64_t kFirstKey = 5001;
+    constexpr uint64_t kSecondKey = 5002;
+    constexpr uint64_t kThirdKey = 5003;
+    constexpr uint32_t kContextBufferBytes = 32;
+    constexpr char kDocument[] = "alpha fuel beta engine gamma route";
+    constexpr char kExpectedFirstChunk[] = "alpha fuel";
+    constexpr char kExpectedSecondChunk[] = "beta engine";
+
+    AstralSpanU8 document = span_from_cstr(kDocument);
+    AstralChunkerDesc chunker{};
+    chunker.size = sizeof(AstralChunkerDesc);
+    chunker.mode = ASTRAL_CHUNK_MODE_WORD;
+    chunker.max_units = kWordsPerChunk;
+    chunker.overlap_units = 0;
+    chunker.document_id = kDocId;
+    chunker.group_id = kGroupId;
+
+    uint32_t count = 0;
+    AstralErr err = astral_chunk_count(&chunker, document, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kRangeCount);
+
+    AstralChunkRange ranges[kRangeCount]{};
+    err = astral_chunk_ranges(&chunker, document, ranges, kRangeCount, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kRangeCount);
+
+    AstralMemoryRecord records[kRangeCount]{};
+    err = astral_memory_record_from_chunk(&ranges[0], kFirstKey, 0, &records[0]);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_record_from_chunk(&ranges[1], kSecondKey, 0, &records[1]);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_record_from_chunk(&ranges[2], kThirdKey, 0, &records[2]);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(records[1].document_id, kDocId);
+    ASSERT_EQ(records[1].group_id, kGroupId);
+    ASSERT_EQ(records[1].chunk_id, ranges[1].chunk_id);
+
+    AstralMemoryIndexDesc memory_desc{};
+    memory_desc.size = sizeof(AstralMemoryIndexDesc);
+    memory_desc.dim = kDim;
+    memory_desc.capacity = kCapacity;
+    memory_desc.metric = ASTRAL_MEMORY_METRIC_COSINE;
+    memory_desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    AstralHandle index = 0;
+    err = astral_memory_create(&memory_desc, &index);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    const float vectors[kRangeCount * kDim] = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+    };
+    err = astral_memory_add_batch(index, records, vectors, kRangeCount);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralMemorySearchDesc search{};
+    search.size = sizeof(AstralMemorySearchDesc);
+    search.top_k = kTopK;
+    search.group_id = kGroupId;
+    const float query[kDim] = {0.0f, 1.0f, 0.0f, 0.0f};
+    AstralMemorySearchResult results[kResultCapacity]{};
+    err = astral_memory_search(index, &search, query, results, kResultCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopK);
+    ASSERT_EQ(results[0].key, kSecondKey);
+    ASSERT_EQ(results[0].document_id, kDocId);
+    ASSERT_EQ(results[0].group_id, kGroupId);
+    ASSERT_EQ(results[0].chunk_id, ranges[1].chunk_id);
+
+    uint8_t context[kContextBufferBytes]{};
+    AstralMutSpanU8 context_out{};
+    context_out.data = context;
+    context_out.len = sizeof(context);
+    uint32_t context_bytes = 0;
+    err = astral_chunk_text_copy(document, &ranges[results[0].chunk_id], context_out, &context_bytes);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(context), context_bytes), std::string(kExpectedSecondChunk));
+
+    err = astral_chunk_text_copy(document, &ranges[results[1].chunk_id], context_out, &context_bytes);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(std::string(reinterpret_cast<const char*>(context), context_bytes), std::string(kExpectedFirstChunk));
+
+    search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    AstralHandle cursor = 0;
+    err = astral_memory_search_begin(index, &search, query, &cursor);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(cursor));
+
+    AstralRequestRef request{};
+    err = astral_request_from_memory_search(cursor, &request);
+    ASSERT_EQ(err, ASTRAL_OK);
+    AstralRequestStatus status{};
+    status.size = sizeof(AstralRequestStatus);
+    err = astral_request_state(&request, &status);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_COMPLETED);
+    ASSERT_EQ(status.queue_depth, kTopK);
+    astral_memory_search_end(cursor);
+
+    astral_memory_destroy(index);
+}
+
 TEST(inference_memory_index_dot_l2_tail_mock) {
     constexpr uint32_t kDim = 17;
     constexpr uint32_t kCapacity = 4;

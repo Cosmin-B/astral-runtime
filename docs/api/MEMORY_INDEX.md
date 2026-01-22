@@ -110,6 +110,24 @@ search.top_k = kTopK;
 search.group_id = ASTRAL_MEMORY_GROUP_ANY;
 ```
 
+## Chunked Document Ingest
+
+For document-backed retrieval, keep text storage outside the memory index and
+store only stable metadata in native records:
+
+1. Use `astral_chunk_count()` and `astral_chunk_ranges()` on the source UTF-8
+   document.
+2. Convert each selected `AstralChunkRange` with
+   `astral_memory_record_from_chunk()`.
+3. Embed each chunk through the embedding API or a caller-owned embedding
+   pipeline.
+4. Add records and vectors with one `astral_memory_add_batch()` call.
+5. Search returns keys, scores, document id, chunk id, and group id. Use the
+   returned chunk id to fetch text with `astral_chunk_text_copy()` or with your
+   own document store.
+
+Native tests cover that path in `inference_rag_ingest_chunk_search_mock`.
+
 ## Validation
 
 ```bash
