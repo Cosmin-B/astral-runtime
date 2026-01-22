@@ -40,6 +40,9 @@ bound at creation time and are forwarded to native prompt setup. A bound
 toolset can also be used through `astral_agent_parse_tool_call()` after
 generation, so wrappers do not need to retain a separate toolset handle for
 completed output parsing.
+Each agent occupies one executor slot while it exists. Creating more agents than
+the configured slot count returns `ASTRAL_E_NOMEM`; use that as the native
+backpressure signal for shared-model character pools.
 
 ## Ownership
 
@@ -138,4 +141,5 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ./build/dev/ben
 
 Expected markers include `features.agent prompt_warmup` and
 `features.agent prompt_cache_warmup`. Native tests include agent-bound tool
-call parsing in `inference_toolset_parse_and_bind_mock`.
+call parsing in `inference_toolset_parse_and_bind_mock` and shared-model agent
+slot isolation in `inference_agents_share_model_executor_mock`.
