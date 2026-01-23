@@ -106,7 +106,8 @@ Notes:
 | Remote runtime transport | ❌ | ❌ | ❌ |
 
 Notes:
-- Vector memory is currently brute-force and bounded by native index capacity.
+- Vector memory supports exact flat search and bounded graph search. Group
+  filters use the exact flat scanner.
 - Continuous batching requires a backend with slot/batch operations; built-in
   mock and CPU backends implement that surface.
 - Remote transport is intentionally absent from the public C ABI today.

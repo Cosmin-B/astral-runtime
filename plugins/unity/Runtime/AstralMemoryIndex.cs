@@ -295,6 +295,8 @@ namespace Astral.Runtime
         public uint capacity = AstralMemoryIndex.DefaultCapacity;
         public AstralNative.AstralMemoryMetric metric = AstralNative.AstralMemoryMetric.Cosine;
         public AstralNative.AstralMemoryIndexKind indexKind = AstralNative.AstralMemoryIndexKind.Flat;
+        public uint graphNeighbors;
+        public uint graphSearch;
 
         internal AstralNative.AstralMemoryIndexDesc ToNativeDesc()
         {
@@ -304,7 +306,9 @@ namespace Astral.Runtime
                 dim = dim,
                 capacity = capacity,
                 metric = metric,
-                index_kind = indexKind
+                index_kind = indexKind,
+                graph_neighbors = graphNeighbors,
+                graph_search = graphSearch
             };
         }
     }
