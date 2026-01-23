@@ -1,9 +1,8 @@
 # Native Memory Index
 
-Astral memory indexes store embedding vectors in native contiguous memory and
-return stable keys and scores for retrieval. The first implementation is a flat
-index for small and medium data sets; it is the correctness baseline for later
-ANN indexes.
+Astral memory indexes store embedding vectors in native memory and return stable
+keys and scores for retrieval. The flat index is the exact correctness baseline.
+The graph index adds a bounded native ANN path for larger all-group searches.
 
 ## C ABI
 
@@ -31,6 +30,15 @@ into native storage and use a bounded native key table for update/remove lookup.
 Search returns result metadata first; callers decide whether to fetch text or
 engine objects for the selected keys.
 
+`AstralMemoryIndexDesc::index_kind` selects storage/search behavior:
+
+- `ASTRAL_MEMORY_INDEX_FLAT` scans contiguous row-major vectors and returns exact
+  top-k results.
+- `ASTRAL_MEMORY_INDEX_GRAPH` builds a bounded adjacency graph during ingest and
+  uses a fixed-size candidate pool for all-group top-k search. Set
+  `graph_neighbors` and `graph_search` to tune recall/latency, or leave them
+  zero for native defaults. Group-filtered searches use the exact flat scanner.
+
 `astral_memory_record_from_chunk()` maps an `AstralChunkRange` into an
 `AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
 chunk, and group metadata consistent with the native chunker while the caller
@@ -54,8 +62,8 @@ Use `ASTRAL_MEMORY_GROUP_ANY` to search all groups, or set
 
 ## Performance
 
-The flat index stores vectors row-major and uses AVX2 dot and L2 kernels when
-the compiler target supports them. The scalar fallback is unrolled by four
+The flat index stores vectors row-major and uses AVX2 or NEON dot and L2 kernels
+when the compiler target supports them. The scalar fallback is unrolled by four
 lanes.
 Search keeps the top-k result set in the caller-provided output array, avoiding
 heap allocation during query execution. The flat scanner dispatches by metric
@@ -63,6 +71,11 @@ before entering the vector loop, so dot, cosine, and L2 searches do not branch
 through a generic scorer for every stored vector.
 Batch ingest uses the same fixed-capacity vector storage and a free-slot cursor
 so sequential adds do not scan old slots to find the next open row.
+
+The graph index allocates adjacency, candidate, and visited buffers at creation
+time. Query execution reuses those buffers and the same SIMD scoring kernels.
+Add/update/remove are colder ingest operations; updates and removals may rebuild
+the graph to keep neighbor links consistent.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, and `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`,
@@ -110,6 +123,15 @@ search.top_k = kTopK;
 search.group_id = ASTRAL_MEMORY_GROUP_ANY;
 ```
 
+Graph index:
+
+```c
+desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+desc.graph_neighbors = 16;
+desc.graph_search = 64;
+err = astral_memory_create(&desc, &index);
+```
+
 ## Chunked Document Ingest
 
 For document-backed retrieval, keep text storage outside the memory index and
@@ -138,8 +160,11 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_ME
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
 ```
 
+Native tests include `inference_memory_index_graph_mock` for graph search,
+filtered exact fallback, save/load, and remove/rebuild behavior.
+
 Expected markers include `features.memory add_batch`,
-`features.memory flat_search_top1`, `features.memory flat_search`, and
-`features.memory cursor_begin_fetch`. Sweep runs also include
+`features.memory flat_search_top1`, `features.memory flat_search`,
+`features.memory graph_search`, and `features.memory cursor_begin_fetch`. Sweep runs also include
 `features.memory top1_100`, `features.memory top1_1k`,
 `features.memory top1_10k`, and `features.memory top1_100k`.

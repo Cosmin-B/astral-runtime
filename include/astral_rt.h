@@ -249,6 +249,7 @@ enum {
 typedef uint32_t AstralMemoryIndexKind;
 enum {
     ASTRAL_MEMORY_INDEX_FLAT = 0,
+    ASTRAL_MEMORY_INDEX_GRAPH = 1,
 };
 
 enum {
@@ -261,9 +262,9 @@ typedef struct AstralMemoryIndexDesc {
     uint32_t capacity;
     AstralMemoryMetric metric;
     AstralMemoryIndexKind index_kind;
+    uint32_t graph_neighbors;
+    uint32_t graph_search;
     uint32_t _reserved0;
-    uint32_t _reserved1;
-    uint32_t _reserved2;
 } AstralMemoryIndexDesc;
 
 typedef struct AstralMemoryRecord {

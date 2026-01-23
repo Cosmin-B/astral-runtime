@@ -950,7 +950,8 @@ namespace Astral.Runtime
 
         public enum AstralMemoryIndexKind : uint
         {
-            Flat = 0
+            Flat = 0,
+            Graph = 1
         }
 
         public const uint ASTRAL_MEMORY_GROUP_ANY = 0xFFFFFFFFu;
@@ -963,9 +964,9 @@ namespace Astral.Runtime
             public uint capacity;
             public AstralMemoryMetric metric;
             public AstralMemoryIndexKind index_kind;
+            public uint graph_neighbors;
+            public uint graph_search;
             public uint _reserved0;
-            public uint _reserved1;
-            public uint _reserved2;
         }
 
         [StructLayout(LayoutKind.Sequential)]
