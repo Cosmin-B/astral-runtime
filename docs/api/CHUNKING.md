@@ -31,6 +31,9 @@ Use `astral_memory_record_from_chunk()` to convert a chunk range into an
 `AstralMemoryRecord` for RAG ingest. The helper preserves document id, chunk id,
 and group id so native, Unreal, and Unity callers do not duplicate metadata
 mapping code.
+After search, callers can use the returned `chunk_id` to copy the selected
+range with `astral_chunk_text_copy()` or to resolve text from their own document
+store.
 
 ## Ownership
 
@@ -89,3 +92,7 @@ cmake --build --preset dev -j8 --target test_inference test_abi_invalid_args ast
 ctest --preset dev -R '^(test_inference|test_abi_invalid_args|gate_abi_layout_report|gate_source_scans|gate_doc_links)$' --output-on-failure
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/benchmarks/astral_benchmarks --features
 ```
+
+Native tests include `inference_rag_ingest_chunk_search_mock`, which plans
+document chunks, converts ranges to memory records, searches the flat index, and
+copies the retrieved chunk text.
