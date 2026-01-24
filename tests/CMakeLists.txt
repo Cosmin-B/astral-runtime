@@ -95,6 +95,7 @@ foreach(test_file ${TEST_FILES})
         target_include_directories(${test_file} PRIVATE
             ${CMAKE_SOURCE_DIR}/include
             ${CMAKE_SOURCE_DIR}/src
+            ${LLAMA_CPP_DIR}/vendor
         )
 
         # Platform-specific settings
