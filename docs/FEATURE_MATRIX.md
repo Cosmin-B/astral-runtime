@@ -103,14 +103,17 @@ Notes:
 | Vector memory index, save/load, cursor fetch | ✅ | ✅ | ✅ |
 | Continuous-batching conversations | ✅ | ✅ | ✅ |
 | Native agents with system prompt/history/prompt cache stats | ✅ | ✅ | ✅ |
-| Remote runtime transport | ❌ | ❌ | ❌ |
+| Remote runtime transport | ⚠️ | ⚠️ | 🧪 |
 
 Notes:
 - Vector memory supports exact flat search and bounded graph search. Group
   filters use the exact flat scanner.
 - Continuous batching requires a backend with slot/batch operations; built-in
   mock and CPU backends implement that surface.
-- Remote transport is intentionally absent from the public C ABI today.
+- Remote runtime support uses `backend_name = "remote"` with a loopback-tested
+  HTTP provider for health, tokenization, completion, auth failure, and
+  embeddings. Transient health retry and timeout status mapping are covered.
+  TLS, streaming chunks, and production service evidence are still required.
 
 ## Test validation map
 
@@ -121,6 +124,7 @@ Notes:
 | `test_tokenization` | tokenization sizing, batch, detokenize | CPU-only + CUDA build |
 | `test_prompt_cache` | prompt cache hits, eviction, save/load | CPU-only + CUDA build |
 | `test_inference` | sessions, grammar, LoRA, prompt cache, agents, vector memory | CPU-only + CUDA build |
+| `test_backend` | backend selection, mock provider, remote loopback provider | CPU-only + CUDA build |
 | `test_continuous_batching` | conversation slot fairness and CPU probe | CPU-only + CUDA build |
 | `test_cuda_parity` | CUDA surface + (optional) CPU-vs-CUDA parity harness | CUDA build (optional inference via env) |
 | `test_cuda_e2e` | end-to-end logprobs/grammar/kv/embeddings on real model | CPU-only always; CUDA when `ASTRAL_TEST_CUDA_E2E=1` |
