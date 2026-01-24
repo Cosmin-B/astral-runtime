@@ -85,7 +85,9 @@ changing source. Set `ASTRAL_BENCH_MEMORY_SWEEP=1` to run the built-in
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
-storage and search ordering.
+storage and search ordering. Unreal's `FAstralMemoryIndexDesc` exposes flat and
+graph index modes plus graph neighbor/search budgets; `0` keeps the native
+defaults.
 
 ## Unity
 
