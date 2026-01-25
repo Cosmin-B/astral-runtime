@@ -119,6 +119,24 @@ For Blueprint convenience, `UAstralSession` also exposes:
 - `OnBytesReceived` (UTF-8 bytes, per tick)
 - `OnTokenReceived` (decoded text, per tick; allocates an `FString` only when bound)
 
+## Remote backend
+
+Remote runtime mode uses the same `UAstralModel` and `UAstralSession` wrappers
+as local providers:
+
+```cpp
+FAstralModelDesc ModelDesc;
+ModelDesc.BackendName = TEXT("remote");
+ModelDesc.SourceKind = EAstralModelSourceKind::Path;
+ModelDesc.PathRoot = EAstralUnrealPathRoot::Raw;
+ModelDesc.ModelPath = TEXT("http://127.0.0.1:8080");
+ModelDesc.RemoteApiKey = TEXT("");
+Model->Load(ModelDesc);
+```
+
+`RemoteApiKey` is passed to native code for the load call only and is not stored
+by the Unreal wrapper after `Load` returns.
+
 ## Vision / Audio (Media)
 
 Media support requires a projector/encoder GGUF and a native Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:

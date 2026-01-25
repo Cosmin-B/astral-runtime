@@ -182,6 +182,7 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
     const FString ResolvedModelPath = resolve_model_path(Desc);
     FTCHARToUTF8 PathUtf8(*ResolvedModelPath);
     FTCHARToUTF8 BackendUtf8(*Desc.BackendName);
+    FTCHARToUTF8 RemoteApiKeyUtf8(*Desc.RemoteApiKey);
 
     AstralModelDesc Native{};
     Native.size = sizeof(AstralModelDesc);
@@ -215,6 +216,12 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
     {
         Native.backend_name.data = reinterpret_cast<const uint8_t*>(BackendUtf8.Get());
         Native.backend_name.len = static_cast<uint32_t>(BackendUtf8.Length());
+    }
+
+    if (Desc.SourceKind == EAstralModelSourceKind::Path && !Desc.RemoteApiKey.IsEmpty())
+    {
+        Native.model_bytes.data = reinterpret_cast<const uint8_t*>(RemoteApiKeyUtf8.Get());
+        Native.model_bytes.len = static_cast<uint32_t>(RemoteApiKeyUtf8.Length());
     }
 
     Native.gpu_layers = static_cast<uint32_t>(Desc.GpuLayers);
