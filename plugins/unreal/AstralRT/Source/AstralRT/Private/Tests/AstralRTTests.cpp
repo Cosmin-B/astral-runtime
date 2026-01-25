@@ -478,6 +478,23 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     UAstralBlueprintLibrary::DestroyMemoryIndex(LoadMemory.Handle);
     UAstralBlueprintLibrary::DestroyMemoryIndex(MemoryCreate.Handle);
 
+    FAstralMemoryIndexDesc GraphMemoryDesc = MemoryDesc;
+    GraphMemoryDesc.IndexKind = EAstralMemoryIndexKind::Graph;
+    GraphMemoryDesc.GraphNeighbors = 2;
+    GraphMemoryDesc.GraphSearch = 4;
+    const FAstralOperationResult GraphMemoryCreate = UAstralBlueprintLibrary::CreateMemoryIndexResult(GraphMemoryDesc);
+    TestTrue(TEXT("graph memory create result succeeds"), GraphMemoryCreate.bSuccess);
+    const FAstralOperationResult GraphAddMemory =
+        UAstralBlueprintLibrary::AddMemoryBatchResult(GraphMemoryCreate.Handle, Records, Vectors, GraphMemoryDesc.Dimension);
+    TestTrue(TEXT("graph memory add result succeeds"), GraphAddMemory.bSuccess);
+    TArray<FAstralMemorySearchResult> GraphMemoryResults;
+    const FAstralOperationResult GraphSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(GraphMemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup, GraphMemoryResults);
+    TestTrue(TEXT("graph memory search result succeeds"), GraphSearchMemory.bSuccess);
+    TestEqual(TEXT("graph memory search count"), GraphSearchMemory.Count, SearchTopK);
+    TestEqual(TEXT("graph memory top key"), GraphMemoryResults[0].Key, RecordA.Key);
+    UAstralBlueprintLibrary::DestroyMemoryIndex(GraphMemoryCreate.Handle);
+
     constexpr int32 PromptCacheMaxEntries = 4;
     constexpr int32 PromptCacheMaxTokens = 16;
     constexpr int64 PromptCacheModelHandle = 1;

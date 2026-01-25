@@ -263,6 +263,14 @@ enum class EAstralMemoryMetric : uint8
     L2 = 2
 };
 
+/** Native memory index search structure. */
+UENUM(BlueprintType)
+enum class EAstralMemoryIndexKind : uint8
+{
+    Flat = 0,
+    Graph = 1
+};
+
 /** Root used to resolve relative filesystem paths before they cross the C ABI. */
 UENUM(BlueprintType)
 enum class EAstralUnrealPathRoot : uint8
@@ -608,6 +616,15 @@ struct ASTRALRT_API FAstralMemoryIndexDesc
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
     EAstralMemoryMetric Metric = EAstralMemoryMetric::Cosine;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    EAstralMemoryIndexKind IndexKind = EAstralMemoryIndexKind::Flat;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int32 GraphNeighbors = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int32 GraphSearch = 0;
 };
 
 /** Metadata associated with one vector in a native memory index. */

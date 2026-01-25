@@ -80,6 +80,18 @@ static AstralMemoryMetric to_native_memory_metric(EAstralMemoryMetric Metric)
     }
 }
 
+static AstralMemoryIndexKind to_native_memory_index_kind(EAstralMemoryIndexKind Kind)
+{
+    switch (Kind)
+    {
+    case EAstralMemoryIndexKind::Graph:
+        return ASTRAL_MEMORY_INDEX_GRAPH;
+    case EAstralMemoryIndexKind::Flat:
+    default:
+        return ASTRAL_MEMORY_INDEX_FLAT;
+    }
+}
+
 static AstralMemoryIndexDesc to_native_memory_desc(const FAstralMemoryIndexDesc& Desc)
 {
     AstralMemoryIndexDesc Native{};
@@ -87,7 +99,9 @@ static AstralMemoryIndexDesc to_native_memory_desc(const FAstralMemoryIndexDesc&
     Native.dim = static_cast<uint32_t>(Desc.Dimension);
     Native.capacity = static_cast<uint32_t>(Desc.Capacity);
     Native.metric = to_native_memory_metric(Desc.Metric);
-    Native.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    Native.index_kind = to_native_memory_index_kind(Desc.IndexKind);
+    Native.graph_neighbors = Desc.GraphNeighbors > 0 ? static_cast<uint32_t>(Desc.GraphNeighbors) : 0u;
+    Native.graph_search = Desc.GraphSearch > 0 ? static_cast<uint32_t>(Desc.GraphSearch) : 0u;
     return Native;
 }
 
