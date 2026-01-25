@@ -312,6 +312,10 @@ struct ASTRALRT_API FAstralModelDesc
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
     FString BackendName;
 
+    /** Bearer key used by the remote backend. Leave empty for local providers or unauthenticated endpoints. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
+    FString RemoteApiKey;
+
     /** Number of layers requested on GPU-capable backends; 0 keeps execution on CPU. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral")
     int32 GpuLayers = 0;
