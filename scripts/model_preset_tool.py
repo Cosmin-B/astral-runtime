@@ -44,6 +44,11 @@ LIST_FORMAT_TEXT = "text"
 LIST_FORMAT_JSON = "json"
 MODEL_TYPE_ALL = "all"
 SHA256_HEX_DIGITS = frozenset("0123456789abcdef")
+MODEL_STATUS_READY = "ready"
+MODEL_STATUS_MISSING = "missing"
+MODEL_STATUS_PARTIAL = "partial"
+MODEL_STATUS_INVALID = "invalid"
+PARTIAL_DOWNLOAD_SUFFIX = ".part"
 
 
 @dataclass(frozen=True)
@@ -304,6 +309,34 @@ def _preset_record(preset: Preset, output_dir: Path) -> Dict[str, Any]:
     }
 
 
+def _status_record(preset: Preset, output_dir: Path) -> Dict[str, Any]:
+    output_path = output_dir / preset.filename
+    part_path = output_path.with_name(output_path.name + PARTIAL_DOWNLOAD_SUFFIX)
+    record = _preset_record(preset, output_dir)
+    record["part_path"] = str(part_path)
+    record["present_bytes"] = 0
+    record["partial_bytes"] = part_path.stat().st_size if part_path.exists() else 0
+    record["expected_bytes"] = preset.size_bytes
+    record["sha256_ok"] = False
+    record["status"] = MODEL_STATUS_MISSING
+    record["error"] = ""
+
+    if output_path.exists():
+        record["present_bytes"] = output_path.stat().st_size
+        try:
+            _verify_existing(output_path, preset)
+            record["sha256_ok"] = True
+            record["status"] = MODEL_STATUS_READY
+        except Exception as exc:
+            record["status"] = MODEL_STATUS_INVALID
+            record["error"] = str(exc)
+        return record
+
+    if part_path.exists():
+        record["status"] = MODEL_STATUS_PARTIAL
+    return record
+
+
 def _request(url: str, token: str, start: int) -> urllib.request.Request:
     request = urllib.request.Request(url)
     request.add_header("User-Agent", "astral-model-downloader/1.0")
@@ -484,6 +517,26 @@ def cmd_info(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
+    output_dir = _repo_root_path(args.dir)
+    record = _status_record(preset, output_dir)
+    if args.format == "json":
+        json.dump(record, sys.stdout, indent=2, sort_keys=True)
+        print()
+    else:
+        print(f"preset: {preset.name}")
+        print(f"status: {record['status']}")
+        print(f"path: {record['path']}")
+        print(f"present_bytes: {record['present_bytes']}")
+        print(f"partial_bytes: {record['partial_bytes']}")
+        print(f"expected_bytes: {record['expected_bytes']}")
+        if record["error"]:
+            print(f"error: {record['error']}")
+        print(f"command: {record['download_command']}")
+    return EXIT_OK
+
+
 def cmd_validate_file(args: argparse.Namespace) -> int:
     preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
     output_path = Path(args.path).expanduser() if args.path else _resolved_output_path(args, preset)
@@ -559,6 +612,12 @@ def main(argv: List[str]) -> int:
     info_parser.add_argument("--dir", default="tests/models")
     info_parser.add_argument("--format", choices=("json", "text"), default="json")
     info_parser.set_defaults(func=cmd_info)
+
+    status_parser = sub.add_parser("status")
+    status_parser.add_argument("preset")
+    status_parser.add_argument("--dir", default="tests/models")
+    status_parser.add_argument("--format", choices=("json", "text"), default="json")
+    status_parser.set_defaults(func=cmd_status)
 
     preset_for_file_parser = sub.add_parser("preset-for-file")
     preset_for_file_parser.add_argument("filename")

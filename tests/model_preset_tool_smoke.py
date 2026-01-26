@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -27,6 +28,10 @@ CUSTOM_MODEL_URL = "https://example.test/model.gguf"
 CUSTOM_MODEL_FILE = "model.gguf"
 CUSTOM_BAD_MODEL_FILE = "../model.gguf"
 CUSTOM_BAD_SHA256 = "abc"
+STATUS_MISSING = "missing"
+STATUS_PARTIAL = "partial"
+STATUS_INVALID = "invalid"
+STATUS_READY = "ready"
 PACKAGE_PRESET = "gpt2-q2k"
 
 
@@ -87,6 +92,29 @@ def main(argv: list[str]) -> int:
     dry_run = run_tool(root, "download", "--preset", QWEN_TEXT_PRESET, "--dry-run").stdout
     for marker in ("preset:", "path:", "url:", "size_bytes:", "sha256:", "command:"):
         require(marker in dry_run, f"dry run missed {marker}")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        missing_status = json.loads(run_tool(root, "status", QWEN_TEXT_PRESET, "--dir", temp_dir).stdout)
+        require(missing_status["status"] == STATUS_MISSING, "missing status did not report missing")
+        require(missing_status["present_bytes"] == 0, "missing status should have no present bytes")
+        require(missing_status["partial_bytes"] == 0, "missing status should have no partial bytes")
+        require(QWEN_TEXT_PRESET in missing_status["download_command"], "status should include repeatable command")
+
+        part_path = Path(temp_dir) / f"{QWEN_TEXT_FILE}.part"
+        part_path.write_bytes(b"partial")
+        partial_status = json.loads(run_tool(root, "status", QWEN_TEXT_PRESET, "--dir", temp_dir).stdout)
+        require(partial_status["status"] == STATUS_PARTIAL, "partial status did not report partial")
+        require(partial_status["partial_bytes"] == len(b"partial"), "partial byte count mismatch")
+
+        model_path = Path(temp_dir) / QWEN_TEXT_FILE
+        model_path.write_bytes(b"invalid")
+        invalid_status = json.loads(run_tool(root, "status", QWEN_TEXT_PRESET, "--dir", temp_dir).stdout)
+        require(invalid_status["status"] == STATUS_INVALID, "invalid status did not report invalid")
+        require("size mismatch" in invalid_status["error"], "invalid status should name size mismatch")
+
+    status_text = run_tool(root, "status", QWEN_TEXT_PRESET, "--dir", CUSTOM_OUTPUT_DIR, "--format", "text").stdout
+    for marker in ("preset:", "status:", "path:", "present_bytes:", "partial_bytes:", "expected_bytes:", "command:"):
+        require(marker in status_text, f"status text missed {marker}")
 
     unknown = run_tool(root, "download", "--preset", UNKNOWN_PRESET, "--dry-run", check=False)
     require(unknown.returncode == EXPECTED_USAGE_EXIT, "unknown preset should fail")
