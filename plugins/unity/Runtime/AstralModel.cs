@@ -445,6 +445,11 @@ namespace Astral.Runtime
                 ? new AstralNative.AstralSpanU8 { data = IntPtr.Zero, len = 0 }
                 : AstralNative.AstralSpanU8.FromString(config.backendName, out backendArray);
 
+            NativeArray<byte> remoteApiKeyArray = default;
+            var remoteApiKeySpan = string.IsNullOrEmpty(config.remoteApiKey)
+                ? new AstralNative.AstralSpanU8 { data = IntPtr.Zero, len = 0 }
+                : AstralNative.AstralSpanU8.FromString(config.remoteApiKey, out remoteApiKeyArray);
+
             try
             {
                 var desc = new AstralNative.AstralModelDesc
@@ -452,6 +457,7 @@ namespace Astral.Runtime
                     size = (uint)Marshal.SizeOf<AstralNative.AstralModelDesc>(),
                     source_kind = AstralNative.AstralModelSourceKind.Path,
                     model_path = pathSpan,
+                    model_bytes = remoteApiKeySpan,
                     backend_name = backendSpan,
                     gpu_layers = config.gpuLayers,
                     n_ctx = config.contextSize,
@@ -481,6 +487,10 @@ namespace Astral.Runtime
                 if (backendArray.IsCreated)
                 {
                     backendArray.Dispose();
+                }
+                if (remoteApiKeyArray.IsCreated)
+                {
+                    remoteApiKeyArray.Dispose();
                 }
             }
         }
@@ -566,6 +576,11 @@ namespace Astral.Runtime
         /// Leave null/empty for auto-selection.
         /// </summary>
         public string backendName = null;
+
+        /// <summary>
+        /// Bearer key used by the remote backend. Leave null/empty for local providers or unauthenticated endpoints.
+        /// </summary>
+        public string remoteApiKey = null;
 
         /// <summary>
         /// Default configuration for desktop platforms.

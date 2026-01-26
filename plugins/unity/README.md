@@ -86,6 +86,11 @@ using var model = AstralModel.Load("/path/to/model.gguf", AstralModelConfig.Mobi
 // Resolve packaged or downloaded model paths before loading
 using var packaged = AstralModel.Load(AstralModelPath.StreamingAssets("Models/model.gguf"));
 using var cached = AstralModel.Load(AstralModelPath.PersistentData("Models/model.gguf"), AstralModelConfig.Mobile);
+
+var remoteConfig = AstralModelConfig.Default;
+remoteConfig.backendName = "remote";
+remoteConfig.remoteApiKey = "";
+using var remote = AstralModel.Load("http://127.0.0.1:8080", remoteConfig);
 ```
 
 ### 3. Run Inference (Streaming)
