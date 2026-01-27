@@ -86,6 +86,8 @@ For a packaged runtime smoke, launch the archived binary with
 The sample GameMode spawns `AAstralSampleActor` on the default engine entry map;
 the log should include successful packaged-content and Saved-cache memory model
 loads plus `Astral sample: RAG search top key` before exit.
+The package runner validates the runtime log after `--run-sample`; the log must
+also include `Astral sample: clean shutdown`.
 
 To package and immediately launch the sample against local real text and
 embedding GGUFs:

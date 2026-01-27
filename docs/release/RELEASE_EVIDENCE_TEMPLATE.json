@@ -125,7 +125,8 @@
         "texture image",
         "Astral sample: packaged content memory model loaded",
         "Astral sample: saved cache memory model loaded",
-        "Astral sample: RAG search top key"
+        "Astral sample: RAG search top key",
+        "Astral sample: clean shutdown"
       ]
     },
     "unity_editmode_abi": {
