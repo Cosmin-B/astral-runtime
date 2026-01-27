@@ -18,6 +18,7 @@ package/sample-matrix eligibility.
 - `tests/model_downloader.sh --preset <preset> --dry-run`
 - `tests/model_downloader.sh --preset <preset> --validate-only`
 - `tests/model_downloader.sh --preset <preset> --info`
+- `tests/model_downloader.sh --preset <preset> --status`
 - `tests/model_downloader.sh --preset <preset> --print-path`
 - `tests/model_downloader.sh --list-presets --list-type text`
 - `tests/model_downloader.sh --list-package --list-format json`
@@ -35,6 +36,12 @@ repeatable downloader command. `list --format json` prints the same records for
 every selected preset, optionally filtered by `--type text` or `--type
 embedding`. Engine setup tools can consume this output without scraping dry-run
 text.
+
+`status` prints the same preset metadata plus local file state. The status value
+is `missing`, `partial`, `invalid`, or `ready`; the record includes final-file
+bytes, `.part` bytes, expected bytes, checksum result, an error string for
+invalid files, and the repeatable downloader command. Engine setup screens can
+use this before starting a first-run download.
 
 Custom downloads are accepted through `--url` or `--hf-repo` plus `--hf-file`.
 The wrapper rejects custom filenames that are not local `.gguf` basenames,
@@ -64,7 +71,9 @@ python3 scripts/model_preset_tool.py validate-manifest
 python3 scripts/model_preset_tool.py list --type embedding --format json
 python3 scripts/model_preset_tool.py list --package --format json
 python3 scripts/model_preset_tool.py info qwen3-0.6b-q8 --dir tests/models
+python3 scripts/model_preset_tool.py status qwen3-0.6b-q8 --dir tests/models
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
+./tests/model_downloader.sh --preset qwen3-0.6b-q8 --status
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --list-presets --list-type text
 ./tests/model_downloader.sh --list-package --list-format json
@@ -72,4 +81,4 @@ python3 scripts/model_preset_tool.py info qwen3-0.6b-q8 --dir tests/models
 ```
 
 Expected evidence markers include `manifest OK`, `preset: qwen3-0.6b-q8`,
-`"download_command"`, `sha256:`, and a resolved `.gguf` path.
+`"download_command"`, `"status"`, `sha256:`, and a resolved `.gguf` path.

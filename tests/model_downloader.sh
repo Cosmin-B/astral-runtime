@@ -18,6 +18,7 @@ Options:
   --validate-only       Validate an existing local preset file without downloading
   --print-path          Print the resolved local path for a preset
   --info                Print resolved preset metadata as JSON
+  --status              Print existing local file state as JSON
   --list-presets        Print available presets
   --list-package        Print presets marked for packaged samples
   --list-type <type>    Filter --list-presets by all, text, or embedding
@@ -59,6 +60,7 @@ fi
 
 print_path=0
 print_info=0
+print_status=0
 list_presets=0
 list_package=0
 preset_name=""
@@ -74,6 +76,7 @@ while [[ $# -gt 0 ]]; do
     --validate-only) args+=(--validate-only); shift ;;
     --print-path) print_path=1; shift ;;
     --info) print_info=1; shift ;;
+    --status) print_status=1; shift ;;
     --list-type) list_type="${2:-}"; shift 2 ;;
     --list-format) list_format="${2:-}"; shift 2 ;;
     --token) args+=(--token "${2:-}"); shift 2 ;;
@@ -127,6 +130,14 @@ if [[ "${print_info}" -eq 1 ]]; then
     exit "${exit_usage}"
   fi
   exec python3 "${tool}" info "${preset_name}" --dir "${output_dir}"
+fi
+
+if [[ "${print_status}" -eq 1 ]]; then
+  if [[ -z "${preset_name}" ]]; then
+    echo "--status requires --preset" >&2
+    exit "${exit_usage}"
+  fi
+  exec python3 "${tool}" status "${preset_name}" --dir "${output_dir}"
 fi
 
 exec python3 "${tool}" download "${args[@]}"
