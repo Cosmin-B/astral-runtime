@@ -19,6 +19,7 @@ BASE_TOKENS = (
     "Astral sample: saved cache bytes read",
     "Astral sample: saved cache memory model loaded",
     "Astral sample: RAG search top key",
+    "Astral sample: clean shutdown",
 )
 
 REAL_MODEL_TOKENS = (

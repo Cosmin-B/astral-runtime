@@ -457,6 +457,8 @@ void AAstralSampleActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
         SavedCacheModel = nullptr;
     }
 
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: clean shutdown"));
+
     Super::EndPlay(EndPlayReason);
 }
 

@@ -28,6 +28,7 @@ LogAstralSample: Display: Astral sample: packaged content memory model loaded fr
 LogAstralSample: Display: Astral sample: saved cache bytes read from ../../../AstralSample/Saved/AstralSample/mock-model-cache.bytes
 LogAstralSample: Display: Astral sample: saved cache memory model loaded from 4 bytes
 LogAstralSample: Display: Astral sample: RAG search top key 101 score 1.000 group 7
+LogAstralSample: Display: Astral sample: clean shutdown
 ")
 
 execute_process(
@@ -56,6 +57,7 @@ LogAstralSample: Display: Astral sample: packaged content memory model loaded fr
 LogAstralSample: Display: Astral sample: saved cache bytes read from ../../../AstralSample/Saved/AstralSample/mock-model-cache.bytes
 LogAstralSample: Display: Astral sample: saved cache memory model loaded from 4 bytes
 LogAstralSample: Display: Astral sample: RAG search top key 101 score 1.000 group 7
+LogAstralSample: Display: Astral sample: clean shutdown
 ")
 execute_process(
   COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${script}"
