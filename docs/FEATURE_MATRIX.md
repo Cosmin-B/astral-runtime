@@ -113,7 +113,9 @@ Notes:
 - Remote runtime support uses `backend_name = "remote"` with a loopback-tested
   HTTP provider for health, tokenization, completion, auth failure, and
   embeddings. Transient health retry and timeout status mapping are covered.
-  TLS, streaming chunks, and production service evidence are still required.
+  HTTPS is rejected with `ASTRAL_E_UNSUPPORTED` when the HTTP client is built
+  without TLS support. TLS-enabled builds, streaming chunks, and production
+  service evidence are still required.
 
 ## Test validation map
 

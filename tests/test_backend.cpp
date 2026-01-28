@@ -680,6 +680,35 @@ TEST(backend_remote_auth_failure) {
     astral_shutdown();
 }
 
+TEST(backend_remote_https_requires_tls_build) {
+    AstralInit cfg = {};
+    cfg.reserve_bytes = 16 * 1024 * 1024;
+    cfg.thread_count = 1;
+    AstralErr err = astral_init(&cfg);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralModelDesc model_desc = {};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    const char* backend = "remote";
+    model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+    model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend));
+    const char* url = "https://127.0.0.1:1";
+    model_desc.model_path.data = reinterpret_cast<const uint8_t*>(url);
+    model_desc.model_path.len = static_cast<uint32_t>(std::strlen(url));
+
+    AstralHandle model = 0;
+    err = astral_model_load(&model_desc, &model);
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT)
+    ASSERT_EQ(err, ASTRAL_E_TIMEOUT);
+#else
+    ASSERT_EQ(err, ASTRAL_E_UNSUPPORTED);
+#endif
+    ASSERT_EQ(model, 0u);
+
+    astral_shutdown();
+}
+
 TEST(backend_remote_health_retry_and_timeout_status) {
     RemoteTestServer retry_remote;
     retry_remote.health_failures = 1;

@@ -22,6 +22,10 @@ Authorization: Bearer <key>
 The provider performs `GET /health` during model load. A non-200 response maps
 to an Astral error before a model handle is returned.
 
+`https://` URLs require cpp-httplib built with OpenSSL support. Builds without
+that support reject HTTPS during model load with `ASTRAL_E_UNSUPPORTED` before
+opening a socket.
+
 ## Endpoints
 
 The current provider uses a small text protocol:
@@ -88,4 +92,5 @@ Expected markers:
 
 - `backend_remote_loopback_completion_and_embeddings` passes.
 - `backend_remote_auth_failure` passes.
+- `backend_remote_https_requires_tls_build` passes.
 - `backend_remote_health_retry_and_timeout_status` passes.

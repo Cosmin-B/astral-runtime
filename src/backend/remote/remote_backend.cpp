@@ -64,6 +64,18 @@ static bool is_http_url(const char* url) {
     return std::strncmp(url, "http://", 7) == 0 || std::strncmp(url, "https://", 8) == 0;
 }
 
+static bool is_https_url(const char* url) {
+    return std::strncmp(url, "https://", 8) == 0;
+}
+
+static bool remote_tls_available() {
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT)
+    return true;
+#else
+    return false;
+#endif
+}
+
 static httplib::Headers remote_headers(const RemoteModel* model) {
     httplib::Headers headers;
     if (model != nullptr && model->api_key[0] != '\0') {
@@ -227,6 +239,11 @@ void* remote_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
     if (!span_copy_nt(desc->model_path, model->base_url, sizeof(model->base_url)) || !is_http_url(model->base_url)) {
         core::runtime_delete(model);
         *out_err = ASTRAL_E_INVALID;
+        return nullptr;
+    }
+    if (is_https_url(model->base_url) && !remote_tls_available()) {
+        core::runtime_delete(model);
+        *out_err = ASTRAL_E_UNSUPPORTED;
         return nullptr;
     }
 
