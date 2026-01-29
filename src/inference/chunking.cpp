@@ -390,6 +390,9 @@ AstralErr chunk_text_copy(AstralSpanU8 text, const AstralChunkRange* range,
 
   const uint32_t len = range->byte_end - range->byte_begin;
   *out_len = len;
+  if (out_text.data == nullptr && out_text.len == 0) {
+    return ASTRAL_OK;
+  }
   if (out_text.data == nullptr || out_text.len < len) {
     return ASTRAL_E_NOMEM;
   }

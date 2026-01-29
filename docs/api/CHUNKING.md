@@ -44,6 +44,8 @@ retry `astral_chunk_ranges()` after `ASTRAL_E_NOMEM`.
 
 `astral_chunk_text_copy()` is a convenience function for selected text ranges. It
 copies into a caller-owned UTF-8 buffer and reports the required byte count.
+Pass a null output span with zero length to size the selected range before
+allocating or reusing a destination buffer.
 
 ## Unity
 

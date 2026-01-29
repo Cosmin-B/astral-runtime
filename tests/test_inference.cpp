@@ -1762,6 +1762,11 @@ TEST(inference_chunking_ranges_mock) {
     copied_span.data = copied;
     copied_span.len = sizeof(copied);
     uint32_t copied_len = 0;
+    AstralMutSpanU8 size_only_span{};
+    err = astral_chunk_text_copy(span_from_cstr("alpha beta gamma delta"), &ranges[0], size_only_span, &copied_len);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(copied_len, kFirstWordRangeEnd);
+
     err = astral_chunk_text_copy(span_from_cstr("alpha beta gamma delta"), &ranges[0], copied_span, &copied_len);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(copied_len, kFirstWordRangeEnd);
