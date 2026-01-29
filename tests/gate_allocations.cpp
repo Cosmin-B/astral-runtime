@@ -40,6 +40,23 @@
 
 namespace {
 
+constexpr uint64_t kRuntimeReserveBytes = 256ULL * 1024ULL * 1024ULL;
+constexpr uint64_t kEmbeddedArenaBytes = 64ULL * 1024ULL * 1024ULL;
+constexpr uint32_t kGateThreadCount = 4;
+constexpr uint32_t kAnyNumaNode = 0xFFFFFFFFu;
+constexpr uint32_t kEmbeddedSessionBlockBytes = 2u * 1024u * 1024u;
+constexpr uint32_t kEmbeddedSessionBlocks = 4;
+#if ASTRAL_ENABLE_THREADS
+constexpr bool kSteadyStateGateEnabled = true;
+#else
+constexpr bool kSteadyStateGateEnabled = false;
+#endif
+
+#if !ASTRAL_ENABLE_VIRTUAL_MEMORY
+constexpr size_t kEmbeddedArenaAlignmentBytes = 64;
+alignas(kEmbeddedArenaAlignmentBytes) static uint8_t g_embedded_arena[kEmbeddedArenaBytes];
+#endif
+
 // Allocation counters (count calls, not bytes-only).
 std::atomic<uint64_t> g_alloc_calls{0};
 std::atomic<uint64_t> g_alloc_bytes{0};
@@ -113,6 +130,34 @@ static bool parse_bool_env(const char* key, bool fallback) {
     if (std::strcmp(v, "ON") == 0) return true;
 
     return fallback;
+}
+
+static AstralErr init_gate_runtime() {
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
+    AstralInit cfg{};
+    cfg.reserve_bytes = kRuntimeReserveBytes;
+    cfg.thread_count = kGateThreadCount;
+    cfg.numa_node = kAnyNumaNode;
+    cfg.enable_hugepages = 0;
+    return astral_init(&cfg);
+#else
+    AstralInit2 cfg{};
+    cfg.base.thread_count = kGateThreadCount;
+    cfg.memory_mode = ASTRAL_MEMMODE_ARENA_BORROWED;
+    cfg.arena.base = g_embedded_arena;
+    cfg.arena.size = kEmbeddedArenaBytes;
+    cfg.arena.session_block_size = kEmbeddedSessionBlockBytes;
+    cfg.arena.session_block_count = kEmbeddedSessionBlocks;
+    return astral_init2(&cfg);
+#endif
+}
+
+static bool cpu_alloc_gate_default() {
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
+    return true;
+#else
+    return false;
+#endif
 }
 
 static const char* find_test_model_path() {
@@ -715,13 +760,13 @@ extern "C" int __wrap_posix_memalign(void** memptr, std::size_t alignment, std::
 TEST(gate_no_alloc_decode_stream_hotpath) {
     tracking_set_enabled(false);
 
-    AstralInit cfg{};
-    cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
-    cfg.thread_count = 4;
-    cfg.numa_node = 0xFFFFFFFFu;
-    cfg.enable_hugepages = 0;
-    AstralErr err = astral_init(&cfg);
+    AstralErr err = init_gate_runtime();
     ASSERT_EQ(err, ASTRAL_OK);
+
+    if (!kSteadyStateGateEnabled) {
+        astral_shutdown();
+        return;
+    }
 
     // Always gate against mock backend (deterministic, no model file required).
     // Use the "infinite" mode so we exercise steady-state token generation.
@@ -731,7 +776,7 @@ TEST(gate_no_alloc_decode_stream_hotpath) {
 
     // CPU backend: enforce steady-state no-alloc when a GGUF is available.
     // You can disable this locally via ASTRAL_GATE_CPU_ALLOC=0.
-    if (parse_bool_env("ASTRAL_GATE_CPU_ALLOC", true)) {
+    if (parse_bool_env("ASTRAL_GATE_CPU_ALLOC", cpu_alloc_gate_default())) {
         const char* gguf_path = find_test_model_path();
         if (gguf_path != nullptr) {
             run_no_alloc_gate_for_backend("cpu", gguf_path);
