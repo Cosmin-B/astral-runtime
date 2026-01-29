@@ -723,7 +723,7 @@ endif()
 message(STATUS "========================================")
 
 # Gate: no tracked heap allocations in steady-state decode/stream.
-if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
     add_executable(gate_allocations
         gate_allocations.cpp
         main.cpp
@@ -769,7 +769,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allo
 endif()
 
 # Gate: no tracked steady-state I/O syscalls in decode/stream.
-if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
     add_executable(gate_io_syscalls
         gate_io_syscalls.cpp
         main.cpp
