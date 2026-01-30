@@ -419,13 +419,7 @@ def _print_preset(preset: Preset, path: Path) -> None:
 
 def cmd_list(args: argparse.Namespace) -> int:
     presets = _load_presets(Path(args.manifest))
-    selected = presets
-    if args.unreal_matrix:
-        selected = [preset for preset in presets if preset.include_in_unreal_sample_matrix]
-    if args.package:
-        selected = [preset for preset in selected if preset.include_in_package]
-    if args.type != MODEL_TYPE_ALL:
-        selected = [preset for preset in selected if preset.model_type == args.type]
+    selected = _select_presets(args, presets)
     if args.format == LIST_FORMAT_JSON:
         output_dir = _repo_root_path(args.dir)
         json.dump([_preset_record(preset, output_dir) for preset in selected], sys.stdout, indent=2, sort_keys=True)
@@ -537,6 +531,34 @@ def cmd_status(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _select_presets(args: argparse.Namespace, presets: List[Preset]) -> List[Preset]:
+    selected = presets
+    if args.unreal_matrix:
+        selected = [preset for preset in selected if preset.include_in_unreal_sample_matrix]
+    if args.package:
+        selected = [preset for preset in selected if preset.include_in_package]
+    if args.type != MODEL_TYPE_ALL:
+        selected = [preset for preset in selected if preset.model_type == args.type]
+    return selected
+
+
+def cmd_status_all(args: argparse.Namespace) -> int:
+    output_dir = _repo_root_path(args.dir)
+    presets = _select_presets(args, _load_presets(Path(args.manifest)))
+    records = [_status_record(preset, output_dir) for preset in presets]
+    if args.format == "json":
+        json.dump(records, sys.stdout, indent=2, sort_keys=True)
+        print()
+        return EXIT_OK
+
+    for record in records:
+        print(
+            f"{record['name']}\t{record['status']}\t"
+            f"{record['present_bytes']}/{record['expected_bytes']}\t{record['path']}"
+        )
+    return EXIT_OK
+
+
 def cmd_validate_file(args: argparse.Namespace) -> int:
     preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
     output_path = Path(args.path).expanduser() if args.path else _resolved_output_path(args, preset)
@@ -618,6 +640,14 @@ def main(argv: List[str]) -> int:
     status_parser.add_argument("--dir", default="tests/models")
     status_parser.add_argument("--format", choices=("json", "text"), default="json")
     status_parser.set_defaults(func=cmd_status)
+
+    status_all_parser = sub.add_parser("status-all")
+    status_all_parser.add_argument("--unreal-matrix", action="store_true")
+    status_all_parser.add_argument("--package", action="store_true")
+    status_all_parser.add_argument("--type", choices=(MODEL_TYPE_ALL, MODEL_TYPE_TEXT, MODEL_TYPE_EMBEDDING), default=MODEL_TYPE_ALL)
+    status_all_parser.add_argument("--dir", default="tests/models")
+    status_all_parser.add_argument("--format", choices=("json", "text"), default="json")
+    status_all_parser.set_defaults(func=cmd_status_all)
 
     preset_for_file_parser = sub.add_parser("preset-for-file")
     preset_for_file_parser.add_argument("filename")

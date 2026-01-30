@@ -81,6 +81,13 @@ def main(argv: list[str]) -> int:
     require(any(row["name"] == QWEN_EMBED_PRESET for row in embedding_presets), "embedding list missed Qwen embed preset")
     require(all(row["model_type"] == MODEL_TYPE_EMBEDDING for row in embedding_presets), "embedding list mixed model types")
 
+    embedding_status = json.loads(
+        run_tool(root, "status-all", "--type", MODEL_TYPE_EMBEDDING, "--dir", CUSTOM_OUTPUT_DIR).stdout
+    )
+    require(any(row["name"] == QWEN_EMBED_PRESET for row in embedding_status), "embedding status missed Qwen embed preset")
+    require(all(row["model_type"] == MODEL_TYPE_EMBEDDING for row in embedding_status), "embedding status mixed model types")
+    require(all("status" in row and "download_command" in row for row in embedding_status), "status rows are incomplete")
+
     text_presets = run_tool(root, "list", "--type", MODEL_TYPE_TEXT).stdout
     require(QWEN_TEXT_PRESET in text_presets, "text list missed Qwen text preset")
     require(QWEN_EMBED_PRESET not in text_presets, "text list included embedding preset")
@@ -88,6 +95,10 @@ def main(argv: list[str]) -> int:
     package_presets = json.loads(run_tool(root, "list", "--package", "--format", "json").stdout)
     require(any(row["name"] == PACKAGE_PRESET for row in package_presets), "package list missed default text preset")
     require(all(row["include_in_package"] is True for row in package_presets), "package list included disabled preset")
+
+    package_status = run_tool(root, "status-all", "--package", "--format", "text", "--dir", CUSTOM_OUTPUT_DIR).stdout
+    require(PACKAGE_PRESET in package_status, "package status missed default text preset")
+    require(QWEN_TEXT_PRESET not in package_status, "package status included disabled preset")
 
     dry_run = run_tool(root, "download", "--preset", QWEN_TEXT_PRESET, "--dry-run").stdout
     for marker in ("preset:", "path:", "url:", "size_bytes:", "sha256:", "command:"):
