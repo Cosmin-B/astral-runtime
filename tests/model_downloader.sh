@@ -19,6 +19,8 @@ Options:
   --print-path          Print the resolved local path for a preset
   --info                Print resolved preset metadata as JSON
   --status              Print existing local file state as JSON
+  --status-all          Print local file state for selected presets as JSON
+  --status-format <fmt> Print --status/--status-all as json or text
   --list-presets        Print available presets
   --list-package        Print presets marked for packaged samples
   --list-type <type>    Filter --list-presets by all, text, or embedding
@@ -61,12 +63,14 @@ fi
 print_path=0
 print_info=0
 print_status=0
+print_status_all=0
 list_presets=0
 list_package=0
 preset_name=""
 output_dir="tests/models"
 list_type="all"
 list_format="text"
+status_format="json"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -77,6 +81,8 @@ while [[ $# -gt 0 ]]; do
     --print-path) print_path=1; shift ;;
     --info) print_info=1; shift ;;
     --status) print_status=1; shift ;;
+    --status-all) print_status_all=1; shift ;;
+    --status-format) status_format="${2:-}"; shift 2 ;;
     --list-type) list_type="${2:-}"; shift 2 ;;
     --list-format) list_format="${2:-}"; shift 2 ;;
     --token) args+=(--token "${2:-}"); shift 2 ;;
@@ -108,7 +114,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "${list_presets}" -eq 1 ]]; then
+if [[ "${list_presets}" -eq 1 && "${print_status_all}" -eq 0 ]]; then
   list_args=(list --type "${list_type}" --format "${list_format}" --dir "${output_dir}")
   if [[ "${list_package}" -eq 1 ]]; then
     list_args+=(--package)
@@ -137,7 +143,15 @@ if [[ "${print_status}" -eq 1 ]]; then
     echo "--status requires --preset" >&2
     exit "${exit_usage}"
   fi
-  exec python3 "${tool}" status "${preset_name}" --dir "${output_dir}"
+  exec python3 "${tool}" status "${preset_name}" --dir "${output_dir}" --format "${status_format}"
+fi
+
+if [[ "${print_status_all}" -eq 1 ]]; then
+  status_args=(status-all --type "${list_type}" --dir "${output_dir}" --format "${status_format}")
+  if [[ "${list_package}" -eq 1 ]]; then
+    status_args+=(--package)
+  fi
+  exec python3 "${tool}" "${status_args[@]}"
 fi
 
 exec python3 "${tool}" download "${args[@]}"
