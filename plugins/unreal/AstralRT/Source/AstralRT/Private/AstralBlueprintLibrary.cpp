@@ -13,6 +13,7 @@ namespace {
 
 static constexpr int32 kInlineToolCapacity = 8;
 static constexpr int32 kInlineChunkRangeCapacity = 32;
+static constexpr int32 kInlineChunkTextBytes = 4096;
 static constexpr int32 kInlineMemoryRecordCapacity = 32;
 static constexpr int32 kInlineMemoryResultCapacity = 16;
 static constexpr int32 kAgentReadBufferBytes = 4096;
@@ -305,6 +306,20 @@ static FAstralChunkRange from_native_chunk_range(const AstralChunkRange& Native)
     Range.ByteEnd = static_cast<int32>(Native.byte_end);
     Range.TokenBegin = static_cast<int32>(Native.token_begin);
     Range.TokenEnd = static_cast<int32>(Native.token_end);
+    return Range;
+}
+
+static AstralChunkRange to_native_chunk_range(const FAstralChunkRange& Source)
+{
+    AstralChunkRange Range{};
+    Range.size = sizeof(AstralChunkRange);
+    Range.document_id = static_cast<uint32_t>(Source.DocumentId);
+    Range.chunk_id = static_cast<uint32_t>(Source.ChunkId);
+    Range.group_id = static_cast<uint32_t>(Source.GroupId);
+    Range.byte_begin = static_cast<uint32_t>(Source.ByteBegin);
+    Range.byte_end = static_cast<uint32_t>(Source.ByteEnd);
+    Range.token_begin = static_cast<uint32_t>(Source.TokenBegin);
+    Range.token_end = static_cast<uint32_t>(Source.TokenEnd);
     return Range;
 }
 
@@ -620,6 +635,71 @@ bool UAstralBlueprintLibrary::ChunkText(
         OutRanges.Add(from_native_chunk_range(NativeRanges[static_cast<int32>(Index)]));
     }
     return true;
+}
+
+bool UAstralBlueprintLibrary::CopyChunkText(
+    const FString& Text,
+    const FAstralChunkRange& Range,
+    FString& OutText,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CopyChunkTextResult(Text, Range, OutText);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CopyChunkTextResult(
+    const FString& Text,
+    const FAstralChunkRange& Range,
+    FString& OutText
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CopyChunkText);
+
+    OutText.Reset();
+    if (Range.ByteBegin < 0 || Range.ByteEnd < Range.ByteBegin)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 TextUtf8(*Text);
+    AstralSpanU8 NativeText{};
+    NativeText.data = reinterpret_cast<const uint8_t*>(TextUtf8.Get());
+    NativeText.len = static_cast<uint32_t>(TextUtf8.Length());
+
+    const AstralChunkRange NativeRange = to_native_chunk_range(Range);
+    AstralMutSpanU8 SizeOnly{};
+    uint32_t Required = 0;
+    AstralErr Err = astral_chunk_text_copy(NativeText, &NativeRange, SizeOnly, &Required);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    if (Required == 0)
+    {
+        return make_operation_result(ASTRAL_OK, kInvalidAstralHandle, kEmptyResultCount);
+    }
+    if (Required > static_cast<uint32_t>(TNumericLimits<int32>::Max()))
+    {
+        return make_operation_result(ASTRAL_E_NOMEM);
+    }
+
+    TArray<uint8, TInlineAllocator<kInlineChunkTextBytes>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(Required));
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = Required;
+    uint32_t Written = 0;
+    Err = astral_chunk_text_copy(NativeText, &NativeRange, Out, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), static_cast<int32>(Written));
+    OutText = FString(Converted.Length(), Converted.Get());
+    return make_operation_result(ASTRAL_OK, kInvalidAstralHandle, static_cast<int32>(Written));
 }
 
 bool UAstralBlueprintLibrary::ChunkTokens(

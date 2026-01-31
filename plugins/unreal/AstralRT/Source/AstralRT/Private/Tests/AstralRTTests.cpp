@@ -337,6 +337,26 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
 
     UAstralBlueprintLibrary::DestroyToolset(ToolsetResult.Handle);
 
+    constexpr int32 ChunkMaxWords = 2;
+    constexpr int32 ChunkExpectedCount = 2;
+    FAstralChunkerDesc ChunkDesc;
+    ChunkDesc.Mode = EAstralChunkMode::Word;
+    ChunkDesc.MaxUnits = ChunkMaxWords;
+    ChunkDesc.OverlapUnits = 0;
+    TArray<FAstralChunkRange> ChunkRanges;
+    int32 ChunkError = static_cast<int32>(ASTRAL_OK);
+    TestTrue(
+        TEXT("chunk text ranges"),
+        UAstralBlueprintLibrary::ChunkText(TEXT("alpha beta gamma"), ChunkDesc, ChunkRanges, ChunkError)
+    );
+    TestEqual(TEXT("chunk text count"), ChunkRanges.Num(), ChunkExpectedCount);
+    FString FirstChunk;
+    const FAstralOperationResult CopyChunk =
+        UAstralBlueprintLibrary::CopyChunkTextResult(TEXT("alpha beta gamma"), ChunkRanges[0], FirstChunk);
+    TestTrue(TEXT("copy chunk text result succeeds"), CopyChunk.bSuccess);
+    TestEqual(TEXT("copy chunk text bytes"), CopyChunk.Count, ChunkRanges[0].ByteEnd - ChunkRanges[0].ByteBegin);
+    TestEqual(TEXT("copy chunk text value"), FirstChunk, FString(TEXT("alpha beta")));
+
     constexpr int32 MemoryDim = 2;
     constexpr int32 MemoryCapacity = 3;
     constexpr int64 MemoryKeyA = 10;
