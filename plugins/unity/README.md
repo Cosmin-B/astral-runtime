@@ -319,8 +319,8 @@ var request = AstralRequest.FromEmbedding(embedder, ticket);
 
 if (AstralRequest.TryGetStatus(request, out var status, out int err))
 {
-    bool queued = status.state == AstralNative.AstralRequestState.Queued;
-    bool ticketed = (status.flags & AstralNative.AstralRequestFlags.Ticket) != 0;
+    bool queued = AstralRequest.IsQueued(status);
+    bool ticketed = AstralRequest.HasTicket(status);
 }
 ```
 
