@@ -62,6 +62,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
     static bool ChunkText(const FString& Text, const FAstralChunkerDesc& Desc, TArray<FAstralChunkRange>& OutRanges, int32& OutErrorCode);
 
+    /** Copy one emitted text range into an engine string. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
+    static bool CopyChunkText(const FString& Text, const FAstralChunkRange& Range, FString& OutText, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
+    static FAstralOperationResult CopyChunkTextResult(const FString& Text, const FAstralChunkRange& Range, FString& OutText);
+
     /** Split an already-tokenized sequence into token ranges. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
     static bool ChunkTokens(int32 TokenCount, const FAstralChunkerDesc& Desc, TArray<FAstralChunkRange>& OutRanges, int32& OutErrorCode);

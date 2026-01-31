@@ -51,6 +51,7 @@ result-returning helpers:
 
 - `UAstralModel::CountTokensResult`, `TokenizeResult`, and `DetokenizeResult`
 - `CreateToolsetResult` and `ParseToolCallResult`
+- `ChunkText`, `CopyChunkTextResult`, and `ChunkTokens`
 - `CreateMemoryIndexResult`, `LoadMemoryIndexResult`,
   `AddMemoryBatchResult`, `RemoveMemoryRecordResult`,
   `ClearMemoryIndexResult`, `SaveMemoryIndexResult`,
