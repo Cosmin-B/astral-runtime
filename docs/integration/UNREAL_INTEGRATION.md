@@ -93,7 +93,9 @@ embedding tickets, and memory search cursors can be wrapped and then polled with
 `GetRequestStatusResult` or `WaitRequestResult`. Embedding refs carry the native
 ticket; memory search refs report remaining cursor results in `QueueDepth`.
 Cursor cancellation returns unsupported, and storage is still released with
-`EndMemorySearch`.
+`EndMemorySearch`. Blueprint predicates such as `IsRequestActive`,
+`IsRequestTerminal`, and `IsRequestSuccessful` keep status checks consistent
+without duplicating enum comparisons in gameplay graphs.
 
 ## Layout
 

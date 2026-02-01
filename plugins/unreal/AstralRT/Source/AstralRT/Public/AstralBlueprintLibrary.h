@@ -260,6 +260,30 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Async")
     static FAstralOperationResult CancelRequestResult(const FAstralRequestRef& Request);
 
+    UFUNCTION(BlueprintPure, Category = "Astral|Async")
+    static bool IsRequestQueued(const FAstralRequestStatus& Status);
+
+    UFUNCTION(BlueprintPure, Category = "Astral|Async")
+    static bool IsRequestRunning(const FAstralRequestStatus& Status);
+
+    UFUNCTION(BlueprintPure, Category = "Astral|Async")
+    static bool IsRequestCompleted(const FAstralRequestStatus& Status);
+
+    UFUNCTION(BlueprintPure, Category = "Astral|Async")
+    static bool IsRequestCanceled(const FAstralRequestStatus& Status);
+
+    UFUNCTION(BlueprintPure, Category = "Astral|Async")
+    static bool IsRequestFailed(const FAstralRequestStatus& Status);
+
+    UFUNCTION(BlueprintPure, Category = "Astral|Async")
+    static bool IsRequestActive(const FAstralRequestStatus& Status);
+
+    UFUNCTION(BlueprintPure, Category = "Astral|Async")
+    static bool IsRequestTerminal(const FAstralRequestStatus& Status);
+
+    UFUNCTION(BlueprintPure, Category = "Astral|Async")
+    static bool IsRequestSuccessful(const FAstralRequestStatus& Status);
+
     /** Create a native prompt cache. Release it with DestroyPromptCache. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
     static bool CreatePromptCache(const FAstralPromptCacheDesc& Desc, int64& OutCacheHandle, int32& OutErrorCode);

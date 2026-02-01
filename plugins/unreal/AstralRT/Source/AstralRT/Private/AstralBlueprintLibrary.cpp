@@ -1400,6 +1400,46 @@ FAstralOperationResult UAstralBlueprintLibrary::CancelRequestResult(const FAstra
     return make_operation_result(Err, Request.OwnerHandle);
 }
 
+bool UAstralBlueprintLibrary::IsRequestQueued(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Queued;
+}
+
+bool UAstralBlueprintLibrary::IsRequestRunning(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Running;
+}
+
+bool UAstralBlueprintLibrary::IsRequestCompleted(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Completed;
+}
+
+bool UAstralBlueprintLibrary::IsRequestCanceled(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Canceled;
+}
+
+bool UAstralBlueprintLibrary::IsRequestFailed(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Failed;
+}
+
+bool UAstralBlueprintLibrary::IsRequestActive(const FAstralRequestStatus& Status)
+{
+    return IsRequestQueued(Status) || IsRequestRunning(Status);
+}
+
+bool UAstralBlueprintLibrary::IsRequestTerminal(const FAstralRequestStatus& Status)
+{
+    return IsRequestCompleted(Status) || IsRequestCanceled(Status) || IsRequestFailed(Status);
+}
+
+bool UAstralBlueprintLibrary::IsRequestSuccessful(const FAstralRequestStatus& Status)
+{
+    return IsRequestCompleted(Status) && Status.ErrorCode == static_cast<int32>(EAstralError::OK);
+}
+
 bool UAstralBlueprintLibrary::CreatePromptCache(const FAstralPromptCacheDesc& Desc, int64& OutCacheHandle, int32& OutErrorCode)
 {
     const FAstralOperationResult Result = CreatePromptCacheResult(Desc);
