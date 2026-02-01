@@ -134,6 +134,56 @@ namespace Astral.Runtime
             return errorCode == AstralNative.ASTRAL_OK;
         }
 
+        public static bool IsQueued(AstralNative.AstralRequestStatus status)
+        {
+            return status.state == AstralNative.AstralRequestState.Queued;
+        }
+
+        public static bool IsRunning(AstralNative.AstralRequestStatus status)
+        {
+            return status.state == AstralNative.AstralRequestState.Running;
+        }
+
+        public static bool IsCompleted(AstralNative.AstralRequestStatus status)
+        {
+            return status.state == AstralNative.AstralRequestState.Completed;
+        }
+
+        public static bool IsCanceled(AstralNative.AstralRequestStatus status)
+        {
+            return status.state == AstralNative.AstralRequestState.Canceled;
+        }
+
+        public static bool IsFailed(AstralNative.AstralRequestStatus status)
+        {
+            return status.state == AstralNative.AstralRequestState.Failed;
+        }
+
+        public static bool IsTerminal(AstralNative.AstralRequestStatus status)
+        {
+            return IsCompleted(status) || IsCanceled(status) || IsFailed(status);
+        }
+
+        public static bool IsActive(AstralNative.AstralRequestStatus status)
+        {
+            return IsQueued(status) || IsRunning(status);
+        }
+
+        public static bool IsSuccessful(AstralNative.AstralRequestStatus status)
+        {
+            return IsCompleted(status) && status.result == AstralNative.ASTRAL_OK;
+        }
+
+        public static bool HasTicket(AstralNative.AstralRequestStatus status)
+        {
+            return (status.flags & AstralNative.AstralRequestFlags.Ticket) != 0;
+        }
+
+        public static bool IsStream(AstralNative.AstralRequestStatus status)
+        {
+            return (status.flags & AstralNative.AstralRequestFlags.Stream) != 0;
+        }
+
         private static AstralNative.AstralRequestStatus NewStatus()
         {
             return new AstralNative.AstralRequestStatus

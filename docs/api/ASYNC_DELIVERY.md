@@ -97,6 +97,9 @@ and `ReadStream()`. `AstralAgent` exposes chat enqueue, cancel, result, and
 stream reads. `AstralEmbedder` exposes ticketed enqueue, `Collect()`, and
 `Cancel()` for queued embedding work. Wrappers can store `AstralRequestRef` in
 their managed queues and poll `AstralRequestStatus` before dispatching callbacks.
+`AstralRequest` includes predicate helpers for queued, running, terminal,
+completed, failed, canceled, stream, and ticketed states so game code does not
+duplicate native enum and flag checks.
 
 ## Unreal
 

@@ -176,6 +176,49 @@ namespace Astral.Runtime.Tests
         }
 
         [Test]
+        public void RequestLifecycle_StatusHelpers_MapNativeStateAndFlags()
+        {
+            var status = new AstralNative.AstralRequestStatus
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralRequestStatus>(),
+                kind = AstralNative.AstralRequestKind.Embedding,
+                state = AstralNative.AstralRequestState.Queued,
+                flags = AstralNative.AstralRequestFlags.Ticket,
+                ticket = 42,
+                result = AstralNative.ASTRAL_OK
+            };
+
+            Assert.True(AstralRequest.IsQueued(status));
+            Assert.True(AstralRequest.IsActive(status));
+            Assert.True(AstralRequest.HasTicket(status));
+            Assert.False(AstralRequest.IsTerminal(status));
+            Assert.False(AstralRequest.IsStream(status));
+
+            status.state = AstralNative.AstralRequestState.Running;
+            status.flags |= AstralNative.AstralRequestFlags.Stream;
+            Assert.True(AstralRequest.IsRunning(status));
+            Assert.True(AstralRequest.IsActive(status));
+            Assert.True(AstralRequest.IsStream(status));
+
+            status.state = AstralNative.AstralRequestState.Completed;
+            Assert.True(AstralRequest.IsCompleted(status));
+            Assert.True(AstralRequest.IsTerminal(status));
+            Assert.True(AstralRequest.IsSuccessful(status));
+            Assert.False(AstralRequest.IsActive(status));
+
+            status.state = AstralNative.AstralRequestState.Failed;
+            status.result = AstralNative.ASTRAL_E_BACKEND;
+            Assert.True(AstralRequest.IsFailed(status));
+            Assert.True(AstralRequest.IsTerminal(status));
+            Assert.False(AstralRequest.IsSuccessful(status));
+
+            status.state = AstralNative.AstralRequestState.Canceled;
+            status.result = AstralNative.ASTRAL_E_CANCELED;
+            Assert.True(AstralRequest.IsCanceled(status));
+            Assert.True(AstralRequest.IsTerminal(status));
+        }
+
+        [Test]
         public void MockBackend_E2E_StreamAndReset_Works()
         {
             RequireNative();
