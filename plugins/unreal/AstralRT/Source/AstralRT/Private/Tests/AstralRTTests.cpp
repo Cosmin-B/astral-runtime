@@ -751,6 +751,29 @@ bool FAstralRTModuleRuntimeGenerationInvalidationTest::RunTest(const FString& Pa
         UAstralBlueprintLibrary::GetRequestStatusResult(SessionRequest, SessionRequestStatus);
     TestTrue(TEXT("session request status succeeds"), GetSessionRequestStatus.bSuccess);
     TestEqual(TEXT("session request status state"), SessionRequestStatus.State, EAstralRequestState::Queued);
+    TestTrue(TEXT("session request queued helper"), UAstralBlueprintLibrary::IsRequestQueued(SessionRequestStatus));
+    TestTrue(TEXT("session request active helper"), UAstralBlueprintLibrary::IsRequestActive(SessionRequestStatus));
+    TestFalse(TEXT("session request terminal helper"), UAstralBlueprintLibrary::IsRequestTerminal(SessionRequestStatus));
+    TestFalse(TEXT("session request successful helper before completion"), UAstralBlueprintLibrary::IsRequestSuccessful(SessionRequestStatus));
+
+    FAstralRequestStatus CompletedStatus = SessionRequestStatus;
+    CompletedStatus.State = EAstralRequestState::Completed;
+    CompletedStatus.ErrorCode = static_cast<int32>(EAstralError::OK);
+    TestTrue(TEXT("completed request helper"), UAstralBlueprintLibrary::IsRequestCompleted(CompletedStatus));
+    TestTrue(TEXT("successful request helper"), UAstralBlueprintLibrary::IsRequestSuccessful(CompletedStatus));
+    TestTrue(TEXT("completed terminal helper"), UAstralBlueprintLibrary::IsRequestTerminal(CompletedStatus));
+    TestFalse(TEXT("completed active helper"), UAstralBlueprintLibrary::IsRequestActive(CompletedStatus));
+
+    CompletedStatus.State = EAstralRequestState::Failed;
+    CompletedStatus.ErrorCode = static_cast<int32>(EAstralError::Backend);
+    TestTrue(TEXT("failed request helper"), UAstralBlueprintLibrary::IsRequestFailed(CompletedStatus));
+    TestTrue(TEXT("failed terminal helper"), UAstralBlueprintLibrary::IsRequestTerminal(CompletedStatus));
+    TestFalse(TEXT("failed successful helper"), UAstralBlueprintLibrary::IsRequestSuccessful(CompletedStatus));
+
+    CompletedStatus.State = EAstralRequestState::Canceled;
+    CompletedStatus.ErrorCode = static_cast<int32>(EAstralError::Canceled);
+    TestTrue(TEXT("canceled request helper"), UAstralBlueprintLibrary::IsRequestCanceled(CompletedStatus));
+    TestTrue(TEXT("canceled terminal helper"), UAstralBlueprintLibrary::IsRequestTerminal(CompletedStatus));
 
     UAstralModel* EmbeddingModel = NewObject<UAstralModel>();
     TestNotNull(TEXT("embedding model allocated"), EmbeddingModel);
