@@ -261,6 +261,12 @@ Conversations support grammar, toolsets, stop sequences, logprob metadata,
 media chunks, cancellation, reset, and stats. Prefer
 `ReadStream(NativeArray<byte>)` for frame-polled gameplay paths.
 
+### Prompt Cache
+
+`AstralPromptCache` owns native token storage and uses `NativeArray<int>` for
+direct token copy calls. Use `KeyFromBytes()` for section-aware cache keys and
+`GetTokenView()` only when the cache lifetime stays local to the read.
+
 ### Vision / Audio (Media)
 
 Media support requires a model projector/encoder GGUF and an Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:

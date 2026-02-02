@@ -26,6 +26,18 @@ namespace Astral.Runtime
         public bool IsValid => !m_disposed && m_handle.IsValid;
         public AstralNative.AstralHandle Handle => m_handle;
 
+        public readonly struct TokenView
+        {
+            public TokenView(IntPtr tokens, uint count)
+            {
+                Tokens = tokens;
+                Count = count;
+            }
+
+            public IntPtr Tokens { get; }
+            public uint Count { get; }
+        }
+
         public static AstralPromptCache Create(AstralPromptCacheConfig config = null)
         {
             config = config ?? AstralPromptCacheConfig.Default;
@@ -65,6 +77,80 @@ namespace Astral.Runtime
                     m_handle = handle,
                     m_disposed = false
                 };
+            }
+        }
+
+        public static AstralNative.AstralPromptCacheKey KeyFromBytes(
+            AstralModel model,
+            AstralNative.AstralPromptSectionKind section,
+            uint generation,
+            NativeArray<byte> bytes)
+        {
+            if (model == null)
+            {
+                throw new ArgumentNullException(nameof(model));
+            }
+            if (!model.IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+            if (!bytes.IsCreated)
+            {
+                throw new ArgumentException("bytes must be created", nameof(bytes));
+            }
+
+            var key = new AstralNative.AstralPromptCacheKey
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralPromptCacheKey>()
+            };
+            int err = AstralNative.astral_prompt_cache_key_from_bytes(
+                model.Handle,
+                section,
+                generation,
+                AstralNative.AstralSpanU8.FromNativeArray(bytes),
+                ref key);
+            ThrowIfError(err, "astral_prompt_cache_key_from_bytes");
+            return key;
+        }
+
+        public static AstralNative.AstralPromptCacheKey KeyFromString(
+            AstralModel model,
+            AstralNative.AstralPromptSectionKind section,
+            uint generation,
+            string text)
+        {
+            if (model == null)
+            {
+                throw new ArgumentNullException(nameof(model));
+            }
+            if (!model.IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            NativeArray<byte> bytes;
+            var span = AstralNative.AstralSpanU8.FromString(text, out bytes);
+            try
+            {
+                var key = new AstralNative.AstralPromptCacheKey
+                {
+                    size = (uint)Marshal.SizeOf<AstralNative.AstralPromptCacheKey>()
+                };
+                int err = AstralNative.astral_prompt_cache_key_from_bytes(
+                    model.Handle,
+                    section,
+                    generation,
+                    span,
+                    ref key);
+                ThrowIfError(err, "astral_prompt_cache_key_from_bytes");
+                return key;
+            }
+            finally
+            {
+                if (bytes.IsCreated)
+                {
+                    bytes.Dispose();
+                }
             }
         }
 
@@ -140,6 +226,35 @@ namespace Astral.Runtime
                 out uint tokenCount);
             ThrowIfError(err, "astral_prompt_cache_get_tokens");
             return tokenCount;
+        }
+
+        public TokenView GetTokenView(ref AstralNative.AstralPromptCacheKey key)
+        {
+            ThrowIfInvalid();
+            int err = AstralNative.astral_prompt_cache_get_token_view(
+                m_handle,
+                ref key,
+                out IntPtr tokens,
+                out uint tokenCount);
+            ThrowIfError(err, "astral_prompt_cache_get_token_view");
+            return new TokenView(tokens, tokenCount);
+        }
+
+        public bool TryGetTokenView(
+            ref AstralNative.AstralPromptCacheKey key,
+            out TokenView view,
+            out int errorCode)
+        {
+            ThrowIfInvalid();
+            errorCode = AstralNative.astral_prompt_cache_get_token_view(
+                m_handle,
+                ref key,
+                out IntPtr tokens,
+                out uint tokenCount);
+            view = errorCode == AstralNative.ASTRAL_OK
+                ? new TokenView(tokens, tokenCount)
+                : new TokenView(IntPtr.Zero, 0);
+            return errorCode == AstralNative.ASTRAL_OK;
         }
 
         public void Dispose()
