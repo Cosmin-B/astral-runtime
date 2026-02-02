@@ -57,6 +57,9 @@ lifetime local and obvious.
 Unity exposes `AstralPromptCache` as an owned handle. The wrapper keeps token
 input/output in `NativeArray<int>` and serializes cache snapshots through
 managed byte arrays; native lookup and eviction behavior remain unchanged.
+`KeyFromBytes()` calls the native key builder for section and generation-aware
+cache keys, and `GetTokenView()` exposes the zero-copy token path when Unity
+code can keep the cache lifetime local.
 
 Agents may bind a prompt cache through `AstralAgentDesc::prompt_cache`. Native
 callers can also use the view path with `astral_session_feed_tokens()` or

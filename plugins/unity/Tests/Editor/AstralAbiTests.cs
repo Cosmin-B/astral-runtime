@@ -77,6 +77,9 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(40, Marshal.SizeOf<AstralNative.AstralStats>());
             Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralRequestRef>());
             Assert.AreEqual(40, Marshal.SizeOf<AstralNative.AstralRequestStatus>());
+            Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralPromptCacheDesc>());
+            Assert.AreEqual(32, Marshal.SizeOf<AstralNative.AstralPromptCacheKey>());
+            Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralPromptCacheStats>());
         }
 
         [Test]
@@ -216,6 +219,27 @@ namespace Astral.Runtime.Tests
             status.result = AstralNative.ASTRAL_E_CANCELED;
             Assert.True(AstralRequest.IsCanceled(status));
             Assert.True(AstralRequest.IsTerminal(status));
+        }
+
+        [Test]
+        public void PromptCache_InvalidModelKey_ReturnsNativeError()
+        {
+            RequireNative();
+
+            var key = new AstralNative.AstralPromptCacheKey
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralPromptCacheKey>()
+            };
+            var empty = new AstralNative.AstralSpanU8 { data = IntPtr.Zero, len = 0 };
+
+            int err = AstralNative.astral_prompt_cache_key_from_bytes(
+                AstralNative.AstralHandle.Invalid,
+                AstralNative.AstralPromptSectionKind.System,
+                1,
+                empty,
+                ref key);
+
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, err);
         }
 
         [Test]

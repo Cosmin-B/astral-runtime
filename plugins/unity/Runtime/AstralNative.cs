@@ -710,6 +710,14 @@ namespace Astral.Runtime
             out AstralHandle out_cache);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_key_from_bytes(
+            AstralHandle model,
+            AstralPromptSectionKind section_kind,
+            uint generation,
+            AstralSpanU8 bytes,
+            ref AstralPromptCacheKey out_key);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern unsafe int astral_prompt_cache_put_tokens(
             AstralHandle cache,
             ref AstralPromptCacheKey key,
@@ -725,7 +733,7 @@ namespace Astral.Runtime
             out uint out_token_count);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern unsafe int astral_prompt_cache_get_token_view(
+        public static extern int astral_prompt_cache_get_token_view(
             AstralHandle cache,
             ref AstralPromptCacheKey key,
             out IntPtr out_tokens,
