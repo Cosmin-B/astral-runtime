@@ -193,10 +193,27 @@ namespace Astral.Runtime
             return written;
         }
 
+        public static uint CountTextBytes(NativeArray<byte> utf8Text, ref AstralNative.AstralChunkRange range)
+        {
+            if (!utf8Text.IsCreated)
+            {
+                throw new ArgumentException("utf8Text must be created", nameof(utf8Text));
+            }
+
+            EnsureRangeSize(ref range);
+            int err = AstralNative.astral_chunk_text_copy(
+                AstralNative.AstralSpanU8.FromNativeArray(utf8Text),
+                ref range,
+                new AstralNative.AstralMutSpanU8 { data = IntPtr.Zero, len = 0 },
+                out uint requiredBytes);
+            ThrowIfError(err, "astral_chunk_text_copy");
+            return requiredBytes;
+        }
+
         public static string CopyTextToString(NativeArray<byte> utf8Text, ref AstralNative.AstralChunkRange range)
         {
             EnsureRangeSize(ref range);
-            uint byteCount = range.byte_end - range.byte_begin;
+            uint byteCount = CountTextBytes(utf8Text, ref range);
             if (byteCount == EmptyByteCount)
             {
                 return string.Empty;

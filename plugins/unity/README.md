@@ -267,6 +267,12 @@ media chunks, cancellation, reset, and stats. Prefer
 direct token copy calls. Use `KeyFromBytes()` for section-aware cache keys and
 `GetTokenView()` only when the cache lifetime stays local to the read.
 
+### Chunking
+
+`AstralChunker` plans text and token ranges into caller-owned `NativeArray`
+buffers. Use `CountTextBytes()` before materializing selected text when a chunk
+will cross back into Unity strings.
+
 ### Vision / Audio (Media)
 
 Media support requires a model projector/encoder GGUF and an Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:

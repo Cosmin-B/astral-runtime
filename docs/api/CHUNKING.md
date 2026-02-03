@@ -57,6 +57,8 @@ Use `AstralChunker.TextDesc()` for UTF-8 text ranges and
 `AstralChunker.TokenDesc()` for token-count planning. String overloads are
 available for setup and editor tooling, but runtime ingest paths should keep text
 as UTF-8 bytes and reuse output buffers.
+`CountTextBytes()` uses the native size-only copy path before Unity allocates a
+temporary string buffer for selected chunks.
 
 ## Performance
 
