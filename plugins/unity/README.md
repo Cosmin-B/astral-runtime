@@ -267,6 +267,12 @@ media chunks, cancellation, reset, and stats. Prefer
 direct token copy calls. Use `KeyFromBytes()` for section-aware cache keys and
 `GetTokenView()` only when the cache lifetime stays local to the read.
 
+### LoRA Adapters
+
+`AstralAdapter.GetInfo()` and `GetPath()` expose native adapter diagnostics.
+Attach adapters to sessions between requests with `AddAdapter()` and update
+their fixed-slot scale with `SetAdapterScale()`.
+
 ### Chunking
 
 `AstralChunker` plans text and token ranges into caller-owned `NativeArray`
