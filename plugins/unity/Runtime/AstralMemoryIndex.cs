@@ -328,6 +328,7 @@ namespace Astral.Runtime
         }
 
         public bool IsValid => !m_disposed && m_handle.IsValid;
+        internal AstralNative.AstralHandle Handle => m_handle;
 
         public unsafe uint Fetch(NativeArray<AstralNative.AstralMemorySearchResult> outResults)
         {
