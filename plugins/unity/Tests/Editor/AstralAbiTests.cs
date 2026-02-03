@@ -80,6 +80,8 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralPromptCacheDesc>());
             Assert.AreEqual(32, Marshal.SizeOf<AstralNative.AstralPromptCacheKey>());
             Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralPromptCacheStats>());
+            Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralAdapterDesc>());
+            Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralAdapterInfo>());
         }
 
         [Test]
@@ -240,6 +242,27 @@ namespace Astral.Runtime.Tests
                 ref key);
 
             Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, err);
+        }
+
+        [Test]
+        public void Adapter_InvalidHandleDiagnostics_ReturnNativeErrors()
+        {
+            RequireNative();
+
+            var info = new AstralNative.AstralAdapterInfo
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralAdapterInfo>()
+            };
+            Assert.AreEqual(
+                AstralNative.ASTRAL_E_INVALID,
+                AstralNative.astral_model_adapter_info(AstralNative.AstralHandle.Invalid, ref info));
+
+            Assert.AreEqual(
+                AstralNative.ASTRAL_E_INVALID,
+                AstralNative.astral_model_adapter_path_copy(
+                    AstralNative.AstralHandle.Invalid,
+                    new AstralNative.AstralMutSpanU8 { data = IntPtr.Zero, len = 0 },
+                    out _));
         }
 
         [Test]

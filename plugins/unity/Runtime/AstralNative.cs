@@ -866,6 +866,15 @@ namespace Astral.Runtime
         }
 
         [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAdapterInfo
+        {
+            public uint size;
+            public AstralHandle model;
+            public uint path_bytes;
+            public uint refcount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
         public struct AstralToolDesc
         {
             public uint size;
@@ -1180,6 +1189,15 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_model_adapter_load(AstralHandle model, ref AstralAdapterDesc desc, out AstralHandle out_adapter);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_adapter_info(AstralHandle adapter, ref AstralAdapterInfo out_info);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_adapter_path_copy(
+            AstralHandle adapter,
+            AstralMutSpanU8 out_path,
+            out uint out_len);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern void astral_model_adapter_release(AstralHandle adapter);

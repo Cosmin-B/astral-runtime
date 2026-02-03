@@ -2,6 +2,7 @@
 
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 using Unity.Collections;
 
 namespace Astral.Runtime
@@ -63,6 +64,48 @@ namespace Astral.Runtime
             }
         }
 
+        public AstralNative.AstralAdapterInfo GetInfo()
+        {
+            ThrowIfInvalid();
+            var info = new AstralNative.AstralAdapterInfo
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralAdapterInfo>()
+            };
+            int err = AstralNative.astral_model_adapter_info(m_handle, ref info);
+            ThrowIfError(err, "astral_model_adapter_info");
+            return info;
+        }
+
+        public string GetPath()
+        {
+            ThrowIfInvalid();
+            int err = AstralNative.astral_model_adapter_path_copy(
+                m_handle,
+                new AstralNative.AstralMutSpanU8 { data = IntPtr.Zero, len = 0 },
+                out uint byteCount);
+            ThrowIfError(err, "astral_model_adapter_path_copy");
+            if (byteCount == 0)
+            {
+                return string.Empty;
+            }
+
+            using (var bytes = new NativeArray<byte>(
+                (int)byteCount,
+                Allocator.Temp,
+                NativeArrayOptions.UninitializedMemory))
+            {
+                err = AstralNative.astral_model_adapter_path_copy(
+                    m_handle,
+                    AstralNative.AstralMutSpanU8.FromNativeArray(bytes),
+                    out uint written);
+                ThrowIfError(err, "astral_model_adapter_path_copy");
+
+                var managed = new byte[written];
+                NativeArray<byte>.Copy(bytes, managed, (int)written);
+                return Encoding.UTF8.GetString(managed);
+            }
+        }
+
         public void Dispose()
         {
             if (m_disposed)
@@ -77,6 +120,22 @@ namespace Astral.Runtime
             }
 
             m_disposed = true;
+        }
+
+        private void ThrowIfInvalid()
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Adapter is not valid (disposed or not loaded).");
+            }
+        }
+
+        private static void ThrowIfError(int err, string call)
+        {
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"{call} failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
         }
     }
 

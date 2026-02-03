@@ -46,7 +46,9 @@ collections.
 `AstralAdapter` owns a native adapter handle and releases it with `Dispose()`.
 Use `AstralModel.LoadAdapter()` to load an adapter, then
 `AstralSession.AddAdapter()`, `ClearAdapters()`, `GetAdapterCount()`,
-`GetAdapter()`, and `SetAdapterScale()` between requests.
+`GetAdapter()`, and `SetAdapterScale()` between requests. `GetInfo()` and
+`GetPath()` expose native adapter diagnostics for UI and logs without parsing
+session state strings.
 
 ## Unreal
 
