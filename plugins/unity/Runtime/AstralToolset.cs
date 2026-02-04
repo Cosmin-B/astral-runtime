@@ -31,6 +31,10 @@ namespace Astral.Runtime
         public int parseStatus;
         public string name;
         public string argumentsJson;
+
+        public bool Parsed => found && parseStatus == AstralNative.ASTRAL_OK;
+        public bool Missing => !found && parseStatus == AstralNative.ASTRAL_E_NOT_FOUND;
+        public bool Malformed => found && parseStatus != AstralNative.ASTRAL_OK;
     }
 
     /// <summary>

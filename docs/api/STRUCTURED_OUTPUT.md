@@ -75,7 +75,9 @@ memory, `ParseCall()` parses a completed tool-call payload, and
 creation. `AstralSession.SetToolset()` / `ClearToolset()` bind or clear the
 handle between requests. `AstralSession.SetGrammarGbnf()`,
 `SetGrammarJsonSchema()`, and `ClearGrammar()` expose direct grammar binding for
-callers that do not need a toolset.
+callers that do not need a toolset. `AstralToolCall.Parsed`, `Missing`, and
+`Malformed` map native parse status to Unity-friendly predicates without
+parsing generated text twice.
 
 ## Example
 
