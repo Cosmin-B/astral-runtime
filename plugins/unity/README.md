@@ -273,6 +273,12 @@ direct token copy calls. Use `KeyFromBytes()` for section-aware cache keys and
 Attach adapters to sessions between requests with `AddAdapter()` and update
 their fixed-slot scale with `SetAdapterScale()`.
 
+### Structured Output
+
+`AstralToolset` owns native tool definitions. `AstralToolCall.Parsed`,
+`Missing`, and `Malformed` expose native parse status after `ParseCall()`
+without scanning generated text in Unity.
+
 ### Chunking
 
 `AstralChunker` plans text and token ranges into caller-owned `NativeArray`

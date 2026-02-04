@@ -82,6 +82,10 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralPromptCacheStats>());
             Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralAdapterDesc>());
             Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralAdapterInfo>());
+            Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralToolDesc>());
+            Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralToolsetDesc>());
+            Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralToolInfo>());
+            Assert.AreEqual(48, Marshal.SizeOf<AstralNative.AstralToolCallResult>());
         }
 
         [Test]
@@ -263,6 +267,37 @@ namespace Astral.Runtime.Tests
                     AstralNative.AstralHandle.Invalid,
                     new AstralNative.AstralMutSpanU8 { data = IntPtr.Zero, len = 0 },
                     out _));
+        }
+
+        [Test]
+        public void ToolCall_StatusHelpers_MapParseStatus()
+        {
+            var parsed = new AstralToolCall
+            {
+                found = true,
+                parseStatus = AstralNative.ASTRAL_OK
+            };
+            Assert.True(parsed.Parsed);
+            Assert.False(parsed.Missing);
+            Assert.False(parsed.Malformed);
+
+            var missing = new AstralToolCall
+            {
+                found = false,
+                parseStatus = AstralNative.ASTRAL_E_NOT_FOUND
+            };
+            Assert.False(missing.Parsed);
+            Assert.True(missing.Missing);
+            Assert.False(missing.Malformed);
+
+            var malformed = new AstralToolCall
+            {
+                found = true,
+                parseStatus = AstralNative.ASTRAL_E_INVALID
+            };
+            Assert.False(malformed.Parsed);
+            Assert.False(malformed.Missing);
+            Assert.True(malformed.Malformed);
         }
 
         [Test]
