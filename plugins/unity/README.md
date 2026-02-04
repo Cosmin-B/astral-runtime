@@ -279,6 +279,12 @@ their fixed-slot scale with `SetAdapterScale()`.
 buffers. Use `CountTextBytes()` before materializing selected text when a chunk
 will cross back into Unity strings.
 
+### Memory Search
+
+`AstralMemoryIndex` owns native vector storage. Cursor searches can be wrapped
+with `AstralRequest.FromMemorySearch(cursor)` for polling remaining results
+before fetching batches.
+
 ### Vision / Audio (Media)
 
 Media support requires a model projector/encoder GGUF and an Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:

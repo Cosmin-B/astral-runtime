@@ -85,6 +85,20 @@ namespace Astral.Runtime
             return request;
         }
 
+        public static AstralNative.AstralRequestRef FromMemorySearch(AstralMemorySearchCursor cursor)
+        {
+            if (cursor == null)
+            {
+                throw new ArgumentNullException(nameof(cursor));
+            }
+            if (!cursor.IsValid)
+            {
+                throw new AstralException("Memory search cursor is not valid.");
+            }
+
+            return FromMemorySearch(cursor.Handle);
+        }
+
         public static AstralNative.AstralRequestStatus GetStatus(AstralNative.AstralRequestRef request)
         {
             var status = NewStatus();

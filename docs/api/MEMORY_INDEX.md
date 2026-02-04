@@ -99,6 +99,8 @@ managed collections during retrieval.
 Use `AstralMemoryIndex.Record()` to create records with the ABI size field set,
 and `AstralMemoryIndex.SearchDesc()` for search descriptors. `Save()` and
 `Load()` are snapshot helpers for editor tooling and staged RAG data.
+`AstralRequest.FromMemorySearch(cursor)` wraps a search cursor for queue-depth
+polling without exposing raw handles to gameplay code.
 
 ## Example
 
