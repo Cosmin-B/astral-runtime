@@ -279,6 +279,12 @@ their fixed-slot scale with `SetAdapterScale()`.
 `Missing`, and `Malformed` expose native parse status after `ParseCall()`
 without scanning generated text in Unity.
 
+### Tokenization
+
+`AstralModel.CountTokensBatch()` and `TokenizeBatch()` route many UTF-8 spans
+through one native tokenizer call. Keep text spans and output offsets in
+caller-owned `NativeArray` buffers for ingest paths.
+
 ### Chunking
 
 `AstralChunker` plans text and token ranges into caller-owned `NativeArray`

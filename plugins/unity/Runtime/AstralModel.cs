@@ -213,6 +213,53 @@ namespace Astral.Runtime
             }
         }
 
+        public unsafe uint CountTokensBatch(
+            NativeArray<AstralNative.AstralTokenizeRequest> requests,
+            NativeArray<uint> outOffsets)
+        {
+            ValidateTokenizeBatchBuffers(requests, outOffsets);
+
+            int err = AstralNative.astral_tokenize_batch(
+                m_handle,
+                (AstralNative.AstralTokenizeRequest*)requests.GetUnsafeReadOnlyPtr(),
+                (uint)requests.Length,
+                (uint*)outOffsets.GetUnsafePtr(),
+                null,
+                0,
+                out uint totalTokens);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_tokenize_batch failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+            return totalTokens;
+        }
+
+        public unsafe uint TokenizeBatch(
+            NativeArray<AstralNative.AstralTokenizeRequest> requests,
+            NativeArray<uint> outOffsets,
+            NativeArray<int> outTokens)
+        {
+            ValidateTokenizeBatchBuffers(requests, outOffsets);
+            if (!outTokens.IsCreated)
+            {
+                throw new ArgumentException("outTokens must be created", nameof(outTokens));
+            }
+
+            int err = AstralNative.astral_tokenize_batch(
+                m_handle,
+                (AstralNative.AstralTokenizeRequest*)requests.GetUnsafeReadOnlyPtr(),
+                (uint)requests.Length,
+                (uint*)outOffsets.GetUnsafePtr(),
+                (int*)outTokens.GetUnsafePtr(),
+                (uint)outTokens.Length,
+                out uint totalTokens);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_tokenize_batch failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+            return totalTokens;
+        }
+
         /// <summary>
         /// Detokenize token ids into a managed UTF-8 string.
         /// </summary>
@@ -257,6 +304,28 @@ namespace Astral.Runtime
                 byte[] managed = new byte[written];
                 NativeArray<byte>.Copy(bytes, managed, (int)written);
                 return System.Text.Encoding.UTF8.GetString(managed);
+            }
+        }
+
+        private void ValidateTokenizeBatchBuffers(
+            NativeArray<AstralNative.AstralTokenizeRequest> requests,
+            NativeArray<uint> outOffsets)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+            if (!requests.IsCreated || requests.Length == 0)
+            {
+                throw new ArgumentException("requests must be created and non-empty", nameof(requests));
+            }
+            if (!outOffsets.IsCreated)
+            {
+                throw new ArgumentException("outOffsets must be created", nameof(outOffsets));
+            }
+            if (outOffsets.Length < requests.Length + 1)
+            {
+                throw new ArgumentException("outOffsets must have requests.Length + 1 entries", nameof(outOffsets));
             }
         }
 

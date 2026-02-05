@@ -53,6 +53,7 @@ namespace Astral.Runtime.Tests
 
             Assert.AreEqual(8, Marshal.SizeOf<AstralNative.AstralHandle>());
             Assert.AreEqual(8, Marshal.SizeOf<ulong>()); // AstralCaps
+            Assert.AreEqual(IntPtr.Size == 8 ? 24 : 12, Marshal.SizeOf<AstralNative.AstralTokenizeRequest>());
 
             int expectedInit = IntPtr.Size == 8 ? 64 : 48;
             Assert.AreEqual(expectedInit, Marshal.SizeOf<AstralNative.AstralInit>());
