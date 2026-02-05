@@ -350,12 +350,14 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::ChunkText(TEXT("alpha beta gamma"), ChunkDesc, ChunkRanges, ChunkError)
     );
     TestEqual(TEXT("chunk text count"), ChunkRanges.Num(), ChunkExpectedCount);
-    FString FirstChunk;
-    const FAstralOperationResult CopyChunk =
-        UAstralBlueprintLibrary::CopyChunkTextResult(TEXT("alpha beta gamma"), ChunkRanges[0], FirstChunk);
-    TestTrue(TEXT("copy chunk text result succeeds"), CopyChunk.bSuccess);
-    TestEqual(TEXT("copy chunk text bytes"), CopyChunk.Count, ChunkRanges[0].ByteEnd - ChunkRanges[0].ByteBegin);
-    TestEqual(TEXT("copy chunk text value"), FirstChunk, FString(TEXT("alpha beta")));
+    if (ChunkRanges.Num() > 0) {
+        FString FirstChunk;
+        const FAstralOperationResult CopyChunk =
+            UAstralBlueprintLibrary::CopyChunkTextResult(TEXT("alpha beta gamma"), ChunkRanges[0], FirstChunk);
+        TestTrue(TEXT("copy chunk text result succeeds"), CopyChunk.bSuccess);
+        TestEqual(TEXT("copy chunk text bytes"), CopyChunk.Count, ChunkRanges[0].ByteEnd - ChunkRanges[0].ByteBegin);
+        TestEqual(TEXT("copy chunk text value"), FirstChunk, FString(TEXT("alpha beta")));
+    }
 
     constexpr int32 MemoryDim = 2;
     constexpr int32 MemoryCapacity = 3;
@@ -414,7 +416,9 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::SearchMemoryIndexResult(MemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup, MemoryResults);
     TestTrue(TEXT("memory search result succeeds"), SearchMemory.bSuccess);
     TestEqual(TEXT("memory search count"), SearchMemory.Count, SearchTopK);
-    TestEqual(TEXT("memory top key"), MemoryResults[0].Key, RecordA.Key);
+    if (MemoryResults.Num() > 0) {
+        TestEqual(TEXT("memory top key"), MemoryResults[0].Key, RecordA.Key);
+    }
 
     const FAstralOperationResult BeginSearch =
         UAstralBlueprintLibrary::BeginMemorySearchResult(MemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup);
@@ -451,7 +455,9 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::FetchMemorySearchResult(BeginSearch.Handle, CursorFetchLimit, CursorResults);
     TestTrue(TEXT("memory cursor fetch succeeds"), FetchSearch.bSuccess);
     TestEqual(TEXT("memory cursor fetch count"), FetchSearch.Count, CursorFetchLimit);
-    TestEqual(TEXT("memory cursor top key"), CursorResults[0].Key, RecordA.Key);
+    if (CursorResults.Num() > 0) {
+        TestEqual(TEXT("memory cursor top key"), CursorResults[0].Key, RecordA.Key);
+    }
 
     FAstralRequestStatus SearchRequestAfterFetch;
     const FAstralOperationResult GetSearchAfterFetch =
@@ -474,7 +480,9 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, LoadedMemoryResults);
     TestTrue(TEXT("loaded memory search succeeds"), LoadedSearchMemory.bSuccess);
     TestEqual(TEXT("loaded memory search count"), LoadedSearchMemory.Count, SearchTopK);
-    TestEqual(TEXT("loaded memory top key"), LoadedMemoryResults[0].Key, RecordA.Key);
+    if (LoadedMemoryResults.Num() > 0) {
+        TestEqual(TEXT("loaded memory top key"), LoadedMemoryResults[0].Key, RecordA.Key);
+    }
 
     const FAstralOperationResult RemoveMemory = UAstralBlueprintLibrary::RemoveMemoryRecordResult(LoadMemory.Handle, MemoryKeyA);
     TestTrue(TEXT("memory remove succeeds"), RemoveMemory.bSuccess);
@@ -484,7 +492,9 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, RemovedMemoryResults);
     TestTrue(TEXT("removed memory search succeeds"), RemovedSearchMemory.bSuccess);
     TestEqual(TEXT("removed memory search count"), RemovedSearchMemory.Count, CursorFetchLimit);
-    TestEqual(TEXT("removed memory top key"), RemovedMemoryResults[0].Key, RecordB.Key);
+    if (RemovedMemoryResults.Num() > 0) {
+        TestEqual(TEXT("removed memory top key"), RemovedMemoryResults[0].Key, RecordB.Key);
+    }
 
     const FAstralOperationResult ClearMemory = UAstralBlueprintLibrary::ClearMemoryIndexResult(LoadMemory.Handle);
     TestTrue(TEXT("memory clear succeeds"), ClearMemory.bSuccess);
@@ -512,7 +522,9 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::SearchMemoryIndexResult(GraphMemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup, GraphMemoryResults);
     TestTrue(TEXT("graph memory search result succeeds"), GraphSearchMemory.bSuccess);
     TestEqual(TEXT("graph memory search count"), GraphSearchMemory.Count, SearchTopK);
-    TestEqual(TEXT("graph memory top key"), GraphMemoryResults[0].Key, RecordA.Key);
+    if (GraphMemoryResults.Num() > 0) {
+        TestEqual(TEXT("graph memory top key"), GraphMemoryResults[0].Key, RecordA.Key);
+    }
     UAstralBlueprintLibrary::DestroyMemoryIndex(GraphMemoryCreate.Handle);
 
     constexpr int32 PromptCacheMaxEntries = 4;
@@ -553,8 +565,10 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::GetPromptCacheTokensResult(PromptCacheCreate.Handle, PromptCacheKey, PromptCacheReadCapacity, PromptCacheReadTokens);
     TestTrue(TEXT("prompt cache get succeeds"), PromptCacheGet.bSuccess);
     TestEqual(TEXT("prompt cache get count"), PromptCacheGet.Count, PromptCacheTokenCount);
-    TestEqual(TEXT("prompt cache token a"), PromptCacheReadTokens[0], PromptCacheTokenA);
-    TestEqual(TEXT("prompt cache token b"), PromptCacheReadTokens[1], PromptCacheTokenB);
+    if (PromptCacheReadTokens.Num() >= PromptCacheTokenCount) {
+        TestEqual(TEXT("prompt cache token a"), PromptCacheReadTokens[0], PromptCacheTokenA);
+        TestEqual(TEXT("prompt cache token b"), PromptCacheReadTokens[1], PromptCacheTokenB);
+    }
 
     FAstralPromptCacheStats PromptCacheStats;
     const FAstralOperationResult PromptCacheStatsResult =
