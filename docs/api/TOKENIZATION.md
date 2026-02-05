@@ -21,6 +21,9 @@ wrappers only convert engine strings and arrays around the same native calls.
 Unity exposes the same flow on `AstralModel`: `CountTokens()` for sizing,
 `Tokenize()` for caller-owned or newly allocated `NativeArray<int>` output, and
 `Detokenize()` for managed string conversion outside hot paths.
+`CountTokensBatch()` and `TokenizeBatch()` take caller-owned
+`NativeArray<AstralTokenizeRequest>` and offset buffers for many UTF-8 spans in
+one native call.
 
 Unreal exposes compatibility bool helpers on `UAstralModel` plus
 `CountTokensResult()`, `TokenizeResult()`, and `DetokenizeResult()` for
