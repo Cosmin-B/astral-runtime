@@ -40,6 +40,20 @@ public:
     UFUNCTION(BlueprintPure, Category = "Astral|Adapters")
     static int32 MaxSessionAdapters();
 
+    /** Read native diagnostics for a loaded model-scoped adapter handle. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    static bool GetAdapterInfo(int64 AdapterHandle, FAstralAdapterInfo& OutInfo, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    static FAstralOperationResult GetAdapterInfoResult(int64 AdapterHandle, FAstralAdapterInfo& OutInfo);
+
+    /** Copy a loaded adapter path into an engine string. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    static bool CopyAdapterPath(int64 AdapterHandle, FString& OutPath, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    static FAstralOperationResult CopyAdapterPathResult(int64 AdapterHandle, FString& OutPath);
+
     /** Create a native structured-output toolset. Release it with DestroyToolset. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
     static bool CreateToolset(const TArray<FAstralToolDesc>& Tools, EAstralToolChoiceMode ChoiceMode, int64& OutToolsetHandle);
