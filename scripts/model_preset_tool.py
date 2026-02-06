@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import struct
 import sys
 import time
 import urllib.error
@@ -12,7 +13,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, BinaryIO, Dict, Iterable, List, Optional
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -49,6 +50,41 @@ MODEL_STATUS_MISSING = "missing"
 MODEL_STATUS_PARTIAL = "partial"
 MODEL_STATUS_INVALID = "invalid"
 PARTIAL_DOWNLOAD_SUFFIX = ".part"
+GGUF_MAGIC = b"GGUF"
+GGUF_HEADER_BYTES = 24
+GGUF_UINT8 = 0
+GGUF_INT8 = 1
+GGUF_UINT16 = 2
+GGUF_INT16 = 3
+GGUF_UINT32 = 4
+GGUF_INT32 = 5
+GGUF_FLOAT32 = 6
+GGUF_BOOL = 7
+GGUF_STRING = 8
+GGUF_ARRAY = 9
+GGUF_UINT64 = 10
+GGUF_INT64 = 11
+GGUF_FLOAT64 = 12
+GGUF_MAX_METADATA_ENTRIES = 100000
+GGUF_MAX_STRING_BYTES = 64 * 1024 * 1024
+GGUF_MAX_ARRAY_ITEMS = 1024 * 1024
+GGUF_CONTEXT_SUFFIX = ".context_length"
+GGUF_EMBEDDING_SUFFIX = ".embedding_length"
+GGUF_POOLING_SUFFIX = ".pooling_type"
+
+GGUF_SCALAR_FORMATS = {
+    GGUF_UINT8: "B",
+    GGUF_INT8: "b",
+    GGUF_UINT16: "H",
+    GGUF_INT16: "h",
+    GGUF_UINT32: "I",
+    GGUF_INT32: "i",
+    GGUF_FLOAT32: "f",
+    GGUF_BOOL: "?",
+    GGUF_UINT64: "Q",
+    GGUF_INT64: "q",
+    GGUF_FLOAT64: "d",
+}
 
 
 @dataclass(frozen=True)
@@ -261,6 +297,104 @@ def _file_sha256(path: Path) -> str:
                 break
             digest.update(chunk)
     return digest.hexdigest()
+
+
+class _GGUFReader:
+    def __init__(self, handle: BinaryIO) -> None:
+        self._handle = handle
+
+    def _take(self, size: int) -> bytes:
+        out = self._handle.read(size)
+        if len(out) != size:
+            raise ValueError("truncated GGUF metadata")
+        return out
+
+    def _unpack(self, fmt: str) -> Any:
+        size = struct.calcsize(fmt)
+        return struct.unpack_from("<" + fmt, self._take(size))[0]
+
+    def string(self) -> str:
+        size = int(self._unpack("Q"))
+        if size > GGUF_MAX_STRING_BYTES:
+            raise ValueError(f"GGUF string is too large: {size}")
+        return self._take(size).decode("utf-8")
+
+    def value(self) -> Any:
+        value_type = int(self._unpack("I"))
+        return self.typed_value(value_type)
+
+    def typed_value(self, value_type: int) -> Any:
+        if value_type == GGUF_STRING:
+            return self.string()
+        if value_type == GGUF_ARRAY:
+            item_type = int(self._unpack("I"))
+            item_count = int(self._unpack("Q"))
+            if item_count > GGUF_MAX_ARRAY_ITEMS:
+                raise ValueError(f"GGUF array is too large: {item_count}")
+            return [self.typed_value(item_type) for _ in range(item_count)]
+        fmt = GGUF_SCALAR_FORMATS.get(value_type)
+        if fmt is None:
+            raise ValueError(f"unsupported GGUF metadata value type: {value_type}")
+        return self._unpack(fmt)
+
+
+def _read_gguf_metadata(path: Path) -> Dict[str, Any]:
+    if path.stat().st_size < GGUF_HEADER_BYTES:
+        raise ValueError(f"{path.name} is too small for a GGUF header")
+    with path.open("rb") as handle:
+        reader = _GGUFReader(handle)
+        magic = reader._take(len(GGUF_MAGIC))
+        if magic != GGUF_MAGIC:
+            raise ValueError(f"{path.name} is not a GGUF file")
+        reader._unpack("I")
+        reader._unpack("Q")
+        metadata_count = int(reader._unpack("Q"))
+        if metadata_count > GGUF_MAX_METADATA_ENTRIES:
+            raise ValueError(f"{path.name} has too many GGUF metadata entries: {metadata_count}")
+
+        metadata: Dict[str, Any] = {}
+        for _ in range(metadata_count):
+            key = reader.string()
+            metadata[key] = reader.value()
+    return metadata
+
+
+def _first_int_metadata(metadata: Dict[str, Any], suffix: str) -> Optional[int]:
+    for key, value in metadata.items():
+        if key.endswith(suffix) and type(value) is int:
+            return int(value)
+    return None
+
+
+def _metadata_record(path: Path) -> Dict[str, Any]:
+    metadata = _read_gguf_metadata(path)
+    context_length = _first_int_metadata(metadata, GGUF_CONTEXT_SUFFIX)
+    embedding_dimension = _first_int_metadata(metadata, GGUF_EMBEDDING_SUFFIX)
+    return {
+        "path": str(path),
+        "format": "GGUF",
+        "metadata_entries": len(metadata),
+        "architecture": metadata.get("general.architecture", ""),
+        "context_length": context_length,
+        "embedding_dimension": embedding_dimension,
+        "supports_embeddings": any(key.endswith(GGUF_POOLING_SUFFIX) for key in metadata),
+    }
+
+
+def _validate_gguf_metadata(path: Path, preset: Preset) -> Dict[str, Any]:
+    record = _metadata_record(path)
+    if preset.context_length is not None and record["context_length"] != preset.context_length:
+        raise ValueError(
+            f"{path.name} context_length mismatch: got {record['context_length']}, expected {preset.context_length}"
+        )
+    if preset.embedding_dimension is not None and record["embedding_dimension"] != preset.embedding_dimension:
+        raise ValueError(
+            f"{path.name} embedding_dimension mismatch: got {record['embedding_dimension']}, "
+            f"expected {preset.embedding_dimension}"
+        )
+    if preset.model_type == MODEL_TYPE_EMBEDDING and not record["supports_embeddings"]:
+        raise ValueError(f"{path.name} metadata does not advertise embedding pooling")
+    return record
 
 
 def _verify_existing(path: Path, preset: Preset) -> None:
@@ -563,7 +697,32 @@ def cmd_validate_file(args: argparse.Namespace) -> int:
     preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
     output_path = Path(args.path).expanduser() if args.path else _resolved_output_path(args, preset)
     _verify_existing(output_path, preset)
+    if args.validate_metadata:
+        _validate_gguf_metadata(output_path, preset)
     print(f"valid: {output_path}")
+    return EXIT_OK
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
+    output_path = Path(args.path).expanduser() if args.path else _resolved_output_path(args, preset)
+    record = _validate_gguf_metadata(output_path, preset) if args.validate else _metadata_record(output_path)
+    record["preset"] = preset.name
+    record["model_type"] = preset.model_type
+    if args.format == "json":
+        json.dump(record, sys.stdout, indent=2, sort_keys=True)
+        print()
+    else:
+        print(f"preset: {preset.name}")
+        print(f"path: {output_path}")
+        print(f"architecture: {record['architecture'] or 'unknown'}")
+        print(f"context_length: {record['context_length'] if record['context_length'] is not None else 'unknown'}")
+        print(
+            f"embedding_dimension: "
+            f"{record['embedding_dimension'] if record['embedding_dimension'] is not None else 'n/a'}"
+        )
+        print(f"supports_embeddings: {str(record['supports_embeddings']).lower()}")
+        print(f"metadata_entries: {record['metadata_entries']}")
     return EXIT_OK
 
 
@@ -582,16 +741,22 @@ def cmd_download(args: argparse.Namespace) -> int:
 
     if args.validate_only:
         _verify_existing(output_path, preset)
+        if args.validate_metadata:
+            _validate_gguf_metadata(output_path, preset)
         print(f"valid: {output_path}")
         return EXIT_OK
 
     if output_path.exists():
         _verify_existing(output_path, preset)
+        if args.validate_metadata:
+            _validate_gguf_metadata(output_path, preset)
         print(f"ready: {output_path}")
         return EXIT_OK
 
     _download(preset, output_path, args.token or _token_from_env())
     _verify_existing(output_path, preset)
+    if args.validate_metadata:
+        _validate_gguf_metadata(output_path, preset)
     print(f"downloaded: {output_path}")
     return EXIT_OK
 
@@ -657,7 +822,16 @@ def main(argv: List[str]) -> int:
     validate_file_parser.add_argument("--preset", required=True)
     validate_file_parser.add_argument("--dir", default="tests/models")
     validate_file_parser.add_argument("--path", default="")
+    validate_file_parser.add_argument("--validate-metadata", action="store_true")
     validate_file_parser.set_defaults(func=cmd_validate_file)
+
+    inspect_parser = sub.add_parser("inspect")
+    inspect_parser.add_argument("preset")
+    inspect_parser.add_argument("--dir", default="tests/models")
+    inspect_parser.add_argument("--path", default="")
+    inspect_parser.add_argument("--validate", action="store_true")
+    inspect_parser.add_argument("--format", choices=("json", "text"), default="json")
+    inspect_parser.set_defaults(func=cmd_inspect)
 
     download_parser = sub.add_parser("download")
     download_parser.add_argument("--preset", default="")
@@ -672,6 +846,7 @@ def main(argv: List[str]) -> int:
     download_parser.add_argument("--file", default="")
     download_parser.add_argument("--min-bytes", type=int, default=MIN_CUSTOM_MODEL_BYTES)
     download_parser.add_argument("--sha256", default="")
+    download_parser.add_argument("--validate-metadata", action="store_true")
     download_parser.set_defaults(func=cmd_download)
 
     validate_parser = sub.add_parser("validate-manifest")

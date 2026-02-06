@@ -466,12 +466,16 @@ in the Unreal packaged-sample matrix.
 ./tests/model_downloader.sh --list-presets
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
+./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --inspect-metadata
 python3 ./scripts/model_preset_tool.py validate-manifest
+python3 ./scripts/model_preset_tool.py inspect qwen3-embed-0.6b-q8 --dir tests/models --validate
 ```
 
 Existing files are validated against the pinned byte size and SHA-256 before
 they are reused. Incomplete downloads resume from the `.part` file when the
-server accepts range requests.
+server accepts range requests. Metadata validation reads only the GGUF header
+and checks context length, embedding dimension, and embedding pooling support
+against the manifest.
 
 `hetzner_watchdog.sh` can keep long-running HF downloads and wait+bench jobs
 alive on a remote runner. Use `--dry-run` to inspect the exact commands before

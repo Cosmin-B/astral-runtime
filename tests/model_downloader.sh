@@ -16,6 +16,8 @@ Options:
   --dir <path>          Output directory (default: tests/models)
   --dry-run             Print resolved preset, path, URL, checksum, and command
   --validate-only       Validate an existing local preset file without downloading
+  --validate-metadata   Validate GGUF metadata against preset fields
+  --inspect-metadata    Print GGUF metadata summary for a local preset
   --print-path          Print the resolved local path for a preset
   --info                Print resolved preset metadata as JSON
   --status              Print existing local file state as JSON
@@ -64,6 +66,7 @@ print_path=0
 print_info=0
 print_status=0
 print_status_all=0
+inspect_metadata=0
 list_presets=0
 list_package=0
 preset_name=""
@@ -78,6 +81,8 @@ while [[ $# -gt 0 ]]; do
     --dir) output_dir="${2:-}"; args+=(--dir "${output_dir}"); shift 2 ;;
     --dry-run) args+=(--dry-run); shift ;;
     --validate-only) args+=(--validate-only); shift ;;
+    --validate-metadata) args+=(--validate-metadata); shift ;;
+    --inspect-metadata) inspect_metadata=1; shift ;;
     --print-path) print_path=1; shift ;;
     --info) print_info=1; shift ;;
     --status) print_status=1; shift ;;
@@ -136,6 +141,14 @@ if [[ "${print_info}" -eq 1 ]]; then
     exit "${exit_usage}"
   fi
   exec python3 "${tool}" info "${preset_name}" --dir "${output_dir}"
+fi
+
+if [[ "${inspect_metadata}" -eq 1 ]]; then
+  if [[ -z "${preset_name}" ]]; then
+    echo "--inspect-metadata requires --preset" >&2
+    exit "${exit_usage}"
+  fi
+  exec python3 "${tool}" inspect "${preset_name}" --dir "${output_dir}" --validate
 fi
 
 if [[ "${print_status}" -eq 1 ]]; then
