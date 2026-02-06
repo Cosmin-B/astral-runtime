@@ -18,6 +18,7 @@ static constexpr int32 kInlineMemoryRecordCapacity = 32;
 static constexpr int32 kInlineMemoryResultCapacity = 16;
 static constexpr int32 kAgentReadBufferBytes = 4096;
 static constexpr int32 kInlineAgentTextBytes = kAgentReadBufferBytes;
+static constexpr int32 kInlineAdapterPathBytes = 1024;
 static constexpr int32 kNoElements = 0;
 static constexpr int32 kEmptyResultCount = 0;
 static constexpr int64 kInvalidAstralHandle = 0;
@@ -335,6 +336,15 @@ static FAstralMemorySearchResult from_native_memory_result(const AstralMemorySea
     return Result;
 }
 
+static FAstralAdapterInfo from_native_adapter_info(const AstralAdapterInfo& Native)
+{
+    FAstralAdapterInfo Info;
+    Info.ModelHandle = static_cast<int64>(Native.model);
+    Info.RefCount = static_cast<int32>(Native.refcount);
+    Info.PathBytes = static_cast<int32>(Native.path_bytes);
+    return Info;
+}
+
 static FAstralAgentChatResult from_native_agent_result(const AstralAgentChatResult& Native)
 {
     FAstralAgentChatResult Result;
@@ -443,6 +453,75 @@ FString UAstralBlueprintLibrary::ErrorCodeName(int32 ErrorCode)
 int32 UAstralBlueprintLibrary::MaxSessionAdapters()
 {
     return static_cast<int32>(ASTRAL_SESSION_ADAPTERS_MAX);
+}
+
+bool UAstralBlueprintLibrary::GetAdapterInfo(int64 AdapterHandle, FAstralAdapterInfo& OutInfo, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetAdapterInfoResult(AdapterHandle, OutInfo);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAdapterInfoResult(int64 AdapterHandle, FAstralAdapterInfo& OutInfo)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAdapterInfo);
+
+    OutInfo = FAstralAdapterInfo();
+    AstralAdapterInfo Native{};
+    Native.size = sizeof(AstralAdapterInfo);
+    const AstralErr Err = astral_model_adapter_info(static_cast<AstralHandle>(AdapterHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutInfo = from_native_adapter_info(Native);
+    return make_operation_result(ASTRAL_OK, AdapterHandle);
+}
+
+bool UAstralBlueprintLibrary::CopyAdapterPath(int64 AdapterHandle, FString& OutPath, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = CopyAdapterPathResult(AdapterHandle, OutPath);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CopyAdapterPathResult(int64 AdapterHandle, FString& OutPath)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CopyAdapterPath);
+
+    OutPath.Reset();
+    AstralMutSpanU8 SizeOnly{};
+    uint32_t Required = 0;
+    AstralErr Err = astral_model_adapter_path_copy(static_cast<AstralHandle>(AdapterHandle), SizeOnly, &Required);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    if (Required == 0)
+    {
+        return make_operation_result(ASTRAL_OK, AdapterHandle, kEmptyResultCount);
+    }
+    if (Required > static_cast<uint32_t>(TNumericLimits<int32>::Max()))
+    {
+        return make_operation_result(ASTRAL_E_NOMEM);
+    }
+
+    TArray<uint8, TInlineAllocator<kInlineAdapterPathBytes>> PathBytes;
+    PathBytes.SetNumUninitialized(static_cast<int32>(Required));
+    AstralMutSpanU8 Out{};
+    Out.data = PathBytes.GetData();
+    Out.len = Required;
+    uint32_t Written = 0;
+    Err = astral_model_adapter_path_copy(static_cast<AstralHandle>(AdapterHandle), Out, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(PathBytes.GetData()), static_cast<int32>(Written));
+    OutPath = FString(Converted.Length(), Converted.Get());
+    return make_operation_result(ASTRAL_OK, AdapterHandle, static_cast<int32>(Written));
 }
 
 bool UAstralBlueprintLibrary::CreateToolset(

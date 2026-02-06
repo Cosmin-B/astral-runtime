@@ -299,6 +299,19 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TArray<uint8> EmptyBytes;
     constexpr int64 InvalidTicket = 0;
     constexpr int64 InvalidHandle = 0;
+
+    FAstralAdapterInfo InvalidAdapterInfo;
+    const FAstralOperationResult InvalidAdapterInfoResult =
+        UAstralBlueprintLibrary::GetAdapterInfoResult(InvalidHandle, InvalidAdapterInfo);
+    TestFalse(TEXT("invalid adapter info fails"), InvalidAdapterInfoResult.bSuccess);
+    TestEqual(TEXT("invalid adapter info error"), InvalidAdapterInfoResult.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    FString InvalidAdapterPath;
+    const FAstralOperationResult InvalidAdapterPathResult =
+        UAstralBlueprintLibrary::CopyAdapterPathResult(InvalidHandle, InvalidAdapterPath);
+    TestFalse(TEXT("invalid adapter path fails"), InvalidAdapterPathResult.bSuccess);
+    TestEqual(TEXT("invalid adapter path error"), InvalidAdapterPathResult.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
     const FAstralAsyncResult InvalidEnqueue = Embedder->EnqueueUtf8BytesResult(EmptyBytes);
     TestFalse(TEXT("invalid embedder enqueue result fails"), InvalidEnqueue.bSuccess);
     TestEqual(TEXT("invalid embedder enqueue error"), InvalidEnqueue.ErrorCode, static_cast<int32>(ASTRAL_E_STATE));

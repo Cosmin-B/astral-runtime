@@ -497,6 +497,22 @@ struct ASTRALRT_API FAstralAdapterDesc
     EAstralUnrealPathRoot PathRoot = EAstralUnrealPathRoot::Raw;
 };
 
+/** Native diagnostics for one loaded LoRA or adapter payload. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralAdapterInfo
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Adapters")
+    int64 ModelHandle = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Adapters")
+    int32 RefCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Adapters")
+    int32 PathBytes = 0;
+};
+
 /** One tool/function definition for structured output. */
 USTRUCT(BlueprintType)
 struct ASTRALRT_API FAstralToolDesc

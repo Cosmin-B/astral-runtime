@@ -54,7 +54,9 @@ session state strings.
 
 `UAstralModel::LoadAdapter()` returns an adapter handle for
 `UAstralSession::AddAdapter()`. Blueprint callers can inspect adapter count,
-adapter handle, path, and scale without using comma-separated strings.
+adapter handle, path, reference count, and scale without using comma-separated
+strings. Use `UAstralBlueprintLibrary::GetAdapterInfoResult()` and
+`CopyAdapterPathResult()` for loaded-adapter diagnostics.
 
 ## Example
 
