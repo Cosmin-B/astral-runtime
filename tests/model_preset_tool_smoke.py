@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
+import struct
 import sys
 import tempfile
 from pathlib import Path
@@ -33,6 +35,74 @@ STATUS_PARTIAL = "partial"
 STATUS_INVALID = "invalid"
 STATUS_READY = "ready"
 PACKAGE_PRESET = "gpt2-q2k"
+TINY_PRESET = "tiny-embed"
+TINY_LABEL = "Tiny synthetic embedding GGUF"
+TINY_REPO = "local/tiny"
+TINY_FILE = "tiny-embed.gguf"
+TINY_LICENSE = "Synthetic smoke fixture."
+TINY_REVISION = "main"
+TINY_ARCH = "qwen3"
+TINY_CONTEXT = 40960
+TINY_EMBEDDING = 1024
+TINY_POOLING = 1
+GGUF_MAGIC = b"GGUF"
+GGUF_VERSION = 3
+GGUF_TENSOR_COUNT = 0
+GGUF_TYPE_UINT32 = 4
+GGUF_TYPE_STRING = 8
+
+
+def gguf_string(value: str) -> bytes:
+    data = value.encode("utf-8")
+    return struct.pack("<Q", len(data)) + data
+
+
+def gguf_uint32(key: str, value: int) -> bytes:
+    return gguf_string(key) + struct.pack("<II", GGUF_TYPE_UINT32, value)
+
+
+def gguf_text(key: str, value: str) -> bytes:
+    return gguf_string(key) + struct.pack("<I", GGUF_TYPE_STRING) + gguf_string(value)
+
+
+def write_tiny_gguf(path: Path, include_pooling: bool = True) -> tuple[int, str]:
+    entries = [
+        gguf_text("general.architecture", TINY_ARCH),
+        gguf_uint32(f"{TINY_ARCH}.context_length", TINY_CONTEXT),
+        gguf_uint32(f"{TINY_ARCH}.embedding_length", TINY_EMBEDDING),
+    ]
+    if include_pooling:
+        entries.append(gguf_uint32(f"{TINY_ARCH}.pooling_type", TINY_POOLING))
+    data = GGUF_MAGIC + struct.pack("<IQQ", GGUF_VERSION, GGUF_TENSOR_COUNT, len(entries)) + b"".join(entries)
+    path.write_bytes(data)
+    return len(data), hashlib.sha256(data).hexdigest()
+
+
+def write_manifest(path: Path, size_bytes: int, sha256: str, embedding_dimension: int = TINY_EMBEDDING) -> None:
+    payload = {
+        "version": 1,
+        "download_dir": "tests/models",
+        "default_preset": TINY_PRESET,
+        "huggingface_base_url": "https://huggingface.co",
+        "presets": [
+            {
+                "name": TINY_PRESET,
+                "label": TINY_LABEL,
+                "model_type": MODEL_TYPE_EMBEDDING,
+                "repo": TINY_REPO,
+                "filename": TINY_FILE,
+                "revision": TINY_REVISION,
+                "size_bytes": size_bytes,
+                "sha256": sha256,
+                "license_note": TINY_LICENSE,
+                "context_length": TINY_CONTEXT,
+                "embedding_dimension": embedding_dimension,
+                "include_in_package": False,
+                "include_in_unreal_sample_matrix": False,
+            }
+        ],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def run_tool(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -122,6 +192,79 @@ def main(argv: list[str]) -> int:
         invalid_status = json.loads(run_tool(root, "status", QWEN_TEXT_PRESET, "--dir", temp_dir).stdout)
         require(invalid_status["status"] == STATUS_INVALID, "invalid status did not report invalid")
         require("size mismatch" in invalid_status["error"], "invalid status should name size mismatch")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        model_path = temp_path / TINY_FILE
+        manifest_path = temp_path / "manifest.json"
+        size_bytes, sha256 = write_tiny_gguf(model_path)
+        write_manifest(manifest_path, size_bytes, sha256)
+
+        metadata = json.loads(
+            run_tool(
+                root,
+                "--manifest",
+                str(manifest_path),
+                "inspect",
+                TINY_PRESET,
+                "--dir",
+                temp_dir,
+                "--validate",
+            ).stdout
+        )
+        require(metadata["architecture"] == TINY_ARCH, "metadata reader missed architecture")
+        require(metadata["context_length"] == TINY_CONTEXT, "metadata reader missed context length")
+        require(metadata["embedding_dimension"] == TINY_EMBEDDING, "metadata reader missed embedding dimension")
+        require(metadata["supports_embeddings"] is True, "metadata reader missed embedding pooling")
+
+        valid_file = run_tool(
+            root,
+            "--manifest",
+            str(manifest_path),
+            "validate-file",
+            "--preset",
+            TINY_PRESET,
+            "--dir",
+            temp_dir,
+            "--validate-metadata",
+        ).stdout
+        require("valid:" in valid_file, "metadata file validation did not report success")
+
+        bad_manifest_path = temp_path / "bad-manifest.json"
+        write_manifest(bad_manifest_path, size_bytes, sha256, embedding_dimension=EXPECTED_EMBED_DIMENSION + 1)
+        bad_metadata = run_tool(
+            root,
+            "--manifest",
+            str(bad_manifest_path),
+            "validate-file",
+            "--preset",
+            TINY_PRESET,
+            "--dir",
+            temp_dir,
+            "--validate-metadata",
+            check=False,
+        )
+        require(bad_metadata.returncode == EXPECTED_USAGE_EXIT, "metadata mismatch should fail")
+        require("embedding_dimension" in bad_metadata.stderr, "metadata mismatch should name embedding dimension")
+
+        no_pool_path = temp_path / "no-pool.gguf"
+        no_pool_size, no_pool_sha = write_tiny_gguf(no_pool_path, include_pooling=False)
+        no_pool_manifest = temp_path / "no-pool-manifest.json"
+        write_manifest(no_pool_manifest, no_pool_size, no_pool_sha)
+        no_pool = run_tool(
+            root,
+            "--manifest",
+            str(no_pool_manifest),
+            "validate-file",
+            "--preset",
+            TINY_PRESET,
+            "--path",
+            str(no_pool_path),
+            "--validate-metadata",
+            check=False,
+        )
+        require(no_pool.returncode == EXPECTED_USAGE_EXIT, "embedding metadata without pooling should fail")
+        require("embedding pooling" in no_pool.stderr, "embedding metadata error should name pooling")
 
     status_text = run_tool(root, "status", QWEN_TEXT_PRESET, "--dir", CUSTOM_OUTPUT_DIR, "--format", "text").stdout
     for marker in ("preset:", "status:", "path:", "present_bytes:", "partial_bytes:", "expected_bytes:", "command:"):

@@ -14,10 +14,12 @@ package/sample-matrix eligibility.
 - `scripts/model_preset_tool.py filename <preset>`
 - `scripts/model_preset_tool.py path <preset> --dir <dir>`
 - `scripts/model_preset_tool.py info <preset> --dir <dir>`
+- `scripts/model_preset_tool.py inspect <preset> --dir <dir> --validate`
 - `scripts/model_preset_tool.py status-all --type embedding --format json`
-- `scripts/model_preset_tool.py validate-file --preset <preset> --dir <dir>`
+- `scripts/model_preset_tool.py validate-file --preset <preset> --dir <dir> --validate-metadata`
 - `tests/model_downloader.sh --preset <preset> --dry-run`
-- `tests/model_downloader.sh --preset <preset> --validate-only`
+- `tests/model_downloader.sh --preset <preset> --validate-only --validate-metadata`
+- `tests/model_downloader.sh --preset <preset> --inspect-metadata`
 - `tests/model_downloader.sh --preset <preset> --info`
 - `tests/model_downloader.sh --preset <preset> --status`
 - `tests/model_downloader.sh --status-all --list-type embedding --status-format json`
@@ -30,6 +32,9 @@ package/sample-matrix eligibility.
 and repeatable downloader command without touching the network. `--validate-only`
 checks an existing local file against the manifest size and SHA-256 and returns a
 non-zero exit code for missing, truncated, or checksum-drifted files.
+`--validate-metadata` also reads GGUF header metadata without loading tensor
+data and checks manifest context length, embedding dimension, and embedding
+pooling support for embedding presets.
 
 `info` prints a stable JSON record with the preset name, model type, repository,
 revision, URL, resolved local path, byte size, checksum, context length,
@@ -46,6 +51,11 @@ value is `missing`, `partial`, `invalid`, or `ready`; each record includes
 final-file bytes, `.part` bytes, expected bytes, checksum result, an error
 string for invalid files, and the repeatable downloader command. Engine setup
 screens can use this before starting a first-run download.
+
+`inspect` prints GGUF metadata derived from the local file header: architecture,
+context length, embedding dimension, embedding support, and metadata entry count.
+Use `--validate` to make mismatches fail with a non-zero exit code before an
+engine sample or local run tries to load the model.
 
 Custom downloads are accepted through `--url` or `--hf-repo` plus `--hf-file`.
 The wrapper rejects custom filenames that are not local `.gguf` basenames,
@@ -75,9 +85,11 @@ python3 scripts/model_preset_tool.py validate-manifest
 python3 scripts/model_preset_tool.py list --type embedding --format json
 python3 scripts/model_preset_tool.py list --package --format json
 python3 scripts/model_preset_tool.py info qwen3-0.6b-q8 --dir tests/models
+python3 scripts/model_preset_tool.py inspect qwen3-embed-0.6b-q8 --dir tests/models --validate
 python3 scripts/model_preset_tool.py status qwen3-0.6b-q8 --dir tests/models
 python3 scripts/model_preset_tool.py status-all --type embedding --format json --dir tests/models
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
+./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --inspect-metadata
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --status
 ./tests/model_downloader.sh --status-all --list-package --status-format text
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
