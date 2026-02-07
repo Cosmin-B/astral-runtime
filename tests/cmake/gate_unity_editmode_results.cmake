@@ -37,6 +37,7 @@ foreach(required
   "unityci/editor:ubuntu-[$]\\{unity_version\\}-[$]\\{image_component\\}-[$]\\{image_version\\}"
   "ASTRAL_UNITY_REQUIRE_NATIVE=1"
   "UNITY_LICENSE"
+  "https://game.ci/docs/docker/docker-images/"
   "/opt/unity/Editor/Unity"
   "--dry-run"
 )
@@ -56,7 +57,8 @@ if(NOT gameci_dry_result EQUAL 0)
   message(FATAL_ERROR "Unity GameCI runner dry-run failed: ${gameci_dry_error}")
 endif()
 foreach(required
-  "unityci/editor:ubuntu-6000.0.57f1-base-3.1.0"
+  "unityci/editor:ubuntu-6000.0.57f1-base-3.2.2"
+  "\\[unity-gameci\\] Docs: https://game.ci/docs/docker/docker-images/"
   "scripts/run_unity_ci_tests.sh"
   "--editor"
   "/opt/unity/Editor/Unity"
