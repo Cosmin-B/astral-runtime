@@ -507,8 +507,9 @@ For Linux container validation, use the GameCI wrapper:
 ./scripts/run_unity_gameci_tests.sh
 ```
 
-The wrapper reads the Unity version from the CI project, defaults to
-`unityci/editor:ubuntu-6000.0.57f1-base-3.1.0`, builds the native Unity plugin
+The wrapper follows the current GameCI v4 Docker documentation, reads the Unity
+version from the CI project, defaults to
+`unityci/editor:ubuntu-6000.0.57f1-base-3.2.2`, builds the native Unity plugin
 on the host, then runs the same EditMode ABI lane inside the container. License
 environment variables are forwarded by name only when already set; license files
 and activation responses are not read or written by the wrapper.

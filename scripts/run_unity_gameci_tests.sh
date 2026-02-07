@@ -5,9 +5,10 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 project_dir="${root_dir}/ci/unity/AstralCiUnityProject"
 results_dir="${root_dir}/build/unity-gameci-results"
 unity_version=""
-image_version="${ASTRAL_UNITY_GAMECI_IMAGE_VERSION:-3.1.0}"
+image_version="${ASTRAL_UNITY_GAMECI_IMAGE_VERSION:-3.2.2}"
 image_component="${ASTRAL_UNITY_GAMECI_COMPONENT:-base}"
 image="${ASTRAL_UNITY_GAMECI_IMAGE:-}"
+gameci_docs_url="https://game.ci/docs/docker/docker-images/"
 docker_bin="${DOCKER:-docker}"
 pull_image=1
 build_native=1
@@ -20,9 +21,9 @@ Usage: scripts/run_unity_gameci_tests.sh [options]
 Runs the Unity EditMode ABI lane in a GameCI Unity Editor container.
 
 Options:
-  --image <ref>            Docker image (default: unityci/editor:ubuntu-<project-version>-base-3.1.0)
+  --image <ref>            Docker image (default: unityci/editor:ubuntu-<project-version>-base-3.2.2)
   --unity-version <ver>    Unity editor version (default: ProjectVersion.txt)
-  --image-version <ver>    GameCI image version (default: 3.1.0)
+  --image-version <ver>    GameCI Docker image version (default: 3.2.2)
   --component <name>       GameCI image component (default: base)
   --project <path>         Unity project path (default: ci/unity/AstralCiUnityProject)
   --results-dir <path>     Result directory (default: build/unity-gameci-results)
@@ -102,6 +103,7 @@ docker_args+=(
 )
 
 echo "[unity-gameci] Image: ${image}"
+echo "[unity-gameci] Docs: ${gameci_docs_url}"
 echo "[unity-gameci] Project: ${project_dir}"
 echo "[unity-gameci] Results: ${results_dir}/editmode-results.xml"
 
