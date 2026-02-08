@@ -83,6 +83,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
     static FAstralOperationResult CopyChunkTextResult(const FString& Text, const FAstralChunkRange& Range, FString& OutText);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
+    static FAstralOperationResult MakeMemoryRecordFromChunkResult(
+        const FAstralChunkRange& Range,
+        int64 Key,
+        int32 Flags,
+        FAstralMemoryRecord& OutRecord
+    );
+
     /** Split an already-tokenized sequence into token ranges. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Chunking")
     static bool ChunkTokens(int32 TokenCount, const FAstralChunkerDesc& Desc, TArray<FAstralChunkRange>& OutRanges, int32& OutErrorCode);
@@ -116,6 +124,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static FAstralOperationResult ClearMemoryIndexResult(int64 MemoryHandle);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult GetMemoryRecordCountResult(int64 MemoryHandle, int32& OutCount);
 
     /** Remove one record from a native memory index by key. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
@@ -335,6 +346,15 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
     static FAstralOperationResult GetPromptCacheStatsResult(int64 CacheHandle, FAstralPromptCacheStats& OutStats);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
+    static FAstralOperationResult MakePromptCacheKeyResult(
+        int64 ModelHandle,
+        EAstralPromptSectionKind Section,
+        int32 Generation,
+        const FString& Text,
+        FAstralPromptCacheKey& OutKey
+    );
+
     /** Store tokenized prompt section bytes under a native key. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Prompt Cache")
     static bool PutPromptCacheTokens(
@@ -394,6 +414,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static FAstralOperationResult SetAgentSystemPromptResult(int64 AgentHandle, const FString& SystemPrompt);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult GetAgentSystemPromptResult(int64 AgentHandle, FString& OutSystemPrompt);
+
     /** Store a native-owned rolling summary for the agent. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool SetAgentSummary(int64 AgentHandle, const FString& Summary, int32& OutErrorCode);
@@ -446,6 +469,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static FAstralOperationResult ClearAgentHistoryResult(int64 AgentHandle);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult GetAgentHistoryCountResult(int64 AgentHandle, int32& OutCount);
 
     /** Serialize native-owned agent prompt state and history. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")

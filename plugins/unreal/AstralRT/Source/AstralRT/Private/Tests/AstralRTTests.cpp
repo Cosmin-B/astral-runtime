@@ -294,6 +294,55 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("detokenize result succeeds"), Detokenize.bSuccess);
     TestEqual(TEXT("detokenize byte count"), Detokenize.Count, MockDetokenizedBytes);
     TestEqual(TEXT("detokenize text"), Detokenized, FString(TEXT("abc")));
+
+    constexpr int32 AgentMaxTokens = 8;
+    constexpr int32 AgentMaxMessages = 4;
+    constexpr int32 AgentMaxPromptBytes = 1024;
+    constexpr int32 AgentSystemPromptBytes = 11;
+    constexpr int32 AgentMessageBytes = 5;
+    constexpr int32 AgentMessageCount = 1;
+    FAstralAgentDesc AgentDesc;
+    AgentDesc.ModelHandle = static_cast<int64>(Model->GetHandle());
+    AgentDesc.MaxTokens = AgentMaxTokens;
+    AgentDesc.MaxMessages = AgentMaxMessages;
+    AgentDesc.MaxPromptBytes = AgentMaxPromptBytes;
+    const FAstralOperationResult AgentCreate = UAstralBlueprintLibrary::CreateAgentResult(AgentDesc);
+    TestTrue(TEXT("agent create result succeeds"), AgentCreate.bSuccess);
+    TestTrue(TEXT("agent handle valid"), AgentCreate.Handle != 0);
+
+    const FString AgentSystemPrompt(TEXT("stay terse."));
+    const FAstralOperationResult SetAgentSystem =
+        UAstralBlueprintLibrary::SetAgentSystemPromptResult(AgentCreate.Handle, AgentSystemPrompt);
+    TestTrue(TEXT("set agent system prompt succeeds"), SetAgentSystem.bSuccess);
+    TestEqual(TEXT("set agent system prompt bytes"), SetAgentSystem.Count, AgentSystemPromptBytes);
+
+    FString ReadAgentSystemPrompt;
+    const FAstralOperationResult GetAgentSystem =
+        UAstralBlueprintLibrary::GetAgentSystemPromptResult(AgentCreate.Handle, ReadAgentSystemPrompt);
+    TestTrue(TEXT("get agent system prompt succeeds"), GetAgentSystem.bSuccess);
+    TestEqual(TEXT("get agent system prompt bytes"), GetAgentSystem.Count, AgentSystemPromptBytes);
+    TestEqual(TEXT("get agent system prompt value"), ReadAgentSystemPrompt, AgentSystemPrompt);
+
+    const FAstralOperationResult AddAgentUser =
+        UAstralBlueprintLibrary::AddAgentMessageResult(AgentCreate.Handle, EAstralAgentRole::User, TEXT("hello"));
+    TestTrue(TEXT("add agent message succeeds"), AddAgentUser.bSuccess);
+    TestEqual(TEXT("add agent message bytes"), AddAgentUser.Count, AgentMessageBytes);
+
+    int32 AgentHistoryCount = 0;
+    const FAstralOperationResult GetAgentHistoryCount =
+        UAstralBlueprintLibrary::GetAgentHistoryCountResult(AgentCreate.Handle, AgentHistoryCount);
+    TestTrue(TEXT("get agent history count succeeds"), GetAgentHistoryCount.bSuccess);
+    TestEqual(TEXT("get agent history count result"), GetAgentHistoryCount.Count, AgentMessageCount);
+    TestEqual(TEXT("get agent history count out"), AgentHistoryCount, AgentMessageCount);
+
+    const FAstralOperationResult ClearAgentHistory = UAstralBlueprintLibrary::ClearAgentHistoryResult(AgentCreate.Handle);
+    TestTrue(TEXT("clear agent history succeeds"), ClearAgentHistory.bSuccess);
+    const FAstralOperationResult GetClearedAgentHistoryCount =
+        UAstralBlueprintLibrary::GetAgentHistoryCountResult(AgentCreate.Handle, AgentHistoryCount);
+    TestTrue(TEXT("get cleared agent history count succeeds"), GetClearedAgentHistoryCount.bSuccess);
+    TestEqual(TEXT("get cleared agent history count"), AgentHistoryCount, 0);
+
+    UAstralBlueprintLibrary::DestroyAgent(AgentCreate.Handle);
     Model->Release();
 
     TArray<uint8> EmptyBytes;
@@ -370,6 +419,16 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         TestTrue(TEXT("copy chunk text result succeeds"), CopyChunk.bSuccess);
         TestEqual(TEXT("copy chunk text bytes"), CopyChunk.Count, ChunkRanges[0].ByteEnd - ChunkRanges[0].ByteBegin);
         TestEqual(TEXT("copy chunk text value"), FirstChunk, FString(TEXT("alpha beta")));
+
+        constexpr int64 ChunkMemoryKey = 31;
+        constexpr int32 ChunkMemoryFlags = 9;
+        FAstralMemoryRecord ChunkRecord;
+        const FAstralOperationResult ChunkRecordResult =
+            UAstralBlueprintLibrary::MakeMemoryRecordFromChunkResult(ChunkRanges[0], ChunkMemoryKey, ChunkMemoryFlags, ChunkRecord);
+        TestTrue(TEXT("chunk memory record succeeds"), ChunkRecordResult.bSuccess);
+        TestEqual(TEXT("chunk memory record key"), ChunkRecord.Key, ChunkMemoryKey);
+        TestEqual(TEXT("chunk memory record chunk"), ChunkRecord.ChunkId, ChunkRanges[0].ChunkId);
+        TestEqual(TEXT("chunk memory record flags"), ChunkRecord.Flags, ChunkMemoryFlags);
     }
 
     constexpr int32 MemoryDim = 2;
@@ -420,6 +479,13 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     const FAstralOperationResult AddMemory = UAstralBlueprintLibrary::AddMemoryBatchResult(MemoryCreate.Handle, Records, Vectors, MemoryDesc.Dimension);
     TestTrue(TEXT("memory add result succeeds"), AddMemory.bSuccess);
     TestEqual(TEXT("memory add count"), AddMemory.Count, Records.Num());
+
+    int32 MemoryRecordCount = 0;
+    const FAstralOperationResult MemoryCountResult =
+        UAstralBlueprintLibrary::GetMemoryRecordCountResult(MemoryCreate.Handle, MemoryRecordCount);
+    TestTrue(TEXT("memory count succeeds"), MemoryCountResult.bSuccess);
+    TestEqual(TEXT("memory count result"), MemoryCountResult.Count, Records.Num());
+    TestEqual(TEXT("memory count out"), MemoryRecordCount, Records.Num());
 
     TArray<float> Query;
     Query.Add(VectorOne);
@@ -500,6 +566,11 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     const FAstralOperationResult RemoveMemory = UAstralBlueprintLibrary::RemoveMemoryRecordResult(LoadMemory.Handle, MemoryKeyA);
     TestTrue(TEXT("memory remove succeeds"), RemoveMemory.bSuccess);
 
+    const FAstralOperationResult RemovedMemoryCount =
+        UAstralBlueprintLibrary::GetMemoryRecordCountResult(LoadMemory.Handle, MemoryRecordCount);
+    TestTrue(TEXT("removed memory count succeeds"), RemovedMemoryCount.bSuccess);
+    TestEqual(TEXT("removed memory count"), MemoryRecordCount, CursorFetchLimit);
+
     TArray<FAstralMemorySearchResult> RemovedMemoryResults;
     const FAstralOperationResult RemovedSearchMemory =
         UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, RemovedMemoryResults);
@@ -511,6 +582,11 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
 
     const FAstralOperationResult ClearMemory = UAstralBlueprintLibrary::ClearMemoryIndexResult(LoadMemory.Handle);
     TestTrue(TEXT("memory clear succeeds"), ClearMemory.bSuccess);
+
+    const FAstralOperationResult ClearedMemoryCount =
+        UAstralBlueprintLibrary::GetMemoryRecordCountResult(LoadMemory.Handle, MemoryRecordCount);
+    TestTrue(TEXT("cleared memory count succeeds"), ClearedMemoryCount.bSuccess);
+    TestEqual(TEXT("cleared memory count"), MemoryRecordCount, EmptySearchCount);
 
     TArray<FAstralMemorySearchResult> ClearedMemoryResults;
     const FAstralOperationResult ClearedSearchMemory =
@@ -564,6 +640,19 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     PromptCacheKey.ModelHandle = PromptCacheModelHandle;
     PromptCacheKey.Key = PromptCacheSystemKey;
     PromptCacheKey.Generation = PromptCacheGeneration;
+
+    FAstralPromptCacheKey DerivedPromptCacheKey;
+    const FAstralOperationResult DerivedPromptKey =
+        UAstralBlueprintLibrary::MakePromptCacheKeyResult(
+            PromptCacheModelHandle,
+            EAstralPromptSectionKind::System,
+            PromptCacheGeneration,
+            TEXT("system section"),
+            DerivedPromptCacheKey
+        );
+    TestTrue(TEXT("derived prompt cache key succeeds"), DerivedPromptKey.bSuccess);
+    TestEqual(TEXT("derived prompt cache key model"), DerivedPromptCacheKey.ModelHandle, PromptCacheModelHandle);
+    TestEqual(TEXT("derived prompt cache key generation"), DerivedPromptCacheKey.Generation, PromptCacheGeneration);
 
     TArray<int32> PromptCacheTokens;
     PromptCacheTokens.Add(PromptCacheTokenA);

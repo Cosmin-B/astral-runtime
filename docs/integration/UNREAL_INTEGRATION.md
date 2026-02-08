@@ -51,9 +51,11 @@ result-returning helpers:
 
 - `UAstralModel::CountTokensResult`, `TokenizeResult`, and `DetokenizeResult`
 - `CreateToolsetResult` and `ParseToolCallResult`
-- `ChunkText`, `CopyChunkTextResult`, and `ChunkTokens`
+- `ChunkText`, `CopyChunkTextResult`, `MakeMemoryRecordFromChunkResult`, and
+  `ChunkTokens`
 - `CreateMemoryIndexResult`, `LoadMemoryIndexResult`,
-  `AddMemoryBatchResult`, `RemoveMemoryRecordResult`,
+  `AddMemoryBatchResult`, `GetMemoryRecordCountResult`,
+  `RemoveMemoryRecordResult`,
   `ClearMemoryIndexResult`, `SaveMemoryIndexResult`,
   `SearchMemoryIndexResult`, `BeginMemorySearchResult`, and
   `FetchMemorySearchResult`
@@ -63,12 +65,13 @@ result-returning helpers:
   `WaitRequestResult`, and `CancelRequestResult`
 - `CreatePromptCacheResult`, `LoadPromptCacheResult`,
   `ClearPromptCacheResult`, `GetPromptCacheStatsResult`,
-  `PutPromptCacheTokensResult`, `GetPromptCacheTokensResult`, and
-  `SavePromptCacheResult`
+  `MakePromptCacheKeyResult`, `PutPromptCacheTokensResult`,
+  `GetPromptCacheTokensResult`, and `SavePromptCacheResult`
 - `CreateAgentResult`, `SetAgentSystemPromptResult`,
-  `AddAgentMessageResult`, `ClearAgentHistoryResult`,
-  `EnqueueAgentChatResult`, `CancelAgentChatResult`, `ReadAgentChatResult`,
-  and `GetAgentChatStatusResult`
+  `GetAgentSystemPromptResult`, `AddAgentMessageResult`,
+  `ClearAgentHistoryResult`, `GetAgentHistoryCountResult`,
+  `EnqueueAgentChatResult`, `CancelAgentChatResult`,
+  `ReadAgentChatResult`, and `GetAgentChatStatusResult`
 
 The older bool helpers remain compatibility wrappers over the same native calls.
 
@@ -76,15 +79,18 @@ Prompt cache helpers are setup-time APIs for tokenized system prompts, tool
 prefixes, memory sections, and history fragments. `FAstralPromptCacheDesc`
 controls entry and token budgets, `FAstralPromptCacheKey` identifies one
 model-scoped section, and `FAstralPromptCacheStats` reports occupancy plus
-optional hit/miss counters. Agents can consume the resulting native cache
-handle through `FAstralAgentDesc::PromptCacheHandle`; Blueprint token arrays are
-copied only when `GetPromptCacheTokensResult` is called. Agent chat status also
-reports prompt-cache reused/new token counts and per-request hit/miss markers.
+optional hit/miss counters. `MakePromptCacheKeyResult` derives the same native
+section key as C++ callers, so Blueprint graphs do not need to invent their own
+hashing. Agents can consume the resulting native cache handle through
+`FAstralAgentDesc::PromptCacheHandle`; Blueprint token arrays are copied only
+when `GetPromptCacheTokensResult` is called. Agent chat status also reports
+prompt-cache reused/new token counts and per-request hit/miss markers.
 
 Memory helpers expose the native flat vector index lifecycle, including
 snapshot save/load for staged RAG data. `SaveMemoryIndexResult` writes an
 engine-owned byte array, `LoadMemoryIndexResult` restores it with the same
-descriptor shape, and remove/clear helpers update the native index without
+descriptor shape, `MakeMemoryRecordFromChunkResult` maps chunk ranges into
+records, and count/remove/clear helpers update the native index without
 rebuilding it from Blueprint arrays.
 
 Request status helpers expose the native `AstralRequestRef` /
