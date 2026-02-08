@@ -527,6 +527,7 @@ bool AAstralSampleActor::LoadGenerationModel()
         return false;
     }
 
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: generation model loaded backend=%s"), *BackendName);
     return true;
 }
 
@@ -587,7 +588,10 @@ void AAstralSampleActor::RunGenerationDemo()
     if (!Session->Decode())
     {
         UE_LOG(LogAstralSample, Error, TEXT("Astral sample: decode failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        return;
     }
+
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: generation decode started"));
 }
 
 void AAstralSampleActor::CancelStreamingDemo()

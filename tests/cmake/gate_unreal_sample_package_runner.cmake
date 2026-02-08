@@ -68,6 +68,8 @@ cat <<'LOG'
 LogPakFile: Display: Mounted IoStore container "../../../AstralSample/Content/Paks/AstralSample-Linux.utoc"
 LogPakFile: Display: Mounted Pak file '../../../AstralSample/Content/Paks/AstralSample-Linux.pak'
 LogAstralSample: Display: Astral sample: backend=cpu memory_backend=mock media_backend=mock model=/tmp/text.gguf embedding_model=/tmp/embed.gguf media_path=/tmp/mmproj.gguf media_path_root=Raw
+LogAstralSample: Display: Astral sample: generation model loaded backend=cpu
+LogAstralSample: Display: Astral sample: generation decode started
 LogAstralSample: Display: Astral sample: canceled stream wait result -4
 LogAstralSample: Display: Astral sample: embedding dimension 1024
 LogAstralSample: Display: Astral sample: media feed demo loaded mock backend with RGBA byte image, texture image, and PCM16 audio
