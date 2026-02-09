@@ -33,8 +33,10 @@ The current provider uses a small text protocol:
 - `GET /health`: returns `200` when the service is ready.
 - `POST /tokenize`: request body is UTF-8 text; response is a comma-separated
   or JSON-like list of integer token ids.
-- `POST /completion`: request body is the prompt text; response body is the
-  generated text.
+- `POST /completion/stream`: request body is the prompt text; response body is
+  generated text delivered as response chunks.
+- `POST /completion`: fallback endpoint for services that do not expose the
+  streaming path.
 - `POST /embeddings`: request body is UTF-8 text; response is a comma-separated
   or JSON-like list of float values.
 
@@ -49,8 +51,10 @@ Callers still own output buffers for tokenization, detokenization, stream reads,
 and embedding collection.
 
 Remote requests are not part of the local decode inner loop optimization model.
-They run at request boundaries and carry network latency. Native sampling sees
-a deterministic token stream produced from the remote response body.
+They carry network latency. The provider receives completion chunks on a
+background HTTP worker and exposes them through the same native session stream
+used by local providers. Native sampling sees a deterministic token stream
+produced from the received bytes.
 
 ## Errors
 

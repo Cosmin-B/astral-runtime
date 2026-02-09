@@ -56,7 +56,7 @@ These areas remain product work or release validation work:
 | Chat templates | Agents assemble bounded native prompts; a maintained template language is not part of the runtime. |
 | Function calling | Native toolsets and result parsing exist; final application dispatch remains in the caller. |
 | RAG / ANN | Exact flat search and bounded graph search exist; full workflow samples and release evidence still need tightening. |
-| Remote server | Native remote transport exists for health, tokenization, completion, auth failure, retry, timeout, and embeddings; TLS, true streaming chunks, and production-service evidence remain open. |
+| Remote server | Native remote transport exists for health, tokenization, streaming completion chunks, auth failure, retry, timeout, and embeddings; TLS-enabled and production-service evidence remain open. |
 | CUDA release path | Build/runtime surface exists; real GPU parity/e2e evidence is required. |
 | Mobile release path | Artifact lanes exist; device/editor validation remains required. |
 | Unreal production path | Plugin and runners exist; UE 5.7 container and UE 5.4+ editor evidence remains required. |
