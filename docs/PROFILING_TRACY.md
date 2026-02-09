@@ -1,6 +1,6 @@
 # Tracy Profiling
 
-Astral can be built with Tracy to capture coarse profiling zones (decode, streaming, scheduling) with low overhead.
+Astral can be built with Tracy to capture coarse profiling zones around native runtime work with low overhead.
 
 ## Setup (submodule)
 
@@ -49,6 +49,11 @@ Defaults are “product-safe”:
 ## What is instrumented (coarse)
 
 This integration intentionally avoids micro/per-token instrumentation for now. You should see zones like:
+- `astral.abi.tokenize`, `astral.abi.tokenize_batch`, `astral.abi.detokenize`
+- `astral.abi.prompt_cache_put_tokens`, `astral.abi.prompt_cache_get_token_view`
+- `astral.abi.chunk_ranges`, `astral.abi.memory_add_batch`, `astral.abi.memory_search`
+- `astral.abi.agent_chat_enqueue`, `astral.abi.agent_chat_stream_read`
+- `astral.abi.embed_enqueue_text`, `astral.abi.embed_collect`
 - `astral.decode_work`, `astral.decode_loop`, `astral.generation_loop`
 - `astral.session_feed`, `astral.stream_read`
 - `astral.submit_work`
