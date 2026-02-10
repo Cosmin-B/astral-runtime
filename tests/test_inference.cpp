@@ -1978,6 +1978,18 @@ TEST(inference_memory_index_flat_mock) {
     err = astral_memory_search_fetch(cursor, cursor_results, kFinalFetchCapacity, &count);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(count, kFinalFetchCount);
+
+    err = astral_request_cancel(&request);
+    ASSERT_EQ(err, ASTRAL_OK);
+    status = AstralRequestStatus{};
+    status.size = sizeof(AstralRequestStatus);
+    err = astral_request_state(&request, &status);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_CANCELED);
+    ASSERT_EQ(status.queue_depth, 0u);
+    err = astral_memory_search_fetch(cursor, cursor_results, kFinalFetchCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_E_CANCELED);
+    ASSERT_EQ(count, 0u);
     astral_memory_search_end(cursor);
 
     search.group_id = kGroupB;
@@ -2266,6 +2278,14 @@ TEST(inference_rag_ingest_chunk_search_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(status.state, ASTRAL_REQUEST_COMPLETED);
     ASSERT_EQ(status.queue_depth, kTopK);
+    err = astral_request_cancel(&request);
+    ASSERT_EQ(err, ASTRAL_OK);
+    status = AstralRequestStatus{};
+    status.size = sizeof(AstralRequestStatus);
+    err = astral_request_state(&request, &status);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_CANCELED);
+    ASSERT_EQ(status.queue_depth, 0u);
     astral_memory_search_end(cursor);
 
     astral_memory_destroy(index);

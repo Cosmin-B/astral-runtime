@@ -49,6 +49,8 @@ callers fetch fixed-size batches without re-running the vector scan. The cursor
 owns its compact native result buffer and must be released with
 `astral_memory_search_end()`. Use `astral_request_from_memory_search()` when an
 engine queue needs to track a cursor through the unified request status API.
+Canceling a memory-search request marks the cursor canceled and clears its
+remaining result depth; it does not release the cursor handle.
 
 ## Metrics
 
