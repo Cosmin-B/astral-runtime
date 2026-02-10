@@ -33,6 +33,7 @@ history themselves.
 - `astral_agent_chat_cancel()`
 - `astral_agent_chat_stream_read()`
 - `astral_agent_chat_result()`
+- `astral_agent_assigned_slot()`
 
 Agents run on the existing model-scoped conversation executor. Configure the
 executor before creating agents for a model. Toolsets and prompt caches can be
@@ -43,6 +44,12 @@ completed output parsing.
 Each agent occupies one executor slot while it exists. Creating more agents than
 the configured slot count returns `ASTRAL_E_NOMEM`; use that as the native
 backpressure signal for shared-model character pools.
+`AstralAgentDesc::slot_affinity` can pin an agent to a stable executor slot.
+Use `ASTRAL_AGENT_SLOT_AUTO` for the normal first-free policy, or pass a
+one-based slot id to reserve a specific backend KV/sequence slot. If that slot
+is already occupied, creation returns `ASTRAL_E_BUSY`; if the requested slot is
+outside the configured executor, creation returns `ASTRAL_E_INVALID`.
+`astral_agent_assigned_slot()` reports the zero-based slot held by the agent.
 
 ## Ownership
 

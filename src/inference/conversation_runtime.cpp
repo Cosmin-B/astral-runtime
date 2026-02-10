@@ -19,6 +19,7 @@ namespace {
 
 constexpr uint32_t kStreamReadBatchCap = 16;
 constexpr size_t kDefaultAllocatorCapacity = 2 * 1024 * 1024;
+constexpr uint32_t kInvalidExecutorSlot = UINT32_MAX;
 
 inline uint64_t get_ticks() {
     return platform::ticks_now();
@@ -287,6 +288,10 @@ ModelExecutor* ensure_executor(Model* model) {
 } // namespace
 
 AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv) {
+    return conv_create_affine(desc, 0, out_conv);
+}
+
+AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity, Conversation** out_conv) {
     if (desc == nullptr || out_conv == nullptr) {
         return ASTRAL_E_INVALID;
     }
@@ -306,6 +311,9 @@ AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv) {
     ModelExecutor* ex = ensure_executor(model);
     if (ex == nullptr) {
         return ASTRAL_E_UNSUPPORTED;
+    }
+    if (slot_affinity != 0 && slot_affinity > ex->max_slots) {
+        return ASTRAL_E_INVALID;
     }
 
     // Acquire allocator backing.
@@ -407,28 +415,36 @@ AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv) {
 
     // Allocate slot by scanning under executor lock (not a hot path).
     lock_flag(model->executor_lock);
-    uint32_t sid = 0xFFFFFFFFu;
-    for (uint32_t i = 0; i < ex->max_slots; ++i) {
-        if (ex->slots[i].load(std::memory_order_relaxed) == nullptr) {
-            ex->slots[i].store(conv, std::memory_order_release);
-            sid = i;
-            break;
+    uint32_t sid = kInvalidExecutorSlot;
+    if (slot_affinity != 0) {
+        const uint32_t preferred = slot_affinity - 1u;
+        if (preferred < ex->max_slots && ex->slots[preferred].load(std::memory_order_relaxed) == nullptr) {
+            ex->slots[preferred].store(conv, std::memory_order_release);
+            sid = preferred;
+        }
+    } else {
+        for (uint32_t i = 0; i < ex->max_slots; ++i) {
+            if (ex->slots[i].load(std::memory_order_relaxed) == nullptr) {
+                ex->slots[i].store(conv, std::memory_order_release);
+                sid = i;
+                break;
+            }
         }
     }
     unlock_flag(model->executor_lock);
 
-    if (sid == 0xFFFFFFFFu) {
+    if (sid == kInvalidExecutorSlot) {
         model_release(model);
         ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         core::runtime_delete(conv);
-        return ASTRAL_E_NOMEM;
+        return slot_affinity == 0 ? ASTRAL_E_NOMEM : ASTRAL_E_BUSY;
     }
     conv->slot_id.store(sid, std::memory_order_release);
 
     const AstralHandle handle = core::register_handle(core::HandleKind::Conversation, conv);
     if (handle == 0) {
         ex->slots[sid].store(nullptr, std::memory_order_release);
-        conv->slot_id.store(0xFFFFFFFFu, std::memory_order_release);
+        conv->slot_id.store(kInvalidExecutorSlot, std::memory_order_release);
         model_release(model);
         ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         core::runtime_delete(conv);

@@ -403,6 +403,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static FAstralOperationResult CreateAgentResult(const FAstralAgentDesc& Desc);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool GetAgentAssignedSlot(int64 AgentHandle, int32& OutSlot, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult GetAgentAssignedSlotResult(int64 AgentHandle, int32& OutSlot);
+
     /** Release a native agent handle. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static void DestroyAgent(int64 AgentHandle);

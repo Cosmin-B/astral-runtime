@@ -6,6 +6,7 @@
 namespace astral::inference {
 
 AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv);
+AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity, Conversation** out_conv);
 void conv_destroy(Conversation* conv);
 
 AstralErr conv_feed(Conversation* conv, AstralSpanU8 prompt_chunk, uint8_t finalize);

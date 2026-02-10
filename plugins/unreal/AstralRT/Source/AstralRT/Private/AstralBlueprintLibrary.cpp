@@ -1883,7 +1883,8 @@ FAstralOperationResult UAstralBlueprintLibrary::CreateAgentResult(const FAstralA
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateAgent);
 
-    if (Desc.ModelHandle == 0 || Desc.MaxTokens < 0 || Desc.TopK < 0 || Desc.MaxMessages < 0 || Desc.MaxPromptBytes < 0)
+    if (Desc.ModelHandle == 0 || Desc.MaxTokens < 0 || Desc.TopK < 0 || Desc.MaxMessages < 0 ||
+        Desc.MaxPromptBytes < 0 || Desc.SlotAffinity < 0)
     {
         return make_operation_result(ASTRAL_E_INVALID);
     }
@@ -1904,6 +1905,7 @@ FAstralOperationResult UAstralBlueprintLibrary::CreateAgentResult(const FAstralA
     Native.max_messages = static_cast<uint32_t>(Desc.MaxMessages);
     Native.max_prompt_bytes = static_cast<uint32_t>(Desc.MaxPromptBytes);
     Native.overflow_policy = static_cast<AstralAgentOverflowPolicy>(Desc.OverflowPolicy);
+    Native.slot_affinity = static_cast<uint32_t>(Desc.SlotAffinity);
 
     AstralHandle Handle = 0;
     const AstralErr Err = astral_agent_create(&Native, &Handle);
@@ -1912,6 +1914,29 @@ FAstralOperationResult UAstralBlueprintLibrary::CreateAgentResult(const FAstralA
         return make_operation_result(Err);
     }
     return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
+}
+
+bool UAstralBlueprintLibrary::GetAgentAssignedSlot(int64 AgentHandle, int32& OutSlot, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetAgentAssignedSlotResult(AgentHandle, OutSlot);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentAssignedSlotResult(int64 AgentHandle, int32& OutSlot)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentAssignedSlot);
+
+    OutSlot = 0;
+    uint32 Slot = 0;
+    const AstralErr Err = astral_agent_assigned_slot(static_cast<AstralHandle>(AgentHandle), &Slot);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutSlot = static_cast<int32>(Slot);
+    return make_operation_result(ASTRAL_OK, AgentHandle, OutSlot);
 }
 
 void UAstralBlueprintLibrary::DestroyAgent(int64 AgentHandle)
