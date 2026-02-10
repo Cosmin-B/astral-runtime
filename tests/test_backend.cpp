@@ -23,6 +23,7 @@
 namespace {
 
 std::atomic<uint64_t> g_new_calls{0};
+constexpr size_t kRemoteStreamChunkBytes = 1;
 
 struct RemoteTestServer {
     httplib::Server server;
@@ -31,6 +32,7 @@ struct RemoteTestServer {
     std::atomic<uint32_t> health_calls{0};
     std::atomic<uint32_t> tokenize_calls{0};
     std::atomic<uint32_t> completion_calls{0};
+    std::atomic<uint32_t> stream_completion_calls{0};
     std::atomic<uint32_t> embedding_calls{0};
     uint32_t health_failures = 0;
     int health_failure_status = 503;
@@ -73,6 +75,21 @@ struct RemoteTestServer {
             }
             completion_calls.fetch_add(1, std::memory_order_relaxed);
             res.set_content(req.body == "hello" ? "remote-ok" : "remote-fallback", "text/plain");
+        });
+        server.Post("/completion/stream", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
+            if (require_auth && req.get_header_value("Authorization") != "Bearer test-key") {
+                res.status = 401;
+                return;
+            }
+            stream_completion_calls.fetch_add(1, std::memory_order_relaxed);
+            const std::string response = req.body == "hello" ? "remote-ok" : "remote-fallback";
+            res.set_chunked_content_provider("text/plain", [response](size_t offset, httplib::DataSink& sink) {
+                if (offset >= response.size()) {
+                    sink.done();
+                    return false;
+                }
+                return sink.write(response.data() + offset, kRemoteStreamChunkBytes);
+            });
         });
         server.Post("/embeddings", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
             if (require_auth && req.get_header_value("Authorization") != "Bearer test-key") {
@@ -612,7 +629,8 @@ TEST(backend_remote_loopback_completion_and_embeddings) {
     const char* expected = "remote-ok";
     ASSERT_EQ(total, static_cast<uint32_t>(std::strlen(expected)));
     ASSERT_EQ(std::memcmp(out, expected, total), 0);
-    ASSERT_EQ(remote.completion_calls.load(std::memory_order_relaxed), 1u);
+    ASSERT_EQ(remote.stream_completion_calls.load(std::memory_order_relaxed), 1u);
+    ASSERT_EQ(remote.completion_calls.load(std::memory_order_relaxed), 0u);
 
     astral_session_destroy(session);
     astral_model_release(model);

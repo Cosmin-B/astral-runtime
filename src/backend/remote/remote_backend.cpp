@@ -3,12 +3,15 @@
 #include "../../utils/trace.hpp"
 
 #include <algorithm>
+#include <condition_variable>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <mutex>
 #include <string>
+#include <thread>
 
 #include <cpp-httplib/httplib.h>
 
@@ -37,14 +40,19 @@ struct RemoteModel {
 };
 
 struct RemoteSession {
-    RemoteModel* model;
+    RemoteModel* model = nullptr;
+    std::mutex stream_mutex;
+    std::condition_variable stream_cv;
+    std::thread stream_thread;
     uint8_t prompt[kRemoteMaxPromptBytes];
     uint8_t output[kRemoteMaxOutputBytes];
     float logits[kRemoteVocabSize];
-    uint32_t prompt_len;
-    uint32_t output_len;
-    uint32_t output_pos;
-    bool fetched;
+    uint32_t prompt_len = 0;
+    uint32_t output_len = 0;
+    uint32_t output_pos = 0;
+    AstralErr stream_err = ASTRAL_OK;
+    bool stream_started = false;
+    bool stream_done = false;
 };
 
 struct RemoteEmbedder {
@@ -212,12 +220,134 @@ static uint32_t parse_float_list(const char* text, uint32_t len, float* out_vec,
     return count;
 }
 
-static uint32_t copy_response_text(const std::string& response, uint8_t* out, uint32_t cap) {
-    const uint32_t n = static_cast<uint32_t>(std::min<std::size_t>(response.size(), cap));
-    if (n != 0) {
-        std::memcpy(out, response.data(), n);
+static uint32_t clamp_size_to_u32(std::size_t value) {
+    return value > std::numeric_limits<uint32_t>::max() ? std::numeric_limits<uint32_t>::max()
+                                                        : static_cast<uint32_t>(value);
+}
+
+static void remote_stream_append(RemoteSession* session, const char* data, uint32_t len) {
+    if (session == nullptr || data == nullptr || len == 0) {
+        return;
     }
-    return n;
+    std::unique_lock<std::mutex> lock(session->stream_mutex);
+    const uint32_t room = kRemoteMaxOutputBytes - session->output_len;
+    const uint32_t n = std::min(len, room);
+    if (n != 0) {
+        std::memcpy(session->output + session->output_len, data, n);
+        session->output_len += n;
+        lock.unlock();
+        session->stream_cv.notify_all();
+    }
+}
+
+static void remote_stream_finish(RemoteSession* session, AstralErr err) {
+    if (session == nullptr) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(session->stream_mutex);
+        session->stream_err = err;
+        session->stream_done = true;
+    }
+    session->stream_cv.notify_all();
+}
+
+struct RemoteStreamReceiver {
+    RemoteSession* session;
+
+    bool operator()(const char* data, size_t len) const {
+        if (len > 0) {
+            remote_stream_append(session, data, clamp_size_to_u32(len));
+        }
+        return true;
+    }
+};
+
+static AstralErr post_remote_stream(RemoteSession* session, const char* body, uint32_t body_len) {
+    ASTRAL_ZONE_N("astral.remote.stream_completion");
+    if (session == nullptr || session->model == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    httplib::Client client(session->model->base_url);
+    client.set_connection_timeout(kRemoteTimeoutSeconds, 0);
+    client.set_read_timeout(kRemoteTimeoutSeconds, 0);
+    client.set_write_timeout(kRemoteTimeoutSeconds, 0);
+
+    const std::string payload(body != nullptr ? body : "", body_len);
+    AstralErr last_err = ASTRAL_E_TIMEOUT;
+    RemoteStreamReceiver receiver{session};
+    for (uint32_t attempt = 0; attempt < kRemoteMaxAttempts; ++attempt) {
+        auto result = client.Post(
+            "/completion/stream",
+            remote_headers(session->model),
+            payload,
+            "text/plain",
+            receiver);
+        if (!result) {
+            last_err = ASTRAL_E_TIMEOUT;
+            continue;
+        }
+        const AstralErr status_err = http_status_to_err(result->status);
+        if (status_err == ASTRAL_OK) {
+            return ASTRAL_OK;
+        }
+        last_err = status_err;
+        if (!http_status_retryable(result->status)) {
+            return last_err;
+        }
+    }
+    return last_err;
+}
+
+static void remote_completion_worker(RemoteSession* session) {
+    AstralErr err = post_remote_stream(
+        session,
+        reinterpret_cast<const char*>(session->prompt),
+        session->prompt_len);
+    if (err == ASTRAL_E_NOT_FOUND || err == ASTRAL_E_UNSUPPORTED) {
+        std::string body;
+        err = post_remote(
+            session->model,
+            "/completion",
+            reinterpret_cast<const char*>(session->prompt),
+            session->prompt_len,
+            &body);
+        if (err == ASTRAL_OK) {
+            remote_stream_append(session, body.data(), clamp_size_to_u32(body.size()));
+        }
+    }
+    remote_stream_finish(session, err);
+}
+
+static AstralErr remote_session_start_stream(RemoteSession* session) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    {
+        std::lock_guard<std::mutex> lock(session->stream_mutex);
+        if (session->stream_started) {
+            return ASTRAL_OK;
+        }
+        session->output_len = 0;
+        session->output_pos = 0;
+        session->stream_err = ASTRAL_OK;
+        session->stream_done = false;
+        session->stream_started = true;
+    }
+    try {
+        session->stream_thread = std::thread(remote_completion_worker, session);
+    } catch (...) {
+        remote_stream_finish(session, ASTRAL_E_NOMEM);
+        return ASTRAL_E_NOMEM;
+    }
+    return ASTRAL_OK;
+}
+
+static void remote_session_join_stream(RemoteSession* session) {
+    if (session != nullptr && session->stream_thread.joinable()) {
+        session->stream_thread.join();
+    }
 }
 
 void* remote_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
@@ -394,14 +524,18 @@ void* remote_session_create(void* model_ctx, const AstralSessionDesc* desc, Astr
         *out_err = ASTRAL_E_NOMEM;
         return nullptr;
     }
-    std::memset(session, 0, sizeof(*session));
+    std::memset(session->prompt, 0, sizeof(session->prompt));
+    std::memset(session->output, 0, sizeof(session->output));
+    std::memset(session->logits, 0, sizeof(session->logits));
     session->model = model;
     *out_err = ASTRAL_OK;
     return session;
 }
 
 void remote_session_destroy(void* session_ctx) {
-    core::runtime_delete(static_cast<RemoteSession*>(session_ctx));
+    RemoteSession* session = static_cast<RemoteSession*>(session_ctx);
+    remote_session_join_stream(session);
+    core::runtime_delete(session);
 }
 
 AstralErr remote_session_reset(void* session_ctx) {
@@ -409,10 +543,13 @@ AstralErr remote_session_reset(void* session_ctx) {
     if (session == nullptr) {
         return ASTRAL_E_INVALID;
     }
+    remote_session_join_stream(session);
     session->prompt_len = 0;
     session->output_len = 0;
     session->output_pos = 0;
-    session->fetched = false;
+    session->stream_err = ASTRAL_OK;
+    session->stream_started = false;
+    session->stream_done = false;
     return ASTRAL_OK;
 }
 
@@ -438,26 +575,27 @@ AstralErr remote_session_logits(void* session_ctx, AstralBackendLogitsView* out_
     if (session == nullptr || out_view == nullptr) {
         return ASTRAL_E_INVALID;
     }
-    if (!session->fetched) {
-        std::string body;
-        const AstralErr err = post_remote(session->model, "/completion",
-                                          reinterpret_cast<const char*>(session->prompt),
-                                          session->prompt_len,
-                                          &body);
-        if (err != ASTRAL_OK) {
-            return err;
+    AstralErr err = remote_session_start_stream(session);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    uint32_t next = kRemoteTokenEos;
+    {
+        std::unique_lock<std::mutex> lock(session->stream_mutex);
+        while (session->output_pos >= session->output_len && !session->stream_done) {
+            session->stream_cv.wait(lock);
         }
-        session->output_len = copy_response_text(body, session->output, sizeof(session->output));
-        session->output_pos = 0;
-        session->fetched = true;
+        if (session->output_pos < session->output_len) {
+            next = static_cast<uint32_t>(session->output[session->output_pos]);
+        } else if (session->stream_err != ASTRAL_OK) {
+            return session->stream_err;
+        }
     }
 
     for (uint32_t i = 0; i < kRemoteVocabSize; ++i) {
         session->logits[i] = kRemoteSuppressedLogit;
     }
-    const uint32_t next = session->output_pos < session->output_len
-        ? static_cast<uint32_t>(session->output[session->output_pos])
-        : static_cast<uint32_t>(kRemoteTokenEos);
     session->logits[next] = kRemoteSelectedLogit;
 
     out_view->logits = session->logits;
@@ -470,8 +608,11 @@ AstralErr remote_session_accept(void* session_ctx, int32_t token) {
     if (session == nullptr) {
         return ASTRAL_E_INVALID;
     }
-    if (token >= 0 && token < 256 && session->output_pos < session->output_len) {
-        ++session->output_pos;
+    if (token >= 0 && token < 256) {
+        std::lock_guard<std::mutex> lock(session->stream_mutex);
+        if (session->output_pos < session->output_len) {
+            ++session->output_pos;
+        }
     }
     return ASTRAL_OK;
 }

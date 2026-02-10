@@ -111,11 +111,12 @@ Notes:
 - Continuous batching requires a backend with slot/batch operations; built-in
   mock and CPU backends implement that surface.
 - Remote runtime support uses `backend_name = "remote"` with a loopback-tested
-  HTTP provider for health, tokenization, completion, auth failure, and
-  embeddings. Transient health retry and timeout status mapping are covered.
+  HTTP provider for health, tokenization, streaming completion chunks, auth
+  failure, and embeddings. Transient health retry and timeout status mapping are
+  covered.
   HTTPS is rejected with `ASTRAL_E_UNSUPPORTED` when the HTTP client is built
-  without TLS support. TLS-enabled builds, streaming chunks, and production
-  service evidence are still required.
+  without TLS support. TLS-enabled builds and production service evidence are
+  still required.
 
 ## Test validation map
 
