@@ -67,7 +67,8 @@ namespace Astral.Runtime
                 tool_choice_mode = (uint)config.toolChoiceMode,
                 max_messages = config.maxMessages,
                 max_prompt_bytes = config.maxPromptBytes,
-                overflow_policy = config.overflowPolicy
+                overflow_policy = config.overflowPolicy,
+                slot_affinity = config.slotAffinity
             };
 
             int err = AstralNative.astral_agent_create(ref desc, out var handle);
@@ -82,6 +83,20 @@ namespace Astral.Runtime
                 m_model = model,
                 m_disposed = false
             };
+        }
+
+        public uint AssignedSlot
+        {
+            get
+            {
+                ThrowIfDisposed();
+                int err = AstralNative.astral_agent_assigned_slot(m_handle, out uint slot);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_agent_assigned_slot failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+                return slot;
+            }
         }
 
         public void SetSystemPrompt(string systemPrompt)
@@ -462,6 +477,7 @@ namespace Astral.Runtime
         public AstralNative.AstralHandle promptCache = AstralNative.AstralHandle.Invalid;
         public AstralNative.AstralHandle memoryIndex = AstralNative.AstralHandle.Invalid;
         public AstralNative.AstralHandle toolset = AstralNative.AstralHandle.Invalid;
+        public uint slotAffinity = 0;
 
         public static AstralAgentConfig Default => new AstralAgentConfig();
     }

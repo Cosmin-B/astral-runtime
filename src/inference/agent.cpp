@@ -687,7 +687,7 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
     if (desc == nullptr || out_agent == nullptr || desc->size != sizeof(AstralAgentDesc) || desc->model == 0) {
         return ASTRAL_E_INVALID;
     }
-    if (!overflow_policy_valid(desc->overflow_policy) || desc->_reserved0 != 0) {
+    if (!overflow_policy_valid(desc->overflow_policy)) {
         return ASTRAL_E_INVALID;
     }
 
@@ -711,19 +711,12 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
     conv_desc.stream_enabled = desc->stream_enabled;
     conv_desc.seed = desc->seed;
 
-    AstralErr err = astral_conv_create(&conv_desc, &agent->conv);
+    AstralErr err = conv_create_affine(&conv_desc, desc->slot_affinity, &agent->conv_ptr);
     if (err != ASTRAL_OK) {
         core::runtime_delete(agent);
         return err;
     }
-    agent->conv_ptr = static_cast<Conversation*>(
-        core::lookup_handle(agent->conv, core::HandleKind::Conversation)
-    );
-    if (agent->conv_ptr == nullptr) {
-        destroy_agent_allocations(agent);
-        core::runtime_delete(agent);
-        return ASTRAL_E_BUSY;
-    }
+    agent->conv = agent->conv_ptr->handle;
     if (desc->toolset != 0) {
         auto* toolset = static_cast<Toolset*>(core::lookup_handle(desc->toolset, core::HandleKind::Toolset));
         if (toolset == nullptr) {
@@ -779,6 +772,14 @@ void agent_destroy(Agent* agent) {
     core::unregister_handle(agent->handle, core::HandleKind::Agent);
     destroy_agent_allocations(agent);
     core::runtime_delete(agent);
+}
+
+AstralErr agent_assigned_slot(Agent* agent, uint32_t* out_slot) {
+    if (agent == nullptr || out_slot == nullptr || agent->conv_ptr == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    *out_slot = agent->conv_ptr->slot_id.load(std::memory_order_acquire);
+    return ASTRAL_OK;
 }
 
 AstralErr agent_set_system_prompt(Agent* agent, AstralSpanU8 system_prompt) {

@@ -1068,7 +1068,7 @@ namespace Astral.Runtime
             public uint max_messages;
             public uint max_prompt_bytes;
             public AstralAgentOverflowPolicy overflow_policy;
-            public uint _reserved0;
+            public uint slot_affinity;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -1375,6 +1375,9 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern void astral_agent_destroy(AstralHandle agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_assigned_slot(AstralHandle agent, out uint out_slot);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_agent_set_system_prompt(AstralHandle agent, AstralSpanU8 system_prompt);

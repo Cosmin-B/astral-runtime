@@ -664,6 +664,9 @@ TEST(inference_agents_share_model_executor_mock) {
     constexpr uint32_t kMaxPromptBytes = kMaxPromptKiB * 1024;
     constexpr uint32_t kAgentASeed = 11;
     constexpr uint32_t kAgentBSeed = 29;
+    constexpr uint32_t kAgentAAffinity = 2;
+    constexpr uint32_t kAgentASlot = kAgentAAffinity - 1;
+    constexpr uint32_t kAgentBSlot = 0;
     constexpr uint32_t kExpectedHistoryMessages = 1;
     constexpr uint32_t kRequestTimeoutMs = 5000;
 
@@ -690,6 +693,7 @@ TEST(inference_agents_share_model_executor_mock) {
 
     AstralAgentDesc desc_a = desc;
     desc_a.seed = kAgentASeed;
+    desc_a.slot_affinity = kAgentAAffinity;
     AstralAgentDesc desc_b = desc;
     desc_b.seed = kAgentBSeed;
 
@@ -697,6 +701,17 @@ TEST(inference_agents_share_model_executor_mock) {
     AstralHandle agent_b = 0;
     ASSERT_EQ(astral_agent_create(&desc_a, &agent_a), ASTRAL_OK);
     ASSERT_EQ(astral_agent_create(&desc_b, &agent_b), ASTRAL_OK);
+
+    uint32_t slot_a = UINT32_MAX;
+    uint32_t slot_b = UINT32_MAX;
+    ASSERT_EQ(astral_agent_assigned_slot(agent_a, &slot_a), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_assigned_slot(agent_b, &slot_b), ASTRAL_OK);
+    ASSERT_EQ(slot_a, kAgentASlot);
+    ASSERT_EQ(slot_b, kAgentBSlot);
+
+    AstralHandle busy_agent = 0;
+    ASSERT_EQ(astral_agent_create(&desc_a, &busy_agent), ASTRAL_E_BUSY);
+    ASSERT_FALSE(astral_handle_valid(busy_agent));
 
     AstralHandle overflow_agent = 0;
     ASSERT_EQ(astral_agent_create(&desc, &overflow_agent), ASTRAL_E_NOMEM);
@@ -778,9 +793,10 @@ TEST(inference_agent_overflow_truncate_mock) {
     constexpr uint32_t kExpectedTruncatedCount = 2;
     constexpr uint32_t kExpectedPromptCount = 1;
     constexpr uint32_t kSaveCapacity = 512;
-    constexpr uint32_t kReservedNonZero = 1;
+    constexpr uint32_t kInvalidSlotAffinity = 2;
+    constexpr uint32_t kOverflowPolicyStep = 1;
     constexpr AstralAgentOverflowPolicy kInvalidOverflowPolicy =
-        static_cast<AstralAgentOverflowPolicy>(ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST + kReservedNonZero);
+        static_cast<AstralAgentOverflowPolicy>(ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST + kOverflowPolicyStep);
     constexpr char kLongHistoryMessage[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     constexpr char kShortUserMessage[] = "go";
     constexpr uint32_t kPromptHeaderReserveBytes = 96;
@@ -811,7 +827,7 @@ TEST(inference_agent_overflow_truncate_mock) {
     ASSERT_EQ(astral_agent_create(&invalid_desc, &invalid_agent), ASTRAL_E_INVALID);
 
     invalid_desc = reject_desc;
-    invalid_desc._reserved0 = kReservedNonZero;
+    invalid_desc.slot_affinity = kInvalidSlotAffinity;
     ASSERT_EQ(astral_agent_create(&invalid_desc, &invalid_agent), ASTRAL_E_INVALID);
 
     invalid_desc = reject_desc;

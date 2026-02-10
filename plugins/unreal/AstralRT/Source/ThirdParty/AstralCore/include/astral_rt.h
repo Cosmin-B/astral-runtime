@@ -1381,6 +1381,10 @@ enum {
     ASTRAL_AGENT_FLAG_NONE = 0,
 };
 
+enum {
+    ASTRAL_AGENT_SLOT_AUTO = 0,
+};
+
 typedef uint32_t AstralAgentChatFlags;
 enum {
     ASTRAL_AGENT_CHAT_FLAG_NONE = 0,
@@ -1411,7 +1415,7 @@ typedef struct AstralAgentDesc {
     uint32_t max_messages;
     uint32_t max_prompt_bytes;
     AstralAgentOverflowPolicy overflow_policy;
-    uint32_t _reserved0;
+    uint32_t slot_affinity; // ASTRAL_AGENT_SLOT_AUTO or one-based executor slot
 } AstralAgentDesc;
 
 typedef struct AstralAgentMessage {
@@ -1953,6 +1957,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stats(AstralHandle conv, AstralConv
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_create(const AstralAgentDesc* desc, AstralHandle* out_agent);
 ASTRAL_API void ASTRAL_CALL astral_agent_destroy(AstralHandle agent);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_assigned_slot(AstralHandle agent, uint32_t* out_slot);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_system_prompt(AstralHandle agent, AstralSpanU8 system_prompt);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt_size(AstralHandle agent, uint32_t* out_bytes);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt(

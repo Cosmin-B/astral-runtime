@@ -816,6 +816,9 @@ struct ASTRALRT_API FAstralAgentDesc
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
     EAstralAgentOverflowPolicy OverflowPolicy = EAstralAgentOverflowPolicy::Reject;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    int32 SlotAffinity = 0;
 };
 
 /** Result from a native agent chat request. */

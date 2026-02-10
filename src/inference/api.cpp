@@ -4054,6 +4054,28 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_agent_create(const AstralAgentDesc* desc
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_assigned_slot(AstralHandle agent, uint32_t* out_slot) {
+    ASTRAL_ABI_TRY_BEGIN
+    ASTRAL_ZONE_N("astral.abi.agent_assigned_slot");
+    if (out_slot == nullptr) {
+        set_err_invalid("out_slot");
+        return ASTRAL_E_INVALID;
+    }
+    auto* a = static_cast<astral::inference::Agent*>(
+        astral::core::lookup_handle(agent, astral::core::HandleKind::Agent)
+    );
+    if (a == nullptr) {
+        set_err_invalid("agent");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_assigned_slot(a, out_slot);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API void ASTRAL_CALL astral_agent_destroy(AstralHandle agent) {
     ASTRAL_ABI_TRY_BEGIN
     if (agent == 0) {
