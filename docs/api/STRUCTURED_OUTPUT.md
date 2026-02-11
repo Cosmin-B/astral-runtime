@@ -22,6 +22,8 @@ completed tool-call payload without requiring engine wrappers to scrape streams.
 - `astral_conv_clear_toolset(conv)` clears the conversation binding.
 - `astral_agent_parse_tool_call(agent, generated_text, out_result)` parses a
   completed payload against the toolset bound at agent creation.
+- `astral_agent_chat_tool_call_result(agent, out_result)` parses the latest
+  drained agent chat stream captured by the native agent.
 
 `AstralToolChoiceMode` is one of:
 
@@ -36,9 +38,14 @@ Tool names, descriptions, and JSON schemas are copied by
 until the toolset is destroyed. Session, conversation, and agent bindings retain
 the toolset, so callers may release their own handle after binding.
 
-`astral_toolset_parse_call()` returns `arguments_json` as a span into the caller
-provided generated text. Keep that text alive until the result has been
-consumed.
+`astral_toolset_parse_call()` and `astral_agent_parse_tool_call()` return
+`arguments_json` as a span into the caller-provided generated text. Keep that
+text alive until the result has been consumed.
+
+`astral_agent_chat_tool_call_result()` returns spans owned by the agent. They
+remain valid until the next chat enqueue or until the agent is destroyed. The
+agent captures bytes as `astral_agent_chat_stream_read()` drains them, so call
+it after the stream has reached end-of-stream.
 
 ## Error Behavior
 
@@ -55,6 +62,10 @@ decode loop does not inspect tool descriptors or parse JSON. The result parser
 is a small single-pass scanner for the `name`/`tool` field and the raw
 `arguments` object span; it does not build a DOM or allocate.
 
+Agent chat capture is enabled only when the agent has a toolset. It reuses a
+bounded native buffer sized from the request token limit and appends drained
+stream bytes outside the decode loop.
+
 ## Unreal And Unity
 
 Unreal exposes Blueprint-safe helpers on `UAstralBlueprintLibrary`:
@@ -63,6 +74,7 @@ Unreal exposes Blueprint-safe helpers on `UAstralBlueprintLibrary`:
 - `DestroyToolset()`
 - `ParseToolCall()`
 - `ParseAgentToolCall()`
+- `GetAgentChatToolCallResult()`
 
 `UAstralSession::SetToolset()` and `UAstralSession::ClearToolset()` bind and
 clear native toolset handles. The wrapper uses Unreal containers for transient
@@ -71,9 +83,10 @@ UTF-8 conversion and passes all core ownership to the native runtime.
 Unity exposes `AstralToolset` as an owned handle over the same native C ABI.
 `AstralToolset.Create()` copies managed tool definitions into native runtime
 memory, `ParseCall()` parses a completed tool-call payload, and
-`AstralAgent.ParseToolCall()` parses against the toolset bound at agent
-creation. `AstralSession.SetToolset()` / `ClearToolset()` bind or clear the
-handle between requests. `AstralSession.SetGrammarGbnf()`,
+`AstralAgent.ParseToolCall()` parses caller-provided text and
+`AstralAgent.GetChatToolCallResult()` reads the native result captured from the
+latest drained chat stream. `AstralSession.SetToolset()` / `ClearToolset()`
+bind or clear the handle between requests. `AstralSession.SetGrammarGbnf()`,
 `SetGrammarJsonSchema()`, and `ClearGrammar()` expose direct grammar binding for
 callers that do not need a toolset. `AstralToolCall.Parsed`, `Missing`, and
 `Malformed` map native parse status to Unity-friendly predicates without

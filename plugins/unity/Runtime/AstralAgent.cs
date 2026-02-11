@@ -285,6 +285,18 @@ namespace Astral.Runtime
             return result;
         }
 
+        public AstralToolCall GetChatToolCallResult()
+        {
+            ThrowIfInvalid();
+            var result = new AstralNative.AstralToolCallResult
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralToolCallResult>()
+            };
+
+            int err = AstralNative.astral_agent_chat_tool_call_result(m_handle, ref result);
+            return ToolCallFromNative(err, "astral_agent_chat_tool_call_result", ref result);
+        }
+
         public AstralToolCall ParseToolCall(string generatedText)
         {
             NativeArray<byte> textArray;
@@ -379,6 +391,11 @@ namespace Astral.Runtime
             };
 
             int err = AstralNative.astral_agent_parse_tool_call(m_handle, generatedText, ref result);
+            return ToolCallFromNative(err, "astral_agent_parse_tool_call", ref result);
+        }
+
+        private static AstralToolCall ToolCallFromNative(int err, string operation, ref AstralNative.AstralToolCallResult result)
+        {
             if (err == AstralNative.ASTRAL_E_NOT_FOUND)
             {
                 return new AstralToolCall
@@ -387,7 +404,7 @@ namespace Astral.Runtime
                     parseStatus = err
                 };
             }
-            ThrowIfError(err, "astral_agent_parse_tool_call");
+            ThrowIfError(err, operation);
 
             return new AstralToolCall
             {

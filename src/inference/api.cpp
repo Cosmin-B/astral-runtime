@@ -4410,6 +4410,25 @@ ASTRAL_API int32_t ASTRAL_CALL astral_agent_chat_stream_read(
     ASTRAL_ABI_CATCH_END_I32(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_tool_call_result(
+    AstralHandle agent,
+    AstralToolCallResult* out_result
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    ASTRAL_ZONE_N("astral.abi.agent_chat_tool_call_result");
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || out_result == nullptr) {
+        set_err_invalid("agent/out_result");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_chat_tool_call_result(a, out_result);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_result(AstralHandle agent, AstralAgentChatResult* out_result) {
     ASTRAL_ABI_TRY_BEGIN
     ASTRAL_ZONE_N("astral.abi.agent_chat_result");

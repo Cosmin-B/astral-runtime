@@ -1410,6 +1410,9 @@ namespace Astral.Runtime
         public static extern int astral_agent_parse_tool_call(AstralHandle agent, AstralSpanU8 generated_text, ref AstralToolCallResult out_result);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_tool_call_result(AstralHandle agent, ref AstralToolCallResult out_result);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_agent_message_add(AstralHandle agent, ref AstralAgentMessage message);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]

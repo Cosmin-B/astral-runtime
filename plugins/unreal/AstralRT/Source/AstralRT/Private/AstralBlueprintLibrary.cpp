@@ -2213,6 +2213,42 @@ FAstralOperationResult UAstralBlueprintLibrary::ParseAgentToolCallResult(
     return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Native.parse_status));
 }
 
+bool UAstralBlueprintLibrary::GetAgentChatToolCallResult(int64 AgentHandle, FAstralToolCallResult& OutResult)
+{
+    return GetAgentChatToolCallResultStatus(AgentHandle, OutResult).bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentChatToolCallResultStatus(
+    int64 AgentHandle,
+    FAstralToolCallResult& OutResult
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentChatToolCallResult);
+
+    OutResult = FAstralToolCallResult{};
+    if (AgentHandle == kInvalidAstralHandle)
+    {
+        OutResult.ParseStatus = static_cast<int32>(ASTRAL_E_INVALID);
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralToolCallResult Native{};
+    Native.size = sizeof(AstralToolCallResult);
+    const AstralErr Err = astral_agent_chat_tool_call_result(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        OutResult.ParseStatus = static_cast<int32>(Err);
+        return make_operation_result(Err);
+    }
+
+    OutResult.bFound = true;
+    OutResult.ParseStatus = Native.parse_status;
+    OutResult.ToolId = static_cast<int32>(Native.tool_id);
+    OutResult.Name = utf8_span_to_string(Native.name);
+    OutResult.ArgumentsJson = utf8_span_to_string(Native.arguments_json);
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Native.parse_status));
+}
+
 bool UAstralBlueprintLibrary::AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode)
 {
     const FAstralOperationResult Result = AddAgentMessageResult(AgentHandle, Role, Text);

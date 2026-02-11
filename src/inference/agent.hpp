@@ -29,6 +29,7 @@ AstralErr agent_history_load(Agent* agent, AstralSpanU8 bytes);
 AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc);
 AstralErr agent_chat_cancel(Agent* agent);
 int32_t agent_chat_stream_read(Agent* agent, AstralMutSpanU8 out_buf, uint32_t timeout_ms);
+AstralErr agent_chat_tool_call_result(Agent* agent, AstralToolCallResult* out_result);
 AstralErr agent_chat_result(Agent* agent, AstralAgentChatResult* out_result);
 
 } // namespace astral::inference

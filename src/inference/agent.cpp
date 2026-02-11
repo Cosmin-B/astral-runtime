@@ -3,10 +3,13 @@
 #include "../core/handles.hpp"
 #include "../core/runtime_alloc.hpp"
 
+#include "../concurrency/spsc_ring.hpp"
+
 #include "conversation_runtime.hpp"
 #include "tooling.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 
 namespace astral::inference {
@@ -31,6 +34,7 @@ constexpr uint8_t kPromptFinalize = 1;
 constexpr uint8_t kPromptAddSpecial = 1;
 constexpr uint8_t kPromptParseSpecial = 0;
 constexpr uint32_t kOneMessage = 1;
+constexpr uint32_t kNoGeneratedCapture = 0;
 constexpr uint64_t kFnvOffsetBasis = 14695981039346656037ull;
 constexpr uint64_t kFnvPrime = 1099511628211ull;
 
@@ -152,6 +156,10 @@ struct Agent {
     uint32_t message_capacity;
     uint8_t* prompt_scratch;
     uint32_t prompt_scratch_capacity;
+    uint8_t* generated_capture;
+    uint32_t generated_capture_len;
+    uint32_t generated_capture_capacity;
+    uint8_t generated_capture_truncated;
     uint32_t max_messages;
     uint32_t max_prompt_bytes;
     uint32_t last_prompt_bytes;
@@ -203,6 +211,10 @@ void destroy_agent_allocations(Agent* agent) {
     agent->memory_context_len = 0;
     free_bytes(agent->prompt_scratch, agent->prompt_scratch_capacity);
     agent->prompt_scratch_capacity = 0;
+    free_bytes(agent->generated_capture, agent->generated_capture_capacity);
+    agent->generated_capture_len = 0;
+    agent->generated_capture_capacity = 0;
+    agent->generated_capture_truncated = 0;
     release_messages(agent);
 }
 
@@ -679,6 +691,53 @@ AstralErr add_message_storage(Agent* agent, AstralAgentRole role, AstralSpanU8 c
     dst.content = copy;
     dst.len = content.len;
     return ASTRAL_OK;
+}
+
+AstralErr prepare_generated_capture(Agent* agent, uint32_t max_tokens) {
+    if (agent == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    agent->generated_capture_len = 0;
+    agent->generated_capture_truncated = 0;
+    if (agent->toolset == nullptr) {
+        return ASTRAL_OK;
+    }
+    if (max_tokens == 0) {
+        free_bytes(agent->generated_capture, agent->generated_capture_capacity);
+        agent->generated_capture_capacity = 0;
+        return ASTRAL_OK;
+    }
+    constexpr uint32_t kCaptureBytesPerToken = concurrency::kStreamTokenUtf8Capacity;
+    if (max_tokens > UINT32_MAX / kCaptureBytesPerToken) {
+        return ASTRAL_E_NOMEM;
+    }
+    const uint32_t required = max_tokens * kCaptureBytesPerToken;
+    if (required <= agent->generated_capture_capacity) {
+        return ASTRAL_OK;
+    }
+    uint8_t* bytes = core::runtime_alloc_array<uint8_t>(required);
+    if (bytes == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+    free_bytes(agent->generated_capture, agent->generated_capture_capacity);
+    agent->generated_capture = bytes;
+    agent->generated_capture_capacity = required;
+    return ASTRAL_OK;
+}
+
+void append_generated_capture(Agent* agent, const uint8_t* bytes, uint32_t len) {
+    if (agent == nullptr || agent->generated_capture == nullptr || bytes == nullptr || len == 0) {
+        return;
+    }
+    const uint32_t remaining = agent->generated_capture_capacity - agent->generated_capture_len;
+    const uint32_t copied = len < remaining ? len : remaining;
+    if (copied != 0) {
+        std::memcpy(agent->generated_capture + agent->generated_capture_len, bytes, copied);
+        agent->generated_capture_len += copied;
+    }
+    if (copied != len) {
+        agent->generated_capture_truncated = 1;
+    }
 }
 
 } // namespace
@@ -1195,6 +1254,12 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
     conv_desc.stream_enabled = agent->desc.stream_enabled;
     conv_desc.seed = agent->desc.seed;
 
+    err = prepare_generated_capture(agent, conv_desc.max_tokens);
+    if (err != ASTRAL_OK) {
+        agent->last_error = err;
+        return err;
+    }
+
     err = conv_reset(agent->conv_ptr, &conv_desc);
     if (err == ASTRAL_OK && agent->desc.prompt_cache != 0) {
         AstralSpanU8 prompt_span{};
@@ -1235,10 +1300,36 @@ int32_t agent_chat_stream_read(Agent* agent, AstralMutSpanU8 out_buf, uint32_t t
         return ASTRAL_E_INVALID;
     }
     const int32_t result = conv_stream_read(agent->conv_ptr, out_buf, timeout_ms);
+    if (result > 0) {
+        append_generated_capture(agent, out_buf.data, static_cast<uint32_t>(result));
+    }
     if (result < 0 && result != ASTRAL_E_TIMEOUT) {
         agent->last_error = static_cast<AstralErr>(result);
     }
     return result;
+}
+
+AstralErr agent_chat_tool_call_result(Agent* agent, AstralToolCallResult* out_result) {
+    if (agent == nullptr || out_result == nullptr || out_result->size != sizeof(AstralToolCallResult)) {
+        return ASTRAL_E_INVALID;
+    }
+    if (agent->toolset == nullptr || agent->generated_capture_len == kNoGeneratedCapture) {
+        return ASTRAL_E_NOT_FOUND;
+    }
+    if (agent->generated_capture_truncated != 0) {
+        out_result->tool_id = 0;
+        out_result->parse_status = ASTRAL_E_INVALID;
+        out_result->name = {};
+        out_result->arguments_json = {};
+        agent->last_error = ASTRAL_E_INVALID;
+        return ASTRAL_E_INVALID;
+    }
+    AstralSpanU8 generated{};
+    generated.data = agent->generated_capture;
+    generated.len = agent->generated_capture_len;
+    const AstralErr err = toolset_parse_call(agent->toolset, generated, out_result);
+    agent->last_error = err;
+    return err;
 }
 
 AstralErr agent_chat_result(Agent* agent, AstralAgentChatResult* out_result) {

@@ -1518,6 +1518,8 @@ TEST(inference_toolset_parse_and_bind_mock) {
     constexpr uint32_t kAgentSeed = 1;
     constexpr char kAgentToolCallJson[] = "{\"name\":\"search\",\"arguments\":{\"query\":\"agent\"}}";
     constexpr char kAgentToolCallArgs[] = "{\"query\":\"agent\"}";
+    constexpr uint32_t kAgentToolCallTokenCount = static_cast<uint32_t>(sizeof(kAgentToolCallJson) - 1u);
+    constexpr char kAgentToolCallPrompt[] = "xxxxxxxxxxxxxxxxxxxxxxxxxxxx";
     constexpr char kPlainText[] = "plain text";
 
     AstralInit cfg = {};
@@ -1527,6 +1529,7 @@ TEST(inference_toolset_parse_and_bind_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     const AstralHandle model = load_mock_model(nullptr);
+    const AstralHandle tool_call_model = load_mock_model("toolcall");
 
     AstralToolDesc tools[kToolCount]{};
     tools[0].size = sizeof(AstralToolDesc);
@@ -1654,6 +1657,7 @@ TEST(inference_toolset_parse_and_bind_mock) {
     ex.max_batch_tokens = kExecutorMaxBatchTokens;
     ex.worker_hint = 0;
     ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
+    ASSERT_EQ(astral_model_executor_configure(tool_call_model, &ex), ASTRAL_OK);
 
     AstralConvDesc conv_desc{};
     conv_desc.size = sizeof(AstralConvDesc);
@@ -1682,10 +1686,10 @@ TEST(inference_toolset_parse_and_bind_mock) {
 
     AstralAgentDesc agent_desc{};
     agent_desc.size = sizeof(AstralAgentDesc);
-    agent_desc.model = model;
+    agent_desc.model = tool_call_model;
     agent_desc.toolset = agent_toolset;
     agent_desc.tool_choice_mode = ASTRAL_TOOL_CHOICE_REQUIRED;
-    agent_desc.max_tokens = kSessionMaxTokens;
+    agent_desc.max_tokens = kAgentToolCallTokenCount;
     agent_desc.temperature = kAgentTemperature;
     agent_desc.top_k = kAgentTopK;
     agent_desc.top_p = kAgentTopP;
@@ -1711,8 +1715,31 @@ TEST(inference_toolset_parse_and_bind_mock) {
     err = astral_agent_parse_tool_call(agent, span_from_cstr(kPlainText), &call);
     ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
 
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_agent_chat_tool_call_result(agent, &call);
+    ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
+
+    AstralAgentChatDesc chat{};
+    chat.size = sizeof(AstralAgentChatDesc);
+    chat.user_message = span_from_cstr(kAgentToolCallPrompt);
+    err = astral_agent_chat_enqueue(agent, &chat);
+    ASSERT_EQ(err, ASTRAL_OK);
+    const std::string generated = read_agent_stream_all(agent);
+    ASSERT_EQ(generated, std::string(kAgentToolCallJson));
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_agent_chat_tool_call_result(agent, &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSearchToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+    const std::string generated_args(reinterpret_cast<const char*>(call.arguments_json.data), call.arguments_json.len);
+    ASSERT_EQ(generated_args, std::string(kAgentToolCallArgs));
+
     astral_agent_destroy(agent);
     astral_session_destroy(session);
+    astral_model_release(tool_call_model);
     astral_model_release(model);
     astral_shutdown();
 }
