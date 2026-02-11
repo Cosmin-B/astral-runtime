@@ -462,6 +462,13 @@ public:
         FAstralToolCallResult& OutResult
     );
 
+    /** Read the parsed tool call captured from the latest drained agent chat stream. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool GetAgentChatToolCallResult(int64 AgentHandle, FAstralToolCallResult& OutResult);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult GetAgentChatToolCallResultStatus(int64 AgentHandle, FAstralToolCallResult& OutResult);
+
     /** Add one native-owned history entry. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode);

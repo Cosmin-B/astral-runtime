@@ -1997,6 +1997,10 @@ ASTRAL_API int32_t ASTRAL_CALL astral_agent_chat_stream_read(
     AstralMutSpanU8 out_buf,
     uint32_t timeout_ms
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_tool_call_result(
+    AstralHandle agent,
+    AstralToolCallResult* out_result
+);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_result(AstralHandle agent, AstralAgentChatResult* out_result);
 
 // ============================================================================

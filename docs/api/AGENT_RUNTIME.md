@@ -32,15 +32,17 @@ history themselves.
 - `astral_agent_chat_enqueue()`
 - `astral_agent_chat_cancel()`
 - `astral_agent_chat_stream_read()`
+- `astral_agent_chat_tool_call_result()`
 - `astral_agent_chat_result()`
 - `astral_agent_assigned_slot()`
 
 Agents run on the existing model-scoped conversation executor. Configure the
 executor before creating agents for a model. Toolsets and prompt caches can be
 bound at creation time and are forwarded to native prompt setup. A bound
-toolset can also be used through `astral_agent_parse_tool_call()` after
-generation, so wrappers do not need to retain a separate toolset handle for
-completed output parsing.
+toolset can also be used through `astral_agent_parse_tool_call()` for
+caller-provided text or `astral_agent_chat_tool_call_result()` for the latest
+drained chat stream, so wrappers do not need to retain a separate toolset
+handle for completed output parsing.
 Each agent occupies one executor slot while it exists. Creating more agents than
 the configured slot count returns `ASTRAL_E_NOMEM`; use that as the native
 backpressure signal for shared-model character pools.
