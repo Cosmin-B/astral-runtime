@@ -446,7 +446,6 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     constexpr int32 SearchTopK = 2;
     constexpr int32 AnyMemoryGroup = -1;
     constexpr int32 CursorFetchLimit = 1;
-    constexpr int32 CursorRemainingAfterFetch = SearchTopK - CursorFetchLimit;
     constexpr int32 EmptySearchCount = 0;
     constexpr int32 EmptyByteCount = 0;
     FAstralMemoryIndexDesc MemoryDesc;
@@ -526,23 +525,26 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("memory cursor wait depth"), WaitSearchStatus.QueueDepth, SearchTopK);
 
     const FAstralOperationResult CancelSearch = UAstralBlueprintLibrary::CancelRequestResult(SearchRequest);
-    TestFalse(TEXT("memory cursor cancel unsupported"), CancelSearch.bSuccess);
-    TestEqual(TEXT("memory cursor cancel code"), CancelSearch.ErrorCode, static_cast<int32>(EAstralError::Unsupported));
+    TestTrue(TEXT("memory cursor cancel succeeds"), CancelSearch.bSuccess);
+
+    FAstralRequestStatus CanceledSearchStatus;
+    const FAstralOperationResult CanceledSearch =
+        UAstralBlueprintLibrary::GetRequestStatusResult(SearchRequest, CanceledSearchStatus);
+    TestTrue(TEXT("memory cursor canceled status succeeds"), CanceledSearch.bSuccess);
+    TestEqual(TEXT("memory cursor canceled state"), CanceledSearchStatus.State, EAstralRequestState::Canceled);
+    TestEqual(TEXT("memory cursor canceled depth"), CanceledSearchStatus.QueueDepth, EmptySearchCount);
 
     TArray<FAstralMemorySearchResult> CursorResults;
     const FAstralOperationResult FetchSearch =
         UAstralBlueprintLibrary::FetchMemorySearchResult(BeginSearch.Handle, CursorFetchLimit, CursorResults);
-    TestTrue(TEXT("memory cursor fetch succeeds"), FetchSearch.bSuccess);
-    TestEqual(TEXT("memory cursor fetch count"), FetchSearch.Count, CursorFetchLimit);
-    if (CursorResults.Num() > 0) {
-        TestEqual(TEXT("memory cursor top key"), CursorResults[0].Key, RecordA.Key);
-    }
+    TestFalse(TEXT("memory cursor fetch canceled"), FetchSearch.bSuccess);
+    TestEqual(TEXT("memory cursor fetch canceled code"), FetchSearch.ErrorCode, static_cast<int32>(EAstralError::Canceled));
 
     FAstralRequestStatus SearchRequestAfterFetch;
     const FAstralOperationResult GetSearchAfterFetch =
         UAstralBlueprintLibrary::GetRequestStatusResult(SearchRequest, SearchRequestAfterFetch);
     TestTrue(TEXT("memory cursor status after fetch succeeds"), GetSearchAfterFetch.bSuccess);
-    TestEqual(TEXT("memory cursor status after fetch depth"), SearchRequestAfterFetch.QueueDepth, CursorRemainingAfterFetch);
+    TestEqual(TEXT("memory cursor status after fetch depth"), SearchRequestAfterFetch.QueueDepth, EmptySearchCount);
     UAstralBlueprintLibrary::EndMemorySearch(BeginSearch.Handle);
 
     TArray<uint8> MemoryBytes;

@@ -77,9 +77,9 @@ Bounded queues report `ASTRAL_E_BUSY` when capacity is exhausted. Polling calls
 use `ASTRAL_E_TIMEOUT` when no data is ready before the requested deadline.
 Canceled operations return `ASTRAL_E_CANCELED` at the wait/result boundary.
 Stale or unknown tickets return `ASTRAL_E_INVALID`.
-Memory search cursors are completed once created; canceling a cursor request
-returns `ASTRAL_E_UNSUPPORTED`, and callers release cursor storage with
-`astral_memory_search_end()`.
+Memory search cursors are completed once created. Canceling a cursor request
+marks it canceled and drops remaining result depth; callers still release cursor
+storage with `astral_memory_search_end()`.
 
 ## Performance
 

@@ -3,6 +3,7 @@
 #include "../core/handles.hpp"
 #include "../core/runtime_alloc.hpp"
 
+#include <atomic>
 #include <cmath>
 #include <cstring>
 
@@ -333,6 +334,7 @@ struct MemorySearchCursor {
   uint32_t capacity;
   uint32_t count;
   uint32_t offset;
+  std::atomic<uint32_t> canceled;
   AstralMemorySearchResult* results;
 };
 
@@ -1355,6 +1357,7 @@ AstralErr memory_search_begin(MemoryIndex* index, const AstralMemorySearchDesc* 
   cursor->capacity = capacity;
   cursor->count = kNoResults;
   cursor->offset = 0;
+  cursor->canceled.store(0, std::memory_order_relaxed);
   cursor->results = core::runtime_alloc_array<AstralMemorySearchResult>(capacity);
   if (capacity != kNoResults && cursor->results == nullptr) {
     destroy_search_cursor(cursor);
@@ -1390,6 +1393,10 @@ AstralErr memory_search_fetch(MemorySearchCursor* cursor, AstralMemorySearchResu
   if (cursor == nullptr || out_count == nullptr || (max_results != 0 && out_results == nullptr)) {
     return ASTRAL_E_INVALID;
   }
+  if (cursor->canceled.load(std::memory_order_acquire) != 0) {
+    *out_count = kNoResults;
+    return ASTRAL_E_CANCELED;
+  }
   if (max_results == 0 || cursor->offset >= cursor->count) {
     *out_count = kNoResults;
     return ASTRAL_OK;
@@ -1401,6 +1408,29 @@ AstralErr memory_search_fetch(MemorySearchCursor* cursor, AstralMemorySearchResu
               sizeof(AstralMemorySearchResult) * to_copy);
   cursor->offset += to_copy;
   *out_count = to_copy;
+  return ASTRAL_OK;
+}
+
+AstralErr memory_search_cancel(MemorySearchCursor* cursor) {
+  if (cursor == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
+  cursor->canceled.store(1, std::memory_order_release);
+  return ASTRAL_OK;
+}
+
+AstralErr memory_search_cursor_status(MemorySearchCursor* cursor, AstralRequestState* out_state,
+                                      uint32_t* out_remaining) {
+  if (cursor == nullptr || out_state == nullptr || out_remaining == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
+  if (cursor->canceled.load(std::memory_order_acquire) != 0) {
+    *out_state = ASTRAL_REQUEST_CANCELED;
+    *out_remaining = kNoResults;
+    return ASTRAL_OK;
+  }
+  *out_state = ASTRAL_REQUEST_COMPLETED;
+  *out_remaining = cursor->offset < cursor->count ? cursor->count - cursor->offset : kNoResults;
   return ASTRAL_OK;
 }
 

@@ -211,13 +211,14 @@ AstralErr request_state_impl(const AstralRequestRef* request, AstralRequestStatu
             out_status->result = ASTRAL_E_INVALID;
             return ASTRAL_E_INVALID;
         }
+        AstralRequestState state = ASTRAL_REQUEST_INVALID;
         uint32_t remaining = 0;
-        const AstralErr err = astral::inference::memory_search_cursor_remaining(cursor, &remaining);
+        const AstralErr err = astral::inference::memory_search_cursor_status(cursor, &state, &remaining);
         if (err != ASTRAL_OK) {
             out_status->result = err;
             return err;
         }
-        out_status->state = ASTRAL_REQUEST_COMPLETED;
+        out_status->state = state;
         out_status->queue_depth = remaining;
         return ASTRAL_OK;
     }
@@ -3188,9 +3189,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_request_cancel(const AstralRequestRef* r
         err = e != nullptr ? astral::inference::embedder_cancel(e, request->ticket) : ASTRAL_E_INVALID;
         break;
     }
-    case ASTRAL_REQUEST_MEMORY_SEARCH:
-        err = lookup_memory_search_cursor(request->owner) != nullptr ? ASTRAL_E_UNSUPPORTED : ASTRAL_E_INVALID;
+    case ASTRAL_REQUEST_MEMORY_SEARCH: {
+        auto* cursor = lookup_memory_search_cursor(request->owner);
+        err = cursor != nullptr ? astral::inference::memory_search_cancel(cursor) : ASTRAL_E_INVALID;
         break;
+    }
     default:
         err = ASTRAL_E_INVALID;
         break;
