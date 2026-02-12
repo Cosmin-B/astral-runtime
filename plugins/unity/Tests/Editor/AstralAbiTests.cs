@@ -87,6 +87,7 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralToolsetDesc>());
             Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralToolInfo>());
             Assert.AreEqual(48, Marshal.SizeOf<AstralNative.AstralToolCallResult>());
+            Assert.AreEqual(64, Marshal.SizeOf<AstralNative.AstralAgentMemoryContextDesc>());
         }
 
         [Test]

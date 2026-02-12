@@ -1088,6 +1088,19 @@ namespace Astral.Runtime
         }
 
         [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentMemoryContextDesc
+        {
+            public uint size;
+            public uint result_count;
+            public uint chunk_count;
+            public uint max_bytes;
+            public AstralSpanU8 document_text;
+            public AstralSpanU8 separator;
+            public IntPtr chunks;
+            public IntPtr results;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
         public struct AstralAgentChatResult
         {
             public uint size;
@@ -1399,6 +1412,11 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_agent_set_memory_context(AstralHandle agent, AstralSpanU8 memory_context);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_set_memory_context_from_results(
+            AstralHandle agent,
+            ref AstralAgentMemoryContextDesc desc);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_agent_get_memory_context_size(AstralHandle agent, out uint out_bytes);

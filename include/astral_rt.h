@@ -1430,6 +1430,17 @@ typedef struct AstralAgentChatDesc {
     AstralSpanU8 user_message;
 } AstralAgentChatDesc;
 
+typedef struct AstralAgentMemoryContextDesc {
+    uint32_t size;
+    uint32_t result_count;
+    uint32_t chunk_count;
+    uint32_t max_bytes;
+    AstralSpanU8 document_text;
+    AstralSpanU8 separator;
+    const AstralChunkRange* chunks;
+    const AstralMemorySearchResult* results;
+} AstralAgentMemoryContextDesc;
+
 typedef struct AstralAgentChatResult {
     uint32_t size;
     AstralSessionState state;
@@ -1452,6 +1463,7 @@ typedef struct AstralAgentChatResult {
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 88, "AstralAgentDesc must be 88 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 24, "AstralAgentMessage must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 24, "AstralAgentChatDesc must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMemoryContextDesc) == 64, "AstralAgentMemoryContextDesc must be 64 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 64-bit");
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 32-bit");
@@ -1459,6 +1471,7 @@ typedef struct AstralAgentChatResult {
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 84, "AstralAgentDesc must be 84 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 16, "AstralAgentMessage must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 16, "AstralAgentChatDesc must be 16 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMemoryContextDesc) == 40, "AstralAgentMemoryContextDesc must be 40 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 64, "AstralAgentChatResult must be 64 bytes on 32-bit");
 #endif
 
@@ -1973,6 +1986,10 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_summary(
     uint32_t* out_len
 );
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_memory_context(AstralHandle agent, AstralSpanU8 memory_context);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_memory_context_from_results(
+    AstralHandle agent,
+    const AstralAgentMemoryContextDesc* desc
+);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_memory_context_size(AstralHandle agent, uint32_t* out_bytes);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_memory_context(
     AstralHandle agent,

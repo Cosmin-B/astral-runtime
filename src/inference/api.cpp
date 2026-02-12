@@ -4210,6 +4210,25 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_memory_context(AstralHandle ag
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_memory_context_from_results(
+    AstralHandle agent,
+    const AstralAgentMemoryContextDesc* desc
+) {
+    ASTRAL_ABI_TRY_BEGIN
+    ASTRAL_ZONE_N("astral.abi.agent_set_memory_context_from_results");
+    auto* a = lookup_agent(agent);
+    if (a == nullptr || desc == nullptr) {
+        set_err_invalid("agent/desc");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::agent_set_memory_context_from_results(a, desc);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_memory_context_size(AstralHandle agent, uint32_t* out_bytes) {
     ASTRAL_ABI_TRY_BEGIN
     auto* a = lookup_agent(agent);

@@ -2120,6 +2120,82 @@ FAstralOperationResult UAstralBlueprintLibrary::SetAgentMemoryContextResult(int6
     return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
 }
 
+bool UAstralBlueprintLibrary::SetAgentMemoryContextFromResults(
+    int64 AgentHandle,
+    const FString& DocumentText,
+    const TArray<FAstralChunkRange>& Chunks,
+    const TArray<FAstralMemorySearchResult>& Results,
+    const FString& Separator,
+    int32 MaxBytes,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result =
+        SetAgentMemoryContextFromResultsStatus(AgentHandle, DocumentText, Chunks, Results, Separator, MaxBytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SetAgentMemoryContextFromResultsStatus(
+    int64 AgentHandle,
+    const FString& DocumentText,
+    const TArray<FAstralChunkRange>& Chunks,
+    const TArray<FAstralMemorySearchResult>& Results,
+    const FString& Separator,
+    int32 MaxBytes
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SetAgentMemoryContextFromResults);
+
+    if (AgentHandle == kInvalidAstralHandle || MaxBytes < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 DocumentUtf8(*DocumentText);
+    FTCHARToUTF8 SeparatorUtf8(*Separator);
+    TArray<AstralChunkRange, TInlineAllocator<kInlineChunkRangeCapacity>> NativeChunks;
+    NativeChunks.Reserve(Chunks.Num());
+    for (const FAstralChunkRange& Chunk : Chunks)
+    {
+        NativeChunks.Add(to_native_chunk_range(Chunk));
+    }
+
+    TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
+    NativeResults.Reserve(Results.Num());
+    for (const FAstralMemorySearchResult& Result : Results)
+    {
+        AstralMemorySearchResult Native{};
+        Native.size = sizeof(AstralMemorySearchResult);
+        Native.group_id = static_cast<uint32_t>(Result.GroupId);
+        Native.key = static_cast<uint64_t>(Result.Key);
+        Native.document_id = static_cast<uint32_t>(Result.DocumentId);
+        Native.chunk_id = static_cast<uint32_t>(Result.ChunkId);
+        Native.score = Result.Score;
+        Native.flags = static_cast<uint32_t>(Result.Flags);
+        NativeResults.Add(Native);
+    }
+
+    AstralAgentMemoryContextDesc Desc{};
+    Desc.size = sizeof(AstralAgentMemoryContextDesc);
+    Desc.result_count = static_cast<uint32_t>(NativeResults.Num());
+    Desc.chunk_count = static_cast<uint32_t>(NativeChunks.Num());
+    Desc.max_bytes = static_cast<uint32_t>(MaxBytes);
+    Desc.document_text.data = reinterpret_cast<const uint8_t*>(DocumentUtf8.Get());
+    Desc.document_text.len = static_cast<uint32_t>(DocumentUtf8.Length());
+    Desc.separator.data = reinterpret_cast<const uint8_t*>(SeparatorUtf8.Get());
+    Desc.separator.len = static_cast<uint32_t>(SeparatorUtf8.Length());
+    Desc.chunks = NativeChunks.GetData();
+    Desc.results = NativeResults.GetData();
+
+    const AstralErr Err = astral_agent_set_memory_context_from_results(static_cast<AstralHandle>(AgentHandle), &Desc);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Desc.result_count));
+}
+
 bool UAstralBlueprintLibrary::GetAgentMemoryContext(int64 AgentHandle, FString& OutMemoryContext, int32& OutErrorCode)
 {
     const FAstralOperationResult Result = GetAgentMemoryContextResult(AgentHandle, OutMemoryContext);

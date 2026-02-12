@@ -1521,6 +1521,11 @@ TEST(inference_toolset_parse_and_bind_mock) {
     constexpr uint32_t kAgentToolCallTokenCount = static_cast<uint32_t>(sizeof(kAgentToolCallJson) - 1u);
     constexpr char kAgentToolCallPrompt[] = "xxxxxxxxxxxxxxxxxxxxxxxxxxxx";
     constexpr char kPlainText[] = "plain text";
+    constexpr char kRagDocument[] = "alpha beta gamma";
+    constexpr char kRagExpectedContext[] = "beta\ngamma";
+    constexpr uint32_t kRagChunkCount = 3;
+    constexpr uint32_t kRagResultCount = 2;
+    constexpr uint32_t kRagContextMaxBytes = 64;
 
     AstralInit cfg = {};
     cfg.reserve_bytes = kRuntimeReserveBytes;
@@ -1736,6 +1741,51 @@ TEST(inference_toolset_parse_and_bind_mock) {
     ASSERT_EQ(call.parse_status, ASTRAL_OK);
     const std::string generated_args(reinterpret_cast<const char*>(call.arguments_json.data), call.arguments_json.len);
     ASSERT_EQ(generated_args, std::string(kAgentToolCallArgs));
+
+    AstralChunkRange rag_chunks[kRagChunkCount]{};
+    for (uint32_t i = 0; i < kRagChunkCount; ++i) {
+        rag_chunks[i].size = sizeof(AstralChunkRange);
+        rag_chunks[i].chunk_id = i;
+    }
+    rag_chunks[0].byte_begin = 0;
+    rag_chunks[0].byte_end = 5;
+    rag_chunks[1].byte_begin = 6;
+    rag_chunks[1].byte_end = 10;
+    rag_chunks[2].byte_begin = 11;
+    rag_chunks[2].byte_end = 16;
+
+    AstralMemorySearchResult rag_results[kRagResultCount]{};
+    rag_results[0].size = sizeof(AstralMemorySearchResult);
+    rag_results[0].chunk_id = 1;
+    rag_results[1].size = sizeof(AstralMemorySearchResult);
+    rag_results[1].chunk_id = 2;
+
+    AstralAgentMemoryContextDesc memory_desc{};
+    memory_desc.size = sizeof(AstralAgentMemoryContextDesc);
+    memory_desc.document_text = span_from_cstr(kRagDocument);
+    memory_desc.separator = span_from_cstr("\n");
+    memory_desc.chunks = rag_chunks;
+    memory_desc.chunk_count = kRagChunkCount;
+    memory_desc.results = rag_results;
+    memory_desc.result_count = kRagResultCount;
+    memory_desc.max_bytes = kRagContextMaxBytes;
+    err = astral_agent_set_memory_context_from_results(agent, &memory_desc);
+    ASSERT_EQ(err, ASTRAL_OK);
+    uint32_t context_bytes = 0;
+    err = astral_agent_get_memory_context_size(agent, &context_bytes);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(context_bytes, static_cast<uint32_t>(sizeof(kRagExpectedContext) - 1u));
+    uint8_t context_buf[kRagContextMaxBytes]{};
+    AstralMutSpanU8 context_out{};
+    context_out.data = context_buf;
+    context_out.len = sizeof(context_buf);
+    uint32_t context_written = 0;
+    err = astral_agent_get_memory_context(agent, context_out, &context_written);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(
+        std::string(reinterpret_cast<const char*>(context_buf), context_written),
+        std::string(kRagExpectedContext)
+    );
 
     astral_agent_destroy(agent);
     astral_session_destroy(session);

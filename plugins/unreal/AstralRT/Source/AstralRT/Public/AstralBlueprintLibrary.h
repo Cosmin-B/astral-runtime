@@ -444,6 +444,28 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static FAstralOperationResult SetAgentMemoryContextResult(int64 AgentHandle, const FString& MemoryContext);
 
+    /** Build native-owned retrieved context from chunk ranges and memory search results. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static bool SetAgentMemoryContextFromResults(
+        int64 AgentHandle,
+        const FString& DocumentText,
+        const TArray<FAstralChunkRange>& Chunks,
+        const TArray<FAstralMemorySearchResult>& Results,
+        const FString& Separator,
+        int32 MaxBytes,
+        int32& OutErrorCode
+    );
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
+    static FAstralOperationResult SetAgentMemoryContextFromResultsStatus(
+        int64 AgentHandle,
+        const FString& DocumentText,
+        const TArray<FAstralChunkRange>& Chunks,
+        const TArray<FAstralMemorySearchResult>& Results,
+        const FString& Separator,
+        int32 MaxBytes
+    );
+
     /** Copy the native-owned retrieved context into an engine string. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Agent")
     static bool GetAgentMemoryContext(int64 AgentHandle, FString& OutMemoryContext, int32& OutErrorCode);

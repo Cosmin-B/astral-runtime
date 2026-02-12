@@ -153,6 +153,8 @@ store only stable metadata in native records:
 5. Search returns keys, scores, document id, chunk id, and group id. Use the
    returned chunk id to fetch text with `astral_chunk_text_copy()` or with your
    own document store.
+6. For agents, `astral_agent_set_memory_context_from_results()` can copy the
+   selected chunk byte ranges into native agent memory in search-result order.
 
 Native tests cover that path in `inference_rag_ingest_chunk_search_mock`.
 

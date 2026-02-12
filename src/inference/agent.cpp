@@ -680,6 +680,76 @@ AstralErr replace_memory_context(Agent* agent, AstralSpanU8 memory_context) {
     return ASTRAL_OK;
 }
 
+AstralErr replace_memory_context_from_results(Agent* agent, const AstralAgentMemoryContextDesc* desc) {
+    if (agent == nullptr || desc == nullptr || desc->size != sizeof(AstralAgentMemoryContextDesc) ||
+        !span_valid(desc->document_text) || !span_valid(desc->separator)) {
+        return ASTRAL_E_INVALID;
+    }
+    if ((desc->result_count != 0 && desc->results == nullptr) || (desc->chunk_count != 0 && desc->chunks == nullptr)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    const uint32_t max_bytes = desc->max_bytes != 0 ? desc->max_bytes : agent->max_prompt_bytes;
+    uint32_t bytes = 0;
+    uint32_t selected = 0;
+    for (uint32_t i = 0; i < desc->result_count; ++i) {
+        const AstralMemorySearchResult& result = desc->results[i];
+        if (result.size != sizeof(AstralMemorySearchResult) || result.chunk_id >= desc->chunk_count) {
+            return ASTRAL_E_INVALID;
+        }
+        const AstralChunkRange& range = desc->chunks[result.chunk_id];
+        if (range.size != sizeof(AstralChunkRange) || range.byte_begin > range.byte_end ||
+            range.byte_end > desc->document_text.len) {
+            return ASTRAL_E_INVALID;
+        }
+        const uint32_t chunk_bytes = range.byte_end - range.byte_begin;
+        if (chunk_bytes == 0) {
+            continue;
+        }
+        const uint32_t separator_bytes = selected != 0 ? desc->separator.len : 0;
+        if (separator_bytes > max_bytes || chunk_bytes > max_bytes ||
+            bytes > max_bytes - separator_bytes || bytes + separator_bytes > max_bytes - chunk_bytes) {
+            return ASTRAL_E_NOMEM;
+        }
+        bytes += separator_bytes + chunk_bytes;
+        ++selected;
+    }
+
+    if (bytes == 0) {
+        free_bytes(agent->memory_context, agent->memory_context_len);
+        agent->memory_context_len = 0;
+        return ASTRAL_OK;
+    }
+
+    uint8_t* copy = core::runtime_alloc_array<uint8_t>(bytes);
+    if (copy == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    uint8_t* cursor = copy;
+    selected = 0;
+    for (uint32_t i = 0; i < desc->result_count; ++i) {
+        const AstralMemorySearchResult& result = desc->results[i];
+        const AstralChunkRange& range = desc->chunks[result.chunk_id];
+        const uint32_t chunk_bytes = range.byte_end - range.byte_begin;
+        if (chunk_bytes == 0) {
+            continue;
+        }
+        if (selected != 0 && desc->separator.len != 0) {
+            std::memcpy(cursor, desc->separator.data, desc->separator.len);
+            cursor += desc->separator.len;
+        }
+        std::memcpy(cursor, desc->document_text.data + range.byte_begin, chunk_bytes);
+        cursor += chunk_bytes;
+        ++selected;
+    }
+
+    free_bytes(agent->memory_context, agent->memory_context_len);
+    agent->memory_context = copy;
+    agent->memory_context_len = bytes;
+    return ASTRAL_OK;
+}
+
 AstralErr add_message_storage(Agent* agent, AstralAgentRole role, AstralSpanU8 content) {
     if (agent == nullptr || !role_valid(role) || !span_valid(content)) {
         return ASTRAL_E_INVALID;
@@ -942,6 +1012,21 @@ AstralErr agent_set_memory_context(Agent* agent, AstralSpanU8 memory_context) {
         return ASTRAL_E_STATE;
     }
     return replace_memory_context(agent, memory_context);
+}
+
+AstralErr agent_set_memory_context_from_results(Agent* agent, const AstralAgentMemoryContextDesc* desc) {
+    if (agent == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    AstralSessionState state = ASTRAL_SESSION_FAILED;
+    const AstralErr state_err = conv_state(agent->conv_ptr, &state);
+    if (state_err != ASTRAL_OK) {
+        return state_err;
+    }
+    if (state == ASTRAL_SESSION_DECODING) {
+        return ASTRAL_E_STATE;
+    }
+    return replace_memory_context_from_results(agent, desc);
 }
 
 AstralErr agent_get_memory_context_size(Agent* agent, uint32_t* out_bytes) {
