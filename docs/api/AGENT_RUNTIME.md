@@ -20,6 +20,7 @@ history themselves.
 - `astral_agent_get_summary_size()`
 - `astral_agent_get_summary()`
 - `astral_agent_set_memory_context()`
+- `astral_agent_set_memory_context_from_results()`
 - `astral_agent_get_memory_context_size()`
 - `astral_agent_get_memory_context()`
 - `astral_agent_parse_tool_call()`
@@ -60,6 +61,10 @@ history content into native storage. Input spans only need to remain valid for
 the duration of the call. Chat enqueue assembles one bounded prompt buffer in
 this order: system prompt, summary, memory context, history, current user turn,
 assistant prefix. The temporary buffer is released before the call returns.
+`astral_agent_set_memory_context_from_results()` builds that memory context
+from document bytes, chunk ranges, and memory search results in result order.
+It copies only the selected byte ranges into the agent and inserts the caller's
+separator between non-empty chunks.
 When `AstralAgentDesc::prompt_cache` is set, the agent looks up the assembled
 prompt in the native prompt cache during request setup. Exact hits feed cached
 token spans directly into the conversation prompt buffer. Misses also cache the

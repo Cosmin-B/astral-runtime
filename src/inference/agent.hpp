@@ -17,6 +17,7 @@ AstralErr agent_set_summary(Agent* agent, AstralSpanU8 summary);
 AstralErr agent_get_summary_size(Agent* agent, uint32_t* out_bytes);
 AstralErr agent_get_summary(Agent* agent, AstralMutSpanU8 out_text, uint32_t* out_len);
 AstralErr agent_set_memory_context(Agent* agent, AstralSpanU8 memory_context);
+AstralErr agent_set_memory_context_from_results(Agent* agent, const AstralAgentMemoryContextDesc* desc);
 AstralErr agent_get_memory_context_size(Agent* agent, uint32_t* out_bytes);
 AstralErr agent_get_memory_context(Agent* agent, AstralMutSpanU8 out_text, uint32_t* out_len);
 AstralErr agent_parse_tool_call(Agent* agent, AstralSpanU8 generated_text, AstralToolCallResult* out_result);
