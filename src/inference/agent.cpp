@@ -48,8 +48,14 @@ constexpr char kLineBreak[] = "\n";
 
 struct AgentMessageStorage {
     AstralAgentRole role;
-    uint8_t* content;
+    uint32_t offset;
     uint32_t len;
+};
+
+struct AgentHistoryArena {
+    uint8_t* bytes;
+    uint32_t len;
+    uint32_t capacity;
 };
 
 struct AgentPromptWorkspace {
@@ -155,12 +161,6 @@ void free_bytes(uint8_t*& bytes, uint32_t len) {
     }
 }
 
-void clear_message(AgentMessageStorage& message) {
-    free_bytes(message.content, message.len);
-    message.role = ASTRAL_AGENT_ROLE_USER;
-    message.len = 0;
-}
-
 } // namespace
 
 struct Agent {
@@ -176,6 +176,7 @@ struct Agent {
     uint8_t* memory_context;
     uint32_t memory_context_len;
     AgentMessageStorage* messages;
+    AgentHistoryArena history;
     uint32_t message_count;
     uint32_t message_capacity;
     AgentChatRuntime chat;
@@ -189,17 +190,22 @@ AstralHandle agent_handle(Agent* agent) {
 
 namespace {
 
-void release_messages(Agent* agent) {
+void release_history(Agent* agent) {
     if (agent == nullptr || agent->messages == nullptr) {
+        if (agent != nullptr) {
+            free_bytes(agent->history.bytes, agent->history.capacity);
+            agent->history.len = 0;
+            agent->history.capacity = 0;
+        }
         return;
-    }
-    for (uint32_t i = 0; i < agent->message_count; ++i) {
-        clear_message(agent->messages[i]);
     }
     core::runtime_free_array(agent->messages, agent->message_capacity);
     agent->messages = nullptr;
     agent->message_count = 0;
     agent->message_capacity = 0;
+    free_bytes(agent->history.bytes, agent->history.capacity);
+    agent->history.len = 0;
+    agent->history.capacity = 0;
 }
 
 void destroy_agent_allocations(Agent* agent) {
@@ -227,7 +233,7 @@ void destroy_agent_allocations(Agent* agent) {
     agent->chat.generated.len = 0;
     agent->chat.generated.capacity = 0;
     agent->chat.generated.truncated = 0;
-    release_messages(agent);
+    release_history(agent);
 }
 
 AstralErr ensure_message_capacity(Agent* agent, uint32_t required) {
@@ -264,14 +270,56 @@ AstralErr ensure_message_capacity(Agent* agent, uint32_t required) {
     return ASTRAL_OK;
 }
 
+AstralErr ensure_history_arena_capacity(Agent* agent, uint32_t required) {
+    if (agent == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (required <= agent->history.capacity) {
+        return ASTRAL_OK;
+    }
+
+    uint32_t next_capacity = agent->history.capacity != 0 ? agent->history.capacity : required;
+    while (next_capacity < required) {
+        const uint32_t grown = next_capacity * kCapacityGrowthFactor;
+        if (grown <= next_capacity) {
+            next_capacity = required;
+            break;
+        }
+        next_capacity = grown;
+    }
+
+    uint8_t* next = core::runtime_alloc_array<uint8_t>(next_capacity);
+    if (next == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+    if (agent->history.len != 0) {
+        std::memcpy(next, agent->history.bytes, agent->history.len);
+    }
+    free_bytes(agent->history.bytes, agent->history.capacity);
+    agent->history.bytes = next;
+    agent->history.capacity = next_capacity;
+    return ASTRAL_OK;
+}
+
+const uint8_t* message_content(const Agent* agent, const AgentMessageStorage& message) {
+    return message.len != 0 ? agent->history.bytes + message.offset : nullptr;
+}
+
 void remove_oldest_message(Agent* agent) {
     if (agent->message_count == 0) {
         return;
     }
-    clear_message(agent->messages[0]);
+    const uint32_t removed_begin = agent->messages[0].offset;
+    const uint32_t removed_end = removed_begin + agent->messages[0].len;
+    const uint32_t tail_bytes = agent->history.len - removed_end;
+    if (tail_bytes != 0) {
+        std::memmove(agent->history.bytes, agent->history.bytes + removed_end, tail_bytes);
+    }
+    agent->history.len -= removed_end;
     const uint32_t remaining = agent->message_count - kOneMessage;
     for (uint32_t i = 0; i < remaining; ++i) {
         agent->messages[i] = agent->messages[i + kOneMessage];
+        agent->messages[i].offset -= removed_end;
     }
     agent->message_count = remaining;
     if (agent->message_capacity != 0) {
@@ -448,16 +496,17 @@ AstralErr build_prompt(
         }
     }
     for (uint32_t i = 0; i < agent->message_count; ++i) {
+        const uint8_t* content = message_content(agent, agent->messages[i]);
         if (hash_enabled) {
             append_role_line_hashed(
                 cursor,
                 agent->messages[i].role,
-                agent->messages[i].content,
+                content,
                 agent->messages[i].len,
                 &hash
             );
         } else {
-            append_role_line(cursor, agent->messages[i].role, agent->messages[i].content, agent->messages[i].len);
+            append_role_line(cursor, agent->messages[i].role, content, agent->messages[i].len);
         }
     }
     if (out_prefix_len != nullptr) {
@@ -764,13 +813,21 @@ AstralErr add_message_storage(Agent* agent, AstralAgentRole role, AstralSpanU8 c
     if (cap_err != ASTRAL_OK) {
         return cap_err;
     }
-    uint8_t* copy = copy_span(content);
-    if (content.len != 0 && copy == nullptr) {
+    if (content.len > UINT32_MAX - agent->history.len) {
         return ASTRAL_E_NOMEM;
+    }
+    const uint32_t offset = agent->history.len;
+    const AstralErr arena_err = ensure_history_arena_capacity(agent, offset + content.len);
+    if (arena_err != ASTRAL_OK) {
+        return arena_err;
+    }
+    if (content.len != 0) {
+        std::memcpy(agent->history.bytes + offset, content.data, content.len);
+        agent->history.len += content.len;
     }
     AgentMessageStorage& dst = agent->messages[agent->message_count++];
     dst.role = role;
-    dst.content = copy;
+    dst.offset = offset;
     dst.len = content.len;
     return ASTRAL_OK;
 }
@@ -1075,10 +1132,8 @@ AstralErr agent_history_clear(Agent* agent) {
     if (agent == nullptr) {
         return ASTRAL_E_INVALID;
     }
-    for (uint32_t i = 0; i < agent->message_count; ++i) {
-        clear_message(agent->messages[i]);
-    }
     agent->message_count = 0;
+    agent->history.len = 0;
     return ASTRAL_OK;
 }
 
@@ -1135,7 +1190,7 @@ AstralErr agent_history_save(Agent* agent, AstralMutSpanU8 out_bytes, uint32_t* 
         record.role = agent->messages[i].role;
         record.len = agent->messages[i].len;
         append_bytes(cursor, &record, sizeof(record));
-        append_bytes(cursor, agent->messages[i].content, agent->messages[i].len);
+        append_bytes(cursor, message_content(agent, agent->messages[i]), agent->messages[i].len);
     }
     return ASTRAL_OK;
 }
@@ -1222,80 +1277,89 @@ AstralErr agent_history_load(Agent* agent, AstralSpanU8 bytes) {
     memory_context.len = memory_context_len;
     cursor += memory_context_len;
 
-    AgentMessageStorage* loaded = nullptr;
-    uint32_t loaded_capacity = 0;
-    if (message_count != 0) {
-        loaded = core::runtime_alloc_array<AgentMessageStorage>(message_count);
-        if (loaded == nullptr) {
-            return ASTRAL_E_NOMEM;
+    const uint8_t* records_begin = cursor;
+    uint32_t history_bytes = 0;
+    for (uint32_t i = 0; i < message_count; ++i) {
+        if (static_cast<size_t>(end - cursor) < sizeof(AgentSaveRecord)) {
+            return ASTRAL_E_INVALID;
         }
-        std::memset(loaded, 0, sizeof(AgentMessageStorage) * message_count);
-        loaded_capacity = message_count;
+        AgentSaveRecord record{};
+        std::memcpy(&record, cursor, sizeof(record));
+        cursor += sizeof(record);
+        if (!role_valid(record.role) || static_cast<size_t>(end - cursor) < record.len ||
+            record.len > UINT32_MAX - history_bytes) {
+            return ASTRAL_E_INVALID;
+        }
+        cursor += record.len;
+        history_bytes += record.len;
+    }
+    if (cursor != end) {
+        return ASTRAL_E_INVALID;
     }
 
     uint8_t* system_copy = copy_span(system);
     if (system.len != 0 && system_copy == nullptr) {
-        core::runtime_free_array(loaded, loaded_capacity);
         return ASTRAL_E_NOMEM;
     }
     uint8_t* summary_copy = copy_span(summary);
     if (summary.len != 0 && summary_copy == nullptr) {
         free_bytes(system_copy, system.len);
-        core::runtime_free_array(loaded, loaded_capacity);
         return ASTRAL_E_NOMEM;
     }
     uint8_t* memory_context_copy = copy_span(memory_context);
     if (memory_context.len != 0 && memory_context_copy == nullptr) {
         free_bytes(system_copy, system.len);
         free_bytes(summary_copy, summary.len);
-        core::runtime_free_array(loaded, loaded_capacity);
         return ASTRAL_E_NOMEM;
     }
 
-    for (uint32_t i = 0; i < message_count; ++i) {
-        if (static_cast<size_t>(end - cursor) < sizeof(AgentSaveRecord)) {
+    AgentMessageStorage* loaded = nullptr;
+    uint32_t loaded_capacity = 0;
+    if (message_count != 0) {
+        loaded = core::runtime_alloc_array<AgentMessageStorage>(message_count);
+        if (loaded == nullptr) {
             free_bytes(system_copy, system.len);
             free_bytes(summary_copy, summary.len);
             free_bytes(memory_context_copy, memory_context.len);
-            core::runtime_free_array(loaded, loaded_capacity);
-            return ASTRAL_E_INVALID;
+            return ASTRAL_E_NOMEM;
         }
-        AgentSaveRecord record{};
-        std::memcpy(&record, cursor, sizeof(record));
-        cursor += sizeof(record);
-        if (!role_valid(record.role) || static_cast<size_t>(end - cursor) < record.len) {
+        std::memset(loaded, 0, sizeof(AgentMessageStorage) * message_count);
+        loaded_capacity = message_count;
+    }
+
+    uint8_t* loaded_history = nullptr;
+    if (history_bytes != 0) {
+        loaded_history = core::runtime_alloc_array<uint8_t>(history_bytes);
+        if (loaded_history == nullptr) {
             free_bytes(system_copy, system.len);
             free_bytes(summary_copy, summary.len);
             free_bytes(memory_context_copy, memory_context.len);
-            for (uint32_t j = 0; j < i; ++j) {
-                clear_message(loaded[j]);
-            }
-            core::runtime_free_array(loaded, loaded_capacity);
-            return ASTRAL_E_INVALID;
-        }
-        AstralSpanU8 content{};
-        content.data = cursor;
-        content.len = record.len;
-        cursor += record.len;
-        loaded[i].content = copy_span(content);
-        if (record.len != 0 && loaded[i].content == nullptr) {
-            free_bytes(system_copy, system.len);
-            free_bytes(summary_copy, summary.len);
-            free_bytes(memory_context_copy, memory_context.len);
-            for (uint32_t j = 0; j <= i; ++j) {
-                clear_message(loaded[j]);
-            }
             core::runtime_free_array(loaded, loaded_capacity);
             return ASTRAL_E_NOMEM;
         }
+    }
+
+    cursor = records_begin;
+    uint32_t history_offset = 0;
+    for (uint32_t i = 0; i < message_count; ++i) {
+        AgentSaveRecord record{};
+        std::memcpy(&record, cursor, sizeof(record));
+        cursor += sizeof(record);
+        const uint8_t* content = cursor;
+        cursor += record.len;
+        if (record.len != 0) {
+            std::memcpy(loaded_history + history_offset, content, record.len);
+        }
         loaded[i].role = record.role;
+        loaded[i].offset = history_offset;
         loaded[i].len = record.len;
+        history_offset += record.len;
     }
 
     free_bytes(agent->system_prompt, agent->system_prompt_len);
     free_bytes(agent->summary, agent->summary_len);
     free_bytes(agent->memory_context, agent->memory_context_len);
-    release_messages(agent);
+    release_history(agent);
     agent->system_prompt = system_copy;
     agent->system_prompt_len = system.len;
     agent->summary = summary_copy;
@@ -1303,6 +1367,9 @@ AstralErr agent_history_load(Agent* agent, AstralSpanU8 bytes) {
     agent->memory_context = memory_context_copy;
     agent->memory_context_len = memory_context.len;
     agent->messages = loaded;
+    agent->history.bytes = loaded_history;
+    agent->history.len = history_bytes;
+    agent->history.capacity = history_bytes;
     agent->message_capacity = loaded_capacity;
     agent->message_count = message_count;
     return ASTRAL_OK;
