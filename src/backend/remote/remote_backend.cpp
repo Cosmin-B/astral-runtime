@@ -50,6 +50,7 @@ struct RemoteSession {
     uint32_t prompt_len = 0;
     uint32_t output_len = 0;
     uint32_t output_pos = 0;
+    uint32_t last_batch_outputs = 0;
     AstralErr stream_err = ASTRAL_OK;
     bool stream_started = false;
     bool stream_done = false;
@@ -547,10 +548,30 @@ AstralErr remote_session_reset(void* session_ctx) {
     session->prompt_len = 0;
     session->output_len = 0;
     session->output_pos = 0;
+    session->last_batch_outputs = 0;
     session->stream_err = ASTRAL_OK;
     session->stream_started = false;
     session->stream_done = false;
     return ASTRAL_OK;
+}
+
+AstralErr remote_session_push_prompt_token(RemoteSession* session, int32_t token) {
+    if (token >= 0 && token < 256) {
+        if (session->prompt_len >= sizeof(session->prompt)) {
+            return ASTRAL_E_NOMEM;
+        }
+        session->prompt[session->prompt_len++] = static_cast<uint8_t>(token);
+    }
+    return ASTRAL_OK;
+}
+
+void remote_session_accept_token(RemoteSession* session, int32_t token) {
+    if (token >= 0 && token < 256) {
+        std::lock_guard<std::mutex> lock(session->stream_mutex);
+        if (session->output_pos < session->output_len) {
+            ++session->output_pos;
+        }
+    }
 }
 
 AstralErr remote_session_feed(void* session_ctx, const int32_t* tokens, uint32_t count) {
@@ -559,12 +580,9 @@ AstralErr remote_session_feed(void* session_ctx, const int32_t* tokens, uint32_t
         return ASTRAL_E_INVALID;
     }
     for (uint32_t i = 0; i < count; ++i) {
-        const int32_t token = tokens[i];
-        if (token >= 0 && token < 256) {
-            if (session->prompt_len >= sizeof(session->prompt)) {
-                return ASTRAL_E_NOMEM;
-            }
-            session->prompt[session->prompt_len++] = static_cast<uint8_t>(token);
+        const AstralErr err = remote_session_push_prompt_token(session, tokens[i]);
+        if (err != ASTRAL_OK) {
+            return err;
         }
     }
     return ASTRAL_OK;
@@ -608,13 +626,66 @@ AstralErr remote_session_accept(void* session_ctx, int32_t token) {
     if (session == nullptr) {
         return ASTRAL_E_INVALID;
     }
-    if (token >= 0 && token < 256) {
-        std::lock_guard<std::mutex> lock(session->stream_mutex);
-        if (session->output_pos < session->output_len) {
-            ++session->output_pos;
+    remote_session_accept_token(session, token);
+    return ASTRAL_OK;
+}
+
+AstralErr remote_session_batch_eval(void* session_ctx,
+                                    const AstralBackendBatchToken* tokens,
+                                    uint32_t token_count,
+                                    uint32_t* out_output_count) {
+    RemoteSession* session = static_cast<RemoteSession*>(session_ctx);
+    if (session == nullptr || out_output_count == nullptr || (token_count != 0 && tokens == nullptr)) {
+        return ASTRAL_E_INVALID;
+    }
+    session->last_batch_outputs = 0;
+
+    for (uint32_t i = 0; i < token_count; ++i) {
+        const AstralBackendBatchToken& token = tokens[i];
+        if (token.slot_id != 0) {
+            return ASTRAL_E_UNSUPPORTED;
+        }
+        AstralErr err = ASTRAL_OK;
+        if (session->stream_started) {
+            remote_session_accept_token(session, token.token);
+        } else {
+            err = remote_session_push_prompt_token(session, token.token);
+        }
+        if (err != ASTRAL_OK) {
+            return err;
+        }
+        if (token.want_logits != 0) {
+            AstralBackendLogitsView view{};
+            err = remote_session_logits(session, &view);
+            if (err != ASTRAL_OK) {
+                return err;
+            }
+            ++session->last_batch_outputs;
         }
     }
+
+    *out_output_count = session->last_batch_outputs;
     return ASTRAL_OK;
+}
+
+AstralErr remote_session_batch_logits(void* session_ctx, uint32_t output_index, AstralBackendLogitsView* out_view) {
+    RemoteSession* session = static_cast<RemoteSession*>(session_ctx);
+    if (session == nullptr || out_view == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (output_index >= session->last_batch_outputs) {
+        return ASTRAL_E_INVALID;
+    }
+    out_view->logits = session->logits;
+    out_view->vocab_size = kRemoteVocabSize;
+    return ASTRAL_OK;
+}
+
+AstralErr remote_session_slot_reset(void* session_ctx, uint32_t slot_id) {
+    if (slot_id != 0) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+    return remote_session_reset(session_ctx);
 }
 
 void* remote_embedder_create(void* model_ctx, AstralErr* out_err) {
@@ -690,9 +761,9 @@ const AstralBackendOps kRemoteOps = {
     .session_feed_audio = nullptr,
     .session_logits = remote_session_logits,
     .session_accept = remote_session_accept,
-    .session_batch_eval = nullptr,
-    .session_batch_logits = nullptr,
-    .session_slot_reset = nullptr,
+    .session_batch_eval = remote_session_batch_eval,
+    .session_batch_logits = remote_session_batch_logits,
+    .session_slot_reset = remote_session_slot_reset,
     .embedder_create = remote_embedder_create,
     .embedder_destroy = remote_embedder_destroy,
     .embedder_reset = remote_embedder_reset,

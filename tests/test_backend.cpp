@@ -632,6 +632,55 @@ TEST(backend_remote_loopback_completion_and_embeddings) {
     ASSERT_EQ(remote.stream_completion_calls.load(std::memory_order_relaxed), 1u);
     ASSERT_EQ(remote.completion_calls.load(std::memory_order_relaxed), 0u);
 
+    AstralAgentDesc agent_desc{};
+    agent_desc.size = sizeof(AstralAgentDesc);
+    agent_desc.model = model;
+    agent_desc.max_tokens = 32;
+    agent_desc.temperature = 0.0f;
+    agent_desc.top_k = 0;
+    agent_desc.top_p = 1.0f;
+    agent_desc.stream_enabled = 1;
+    agent_desc.seed = 1;
+
+    AstralHandle agent = 0;
+    err = astral_agent_create(&agent_desc, &agent);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralAgentChatDesc chat{};
+    chat.size = sizeof(AstralAgentChatDesc);
+    chat.user_message = prompt_span;
+    err = astral_agent_chat_enqueue(agent, &chat);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    uint8_t agent_out[64];
+    uint32_t agent_total = 0;
+    for (uint32_t i = 0; i < 32 && agent_total < sizeof(agent_out); ++i) {
+        AstralMutSpanU8 dst{};
+        dst.data = agent_out + agent_total;
+        dst.len = sizeof(agent_out) - agent_total;
+        const int32_t n = astral_agent_chat_stream_read(agent, dst, 100);
+        if (n < 0) {
+            ASSERT_EQ(n, ASTRAL_E_TIMEOUT);
+            continue;
+        }
+        if (n == 0) {
+            break;
+        }
+        agent_total += static_cast<uint32_t>(n);
+    }
+    const char* agent_expected = "remote-fallback";
+    ASSERT_EQ(agent_total, static_cast<uint32_t>(std::strlen(agent_expected)));
+    ASSERT_EQ(std::memcmp(agent_out, agent_expected, agent_total), 0);
+
+    AstralAgentChatResult chat_result{};
+    chat_result.size = sizeof(AstralAgentChatResult);
+    err = astral_agent_chat_result(agent, &chat_result);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(chat_result.state, ASTRAL_SESSION_COMPLETED);
+    ASSERT_EQ(chat_result.last_error, ASTRAL_OK);
+    ASSERT_EQ(remote.stream_completion_calls.load(std::memory_order_relaxed), 2u);
+
+    astral_agent_destroy(agent);
     astral_session_destroy(session);
     astral_model_release(model);
 
