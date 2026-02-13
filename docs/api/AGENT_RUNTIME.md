@@ -61,6 +61,10 @@ history content into native storage. Input spans only need to remain valid for
 the duration of the call. Chat enqueue assembles one bounded prompt buffer in
 this order: system prompt, summary, memory context, history, current user turn,
 assistant prefix. The temporary buffer is released before the call returns.
+History messages are stored as small native records that point into one
+agent-owned byte arena. Adding a message appends its UTF-8 bytes once; prompt
+assembly walks records linearly and copies from the arena into the reusable
+prompt buffer.
 `astral_agent_set_memory_context_from_results()` builds that memory context
 from document bytes, chunk ranges, and memory search results in result order.
 It copies only the selected byte ranges into the agent and inserts the caller's
@@ -94,8 +98,10 @@ from the stream while decode is active.
 
 Prompt assembly is outside the decode loop. The assembled buffer is bounded by
 `AstralAgentDesc::max_prompt_bytes`, and history growth is bounded by
-`max_messages`. The decode hot path remains the existing conversation executor,
-stream ring, sampler, grammar, and backend slot machinery.
+`max_messages`. History storage is a byte arena plus POD records, so the common
+prompt-build path avoids per-message heap objects and stays a forward scan over
+contiguous metadata. The decode hot path remains the existing conversation
+executor, stream ring, sampler, grammar, and backend slot machinery.
 
 `AstralAgentChatResult` reports `prompt_cache_reused_tokens`,
 `prompt_cache_new_tokens`, `prompt_cache_hits`, and `prompt_cache_misses` for
