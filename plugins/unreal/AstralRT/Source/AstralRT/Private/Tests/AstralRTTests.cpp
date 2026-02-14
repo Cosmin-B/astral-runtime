@@ -301,6 +301,10 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     constexpr int32 AgentSystemPromptBytes = 11;
     constexpr int32 AgentMessageBytes = 5;
     constexpr int32 AgentMessageCount = 1;
+    constexpr int32 AgentChatUserBytes = 4;
+    constexpr int32 AgentChatTimeoutMs = 1000;
+    constexpr int32 AgentChatMaxReads = 32;
+    constexpr int32 AgentChatMinOutputBytes = 1;
     FAstralAgentDesc AgentDesc;
     AgentDesc.ModelHandle = static_cast<int64>(Model->GetHandle());
     AgentDesc.MaxTokens = AgentMaxTokens;
@@ -341,6 +345,43 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::GetAgentHistoryCountResult(AgentCreate.Handle, AgentHistoryCount);
     TestTrue(TEXT("get cleared agent history count succeeds"), GetClearedAgentHistoryCount.bSuccess);
     TestEqual(TEXT("get cleared agent history count"), AgentHistoryCount, 0);
+
+    const FAstralOperationResult EnqueueAgentChat =
+        UAstralBlueprintLibrary::EnqueueAgentChatResult(AgentCreate.Handle, TEXT("ping"), false);
+    TestTrue(TEXT("enqueue agent chat succeeds"), EnqueueAgentChat.bSuccess);
+    TestEqual(TEXT("enqueue agent chat byte count"), EnqueueAgentChat.Count, AgentChatUserBytes);
+
+    FAstralRequestRef AgentChatRequest;
+    const FAstralOperationResult CreateAgentChatRequest =
+        UAstralBlueprintLibrary::CreateAgentChatRequestResult(AgentCreate.Handle, AgentChatRequest);
+    TestTrue(TEXT("agent chat request succeeds"), CreateAgentChatRequest.bSuccess);
+    TestEqual(TEXT("agent chat request kind"), AgentChatRequest.Kind, EAstralRequestKind::AgentChat);
+
+    FAstralRequestStatus AgentChatWaitStatus;
+    const FAstralOperationResult AgentChatWait =
+        UAstralBlueprintLibrary::WaitRequestResult(AgentChatRequest, AgentChatTimeoutMs, AgentChatWaitStatus);
+    TestTrue(TEXT("agent chat wait succeeds"), AgentChatWait.bSuccess);
+    TestEqual(TEXT("agent chat wait state"), AgentChatWaitStatus.State, EAstralRequestState::Completed);
+
+    FString AgentChatText;
+    for (int32 ReadIndex = 0; ReadIndex < AgentChatMaxReads; ++ReadIndex) {
+        FString Chunk;
+        const FAstralOperationResult ReadAgentChat =
+            UAstralBlueprintLibrary::ReadAgentChatResult(AgentCreate.Handle, AgentChatTimeoutMs, Chunk);
+        TestTrue(TEXT("read agent chat succeeds"), ReadAgentChat.bSuccess);
+        if (ReadAgentChat.bEndOfStream) {
+            break;
+        }
+        AgentChatText += Chunk;
+    }
+    TestTrue(TEXT("agent chat produced text"), AgentChatText.Len() >= AgentChatMinOutputBytes);
+
+    FAstralAgentChatResult AgentChatStatus;
+    const FAstralOperationResult GetAgentChatStatus =
+        UAstralBlueprintLibrary::GetAgentChatStatusResult(AgentCreate.Handle, AgentChatStatus);
+    TestTrue(TEXT("get agent chat status succeeds"), GetAgentChatStatus.bSuccess);
+    TestEqual(TEXT("agent chat status state"), AgentChatStatus.State, static_cast<int32>(ASTRAL_SESSION_COMPLETED));
+    TestEqual(TEXT("agent chat status error"), AgentChatStatus.LastError, static_cast<int32>(ASTRAL_OK));
 
     UAstralBlueprintLibrary::DestroyAgent(AgentCreate.Handle);
     Model->Release();
