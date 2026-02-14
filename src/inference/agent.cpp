@@ -864,18 +864,18 @@ AstralErr prepare_generated_capture(Agent* agent, uint32_t max_tokens) {
     return ASTRAL_OK;
 }
 
-void append_generated_capture(Agent* agent, const uint8_t* bytes, uint32_t len) {
-    if (agent == nullptr || agent->chat.generated.bytes == nullptr || bytes == nullptr || len == 0) {
+void append_generated_capture(Agent& agent, const uint8_t* bytes, uint32_t len) {
+    if (agent.chat.generated.bytes == nullptr || bytes == nullptr || len == 0) {
         return;
     }
-    const uint32_t remaining = agent->chat.generated.capacity - agent->chat.generated.len;
+    const uint32_t remaining = agent.chat.generated.capacity - agent.chat.generated.len;
     const uint32_t copied = len < remaining ? len : remaining;
     if (copied != 0) {
-        std::memcpy(agent->chat.generated.bytes + agent->chat.generated.len, bytes, copied);
-        agent->chat.generated.len += copied;
+        std::memcpy(agent.chat.generated.bytes + agent.chat.generated.len, bytes, copied);
+        agent.chat.generated.len += copied;
     }
     if (copied != len) {
-        agent->chat.generated.truncated = 1;
+        agent.chat.generated.truncated = 1;
     }
 }
 
@@ -1465,7 +1465,7 @@ int32_t agent_chat_stream_read(Agent* agent, AstralMutSpanU8 out_buf, uint32_t t
     }
     const int32_t result = conv_stream_read(agent->conv_ptr, out_buf, timeout_ms);
     if (result > 0) {
-        append_generated_capture(agent, out_buf.data, static_cast<uint32_t>(result));
+        append_generated_capture(*agent, out_buf.data, static_cast<uint32_t>(result));
     }
     if (result < 0 && result != ASTRAL_E_TIMEOUT) {
         agent->chat.last_error = static_cast<AstralErr>(result);
