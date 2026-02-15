@@ -311,6 +311,72 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("detokenize byte count"), Detokenize.Count, MockDetokenizedBytes);
     TestEqual(TEXT("detokenize text"), Detokenized, FString(TEXT("abc")));
 
+    constexpr int32 AdapterSessionMaxTokens = 1;
+    constexpr int32 AdapterSessionSeed = 31;
+    constexpr int32 AdapterIndex = 0;
+    constexpr int32 AdapterAttachedCount = 1;
+    constexpr int32 AdapterClearedCount = 0;
+    constexpr int32 AdapterLoadedRefCount = 1;
+    constexpr int32 AdapterAttachedRefCount = 2;
+    constexpr float AdapterInitialScale = 0.75f;
+    constexpr float AdapterUpdatedScale = 0.5f;
+    const FString AdapterPath(TEXT("adapter-unreal-smoke"));
+
+    FAstralAdapterDesc AdapterDesc;
+    AdapterDesc.AdapterPath = AdapterPath;
+    int64 AdapterHandle = 0;
+    TestTrue(TEXT("unreal adapter loads"), Model->LoadAdapter(AdapterDesc, AdapterHandle));
+    TestTrue(TEXT("unreal adapter handle valid"), AdapterHandle != 0);
+
+    FAstralAdapterInfo AdapterInfo;
+    const FAstralOperationResult AdapterInfoResult =
+        UAstralBlueprintLibrary::GetAdapterInfoResult(AdapterHandle, AdapterInfo);
+    TestTrue(TEXT("unreal adapter info succeeds"), AdapterInfoResult.bSuccess);
+    TestEqual(TEXT("unreal adapter refcount after load"), AdapterInfo.RefCount, AdapterLoadedRefCount);
+    TestTrue(TEXT("unreal adapter path byte count"), AdapterInfo.PathBytes > 0);
+
+    FString CopiedAdapterPath;
+    const FAstralOperationResult AdapterPathResult =
+        UAstralBlueprintLibrary::CopyAdapterPathResult(AdapterHandle, CopiedAdapterPath);
+    TestTrue(TEXT("unreal adapter path copy succeeds"), AdapterPathResult.bSuccess);
+    TestEqual(TEXT("unreal adapter path value"), CopiedAdapterPath, AdapterPath);
+
+    FAstralSessionDesc AdapterSessionDesc;
+    AdapterSessionDesc.MaxTokens = AdapterSessionMaxTokens;
+    AdapterSessionDesc.Temperature = 0.0f;
+    AdapterSessionDesc.TopK = 0;
+    AdapterSessionDesc.TopP = 1.0f;
+    AdapterSessionDesc.bStreamEnabled = false;
+    AdapterSessionDesc.Seed = AdapterSessionSeed;
+    TestTrue(TEXT("unreal adapter session creates"), Session->Create(Model, AdapterSessionDesc));
+    TestTrue(TEXT("unreal adapter attaches"), Session->AddAdapter(AdapterHandle, AdapterInitialScale));
+
+    int32 AttachedAdapterCount = 0;
+    TestTrue(TEXT("unreal adapter count succeeds"), Session->GetAdapterCount(AttachedAdapterCount));
+    TestEqual(TEXT("unreal adapter count"), AttachedAdapterCount, AdapterAttachedCount);
+
+    int64 AttachedAdapterHandle = 0;
+    float AttachedAdapterScale = 0.0f;
+    TestTrue(TEXT("unreal adapter get succeeds"), Session->GetAdapter(AdapterIndex, AttachedAdapterHandle, AttachedAdapterScale));
+    TestEqual(TEXT("unreal adapter handle from session"), AttachedAdapterHandle, AdapterHandle);
+    TestTrue(TEXT("unreal adapter scale from session"), FMath::IsNearlyEqual(AttachedAdapterScale, AdapterInitialScale));
+
+    FAstralAdapterInfo AttachedAdapterInfo;
+    const FAstralOperationResult AttachedAdapterInfoResult =
+        UAstralBlueprintLibrary::GetAdapterInfoResult(AdapterHandle, AttachedAdapterInfo);
+    TestTrue(TEXT("unreal attached adapter info succeeds"), AttachedAdapterInfoResult.bSuccess);
+    TestEqual(TEXT("unreal adapter refcount after attach"), AttachedAdapterInfo.RefCount, AdapterAttachedRefCount);
+
+    TestTrue(TEXT("unreal adapter scale updates"), Session->SetAdapterScale(AdapterIndex, AdapterUpdatedScale));
+    TestTrue(TEXT("unreal adapter get after scale succeeds"), Session->GetAdapter(AdapterIndex, AttachedAdapterHandle, AttachedAdapterScale));
+    TestTrue(TEXT("unreal adapter updated scale"), FMath::IsNearlyEqual(AttachedAdapterScale, AdapterUpdatedScale));
+
+    TestTrue(TEXT("unreal adapter clear succeeds"), Session->ClearAdapters());
+    TestTrue(TEXT("unreal adapter count after clear succeeds"), Session->GetAdapterCount(AttachedAdapterCount));
+    TestEqual(TEXT("unreal adapter count after clear"), AttachedAdapterCount, AdapterClearedCount);
+    Model->ReleaseAdapter(AdapterHandle);
+    Session->ConditionalBeginDestroy();
+
     constexpr int32 AgentMaxTokens = 8;
     constexpr int32 AgentMaxMessages = 4;
     constexpr int32 AgentMaxPromptBytes = 1024;
