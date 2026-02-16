@@ -35,6 +35,8 @@ STATUS_PARTIAL = "partial"
 STATUS_INVALID = "invalid"
 STATUS_READY = "ready"
 PACKAGE_PRESET = "gpt2-q2k"
+UNREAL_MATRIX_PRESET = "gemma3-270m-q4km"
+UNREAL_MATRIX_FILE = "gemma-3-270m-q4_k_m.gguf"
 TINY_PRESET = "tiny-embed"
 TINY_LABEL = "Tiny synthetic embedding GGUF"
 TINY_REPO = "local/tiny"
@@ -169,6 +171,33 @@ def main(argv: list[str]) -> int:
     package_status = run_tool(root, "status-all", "--package", "--format", "text", "--dir", CUSTOM_OUTPUT_DIR).stdout
     require(PACKAGE_PRESET in package_status, "package status missed default text preset")
     require(QWEN_TEXT_PRESET not in package_status, "package status included disabled preset")
+
+    unreal_matrix_presets = json.loads(run_tool(root, "list", "--unreal-matrix", "--format", "json").stdout)
+    require(
+        any(row["name"] == UNREAL_MATRIX_PRESET for row in unreal_matrix_presets),
+        "Unreal matrix list missed expected text preset",
+    )
+    require(
+        all(row["include_in_unreal_sample_matrix"] is True for row in unreal_matrix_presets),
+        "Unreal matrix list included disabled preset",
+    )
+    require(
+        all(row["model_type"] == MODEL_TYPE_TEXT for row in unreal_matrix_presets),
+        "Unreal matrix list included non-text preset",
+    )
+    unreal_matrix_status = run_tool(
+        root,
+        "status-all",
+        "--unreal-matrix",
+        "--format",
+        "text",
+        "--dir",
+        CUSTOM_OUTPUT_DIR,
+    ).stdout
+    require(UNREAL_MATRIX_PRESET in unreal_matrix_status, "Unreal matrix status missed expected preset")
+    require(PACKAGE_PRESET not in unreal_matrix_status, "Unreal matrix status included package-only preset")
+    preset_for_file = run_tool(root, "preset-for-file", UNREAL_MATRIX_FILE).stdout.strip()
+    require(preset_for_file == UNREAL_MATRIX_PRESET, "filename lookup did not resolve Unreal matrix preset")
 
     dry_run = run_tool(root, "download", "--preset", QWEN_TEXT_PRESET, "--dry-run").stdout
     for marker in ("preset:", "path:", "url:", "size_bytes:", "sha256:", "command:"):
