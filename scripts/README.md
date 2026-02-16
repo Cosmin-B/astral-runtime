@@ -203,7 +203,7 @@ python3 ./scripts/inventory_comments.py --format review-tsv > build/comment-revi
 python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers
 ```
 
-Use `review-tsv` for the human pass from the moonshot plan. Fill `decision`
+Use `review-tsv` for the maintained comment review pass. Fill `decision`
 with `keep`, `rewrite`, `delete`, or `issue`; use `issue` for comments that
 identify real follow-up work and record the public issue reference in the
 `issue` column.

@@ -156,7 +156,7 @@ err = astral_agent_message_add(agent, &message);
 ```bash
 cmake --build --preset dev -j8 --target test_inference test_abi_invalid_args
 ctest --preset dev -R '^(test_inference|test_abi_invalid_args|gate_abi_layout_report|gate_source_scans|gate_doc_links|gate_unreal_header_mirror)$' --output-on-failure
-ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ./build/dev/benchmarks/astral_benchmarks --features
+ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ./build/dev/benchmarks/astral_benchmarks --only features
 ```
 
 Expected markers include `features.agent prompt_warmup` and

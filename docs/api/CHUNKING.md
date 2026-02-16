@@ -94,7 +94,7 @@ if (err == ASTRAL_OK) {
 ```bash
 cmake --build --preset dev -j8 --target test_inference test_abi_invalid_args astral_benchmarks
 ctest --preset dev -R '^(test_inference|test_abi_invalid_args|gate_abi_layout_report|gate_source_scans|gate_doc_links)$' --output-on-failure
-ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/benchmarks/astral_benchmarks --features
+ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/benchmarks/astral_benchmarks --only features
 ```
 
 Native tests include `inference_rag_ingest_chunk_search_mock`, which plans

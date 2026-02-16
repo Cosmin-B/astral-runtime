@@ -415,4 +415,4 @@ and [third-party notices](docs/release/THIRD_PARTY_NOTICES.md).
 - GitHub Issues: https://github.com/Cosmin-B/astral/issues
 
 ---
-Keep support claims tied to the validation gates above and the production readiness audit.
+Keep support claims tied to reproducible validation gates and release evidence.
