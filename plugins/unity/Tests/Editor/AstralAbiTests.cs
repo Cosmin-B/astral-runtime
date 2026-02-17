@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using NUnit.Framework;
 using Unity.Collections;
+using UnityEngine;
 
 namespace Astral.Runtime.Tests
 {
@@ -100,6 +101,26 @@ namespace Astral.Runtime.Tests
         }
 
         [Test]
+        public void ModelPath_WrapperRoots_ResolveThroughNativeAbi()
+        {
+            RequireNative();
+
+            const string relativePath = "Models/model.gguf";
+            Assert.AreEqual(
+                JoinPath(Application.streamingAssetsPath, relativePath),
+                AstralModelPath.StreamingAssets(relativePath).Resolve());
+            Assert.AreEqual(
+                JoinPath(Application.persistentDataPath, relativePath),
+                AstralModelPath.PersistentData(relativePath).Resolve());
+            Assert.AreEqual(
+                JoinPath(Application.temporaryCachePath, relativePath),
+                AstralModelPath.TemporaryCache(relativePath).Resolve());
+            Assert.AreEqual(
+                JoinPath(Application.persistentDataPath, relativePath),
+                AstralModelPath.Download(relativePath).Resolve());
+        }
+
+        [Test]
         public void ModelPath_NativeResolver_JoinsContentRoot()
         {
             RequireNative();
@@ -145,6 +166,16 @@ namespace Astral.Runtime.Tests
 
             Assert.AreEqual(AstralNative.ASTRAL_OK, err);
             Assert.AreEqual(expectedPath, Encoding.UTF8.GetString(output));
+        }
+
+        private static string JoinPath(string root, string relativePath)
+        {
+            if (root.EndsWith("/", StringComparison.Ordinal) || root.EndsWith("\\", StringComparison.Ordinal))
+            {
+                return root + relativePath;
+            }
+
+            return root + "/" + relativePath;
         }
 
         [Test]
