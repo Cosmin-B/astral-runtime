@@ -392,8 +392,24 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     constexpr int32 AgentSlotA = 0;
     constexpr int32 AgentSlotB = 1;
     constexpr int32 AgentBSeed = 23;
+    constexpr int32 AgentToolId = 13;
+    TArray<FAstralToolDesc> AgentTools;
+    FAstralToolDesc AgentTool;
+    AgentTool.ToolId = AgentToolId;
+    AgentTool.Name = TEXT("agent_lookup");
+    AgentTool.Description = TEXT("search agent memory");
+    AgentTool.JsonSchema = TEXT("{}");
+    AgentTools.Add(AgentTool);
+
+    const FAstralOperationResult AgentToolsetResult =
+        UAstralBlueprintLibrary::CreateToolsetResult(AgentTools, EAstralToolChoiceMode::Required);
+    TestTrue(TEXT("agent toolset result succeeds"), AgentToolsetResult.bSuccess);
+    TestTrue(TEXT("agent toolset handle valid"), AgentToolsetResult.Handle != 0);
+
     FAstralAgentDesc AgentDesc;
     AgentDesc.ModelHandle = static_cast<int64>(Model->GetHandle());
+    AgentDesc.ToolsetHandle = AgentToolsetResult.Handle;
+    AgentDesc.ToolChoiceMode = EAstralToolChoiceMode::Required;
     AgentDesc.MaxTokens = AgentMaxTokens;
     AgentDesc.MaxMessages = AgentMaxMessages;
     AgentDesc.MaxPromptBytes = AgentMaxPromptBytes;
@@ -407,6 +423,19 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::GetAgentAssignedSlotResult(AgentCreate.Handle, AgentAssignedSlot);
     TestTrue(TEXT("get agent assigned slot succeeds"), GetAgentSlot.bSuccess);
     TestEqual(TEXT("agent assigned slot"), AgentAssignedSlot, AgentSlotA);
+
+    FAstralToolCallResult AgentToolCall;
+    const FAstralOperationResult ParseAgentTool =
+        UAstralBlueprintLibrary::ParseAgentToolCallResult(
+            AgentCreate.Handle,
+            TEXT("{\"name\":\"agent_lookup\",\"arguments\":{\"q\":\"agent\"}}"),
+            AgentToolCall
+        );
+    TestTrue(TEXT("agent tool parse result succeeds"), ParseAgentTool.bSuccess);
+    TestTrue(TEXT("agent tool parse found"), AgentToolCall.bFound);
+    TestEqual(TEXT("agent tool parse id"), AgentToolCall.ToolId, AgentToolId);
+    TestEqual(TEXT("agent tool parse name"), AgentToolCall.Name, AgentTool.Name);
+    TestEqual(TEXT("agent tool parse arguments"), AgentToolCall.ArgumentsJson, FString(TEXT("{\"q\":\"agent\"}")));
 
     FAstralAgentDesc AgentBDesc = AgentDesc;
     AgentBDesc.Seed = AgentBSeed;
@@ -539,6 +568,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
 
     UAstralBlueprintLibrary::DestroyAgent(AgentBCreate.Handle);
     UAstralBlueprintLibrary::DestroyAgent(AgentCreate.Handle);
+    UAstralBlueprintLibrary::DestroyToolset(AgentToolsetResult.Handle);
     Model->Release();
 
     TArray<uint8> EmptyBytes;
