@@ -334,6 +334,59 @@ namespace Astral.Runtime.Tests
         }
 
         [Test]
+        public void AgentWrapper_Toolset_ParsesToolCalls()
+        {
+            RequireNative();
+
+            AstralRuntime.Initialize(new AstralConfig
+            {
+                reserveBytes = 256UL << 20,
+                threadCount = 1,
+                useUnityAllocator = false,
+                enableLogging = false
+            });
+
+            try
+            {
+                using var model = AstralModel.Load("mock-model", new AstralModelConfig
+                {
+                    backendName = "mock",
+                    contextSize = 128,
+                    batchSize = 64
+                });
+                using var toolset = AstralToolset.Create(
+                    new[]
+                    {
+                        new AstralToolDefinition
+                        {
+                            toolId = 41,
+                            name = "agent_lookup",
+                            description = "search agent memory",
+                            jsonSchema = "{}"
+                        }
+                    },
+                    AstralNative.AstralToolChoiceMode.Required);
+
+                var config = AstralAgentConfig.Default.WithToolset(toolset, AstralNative.AstralToolChoiceMode.Required);
+                config.maxTokens = 8;
+                config.maxMessages = 4;
+                config.maxPromptBytes = 1024;
+
+                using var agent = AstralAgent.Create(model, config);
+                AstralToolCall call = agent.ParseToolCall("{\"name\":\"agent_lookup\",\"arguments\":{\"q\":\"agent\"}}");
+
+                Assert.True(call.Parsed);
+                Assert.AreEqual(41u, call.toolId);
+                Assert.AreEqual("agent_lookup", call.name);
+                Assert.AreEqual("{\"q\":\"agent\"}", call.argumentsJson);
+            }
+            finally
+            {
+                AstralRuntime.Shutdown();
+            }
+        }
+
+        [Test]
         public void MockBackend_E2E_StreamAndReset_Works()
         {
             RequireNative();
