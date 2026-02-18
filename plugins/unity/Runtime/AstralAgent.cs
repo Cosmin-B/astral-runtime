@@ -497,5 +497,23 @@ namespace Astral.Runtime
         public uint slotAffinity = 0;
 
         public static AstralAgentConfig Default => new AstralAgentConfig();
+
+        public AstralAgentConfig WithToolset(
+            AstralToolset toolset,
+            AstralNative.AstralToolChoiceMode choiceMode = AstralNative.AstralToolChoiceMode.Auto)
+        {
+            if (toolset == null)
+            {
+                throw new ArgumentNullException(nameof(toolset));
+            }
+            if (!toolset.IsValid)
+            {
+                throw new AstralException("Toolset is not valid (disposed or not created).");
+            }
+
+            this.toolset = toolset.Handle;
+            toolChoiceMode = choiceMode;
+            return this;
+        }
     }
 }
