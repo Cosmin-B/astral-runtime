@@ -703,6 +703,101 @@ foreach(required_model_tool_text
   endif()
 endforeach()
 
+set(feature_bench_file "${ROOT}/benchmarks/bench_features.cpp")
+set(prompt_cache_doc_file "${ROOT}/docs/api/PROMPT_CACHE.md")
+set(structured_output_doc_file "${ROOT}/docs/api/STRUCTURED_OUTPUT.md")
+set(agent_runtime_doc_file "${ROOT}/docs/api/AGENT_RUNTIME.md")
+set(chunking_doc_file "${ROOT}/docs/api/CHUNKING.md")
+set(memory_index_doc_file "${ROOT}/docs/api/MEMORY_INDEX.md")
+if(NOT EXISTS "${feature_bench_file}")
+  message(FATAL_ERROR "Feature benchmark source is missing")
+endif()
+foreach(required_feature_doc_file
+    "${prompt_cache_doc_file}"
+    "${structured_output_doc_file}"
+    "${agent_runtime_doc_file}"
+    "${chunking_doc_file}"
+    "${memory_index_doc_file}")
+  if(NOT EXISTS "${required_feature_doc_file}")
+    message(FATAL_ERROR "Feature API doc is missing: ${required_feature_doc_file}")
+  endif()
+endforeach()
+file(READ "${feature_bench_file}" feature_bench_content)
+file(READ "${prompt_cache_doc_file}" prompt_cache_doc_content)
+file(READ "${structured_output_doc_file}" structured_output_doc_content)
+file(READ "${agent_runtime_doc_file}" agent_runtime_doc_content)
+file(READ "${chunking_doc_file}" chunking_doc_content)
+file(READ "${memory_index_doc_file}" memory_index_doc_content)
+foreach(required_feature_benchmark_marker
+    "features.prompt_cache get"
+    "features.prompt_cache view"
+    "features.prompt_cache miss"
+    "features.toolset parse"
+    "features.chunk word_ranges"
+    "features.memory add_batch"
+    "features.memory flat_search_top1"
+    "features.memory flat_search"
+    "features.memory graph_search"
+    "features.memory cursor_begin_fetch"
+    "features.agent prompt_warmup"
+    "features.agent prompt_cache_warmup"
+    "features.memory top1_100"
+    "features.memory top1_1k"
+    "features.memory top1_10k"
+    "features.memory top1_100k")
+  string(FIND "${feature_bench_content}" "${required_feature_benchmark_marker}" feature_benchmark_marker_pos)
+  if(feature_benchmark_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Feature benchmark source is missing '${required_feature_benchmark_marker}'")
+  endif()
+endforeach()
+foreach(required_prompt_cache_doc_marker
+    "features.prompt_cache get"
+    "features.prompt_cache view"
+    "features.prompt_cache miss"
+    "features.agent prompt_cache_warmup")
+  string(FIND "${prompt_cache_doc_content}" "${required_prompt_cache_doc_marker}" prompt_cache_doc_marker_pos)
+  if(prompt_cache_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Prompt cache doc is missing benchmark marker '${required_prompt_cache_doc_marker}'")
+  endif()
+endforeach()
+foreach(required_structured_output_doc_marker
+    "features.toolset parse")
+  string(FIND "${structured_output_doc_content}" "${required_structured_output_doc_marker}" structured_output_doc_marker_pos)
+  if(structured_output_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Structured output doc is missing benchmark marker '${required_structured_output_doc_marker}'")
+  endif()
+endforeach()
+foreach(required_agent_runtime_doc_marker
+    "features.agent prompt_warmup"
+    "features.agent prompt_cache_warmup")
+  string(FIND "${agent_runtime_doc_content}" "${required_agent_runtime_doc_marker}" agent_runtime_doc_marker_pos)
+  if(agent_runtime_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Agent runtime doc is missing benchmark marker '${required_agent_runtime_doc_marker}'")
+  endif()
+endforeach()
+foreach(required_chunking_doc_marker
+    "features.chunk word_ranges")
+  string(FIND "${chunking_doc_content}" "${required_chunking_doc_marker}" chunking_doc_marker_pos)
+  if(chunking_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Chunking doc is missing benchmark marker '${required_chunking_doc_marker}'")
+  endif()
+endforeach()
+foreach(required_memory_index_doc_marker
+    "features.memory add_batch"
+    "features.memory flat_search_top1"
+    "features.memory flat_search"
+    "features.memory graph_search"
+    "features.memory cursor_begin_fetch"
+    "features.memory top1_100"
+    "features.memory top1_1k"
+    "features.memory top1_10k"
+    "features.memory top1_100k")
+  string(FIND "${memory_index_doc_content}" "${required_memory_index_doc_marker}" memory_index_doc_marker_pos)
+  if(memory_index_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Memory index doc is missing benchmark marker '${required_memory_index_doc_marker}'")
+  endif()
+endforeach()
+
 set(hf_manifest_file "${ROOT}/scripts/hf_gguf_manifest_full.json")
 file(READ "${hf_manifest_file}" hf_manifest_content)
 foreach(required_hf_manifest_text
