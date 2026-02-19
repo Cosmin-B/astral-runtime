@@ -277,7 +277,9 @@ their fixed-slot scale with `SetAdapterScale()`.
 
 `AstralToolset` owns native tool definitions. `AstralToolCall.Parsed`,
 `Missing`, and `Malformed` expose native parse status after `ParseCall()`
-without scanning generated text in Unity.
+without scanning generated text in Unity. Use
+`AstralAgentConfig.WithToolset(toolset, choiceMode)` to bind a toolset to a
+native agent at creation time.
 
 ### Tokenization
 

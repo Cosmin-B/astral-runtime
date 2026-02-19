@@ -83,6 +83,7 @@ UTF-8 conversion and passes all core ownership to the native runtime.
 Unity exposes `AstralToolset` as an owned handle over the same native C ABI.
 `AstralToolset.Create()` copies managed tool definitions into native runtime
 memory, `ParseCall()` parses a completed tool-call payload, and
+`AstralAgentConfig.WithToolset()` binds the handle at agent creation time.
 `AstralAgent.ParseToolCall()` parses caller-provided text and
 `AstralAgent.GetChatToolCallResult()` reads the native result captured from the
 latest drained chat stream. `AstralSession.SetToolset()` / `ClearToolset()`
