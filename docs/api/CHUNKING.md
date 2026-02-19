@@ -100,3 +100,4 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/b
 Native tests include `inference_rag_ingest_chunk_search_mock`, which plans
 document chunks, converts ranges to memory records, searches the flat index, and
 copies the retrieved chunk text.
+Benchmark output should include `features.chunk word_ranges`.
