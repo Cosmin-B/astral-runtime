@@ -822,12 +822,31 @@ void AAstralSampleActor::RunMemorySearchDemo()
     constexpr int64 MemoryKeyB = 202;
     constexpr int32 MemoryGroup = 7;
     constexpr int32 MemoryDocument = 11;
-    constexpr int32 MemoryChunkA = 1;
-    constexpr int32 MemoryChunkB = 2;
+    constexpr int32 ChunkMaxWords = 2;
+    constexpr int32 ExpectedChunkCount = 2;
+    constexpr int32 FirstChunkIndex = 0;
+    constexpr int32 SecondChunkIndex = 1;
     constexpr int32 TopK = 1;
     constexpr int32 AnyGroup = -1;
     constexpr float VectorOne = 1.0f;
     constexpr float VectorZero = 0.0f;
+    const FString DocumentText(TEXT("alpha beta gamma delta"));
+
+    FAstralChunkerDesc ChunkDesc;
+    ChunkDesc.Mode = EAstralChunkMode::Word;
+    ChunkDesc.MaxUnits = ChunkMaxWords;
+    ChunkDesc.OverlapUnits = 0;
+    ChunkDesc.DocumentId = MemoryDocument;
+    ChunkDesc.GroupId = MemoryGroup;
+
+    TArray<FAstralChunkRange> ChunkRanges;
+    int32 ChunkError = 0;
+    if (!UAstralBlueprintLibrary::ChunkText(DocumentText, ChunkDesc, ChunkRanges, ChunkError) ||
+        ChunkRanges.Num() != ExpectedChunkCount)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: chunk %d"), ChunkError);
+        return;
+    }
 
     FAstralMemoryIndexDesc MemoryDesc;
     MemoryDesc.Dimension = MemoryDim;
@@ -844,17 +863,25 @@ void AAstralSampleActor::RunMemorySearchDemo()
     TArray<FAstralMemoryRecord> Records;
     Records.Reserve(MemoryCapacity);
     FAstralMemoryRecord RecordA;
-    RecordA.Key = MemoryKeyA;
-    RecordA.GroupId = MemoryGroup;
-    RecordA.DocumentId = MemoryDocument;
-    RecordA.ChunkId = MemoryChunkA;
+    FAstralOperationResult RecordResult =
+        UAstralBlueprintLibrary::MakeMemoryRecordFromChunkResult(ChunkRanges[FirstChunkIndex], MemoryKeyA, 0, RecordA);
+    if (!RecordResult.bSuccess)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: record %d"), RecordResult.ErrorCode);
+        UAstralBlueprintLibrary::DestroyMemoryIndex(CreateResult.Handle);
+        return;
+    }
     Records.Add(RecordA);
 
     FAstralMemoryRecord RecordB;
-    RecordB.Key = MemoryKeyB;
-    RecordB.GroupId = MemoryGroup;
-    RecordB.DocumentId = MemoryDocument;
-    RecordB.ChunkId = MemoryChunkB;
+    RecordResult =
+        UAstralBlueprintLibrary::MakeMemoryRecordFromChunkResult(ChunkRanges[SecondChunkIndex], MemoryKeyB, 0, RecordB);
+    if (!RecordResult.bSuccess)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: record %d"), RecordResult.ErrorCode);
+        UAstralBlueprintLibrary::DestroyMemoryIndex(CreateResult.Handle);
+        return;
+    }
     Records.Add(RecordB);
 
     TArray<float> Vectors;
@@ -888,6 +915,17 @@ void AAstralSampleActor::RunMemorySearchDemo()
         return;
     }
 
+    FString TopChunkText;
+    const FAstralOperationResult ChunkTextResult =
+        UAstralBlueprintLibrary::CopyChunkTextResult(DocumentText, ChunkRanges[Results[0].ChunkId], TopChunkText);
+    if (!ChunkTextResult.bSuccess)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: copy chunk %d"), ChunkTextResult.ErrorCode);
+        UAstralBlueprintLibrary::DestroyMemoryIndex(CreateResult.Handle);
+        return;
+    }
+
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: RAG chunk text %s"), *TopChunkText);
     UE_LOG(LogAstralSample, Display, TEXT("Astral sample: RAG search top key %lld score %.3f group %d"),
         Results[0].Key,
         Results[0].Score,

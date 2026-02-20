@@ -77,6 +77,7 @@ LogAstralSample: Display: Astral sample: packaged content bytes read from ../../
 LogAstralSample: Display: Astral sample: packaged content memory model loaded from 4 bytes
 LogAstralSample: Display: Astral sample: saved cache bytes read from ../../../AstralSample/Saved/AstralSample/mock-model-cache.bytes
 LogAstralSample: Display: Astral sample: saved cache memory model loaded from 4 bytes
+LogAstralSample: Display: Astral sample: RAG chunk text alpha beta
 LogAstralSample: Display: Astral sample: RAG search top key 101 score 1.000 group 7
 LogAstralSample: Display: Astral sample: clean shutdown
 LOG
@@ -338,6 +339,10 @@ foreach(required_sample_text
     "Desc.ModelPath = ModelPath;"
     "Desc.ModelPath = EmbeddingModelPath.IsEmpty() ? ModelPath : EmbeddingModelPath;"
     "void RunPackagedMemorySourceDemo();"
+    "UAstralBlueprintLibrary::ChunkText"
+    "UAstralBlueprintLibrary::MakeMemoryRecordFromChunkResult"
+    "UAstralBlueprintLibrary::CopyChunkTextResult"
+    "Astral sample: RAG chunk text"
     "void AAstralSampleActor::RunErrorDemo()"
     "Astral sample: expected load failure:")
   string(FIND "${sample_actor_header_text}\n${sample_actor_cpp_text}" "${required_sample_text}" sample_text_pos)
