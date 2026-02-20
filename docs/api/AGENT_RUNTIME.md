@@ -65,6 +65,9 @@ History messages are stored as small native records that point into one
 agent-owned byte arena. Adding a message appends its UTF-8 bytes once; prompt
 assembly walks records linearly and copies from the arena into the reusable
 prompt buffer.
+The agent caches the stable prefix byte count and prompt-cache hash after
+system prompt, summary, memory context, or history changes, so repeated turns
+do not rescan those bytes just to derive cache keys.
 `astral_agent_set_memory_context_from_results()` builds that memory context
 from document bytes, chunk ranges, and memory search results in result order.
 It copies only the selected byte ranges into the agent and inserts the caller's
