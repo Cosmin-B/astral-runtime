@@ -60,7 +60,8 @@ The agent copies system prompt, rolling summary, retrieved memory context, and
 history content into native storage. Input spans only need to remain valid for
 the duration of the call. Chat enqueue assembles one bounded prompt buffer in
 this order: system prompt, summary, memory context, history, current user turn,
-assistant prefix. The temporary buffer is released before the call returns.
+assistant prefix. The scratch buffer is owned by the agent and reused across
+chat requests.
 History messages are stored as small native records that point into one
 agent-owned byte arena. Adding a message appends its UTF-8 bytes once; prompt
 assembly walks records linearly and copies from the arena into the reusable
