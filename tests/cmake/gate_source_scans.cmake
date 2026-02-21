@@ -732,6 +732,7 @@ foreach(required_feature_benchmark_marker
     "features.prompt_cache get"
     "features.prompt_cache view"
     "features.prompt_cache miss"
+    "features.system_prompt cached_tokens"
     "features.toolset parse"
     "features.chunk word_ranges"
     "features.memory add_batch"
@@ -754,6 +755,7 @@ foreach(required_prompt_cache_doc_marker
     "features.prompt_cache get"
     "features.prompt_cache view"
     "features.prompt_cache miss"
+    "features.system_prompt cached_tokens"
     "features.agent prompt_cache_warmup")
   string(FIND "${prompt_cache_doc_content}" "${required_prompt_cache_doc_marker}" prompt_cache_doc_marker_pos)
   if(prompt_cache_doc_marker_pos EQUAL -1)
@@ -769,7 +771,8 @@ foreach(required_structured_output_doc_marker
 endforeach()
 foreach(required_agent_runtime_doc_marker
     "features.agent prompt_warmup"
-    "features.agent prompt_cache_warmup")
+    "features.agent prompt_cache_warmup"
+    "features.system_prompt cached_tokens")
   string(FIND "${agent_runtime_doc_content}" "${required_agent_runtime_doc_marker}" agent_runtime_doc_marker_pos)
   if(agent_runtime_doc_marker_pos EQUAL -1)
     message(FATAL_ERROR "Agent runtime doc is missing benchmark marker '${required_agent_runtime_doc_marker}'")

@@ -162,7 +162,8 @@ ctest --preset dev -R '^(test_inference|test_abi_invalid_args|gate_abi_layout_re
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ./build/dev/benchmarks/astral_benchmarks --only features
 ```
 
-Expected markers include `features.agent prompt_warmup` and
-`features.agent prompt_cache_warmup`. Native tests include agent-bound tool
+Expected markers include `features.agent prompt_warmup`,
+`features.agent prompt_cache_warmup`, and
+`features.system_prompt cached_tokens`. Native tests include agent-bound tool
 call parsing in `inference_toolset_parse_and_bind_mock` and shared-model agent
 slot isolation in `inference_agents_share_model_executor_mock`.
