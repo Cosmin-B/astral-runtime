@@ -437,7 +437,7 @@ AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity,
         model_release(model);
         ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         core::runtime_delete(conv);
-        return slot_affinity == 0 ? ASTRAL_E_NOMEM : ASTRAL_E_BUSY;
+        return ASTRAL_E_BUSY;
     }
     conv->slot_id.store(sid, std::memory_order_release);
 

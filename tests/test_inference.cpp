@@ -386,7 +386,7 @@ TEST(inference_conversation_multi_slot_isolation) {
     ASSERT_NE(out_a, out_b);
 
     AstralHandle c = 0;
-    ASSERT_EQ(astral_conv_create(&conv_desc, &c), ASTRAL_E_NOMEM);
+    ASSERT_EQ(astral_conv_create(&conv_desc, &c), ASTRAL_E_BUSY);
 
     astral_conv_destroy(a);
     astral_conv_destroy(b);
@@ -714,7 +714,7 @@ TEST(inference_agents_share_model_executor_mock) {
     ASSERT_FALSE(astral_handle_valid(busy_agent));
 
     AstralHandle overflow_agent = 0;
-    ASSERT_EQ(astral_agent_create(&desc, &overflow_agent), ASTRAL_E_NOMEM);
+    ASSERT_EQ(astral_agent_create(&desc, &overflow_agent), ASTRAL_E_BUSY);
     ASSERT_FALSE(astral_handle_valid(overflow_agent));
 
     ASSERT_EQ(astral_agent_set_system_prompt(agent_a, span_from_cstr("speak as pilot")), ASTRAL_OK);

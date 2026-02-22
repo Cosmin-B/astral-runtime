@@ -45,7 +45,7 @@ caller-provided text or `astral_agent_chat_tool_call_result()` for the latest
 drained chat stream, so wrappers do not need to retain a separate toolset
 handle for completed output parsing.
 Each agent occupies one executor slot while it exists. Creating more agents than
-the configured slot count returns `ASTRAL_E_NOMEM`; use that as the native
+the configured slot count returns `ASTRAL_E_BUSY`; use that as the native
 backpressure signal for shared-model character pools.
 `AstralAgentDesc::slot_affinity` can pin an agent to a stable executor slot.
 Use `ASTRAL_AGENT_SLOT_AUTO` for the normal first-free policy, or pass a
