@@ -44,5 +44,5 @@ For local Linux container validation, use:
 ```
 
 The script resolves the checked-in Unity version and uses
-`unityci/editor:ubuntu-6000.0.57f1-base-3.1.0` unless `--image` or
+`unityci/editor:ubuntu-6000.0.57f1-base-3.2.2` unless `--image` or
 `ASTRAL_UNITY_GAMECI_IMAGE` overrides it.
