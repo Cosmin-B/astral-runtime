@@ -783,6 +783,91 @@ TEST(inference_agents_share_model_executor_mock) {
     astral_shutdown();
 }
 
+TEST(inference_agents_cancel_one_shared_model_mock) {
+    constexpr uint32_t kBytesPerMiB = 1024 * 1024;
+    constexpr uint32_t kReserveMiB = 32;
+    constexpr uint32_t kExecutorSlots = 2;
+    constexpr uint32_t kBatchTokens = 1;
+    constexpr uint32_t kMaxTokens = 32;
+    constexpr uint32_t kMaxMessages = 4;
+    constexpr uint32_t kMaxPromptKiB = 8;
+    constexpr uint32_t kMaxPromptBytes = kMaxPromptKiB * 1024;
+    constexpr uint32_t kRequestTimeoutMs = 5000;
+    constexpr char kLongPrompt[] =
+        "cancel this shared model request after it begins prompt ingestion with enough bytes to span ticks";
+    constexpr char kOtherPrompt[] = "finish normally";
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = kReserveMiB * kBytesPerMiB;
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralHandle model = load_mock_model(nullptr);
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = kExecutorSlots;
+    ex.max_batch_tokens = kBatchTokens;
+    ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
+
+    AstralAgentDesc desc{};
+    desc.size = sizeof(AstralAgentDesc);
+    desc.model = model;
+    desc.max_tokens = kMaxTokens;
+    desc.temperature = 0.0f;
+    desc.top_p = 1.0f;
+    desc.stream_enabled = 1;
+    desc.max_messages = kMaxMessages;
+    desc.max_prompt_bytes = kMaxPromptBytes;
+
+    AstralHandle canceled_agent = 0;
+    AstralHandle active_agent = 0;
+    ASSERT_EQ(astral_agent_create(&desc, &canceled_agent), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_create(&desc, &active_agent), ASTRAL_OK);
+
+    AstralAgentChatDesc canceled_chat{};
+    canceled_chat.size = sizeof(AstralAgentChatDesc);
+    canceled_chat.user_message = span_from_cstr(kLongPrompt);
+    ASSERT_EQ(astral_agent_chat_enqueue(canceled_agent, &canceled_chat), ASTRAL_OK);
+
+    AstralRequestRef canceled_request{};
+    ASSERT_EQ(astral_request_from_agent_chat(canceled_agent, &canceled_request), ASTRAL_OK);
+    ASSERT_EQ(astral_request_cancel(&canceled_request), ASTRAL_OK);
+
+    AstralAgentChatDesc active_chat{};
+    active_chat.size = sizeof(AstralAgentChatDesc);
+    active_chat.user_message = span_from_cstr(kOtherPrompt);
+    ASSERT_EQ(astral_agent_chat_enqueue(active_agent, &active_chat), ASTRAL_OK);
+
+    AstralRequestRef active_request{};
+    ASSERT_EQ(astral_request_from_agent_chat(active_agent, &active_request), ASTRAL_OK);
+
+    AstralRequestStatus canceled_status{};
+    canceled_status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_wait(&canceled_request, kRequestTimeoutMs, &canceled_status), ASTRAL_OK);
+    ASSERT_EQ(canceled_status.state, ASTRAL_REQUEST_CANCELED);
+
+    AstralRequestStatus active_status{};
+    active_status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_wait(&active_request, kRequestTimeoutMs, &active_status), ASTRAL_OK);
+    ASSERT_EQ(active_status.state, ASTRAL_REQUEST_COMPLETED);
+    (void)read_agent_stream_all(active_agent);
+
+    AstralAgentChatResult canceled_result{};
+    canceled_result.size = sizeof(AstralAgentChatResult);
+    ASSERT_EQ(astral_agent_chat_result(canceled_agent, &canceled_result), ASTRAL_OK);
+    ASSERT_EQ(canceled_result.state, ASTRAL_SESSION_CANCELED);
+
+    AstralAgentChatResult active_result{};
+    active_result.size = sizeof(AstralAgentChatResult);
+    ASSERT_EQ(astral_agent_chat_result(active_agent, &active_result), ASTRAL_OK);
+    ASSERT_EQ(active_result.state, ASTRAL_SESSION_COMPLETED);
+    ASSERT_GT(active_result.generated_tokens, 0ull);
+
+    astral_agent_destroy(canceled_agent);
+    astral_agent_destroy(active_agent);
+    astral_model_release(model);
+    astral_shutdown();
+}
+
 TEST(inference_agent_overflow_truncate_mock) {
     constexpr uint32_t kReserveBytes = 32 * 1024 * 1024;
     constexpr uint32_t kMaxTokens = 0;
