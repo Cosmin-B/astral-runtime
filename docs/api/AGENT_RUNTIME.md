@@ -167,4 +167,5 @@ Expected markers include `features.agent prompt_warmup`,
 `features.agent prompt_cache_warmup`, and
 `features.system_prompt cached_tokens`. Native tests include agent-bound tool
 call parsing in `inference_toolset_parse_and_bind_mock` and shared-model agent
-slot isolation in `inference_agents_share_model_executor_mock`.
+slot isolation plus cancel isolation in `inference_agents_share_model_executor_mock`
+and `inference_agents_cancel_one_shared_model_mock`.
