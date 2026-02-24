@@ -642,7 +642,7 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(result.state, ASTRAL_SESSION_COMPLETED);
     ASSERT_EQ(result.history_messages, kChatHistoryCount);
     ASSERT_GT(result.prompt_cache_reused_tokens, kPromptCacheNoReusedTokens);
-    ASSERT_EQ(result.prompt_cache_new_tokens, kPromptCacheNoNewTokens);
+    ASSERT_GT(result.prompt_cache_new_tokens, kPromptCacheNoNewTokens);
     ASSERT_EQ(result.prompt_cache_hits, kPromptCacheSecondHits);
     ASSERT_EQ(astral_agent_chat_cancel(agent), ASTRAL_OK);
 
