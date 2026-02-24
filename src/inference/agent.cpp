@@ -62,6 +62,8 @@ struct AgentHistoryArena {
 struct AgentPromptWorkspace {
     uint8_t* scratch;
     uint32_t scratch_capacity;
+    uint8_t* prefix;
+    uint32_t prefix_capacity;
 };
 
 struct AgentGeneratedCapture {
@@ -143,6 +145,7 @@ inline bool overflow_policy_valid(AstralAgentOverflowPolicy policy) {
 }
 
 void invalidate_prompt_metadata(Agent* agent);
+void append_bytes_hashed(uint8_t*& dst, const void* src, uint32_t len, uint64_t* hash);
 
 void hash_bytes_into(uint64_t* hash, const void* src, uint32_t len) {
     const uint8_t* bytes = static_cast<const uint8_t*>(src);
@@ -243,6 +246,8 @@ void destroy_agent_allocations(Agent* agent) {
     agent->memory_context_len = 0;
     free_bytes(agent->chat.prompt.scratch, agent->chat.prompt.scratch_capacity);
     agent->chat.prompt.scratch_capacity = 0;
+    free_bytes(agent->chat.prompt.prefix, agent->chat.prompt.prefix_capacity);
+    agent->chat.prompt.prefix_capacity = 0;
     free_bytes(agent->chat.generated.bytes, agent->chat.generated.capacity);
     agent->chat.generated.len = 0;
     agent->chat.generated.capacity = 0;
@@ -342,13 +347,60 @@ void remove_oldest_message(Agent* agent) {
     invalidate_prompt_metadata(agent);
 }
 
-void hash_role_line(AstralAgentRole role, const uint8_t* content, uint32_t len, uint64_t* hash, uint32_t* out_bytes) {
+uint32_t role_line_bytes(AstralAgentRole role, uint32_t len) {
+    uint32_t label_len = 0;
+    (void)role_label(role, &label_len);
+    return label_len + len + static_cast<uint32_t>(sizeof(kLineBreak) - 1u);
+}
+
+uint32_t stable_prefix_bytes(const Agent* agent) {
+    uint32_t bytes = 0;
+    if (agent->system_prompt_len != 0) {
+        bytes += role_line_bytes(ASTRAL_AGENT_ROLE_SYSTEM, agent->system_prompt_len);
+    }
+    if (agent->summary_len != 0) {
+        bytes += static_cast<uint32_t>(sizeof(kSummaryLabel) - 1u) + agent->summary_len +
+                 static_cast<uint32_t>(sizeof(kLineBreak) - 1u);
+    }
+    if (agent->memory_context_len != 0) {
+        bytes += static_cast<uint32_t>(sizeof(kMemoryLabel) - 1u) + agent->memory_context_len +
+                 static_cast<uint32_t>(sizeof(kLineBreak) - 1u);
+    }
+    for (uint32_t i = 0; i < agent->message_count; ++i) {
+        bytes += role_line_bytes(agent->messages[i].role, agent->messages[i].len);
+    }
+    return bytes;
+}
+
+AstralErr ensure_prefix_cache(Agent* agent, uint32_t required) {
+    if (required <= agent->chat.prompt.prefix_capacity) {
+        return ASTRAL_OK;
+    }
+    uint32_t next_capacity = agent->chat.prompt.prefix_capacity != 0 ? agent->chat.prompt.prefix_capacity : required;
+    while (next_capacity < required) {
+        const uint32_t grown = next_capacity * kCapacityGrowthFactor;
+        if (grown <= next_capacity || grown > agent->max_prompt_bytes) {
+            next_capacity = required;
+            break;
+        }
+        next_capacity = grown;
+    }
+    uint8_t* next = core::runtime_alloc_array<uint8_t>(next_capacity);
+    if (next == nullptr) {
+        return ASTRAL_E_NOMEM;
+    }
+    free_bytes(agent->chat.prompt.prefix, agent->chat.prompt.prefix_capacity);
+    agent->chat.prompt.prefix = next;
+    agent->chat.prompt.prefix_capacity = next_capacity;
+    return ASTRAL_OK;
+}
+
+void append_role_line_hashed(uint8_t*& dst, AstralAgentRole role, const uint8_t* content, uint32_t len, uint64_t* hash) {
     uint32_t label_len = 0;
     const char* label = role_label(role, &label_len);
-    hash_bytes_into(hash, label, label_len);
-    hash_bytes_into(hash, content, len);
-    hash_bytes_into(hash, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
-    *out_bytes += label_len + len + static_cast<uint32_t>(sizeof(kLineBreak) - 1u);
+    append_bytes_hashed(dst, label, label_len, hash);
+    append_bytes_hashed(dst, content, len, hash);
+    append_bytes_hashed(dst, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u), hash);
 }
 
 AstralErr ensure_prompt_metadata(Agent* agent) {
@@ -356,32 +408,34 @@ AstralErr ensure_prompt_metadata(Agent* agent) {
         return ASTRAL_OK;
     }
 
-    uint32_t bytes = 0;
+    const uint32_t bytes = stable_prefix_bytes(agent);
+    const AstralErr cache_err = ensure_prefix_cache(agent, bytes);
+    if (cache_err != ASTRAL_OK) {
+        return cache_err;
+    }
+
+    uint8_t* cursor = agent->chat.prompt.prefix;
     uint64_t hash = kFnvOffsetBasis;
     if (agent->system_prompt_len != 0) {
-        hash_role_line(ASTRAL_AGENT_ROLE_SYSTEM, agent->system_prompt, agent->system_prompt_len, &hash, &bytes);
+        append_role_line_hashed(cursor, ASTRAL_AGENT_ROLE_SYSTEM, agent->system_prompt, agent->system_prompt_len, &hash);
     }
     if (agent->summary_len != 0) {
-        hash_bytes_into(&hash, kSummaryLabel, static_cast<uint32_t>(sizeof(kSummaryLabel) - 1u));
-        hash_bytes_into(&hash, agent->summary, agent->summary_len);
-        hash_bytes_into(&hash, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
-        bytes += static_cast<uint32_t>(sizeof(kSummaryLabel) - 1u) + agent->summary_len +
-                 static_cast<uint32_t>(sizeof(kLineBreak) - 1u);
+        append_bytes_hashed(cursor, kSummaryLabel, static_cast<uint32_t>(sizeof(kSummaryLabel) - 1u), &hash);
+        append_bytes_hashed(cursor, agent->summary, agent->summary_len, &hash);
+        append_bytes_hashed(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u), &hash);
     }
     if (agent->memory_context_len != 0) {
-        hash_bytes_into(&hash, kMemoryLabel, static_cast<uint32_t>(sizeof(kMemoryLabel) - 1u));
-        hash_bytes_into(&hash, agent->memory_context, agent->memory_context_len);
-        hash_bytes_into(&hash, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
-        bytes += static_cast<uint32_t>(sizeof(kMemoryLabel) - 1u) + agent->memory_context_len +
-                 static_cast<uint32_t>(sizeof(kLineBreak) - 1u);
+        append_bytes_hashed(cursor, kMemoryLabel, static_cast<uint32_t>(sizeof(kMemoryLabel) - 1u), &hash);
+        append_bytes_hashed(cursor, agent->memory_context, agent->memory_context_len, &hash);
+        append_bytes_hashed(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u), &hash);
     }
     for (uint32_t i = 0; i < agent->message_count; ++i) {
-        hash_role_line(
+        append_role_line_hashed(
+            cursor,
             agent->messages[i].role,
             message_content(agent, agent->messages[i]),
             agent->messages[i].len,
-            &hash,
-            &bytes
+            &hash
         );
     }
     agent->chat.prefix.prefix_bytes = bytes;
@@ -391,12 +445,9 @@ AstralErr ensure_prompt_metadata(Agent* agent) {
 }
 
 AstralErr prompt_bytes_required(Agent* agent, AstralSpanU8 user_message, uint32_t* out_bytes) {
-    const AstralErr meta_err = ensure_prompt_metadata(agent);
-    if (meta_err != ASTRAL_OK) {
-        return meta_err;
-    }
-
-    uint32_t bytes = kHeaderReserveBytes + agent->chat.prefix.prefix_bytes;
+    const uint32_t prefix_bytes =
+        agent->chat.prefix.valid != 0 ? agent->chat.prefix.prefix_bytes : stable_prefix_bytes(agent);
+    uint32_t bytes = kHeaderReserveBytes + prefix_bytes;
     if (user_message.len != 0) {
         bytes += static_cast<uint32_t>(sizeof(kUserLabel) - 1u) + user_message.len +
                  static_cast<uint32_t>(sizeof(kLineBreak) - 1u);
@@ -482,14 +533,6 @@ void append_span_hashed(uint8_t*& dst, AstralSpanU8 span, uint64_t* hash) {
     append_bytes_hashed(dst, span.data, span.len, hash);
 }
 
-void append_role_line(uint8_t*& dst, AstralAgentRole role, const uint8_t* content, uint32_t len) {
-    uint32_t label_len = 0;
-    const char* label = role_label(role, &label_len);
-    append_bytes(dst, label, label_len);
-    append_bytes(dst, content, len);
-    append_bytes(dst, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
-}
-
 AstralErr build_prompt(
     Agent* agent,
     AstralSpanU8 user_message,
@@ -515,24 +558,13 @@ AstralErr build_prompt(
         return scratch_err;
     }
 
+    const AstralErr meta_err = ensure_prompt_metadata(agent);
+    if (meta_err != ASTRAL_OK) {
+        return meta_err;
+    }
+
     uint8_t* cursor = agent->chat.prompt.scratch;
-    if (agent->system_prompt_len != 0) {
-        append_role_line(cursor, ASTRAL_AGENT_ROLE_SYSTEM, agent->system_prompt, agent->system_prompt_len);
-    }
-    if (agent->summary_len != 0) {
-        append_bytes(cursor, kSummaryLabel, static_cast<uint32_t>(sizeof(kSummaryLabel) - 1u));
-        append_bytes(cursor, agent->summary, agent->summary_len);
-        append_bytes(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
-    }
-    if (agent->memory_context_len != 0) {
-        append_bytes(cursor, kMemoryLabel, static_cast<uint32_t>(sizeof(kMemoryLabel) - 1u));
-        append_bytes(cursor, agent->memory_context, agent->memory_context_len);
-        append_bytes(cursor, kLineBreak, static_cast<uint32_t>(sizeof(kLineBreak) - 1u));
-    }
-    for (uint32_t i = 0; i < agent->message_count; ++i) {
-        const uint8_t* content = message_content(agent, agent->messages[i]);
-        append_role_line(cursor, agent->messages[i].role, content, agent->messages[i].len);
-    }
+    append_bytes(cursor, agent->chat.prompt.prefix, agent->chat.prefix.prefix_bytes);
     if (out_prefix_len != nullptr) {
         *out_prefix_len = agent->chat.prefix.prefix_bytes;
     }
