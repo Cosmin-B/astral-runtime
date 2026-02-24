@@ -64,11 +64,11 @@ assistant prefix. The scratch buffer is owned by the agent and reused across
 chat requests.
 History messages are stored as small native records that point into one
 agent-owned byte arena. Adding a message appends its UTF-8 bytes once; prompt
-assembly walks records linearly and copies from the arena into the reusable
-prompt buffer.
-The agent caches the stable prefix byte count and prompt-cache hash after
+assembly reuses a cached stable prefix and appends only the current user turn
+and assistant marker into the prompt buffer.
+The agent caches stable prefix bytes, byte count, and prompt-cache hash after
 system prompt, summary, memory context, or history changes, so repeated turns
-do not rescan those bytes just to derive cache keys.
+do not rescan those bytes or rebuild that section.
 `astral_agent_set_memory_context_from_results()` builds that memory context
 from document bytes, chunk ranges, and memory search results in result order.
 It copies only the selected byte ranges into the agent and inserts the caller's
