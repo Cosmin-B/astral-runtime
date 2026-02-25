@@ -658,7 +658,14 @@ AstralErr feed_prompt_with_cache(
         agent->chat.prompt_cache_reused_tokens = cached_count;
         agent->chat.prompt_cache_hits = kPromptCacheHitCount;
         err = conv_feed_tokens(agent->conv_ptr, cached_tokens, cached_count, 0);
-        return err == ASTRAL_OK ? conv_feed(agent->conv_ptr, suffix, kPromptFinalize) : err;
+        if (err != ASTRAL_OK) {
+            return err;
+        }
+        err = conv_feed(agent->conv_ptr, suffix, kPromptFinalize);
+        if (err == ASTRAL_OK && agent->conv_ptr->prompt_count >= cached_count) {
+            agent->chat.prompt_cache_new_tokens = agent->conv_ptr->prompt_count - cached_count;
+        }
+        return err;
     }
     if (err != ASTRAL_E_NOT_FOUND) {
         return err;
