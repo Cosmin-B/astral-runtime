@@ -696,7 +696,8 @@ foreach(required_model_tool_text
     "download"
     "list"
     "validate-only"
-    "print-path")
+    "print-path"
+    "list-unreal-matrix")
   string(FIND "${model_downloader_content}" "${required_model_tool_text}" model_downloader_pos)
   if(model_downloader_pos EQUAL -1)
     message(FATAL_ERROR "Model downloader wrapper is missing '${required_model_tool_text}'")
