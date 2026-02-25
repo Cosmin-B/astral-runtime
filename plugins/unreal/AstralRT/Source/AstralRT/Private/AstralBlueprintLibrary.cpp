@@ -1584,6 +1584,41 @@ bool UAstralBlueprintLibrary::IsRequestSuccessful(const FAstralRequestStatus& St
     return IsRequestCompleted(Status) && Status.ErrorCode == static_cast<int32>(EAstralError::OK);
 }
 
+bool UAstralBlueprintLibrary::IsOperationSuccessful(const FAstralOperationResult& Result)
+{
+    return Result.bSuccess;
+}
+
+bool UAstralBlueprintLibrary::IsOperationBackpressure(const FAstralOperationResult& Result)
+{
+    return Result.bBackpressure;
+}
+
+bool UAstralBlueprintLibrary::IsOperationTimeout(const FAstralOperationResult& Result)
+{
+    return Result.bTimeout;
+}
+
+bool UAstralBlueprintLibrary::IsOperationCanceled(const FAstralOperationResult& Result)
+{
+    return Result.bCanceled;
+}
+
+bool UAstralBlueprintLibrary::IsOperationUnsupported(const FAstralOperationResult& Result)
+{
+    return Result.bUnsupported;
+}
+
+bool UAstralBlueprintLibrary::IsOperationNotFound(const FAstralOperationResult& Result)
+{
+    return Result.bNotFound;
+}
+
+bool UAstralBlueprintLibrary::IsOperationEndOfStream(const FAstralOperationResult& Result)
+{
+    return Result.bEndOfStream;
+}
+
 bool UAstralBlueprintLibrary::CreatePromptCache(const FAstralPromptCacheDesc& Desc, int64& OutCacheHandle, int32& OutErrorCode)
 {
     const FAstralOperationResult Result = CreatePromptCacheResult(Desc);
