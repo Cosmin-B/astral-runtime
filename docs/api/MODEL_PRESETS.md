@@ -26,6 +26,7 @@ package/sample-matrix eligibility.
 - `tests/model_downloader.sh --preset <preset> --print-path`
 - `tests/model_downloader.sh --list-presets --list-type text`
 - `tests/model_downloader.sh --list-package --list-format json`
+- `tests/model_downloader.sh --list-unreal-matrix --list-format json`
 - `tests/model_downloader.sh --list-presets --list-type embedding --list-format json`
 
 `--dry-run` prints the resolved preset, output path, URL, byte size, checksum,
@@ -95,6 +96,7 @@ python3 scripts/model_preset_tool.py status-all --type embedding --format json -
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --list-presets --list-type text
 ./tests/model_downloader.sh --list-package --list-format json
+./tests/model_downloader.sh --list-unreal-matrix --list-format json
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --print-path
 ```
 

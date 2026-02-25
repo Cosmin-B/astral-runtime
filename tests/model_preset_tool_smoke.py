@@ -119,6 +119,18 @@ def run_tool(root: Path, *args: str, check: bool = True) -> subprocess.Completed
     )
 
 
+def run_downloader(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    command = [str(root / "tests" / "model_downloader.sh"), *args]
+    return subprocess.run(
+        command,
+        cwd=root,
+        check=check,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
@@ -196,6 +208,24 @@ def main(argv: list[str]) -> int:
     ).stdout
     require(UNREAL_MATRIX_PRESET in unreal_matrix_status, "Unreal matrix status missed expected preset")
     require(PACKAGE_PRESET not in unreal_matrix_status, "Unreal matrix status included package-only preset")
+    wrapper_unreal_matrix = run_downloader(
+        root,
+        "--list-unreal-matrix",
+        "--list-format",
+        "json",
+    ).stdout
+    require(UNREAL_MATRIX_PRESET in wrapper_unreal_matrix, "wrapper Unreal matrix list missed expected preset")
+    wrapper_unreal_matrix_status = run_downloader(
+        root,
+        "--status-all",
+        "--list-unreal-matrix",
+        "--status-format",
+        "text",
+        "--dir",
+        CUSTOM_OUTPUT_DIR,
+    ).stdout
+    require(UNREAL_MATRIX_PRESET in wrapper_unreal_matrix_status, "wrapper Unreal matrix status missed expected preset")
+    require(PACKAGE_PRESET not in wrapper_unreal_matrix_status, "wrapper Unreal matrix status included package-only preset")
     preset_for_file = run_tool(root, "preset-for-file", UNREAL_MATRIX_FILE).stdout.strip()
     require(preset_for_file == UNREAL_MATRIX_PRESET, "filename lookup did not resolve Unreal matrix preset")
 

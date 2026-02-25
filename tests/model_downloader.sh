@@ -25,6 +25,7 @@ Options:
   --status-format <fmt> Print --status/--status-all as json or text
   --list-presets        Print available presets
   --list-package        Print presets marked for packaged samples
+  --list-unreal-matrix  Print presets marked for Unreal sample matrix runs
   --list-type <type>    Filter --list-presets by all, text, or embedding
   --list-format <fmt>   Print --list-presets as text or json
   --token <token>       Hugging Face token, otherwise HF_TOKEN/HUGGINGFACE_HUB_TOKEN is used
@@ -69,6 +70,7 @@ print_status_all=0
 inspect_metadata=0
 list_presets=0
 list_package=0
+list_unreal_matrix=0
 preset_name=""
 output_dir="tests/models"
 list_type="all"
@@ -107,6 +109,11 @@ while [[ $# -gt 0 ]]; do
       list_package=1
       shift
       ;;
+    --list-unreal-matrix)
+      list_presets=1
+      list_unreal_matrix=1
+      shift
+      ;;
     --help|-h)
       usage
       exit "${exit_ok}"
@@ -123,6 +130,9 @@ if [[ "${list_presets}" -eq 1 && "${print_status_all}" -eq 0 ]]; then
   list_args=(list --type "${list_type}" --format "${list_format}" --dir "${output_dir}")
   if [[ "${list_package}" -eq 1 ]]; then
     list_args+=(--package)
+  fi
+  if [[ "${list_unreal_matrix}" -eq 1 ]]; then
+    list_args+=(--unreal-matrix)
   fi
   exec python3 "${tool}" "${list_args[@]}"
 fi
@@ -163,6 +173,9 @@ if [[ "${print_status_all}" -eq 1 ]]; then
   status_args=(status-all --type "${list_type}" --dir "${output_dir}" --format "${status_format}")
   if [[ "${list_package}" -eq 1 ]]; then
     status_args+=(--package)
+  fi
+  if [[ "${list_unreal_matrix}" -eq 1 ]]; then
+    status_args+=(--unreal-matrix)
   fi
   exec python3 "${tool}" "${status_args[@]}"
 fi
