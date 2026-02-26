@@ -502,13 +502,14 @@ FAstralOperationResult UAstralBlueprintLibrary::CopyAdapterPathResult(int64 Adap
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CopyAdapterPath);
 
     OutPath.Reset();
-    AstralMutSpanU8 SizeOnly{};
-    uint32_t Required = 0;
-    AstralErr Err = astral_model_adapter_path_copy(static_cast<AstralHandle>(AdapterHandle), SizeOnly, &Required);
+    AstralAdapterInfo Info{};
+    Info.size = sizeof(AstralAdapterInfo);
+    AstralErr Err = astral_model_adapter_info(static_cast<AstralHandle>(AdapterHandle), &Info);
     if (Err != ASTRAL_OK)
     {
         return make_operation_result(Err);
     }
+    const uint32_t Required = Info.path_bytes;
     if (Required == 0)
     {
         return make_operation_result(ASTRAL_OK, AdapterHandle, kEmptyResultCount);

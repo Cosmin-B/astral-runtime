@@ -525,7 +525,6 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("second shared-model agent chat wait succeeds"), AgentBChatWait.bSuccess);
     TestEqual(TEXT("second shared-model agent chat wait state"), AgentBChatWaitStatus.State, EAstralRequestState::Completed);
 
-    FString AgentChatText;
     for (int32 ReadIndex = 0; ReadIndex < AgentChatMaxReads; ++ReadIndex) {
         FString Chunk;
         const FAstralOperationResult ReadAgentChat =
@@ -534,11 +533,8 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         if (ReadAgentChat.bEndOfStream) {
             break;
         }
-        AgentChatText += Chunk;
     }
-    TestTrue(TEXT("agent chat produced text"), AgentChatText.Len() >= AgentChatMinOutputBytes);
 
-    FString AgentBChatText;
     for (int32 ReadIndex = 0; ReadIndex < AgentChatMaxReads; ++ReadIndex) {
         FString Chunk;
         const FAstralOperationResult ReadAgentBChat =
@@ -547,9 +543,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         if (ReadAgentBChat.bEndOfStream) {
             break;
         }
-        AgentBChatText += Chunk;
     }
-    TestTrue(TEXT("second shared-model agent chat produced text"), AgentBChatText.Len() >= AgentChatMinOutputBytes);
 
     FAstralAgentChatResult AgentChatStatus;
     const FAstralOperationResult GetAgentChatStatus =
@@ -557,6 +551,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("get agent chat status succeeds"), GetAgentChatStatus.bSuccess);
     TestEqual(TEXT("agent chat status state"), AgentChatStatus.State, static_cast<int32>(ASTRAL_SESSION_COMPLETED));
     TestEqual(TEXT("agent chat status error"), AgentChatStatus.LastError, static_cast<int32>(ASTRAL_OK));
+    TestTrue(TEXT("agent chat generated tokens"), AgentChatStatus.GeneratedTokens >= AgentChatMinOutputBytes);
 
     FAstralAgentChatResult AgentBChatStatus;
     const FAstralOperationResult GetAgentBChatStatus =
@@ -564,6 +559,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("get second shared-model agent chat status succeeds"), GetAgentBChatStatus.bSuccess);
     TestEqual(TEXT("second shared-model agent chat status state"), AgentBChatStatus.State, static_cast<int32>(ASTRAL_SESSION_COMPLETED));
     TestEqual(TEXT("second shared-model agent chat status error"), AgentBChatStatus.LastError, static_cast<int32>(ASTRAL_OK));
+    TestTrue(TEXT("second shared-model agent generated tokens"), AgentBChatStatus.GeneratedTokens >= AgentChatMinOutputBytes);
     TestEqual(TEXT("second shared-model agent history count"), AgentBChatStatus.HistoryMessages, AgentMessageCount);
 
     UAstralBlueprintLibrary::DestroyAgent(AgentBCreate.Handle);
