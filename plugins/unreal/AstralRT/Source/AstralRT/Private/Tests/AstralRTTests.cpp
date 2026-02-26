@@ -1119,6 +1119,26 @@ bool FAstralRTModuleRuntimeGenerationInvalidationTest::RunTest(const FString& Pa
     TestTrue(TEXT("canceled request helper"), UAstralBlueprintLibrary::IsRequestCanceled(CompletedStatus));
     TestTrue(TEXT("canceled terminal helper"), UAstralBlueprintLibrary::IsRequestTerminal(CompletedStatus));
 
+    TestTrue(TEXT("operation success helper"), UAstralBlueprintLibrary::IsOperationSuccessful(CreateSessionRequest));
+    FAstralOperationResult OperationStatus{};
+    OperationStatus.bBackpressure = true;
+    TestTrue(TEXT("operation backpressure helper"), UAstralBlueprintLibrary::IsOperationBackpressure(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bTimeout = true;
+    TestTrue(TEXT("operation timeout helper"), UAstralBlueprintLibrary::IsOperationTimeout(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bCanceled = true;
+    TestTrue(TEXT("operation canceled helper"), UAstralBlueprintLibrary::IsOperationCanceled(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bUnsupported = true;
+    TestTrue(TEXT("operation unsupported helper"), UAstralBlueprintLibrary::IsOperationUnsupported(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bNotFound = true;
+    TestTrue(TEXT("operation not found helper"), UAstralBlueprintLibrary::IsOperationNotFound(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bEndOfStream = true;
+    TestTrue(TEXT("operation end of stream helper"), UAstralBlueprintLibrary::IsOperationEndOfStream(OperationStatus));
+
     UAstralModel* EmbeddingModel = NewObject<UAstralModel>();
     TestNotNull(TEXT("embedding model allocated"), EmbeddingModel);
 

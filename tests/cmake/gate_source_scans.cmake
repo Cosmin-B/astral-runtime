@@ -1308,7 +1308,10 @@ foreach(required_unreal_blueprint_header_text
     "HasKvState"
     "HasSlots"
     "HasGbnfGrammar"
-    "HasJsonSchemaGrammar")
+    "HasJsonSchemaGrammar"
+    "IsOperationSuccessful"
+    "IsOperationBackpressure"
+    "IsOperationEndOfStream")
   string(FIND "${unreal_blueprint_header_text}" "${required_unreal_blueprint_header_text}" unreal_blueprint_header_pos)
   if(unreal_blueprint_header_pos EQUAL -1)
     message(FATAL_ERROR "AstralRT Blueprint library header is missing '${required_unreal_blueprint_header_text}'")
@@ -1324,7 +1327,9 @@ foreach(required_unreal_blueprint_source_text
     "ASTRAL_CAP_STOP_SEQS"
     "ASTRAL_CAP_EMBEDDINGS"
     "ASTRAL_CAP_LOGPROBS"
-    "ASTRAL_CAP_MM_EMBEDDINGS")
+    "ASTRAL_CAP_MM_EMBEDDINGS"
+    "Result.bBackpressure"
+    "Result.bEndOfStream")
   string(FIND "${unreal_blueprint_source_text}" "${required_unreal_blueprint_source_text}" unreal_blueprint_source_pos)
   if(unreal_blueprint_source_pos EQUAL -1)
     message(FATAL_ERROR "AstralRT Blueprint library source is missing '${required_unreal_blueprint_source_text}'")
@@ -1704,7 +1709,9 @@ foreach(required_unreal_blueprint_test
     "AstralRT.Blueprint.LibraryHelpers"
     "Blueprint model factory"
     "HasSamplerControls"
-    "HasMultimodalEmbeddings")
+    "HasMultimodalEmbeddings"
+    "operation backpressure helper"
+    "operation end of stream helper")
   if(NOT unreal_automation_text MATCHES "${required_unreal_blueprint_test}")
     message(FATAL_ERROR "Unreal Blueprint library Automation coverage is missing ${required_unreal_blueprint_test}")
   endif()
