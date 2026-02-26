@@ -414,6 +414,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     AgentDesc.MaxMessages = AgentMaxMessages;
     AgentDesc.MaxPromptBytes = AgentMaxPromptBytes;
     AgentDesc.SlotAffinity = AgentSlotAffinityA;
+    AgentDesc.SystemPrompt = TEXT("stay terse.");
     const FAstralOperationResult AgentCreate = UAstralBlueprintLibrary::CreateAgentResult(AgentDesc);
     TestTrue(TEXT("agent create result succeeds"), AgentCreate.bSuccess);
     TestTrue(TEXT("agent handle valid"), AgentCreate.Handle != 0);
@@ -450,18 +451,12 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("get second shared-model agent slot succeeds"), GetAgentBSlot.bSuccess);
     TestEqual(TEXT("second shared-model agent assigned slot"), AgentBAssignedSlot, AgentSlotB);
 
-    const FString AgentSystemPrompt(TEXT("stay terse."));
-    const FAstralOperationResult SetAgentSystem =
-        UAstralBlueprintLibrary::SetAgentSystemPromptResult(AgentCreate.Handle, AgentSystemPrompt);
-    TestTrue(TEXT("set agent system prompt succeeds"), SetAgentSystem.bSuccess);
-    TestEqual(TEXT("set agent system prompt bytes"), SetAgentSystem.Count, AgentSystemPromptBytes);
-
     FString ReadAgentSystemPrompt;
     const FAstralOperationResult GetAgentSystem =
         UAstralBlueprintLibrary::GetAgentSystemPromptResult(AgentCreate.Handle, ReadAgentSystemPrompt);
     TestTrue(TEXT("get agent system prompt succeeds"), GetAgentSystem.bSuccess);
     TestEqual(TEXT("get agent system prompt bytes"), GetAgentSystem.Count, AgentSystemPromptBytes);
-    TestEqual(TEXT("get agent system prompt value"), ReadAgentSystemPrompt, AgentSystemPrompt);
+    TestEqual(TEXT("get agent system prompt value"), ReadAgentSystemPrompt, AgentDesc.SystemPrompt);
 
     const FAstralOperationResult AddAgentUser =
         UAstralBlueprintLibrary::AddAgentMessageResult(AgentCreate.Handle, EAstralAgentRole::User, TEXT("hello"));

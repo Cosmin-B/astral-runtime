@@ -51,38 +51,76 @@ namespace Astral.Runtime
             }
 
             config = config ?? AstralAgentConfig.Default;
-            var desc = new AstralNative.AstralAgentDesc
+            var systemBytes = ToTempUtf8(config.systemPrompt);
+            var summaryBytes = ToTempUtf8(config.summary);
+            var memoryContextBytes = ToTempUtf8(config.memoryContext);
+            try
             {
-                size = (uint)Marshal.SizeOf<AstralNative.AstralAgentDesc>(),
-                model = model.Handle,
-                prompt_cache = config.promptCache,
-                memory_index = config.memoryIndex,
-                toolset = config.toolset,
-                max_tokens = config.maxTokens,
-                temperature = config.temperature,
-                top_k = config.topK,
-                top_p = config.topP,
-                stream_enabled = (byte)(config.streamEnabled ? 1 : 0),
-                seed = config.seed,
-                tool_choice_mode = (uint)config.toolChoiceMode,
-                max_messages = config.maxMessages,
-                max_prompt_bytes = config.maxPromptBytes,
-                overflow_policy = config.overflowPolicy,
-                slot_affinity = config.slotAffinity
-            };
+                var desc = new AstralNative.AstralAgentDesc
+                {
+                    size = (uint)Marshal.SizeOf<AstralNative.AstralAgentDesc>(),
+                    model = model.Handle,
+                    prompt_cache = config.promptCache,
+                    memory_index = config.memoryIndex,
+                    toolset = config.toolset,
+                    max_tokens = config.maxTokens,
+                    temperature = config.temperature,
+                    top_k = config.topK,
+                    top_p = config.topP,
+                    stream_enabled = (byte)(config.streamEnabled ? 1 : 0),
+                    seed = config.seed,
+                    tool_choice_mode = (uint)config.toolChoiceMode,
+                    max_messages = config.maxMessages,
+                    max_prompt_bytes = config.maxPromptBytes,
+                    overflow_policy = config.overflowPolicy,
+                    slot_affinity = config.slotAffinity,
+                    system_prompt = SpanFromTemp(systemBytes),
+                    summary = SpanFromTemp(summaryBytes),
+                    memory_context = SpanFromTemp(memoryContextBytes)
+                };
 
-            int err = AstralNative.astral_agent_create(ref desc, out var handle);
-            if (err != AstralNative.ASTRAL_OK)
-            {
-                throw new AstralException($"astral_agent_create failed: {AstralRuntime.GetErrorString(err)}", err);
+                int err = AstralNative.astral_agent_create(ref desc, out var handle);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_agent_create failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+
+                return new AstralAgent
+                {
+                    m_handle = handle,
+                    m_model = model,
+                    m_disposed = false
+                };
             }
-
-            return new AstralAgent
+            finally
             {
-                m_handle = handle,
-                m_model = model,
-                m_disposed = false
-            };
+                DisposeTemp(ref systemBytes);
+                DisposeTemp(ref summaryBytes);
+                DisposeTemp(ref memoryContextBytes);
+            }
+        }
+
+        private static NativeArray<byte> ToTempUtf8(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return default;
+            }
+            return new NativeArray<byte>(Encoding.UTF8.GetBytes(text), Allocator.Temp);
+        }
+
+        private static AstralNative.AstralSpanU8 SpanFromTemp(NativeArray<byte> bytes)
+        {
+            return bytes.IsCreated ? AstralNative.AstralSpanU8.FromNativeArray(bytes) : default;
+        }
+
+        private static void DisposeTemp(ref NativeArray<byte> bytes)
+        {
+            if (bytes.IsCreated)
+            {
+                bytes.Dispose();
+                bytes = default;
+            }
         }
 
         public uint AssignedSlot
@@ -495,6 +533,9 @@ namespace Astral.Runtime
         public AstralNative.AstralHandle memoryIndex = AstralNative.AstralHandle.Invalid;
         public AstralNative.AstralHandle toolset = AstralNative.AstralHandle.Invalid;
         public uint slotAffinity = 0;
+        public string systemPrompt;
+        public string summary;
+        public string memoryContext;
 
         public static AstralAgentConfig Default => new AstralAgentConfig();
 

@@ -38,8 +38,9 @@ history themselves.
 - `astral_agent_assigned_slot()`
 
 Agents run on the existing model-scoped conversation executor. Configure the
-executor before creating agents for a model. Toolsets and prompt caches can be
-bound at creation time and are forwarded to native prompt setup. A bound
+executor before creating agents for a model. Initial system prompt, rolling
+summary, retrieved memory context, toolsets, and prompt caches can be bound at
+creation time and are forwarded to native prompt setup. A bound
 toolset can also be used through `astral_agent_parse_tool_call()` for
 caller-provided text or `astral_agent_chat_tool_call_result()` for the latest
 drained chat stream, so wrappers do not need to retain a separate toolset
@@ -56,12 +57,14 @@ outside the configured executor, creation returns `ASTRAL_E_INVALID`.
 
 ## Ownership
 
-The agent copies system prompt, rolling summary, retrieved memory context, and
-history content into native storage. Input spans only need to remain valid for
-the duration of the call. Chat enqueue assembles one bounded prompt buffer in
-this order: system prompt, summary, memory context, history, current user turn,
-assistant prefix. The scratch buffer is owned by the agent and reused across
-chat requests.
+The agent copies `AstralAgentDesc::system_prompt`,
+`AstralAgentDesc::summary`, `AstralAgentDesc::memory_context`, and history
+content into native storage. Those sections can also be replaced later through
+the matching set calls. Input spans only need to remain valid for the duration
+of the call. Chat enqueue assembles one bounded prompt buffer in this order:
+system prompt, summary, memory context, history, current user turn, assistant
+prefix. The scratch buffer is owned by the agent and reused across chat
+requests.
 History messages are stored as small native records that point into one
 agent-owned byte arena. Adding a message appends its UTF-8 bytes once; prompt
 assembly reuses a cached stable prefix and appends only the current user turn
@@ -131,6 +134,10 @@ enum {
     kStreamEnabled = 1,
 };
 
+AstralSpanU8 system_prompt = {0};
+AstralSpanU8 summary = {0};
+AstralSpanU8 memory_context = {0};
+
 AstralAgentDesc desc = {0};
 desc.size = sizeof(AstralAgentDesc);
 desc.model = model;
@@ -139,15 +146,12 @@ desc.max_tokens = kMaxTokens;
 desc.stream_enabled = kStreamEnabled;
 desc.max_messages = kMaxMessages;
 desc.max_prompt_bytes = kMaxPromptBytes;
+desc.system_prompt = system_prompt;
+desc.summary = summary;
+desc.memory_context = memory_context;
 
 AstralHandle agent = 0;
 AstralErr err = astral_agent_create(&desc, &agent);
-
-AstralSpanU8 summary = {0};
-err = astral_agent_set_summary(agent, summary);
-
-AstralSpanU8 memory_context = {0};
-err = astral_agent_set_memory_context(agent, memory_context);
 
 AstralAgentMessage message = {0};
 message.size = sizeof(AstralAgentMessage);

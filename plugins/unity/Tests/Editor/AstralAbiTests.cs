@@ -88,6 +88,8 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(24, Marshal.SizeOf<AstralNative.AstralToolsetDesc>());
             Assert.AreEqual(56, Marshal.SizeOf<AstralNative.AstralToolInfo>());
             Assert.AreEqual(48, Marshal.SizeOf<AstralNative.AstralToolCallResult>());
+            int expectedAgentDesc = IntPtr.Size == 8 ? 136 : 108;
+            Assert.AreEqual(expectedAgentDesc, Marshal.SizeOf<AstralNative.AstralAgentDesc>());
             Assert.AreEqual(64, Marshal.SizeOf<AstralNative.AstralAgentMemoryContextDesc>());
         }
 
@@ -371,8 +373,14 @@ namespace Astral.Runtime.Tests
                 config.maxTokens = 8;
                 config.maxMessages = 4;
                 config.maxPromptBytes = 1024;
+                config.systemPrompt = "stay terse.";
+                config.summary = "prior context";
+                config.memoryContext = "retrieved context";
 
                 using var agent = AstralAgent.Create(model, config);
+                Assert.AreEqual(config.systemPrompt, agent.GetSystemPrompt());
+                Assert.AreEqual(config.summary, agent.GetSummary());
+                Assert.AreEqual(config.memoryContext, agent.GetMemoryContext());
                 AstralToolCall call = agent.ParseToolCall("{\"name\":\"agent_lookup\",\"arguments\":{\"q\":\"agent\"}}");
 
                 Assert.True(call.Parsed);

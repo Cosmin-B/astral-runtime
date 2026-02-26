@@ -1943,6 +1943,16 @@ FAstralOperationResult UAstralBlueprintLibrary::CreateAgentResult(const FAstralA
     Native.overflow_policy = static_cast<AstralAgentOverflowPolicy>(Desc.OverflowPolicy);
     Native.slot_affinity = static_cast<uint32_t>(Desc.SlotAffinity);
 
+    FTCHARToUTF8 SystemPromptUtf8(*Desc.SystemPrompt);
+    FTCHARToUTF8 SummaryUtf8(*Desc.Summary);
+    FTCHARToUTF8 MemoryContextUtf8(*Desc.MemoryContext);
+    Native.system_prompt.data = reinterpret_cast<const uint8_t*>(SystemPromptUtf8.Get());
+    Native.system_prompt.len = static_cast<uint32_t>(SystemPromptUtf8.Length());
+    Native.summary.data = reinterpret_cast<const uint8_t*>(SummaryUtf8.Get());
+    Native.summary.len = static_cast<uint32_t>(SummaryUtf8.Length());
+    Native.memory_context.data = reinterpret_cast<const uint8_t*>(MemoryContextUtf8.Get());
+    Native.memory_context.len = static_cast<uint32_t>(MemoryContextUtf8.Length());
+
     AstralHandle Handle = 0;
     const AstralErr Err = astral_agent_create(&Native, &Handle);
     if (Err != ASTRAL_OK)

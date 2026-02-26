@@ -819,6 +819,15 @@ struct ASTRALRT_API FAstralAgentDesc
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
     int32 SlotAffinity = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    FString SystemPrompt;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    FString Summary;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Agent")
+    FString MemoryContext;
 };
 
 /** Result from a native agent chat request. */

@@ -952,7 +952,8 @@ void append_generated_capture(Agent& agent, const uint8_t* bytes, uint32_t len) 
 } // namespace
 
 AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
-    if (desc == nullptr || out_agent == nullptr || desc->size != sizeof(AstralAgentDesc) || desc->model == 0) {
+    if (desc == nullptr || out_agent == nullptr || desc->size != sizeof(AstralAgentDesc) || desc->model == 0 ||
+        !span_valid(desc->system_prompt) || !span_valid(desc->summary) || !span_valid(desc->memory_context)) {
         return ASTRAL_E_INVALID;
     }
     if (!overflow_policy_valid(desc->overflow_policy)) {
@@ -965,6 +966,9 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
     }
     std::memset(agent, 0, sizeof(Agent));
     agent->desc = *desc;
+    agent->desc.system_prompt = {};
+    agent->desc.summary = {};
+    agent->desc.memory_context = {};
     agent->max_messages = desc->max_messages != 0 ? desc->max_messages : kDefaultMaxMessages;
     agent->max_prompt_bytes = desc->max_prompt_bytes != 0 ? desc->max_prompt_bytes : kDefaultMaxPromptBytes;
     agent->chat.last_error = ASTRAL_OK;
@@ -1014,6 +1018,30 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
     if (desc->memory_index != 0) {
         uint32_t memory_count = 0;
         err = astral_memory_count(desc->memory_index, &memory_count);
+        if (err != ASTRAL_OK) {
+            destroy_agent_allocations(agent);
+            core::runtime_delete(agent);
+            return err;
+        }
+    }
+    if (desc->system_prompt.len != 0) {
+        err = replace_system_prompt(agent, desc->system_prompt);
+        if (err != ASTRAL_OK) {
+            destroy_agent_allocations(agent);
+            core::runtime_delete(agent);
+            return err;
+        }
+    }
+    if (desc->summary.len != 0) {
+        err = replace_summary(agent, desc->summary);
+        if (err != ASTRAL_OK) {
+            destroy_agent_allocations(agent);
+            core::runtime_delete(agent);
+            return err;
+        }
+    }
+    if (desc->memory_context.len != 0) {
+        err = replace_memory_context(agent, desc->memory_context);
         if (err != ASTRAL_OK) {
             destroy_agent_allocations(agent);
             core::runtime_delete(agent);

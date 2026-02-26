@@ -1069,6 +1069,9 @@ namespace Astral.Runtime
             public uint max_prompt_bytes;
             public AstralAgentOverflowPolicy overflow_policy;
             public uint slot_affinity;
+            public AstralSpanU8 system_prompt;
+            public AstralSpanU8 summary;
+            public AstralSpanU8 memory_context;
         }
 
         [StructLayout(LayoutKind.Sequential)]

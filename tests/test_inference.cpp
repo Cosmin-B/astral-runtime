@@ -517,12 +517,14 @@ TEST(inference_agent_history_and_chat_mock) {
     desc.seed = kSeed;
     desc.max_messages = kMaxMessages;
     desc.max_prompt_bytes = kMaxPromptBytes;
+    desc.system_prompt = span_from_cstr(kSystemPrompt);
+    desc.summary = span_from_cstr(kSummary);
+    desc.memory_context = span_from_cstr(kMemoryContext);
 
     AstralHandle agent = 0;
     ASSERT_EQ(astral_agent_create(&desc, &agent), ASTRAL_OK);
     ASSERT_TRUE(astral_handle_valid(agent));
 
-    ASSERT_EQ(astral_agent_set_system_prompt(agent, span_from_cstr(kSystemPrompt)), ASTRAL_OK);
     uint32_t bytes = 0;
     ASSERT_EQ(astral_agent_get_system_prompt_size(agent, &bytes), ASTRAL_OK);
     ASSERT_EQ(bytes, kSystemBytes);
@@ -534,7 +536,6 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(astral_agent_get_system_prompt(agent, system_out, &bytes), ASTRAL_OK);
     ASSERT_EQ(std::string(reinterpret_cast<const char*>(system_buf), bytes), kSystemPrompt);
 
-    ASSERT_EQ(astral_agent_set_summary(agent, span_from_cstr(kSummary)), ASTRAL_OK);
     ASSERT_EQ(astral_agent_get_summary_size(agent, &bytes), ASTRAL_OK);
     ASSERT_EQ(bytes, kSummaryBytes);
 
@@ -545,7 +546,6 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(astral_agent_get_summary(agent, summary_out, &bytes), ASTRAL_OK);
     ASSERT_EQ(std::string(reinterpret_cast<const char*>(summary_buf), bytes), kSummary);
 
-    ASSERT_EQ(astral_agent_set_memory_context(agent, span_from_cstr(kMemoryContext)), ASTRAL_OK);
     ASSERT_EQ(astral_agent_get_memory_context_size(agent, &bytes), ASTRAL_OK);
     ASSERT_EQ(bytes, kMemoryContextBytes);
 

@@ -1416,6 +1416,9 @@ typedef struct AstralAgentDesc {
     uint32_t max_prompt_bytes;
     AstralAgentOverflowPolicy overflow_policy;
     uint32_t slot_affinity; // ASTRAL_AGENT_SLOT_AUTO or one-based executor slot
+    AstralSpanU8 system_prompt;
+    AstralSpanU8 summary;
+    AstralSpanU8 memory_context;
 } AstralAgentDesc;
 
 typedef struct AstralAgentMessage {
@@ -1460,7 +1463,7 @@ typedef struct AstralAgentChatResult {
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralRequestStatus) == 40, "AstralRequestStatus must be 40 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 88, "AstralAgentDesc must be 88 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 136, "AstralAgentDesc must be 136 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 24, "AstralAgentMessage must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 24, "AstralAgentChatDesc must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMemoryContextDesc) == 64, "AstralAgentMemoryContextDesc must be 64 bytes on 64-bit");
@@ -1468,7 +1471,7 @@ typedef struct AstralAgentChatResult {
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralRequestStatus) == 40, "AstralRequestStatus must be 40 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 84, "AstralAgentDesc must be 84 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 108, "AstralAgentDesc must be 108 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 16, "AstralAgentMessage must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 16, "AstralAgentChatDesc must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMemoryContextDesc) == 40, "AstralAgentMemoryContextDesc must be 40 bytes on 32-bit");
