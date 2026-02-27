@@ -60,6 +60,7 @@ static constexpr uint32_t kBenchAgentPromptCacheEntries = 4;
 static constexpr uint32_t kBenchAgentPromptCacheTokens = 256;
 static constexpr uint32_t kBenchAgentSeed = 11;
 static constexpr uint32_t kBenchAgentPollLimit = 65536;
+static constexpr double kMsToNs = 1000000.0;
 static constexpr float kBenchAdapterScale = 1.0f;
 static constexpr float kBenchAdapterUpdatedScale = 0.5f;
 static constexpr char kBenchAdapterPath[] = "bench-adapter";
@@ -1295,6 +1296,7 @@ static BenchResult bench_agent_prompt_warmup_impl(uint64_t iters, bool use_promp
 
     const uint64_t t0 = ticks_now();
     const uint64_t n0 = ns_now();
+    double prompt_build_ms_total = 0.0;
     for (uint64_t i = 0; i < iters; ++i) {
         const AstralErr err = astral_agent_chat_enqueue(agent, &chat);
         if (err != ASTRAL_OK) {
@@ -1317,12 +1319,17 @@ static BenchResult bench_agent_prompt_warmup_impl(uint64_t iters, bool use_promp
             r.ops = i;
             break;
         }
+        prompt_build_ms_total += result.prompt_build_ms;
     }
     const uint64_t t1 = ticks_now();
     const uint64_t n1 = ns_now();
 
     r.ticks = t1 - t0;
     r.ns = n1 - n0;
+    if (r.ops != 0) {
+        r.extra_label = "prompt_build_ns/op";
+        r.extra_value = (prompt_build_ms_total * kMsToNs) / static_cast<double>(r.ops);
+    }
     astral_agent_destroy(agent);
     if (prompt_cache != 0) {
         astral_prompt_cache_destroy(prompt_cache);
