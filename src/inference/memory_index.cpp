@@ -4,6 +4,7 @@
 #include "../core/runtime_alloc.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <cmath>
 #include <cstring>
 
@@ -42,6 +43,7 @@ constexpr uint32_t kGraphMinSearch = 4;
 constexpr float kWorstScore = -3.4028234663852886e38f;
 #if defined(__AVX2__)
 constexpr uint32_t kAvx2F32Lanes = 8;
+constexpr size_t kVectorStorageAlign = 32;
 constexpr uint32_t kAvx2UnrollVectors = 4;
 constexpr uint32_t kAvx2UnrollF32 = kAvx2F32Lanes * kAvx2UnrollVectors;
 constexpr uint32_t kAvx2Offset1 = kAvx2F32Lanes;
@@ -50,11 +52,15 @@ constexpr uint32_t kAvx2Offset3 = kAvx2F32Lanes * 3u;
 #endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
 constexpr uint32_t kNeonF32Lanes = 4;
+constexpr size_t kVectorStorageAlign = 16;
 constexpr uint32_t kNeonUnrollVectors = 4;
 constexpr uint32_t kNeonUnrollF32 = kNeonF32Lanes * kNeonUnrollVectors;
 constexpr uint32_t kNeonOffset1 = kNeonF32Lanes;
 constexpr uint32_t kNeonOffset2 = kNeonF32Lanes * 2u;
 constexpr uint32_t kNeonOffset3 = kNeonF32Lanes * 3u;
+#endif
+#if !defined(__AVX2__) && !(defined(__aarch64__) && defined(__ARM_NEON))
+constexpr size_t kVectorStorageAlign = alignof(float);
 #endif
 
 struct MemorySlot {
@@ -104,6 +110,15 @@ inline uint32_t graph_search_from_desc(const AstralMemoryIndexDesc* desc) {
   }
   const uint32_t requested = desc->graph_search != 0 ? desc->graph_search : kGraphDefaultSearch;
   return requested < kGraphMinSearch ? kGraphMinSearch : requested;
+}
+
+inline float* alloc_vector_storage(uint32_t capacity, uint32_t dim) {
+  const size_t count = static_cast<size_t>(capacity) * dim;
+  return static_cast<float*>(core::runtime_alloc(count * sizeof(float), kVectorStorageAlign));
+}
+
+inline void free_vector_storage(float* ptr, uint32_t capacity, uint32_t dim) {
+  core::runtime_free(ptr, static_cast<size_t>(capacity) * dim * sizeof(float), kVectorStorageAlign);
 }
 
 #if defined(__AVX2__)
@@ -1049,7 +1064,7 @@ void destroy_allocations(MemoryIndex* index) {
     index->slots = nullptr;
   }
   if (index->vectors != nullptr) {
-    core::runtime_free_array(index->vectors, index->capacity * index->dim);
+    free_vector_storage(index->vectors, index->capacity, index->dim);
     index->vectors = nullptr;
   }
   if (index->active_slots != nullptr) {
@@ -1132,7 +1147,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->metric = desc->metric;
   index->index_kind = desc->index_kind;
   index->slots = core::runtime_alloc_array<MemorySlot>(desc->capacity);
-  index->vectors = core::runtime_alloc_array<float>(desc->capacity * desc->dim);
+  index->vectors = alloc_vector_storage(desc->capacity, desc->dim);
   index->active_slots = core::runtime_alloc_array<uint32_t>(desc->capacity);
   index->key_table = core::runtime_alloc_array<uint32_t>(key_table_capacity);
   index->graph_neighbors = nullptr;
