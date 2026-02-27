@@ -864,6 +864,9 @@ struct ASTRALRT_API FAstralAgentChatResult
     int32 LastError = 0;
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
+    double PromptBuildMs = 0.0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")
     int64 GeneratedTokens = 0;
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Agent")

@@ -2,6 +2,7 @@
 
 #include "../core/handles.hpp"
 #include "../core/runtime_alloc.hpp"
+#include "../platform/time.h"
 
 #include "../concurrency/spsc_ring.hpp"
 #include "../utils/trace.hpp"
@@ -89,6 +90,7 @@ struct AgentChatRuntime {
     uint32_t prompt_cache_new_tokens;
     uint32_t prompt_cache_hits;
     uint32_t prompt_cache_misses;
+    double prompt_build_ms;
     AstralErr last_error;
 };
 
@@ -1501,7 +1503,10 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
     uint32_t* prefix_len_out = agent->desc.prompt_cache != 0 ? &prefix_len : nullptr;
     uint64_t* prefix_hash_out = agent->desc.prompt_cache != 0 ? &prefix_hash : nullptr;
     uint64_t* prompt_hash_out = agent->desc.prompt_cache != 0 ? &prompt_hash : nullptr;
+    const uint64_t prompt_build_start = platform::ticks_now();
     err = build_prompt(agent, desc->user_message, &prompt, &prompt_len, prefix_len_out, prefix_hash_out, prompt_hash_out);
+    const uint64_t prompt_build_ticks = platform::ticks_now() - prompt_build_start;
+    agent->chat.prompt_build_ms = static_cast<double>(platform::ticks_to_ns(prompt_build_ticks)) / 1.0e6;
     if (err != ASTRAL_OK) {
         agent->chat.last_error = err;
         return err;
@@ -1616,6 +1621,7 @@ AstralErr agent_chat_result(Agent* agent, AstralAgentChatResult* out_result) {
     out_result->prompt_cache_hits = agent->chat.prompt_cache_hits;
     out_result->prompt_cache_misses = agent->chat.prompt_cache_misses;
     out_result->last_error = agent->chat.last_error;
+    out_result->prompt_build_ms = agent->chat.prompt_build_ms;
     out_result->generated_tokens = stats_err == ASTRAL_OK ? stats.generated_tokens : 0;
     out_result->t_first_token_ms = stats_err == ASTRAL_OK ? stats.t_first_token_ms : 0.0;
     out_result->tok_per_s = stats_err == ASTRAL_OK ? stats.tok_per_s : 0.0;

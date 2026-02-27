@@ -628,6 +628,7 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(result.history_messages, kChatHistoryCount);
     ASSERT_GT(result.prompt_bytes, 0u);
     ASSERT_GT(result.generated_tokens, 0ull);
+    ASSERT_GE(result.prompt_build_ms, 0.0);
     ASSERT_GT(result.prompt_cache_new_tokens, kPromptCacheNoNewTokens);
     ASSERT_EQ(result.prompt_cache_reused_tokens, kPromptCacheNoReusedTokens);
     ASSERT_EQ(result.prompt_cache_misses, kPromptCacheFirstMisses);
@@ -642,6 +643,7 @@ TEST(inference_agent_history_and_chat_mock) {
     ASSERT_EQ(result.state, ASTRAL_SESSION_COMPLETED);
     ASSERT_EQ(result.history_messages, kChatHistoryCount);
     ASSERT_GT(result.prompt_cache_reused_tokens, kPromptCacheNoReusedTokens);
+    ASSERT_GE(result.prompt_build_ms, 0.0);
     ASSERT_GT(result.prompt_cache_new_tokens, kPromptCacheNoNewTokens);
     ASSERT_EQ(result.prompt_cache_hits, kPromptCacheSecondHits);
     ASSERT_EQ(astral_agent_chat_cancel(agent), ASTRAL_OK);

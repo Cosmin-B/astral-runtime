@@ -1116,6 +1116,7 @@ namespace Astral.Runtime
             public uint prompt_cache_hits;
             public uint prompt_cache_misses;
             public int last_error;
+            public double prompt_build_ms;
             public ulong generated_tokens;
             public double t_first_token_ms;
             public double tok_per_s;

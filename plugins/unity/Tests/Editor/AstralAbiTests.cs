@@ -91,6 +91,7 @@ namespace Astral.Runtime.Tests
             int expectedAgentDesc = IntPtr.Size == 8 ? 136 : 108;
             Assert.AreEqual(expectedAgentDesc, Marshal.SizeOf<AstralNative.AstralAgentDesc>());
             Assert.AreEqual(64, Marshal.SizeOf<AstralNative.AstralAgentMemoryContextDesc>());
+            Assert.AreEqual(72, Marshal.SizeOf<AstralNative.AstralAgentChatResult>());
         }
 
         [Test]

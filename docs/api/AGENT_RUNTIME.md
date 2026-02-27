@@ -112,7 +112,8 @@ executor, stream ring, sampler, grammar, and backend slot machinery.
 
 `AstralAgentChatResult` reports `prompt_cache_reused_tokens`,
 `prompt_cache_new_tokens`, `prompt_cache_hits`, and `prompt_cache_misses` for
-the most recent request. On a stable-prefix hit, reused tokens count the cached
+the most recent request, along with `prompt_build_ms` for native prompt assembly
+before decode begins. On a stable-prefix hit, reused tokens count the cached
 prefix and new tokens count the current suffix. These counters describe agent
 prompt setup only; they do not imply backend KV-prefix reuse.
 
