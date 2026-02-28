@@ -669,6 +669,7 @@ TEST(inference_agents_share_model_executor_mock) {
     constexpr uint32_t kAgentAAffinity = 2;
     constexpr uint32_t kAgentASlot = kAgentAAffinity - 1;
     constexpr uint32_t kAgentBSlot = 0;
+    constexpr uint32_t kNoAssignedSlot = UINT32_MAX;
     constexpr uint32_t kExpectedHistoryMessages = 1;
     constexpr uint32_t kRequestTimeoutMs = 5000;
 
@@ -701,23 +702,19 @@ TEST(inference_agents_share_model_executor_mock) {
 
     AstralHandle agent_a = 0;
     AstralHandle agent_b = 0;
+    AstralHandle idle_agent = 0;
+    AstralHandle overflow_agent = 0;
     ASSERT_EQ(astral_agent_create(&desc_a, &agent_a), ASTRAL_OK);
     ASSERT_EQ(astral_agent_create(&desc_b, &agent_b), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_create(&desc_a, &idle_agent), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_create(&desc, &overflow_agent), ASTRAL_OK);
 
     uint32_t slot_a = UINT32_MAX;
     uint32_t slot_b = UINT32_MAX;
-    ASSERT_EQ(astral_agent_assigned_slot(agent_a, &slot_a), ASTRAL_OK);
-    ASSERT_EQ(astral_agent_assigned_slot(agent_b, &slot_b), ASTRAL_OK);
-    ASSERT_EQ(slot_a, kAgentASlot);
-    ASSERT_EQ(slot_b, kAgentBSlot);
-
-    AstralHandle busy_agent = 0;
-    ASSERT_EQ(astral_agent_create(&desc_a, &busy_agent), ASTRAL_E_BUSY);
-    ASSERT_FALSE(astral_handle_valid(busy_agent));
-
-    AstralHandle overflow_agent = 0;
-    ASSERT_EQ(astral_agent_create(&desc, &overflow_agent), ASTRAL_E_BUSY);
-    ASSERT_FALSE(astral_handle_valid(overflow_agent));
+    ASSERT_EQ(astral_agent_assigned_slot(agent_a, &slot_a), ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(slot_a, kNoAssignedSlot);
+    ASSERT_EQ(astral_agent_assigned_slot(agent_b, &slot_b), ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(slot_b, kNoAssignedSlot);
 
     ASSERT_EQ(astral_agent_set_system_prompt(agent_a, span_from_cstr("speak as pilot")), ASTRAL_OK);
     ASSERT_EQ(astral_agent_set_system_prompt(agent_b, span_from_cstr("speak as medic")), ASTRAL_OK);
@@ -743,6 +740,16 @@ TEST(inference_agents_share_model_executor_mock) {
 
     ASSERT_EQ(astral_agent_chat_enqueue(agent_a, &chat_a), ASTRAL_OK);
     ASSERT_EQ(astral_agent_chat_enqueue(agent_b, &chat_b), ASTRAL_OK);
+
+    ASSERT_EQ(astral_agent_assigned_slot(agent_a, &slot_a), ASTRAL_OK);
+    ASSERT_EQ(astral_agent_assigned_slot(agent_b, &slot_b), ASTRAL_OK);
+    ASSERT_EQ(slot_a, kAgentASlot);
+    ASSERT_EQ(slot_b, kAgentBSlot);
+
+    AstralAgentChatDesc overflow_chat{};
+    overflow_chat.size = sizeof(AstralAgentChatDesc);
+    overflow_chat.user_message = span_from_cstr("wait for a slot");
+    ASSERT_EQ(astral_agent_chat_enqueue(overflow_agent, &overflow_chat), ASTRAL_E_BUSY);
 
     AstralRequestRef request_a{};
     AstralRequestRef request_b{};
@@ -781,6 +788,8 @@ TEST(inference_agents_share_model_executor_mock) {
 
     astral_agent_destroy(agent_a);
     astral_agent_destroy(agent_b);
+    astral_agent_destroy(idle_agent);
+    astral_agent_destroy(overflow_agent);
     astral_model_release(model);
     astral_shutdown();
 }

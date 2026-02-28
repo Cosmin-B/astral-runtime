@@ -45,15 +45,18 @@ toolset can also be used through `astral_agent_parse_tool_call()` for
 caller-provided text or `astral_agent_chat_tool_call_result()` for the latest
 drained chat stream, so wrappers do not need to retain a separate toolset
 handle for completed output parsing.
-Each agent occupies one executor slot while it exists. Creating more agents than
-the configured slot count returns `ASTRAL_E_BUSY`; use that as the native
-backpressure signal for shared-model character pools.
-`AstralAgentDesc::slot_affinity` can pin an agent to a stable executor slot.
-Use `ASTRAL_AGENT_SLOT_AUTO` for the normal first-free policy, or pass a
-one-based slot id to reserve a specific backend KV/sequence slot. If that slot
-is already occupied, creation returns `ASTRAL_E_BUSY`; if the requested slot is
-outside the configured executor, creation returns `ASTRAL_E_INVALID`.
-`astral_agent_assigned_slot()` reports the zero-based slot held by the agent.
+Idle agents do not occupy executor slots. A chat request acquires the
+agent's slot-backed conversation on first enqueue, so applications can create
+larger native character pools than the active decode slot count. If every slot
+is already occupied when a new agent chat starts, enqueue returns
+`ASTRAL_E_BUSY`.
+`AstralAgentDesc::slot_affinity` is a one-based preferred executor slot. It is
+validated at creation time and applied when the first chat request starts. If
+the preferred slot is occupied at enqueue time, the request returns
+`ASTRAL_E_BUSY`; if the requested slot is outside the configured executor,
+creation returns `ASTRAL_E_INVALID`. `astral_agent_assigned_slot()` reports the
+zero-based slot after the agent has started a chat and returns
+`ASTRAL_E_NOT_FOUND` before a slot is assigned.
 
 ## Ownership
 
