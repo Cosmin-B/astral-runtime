@@ -764,7 +764,8 @@ foreach(required_prompt_cache_doc_marker
   endif()
 endforeach()
 foreach(required_structured_output_doc_marker
-    "features.toolset parse")
+    "features.toolset parse"
+    "features.toolset parse_many")
   string(FIND "${structured_output_doc_content}" "${required_structured_output_doc_marker}" structured_output_doc_marker_pos)
   if(structured_output_doc_marker_pos EQUAL -1)
     message(FATAL_ERROR "Structured output doc is missing benchmark marker '${required_structured_output_doc_marker}'")

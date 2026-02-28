@@ -131,4 +131,4 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/b
 Expected evidence includes `inference_toolset_parse_and_bind_mock` passing,
 invalid argument coverage for the C ABI boundary, and ABI layout coverage for
 `AstralToolCallResult`. Benchmark output should include
-`features.toolset parse`.
+`features.toolset parse` and `features.toolset parse_many`.

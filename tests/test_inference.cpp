@@ -1596,6 +1596,7 @@ TEST(inference_toolset_parse_and_bind_mock) {
     constexpr uint32_t kFirstCollisionToolId = 303;
     constexpr uint32_t kSecondCollisionToolId = 404;
     constexpr uint32_t kOpenToolIndex = 1;
+    constexpr uint32_t kNoToolId = 0;
     constexpr uint32_t kSessionMaxTokens = 4;
     constexpr uint32_t kExecutorMaxBatchTokens = 8;
     constexpr float kAgentTemperature = 0.0f;
@@ -1608,6 +1609,12 @@ TEST(inference_toolset_parse_and_bind_mock) {
     constexpr uint32_t kAgentToolCallTokenCount = static_cast<uint32_t>(sizeof(kAgentToolCallJson) - 1u);
     constexpr char kAgentToolCallPrompt[] = "xxxxxxxxxxxxxxxxxxxxxxxxxxxx";
     constexpr char kPlainText[] = "plain text";
+    constexpr char kNestedToolCallJson[] =
+        "{\"name\":\"search\",\"arguments\":{\"query\":{\"text\":\"latency\",\"filters\":{\"kind\":\"trace\"}}}}";
+    constexpr char kNestedToolCallArgs[] = "{\"query\":{\"text\":\"latency\",\"filters\":{\"kind\":\"trace\"}}}";
+    constexpr char kEscapedToolCallJson[] =
+        "{\"name\":\"search\",\"arguments\":{\"query\":\"brace \\\"}\\\" stays in string\",\"k\":1}}";
+    constexpr char kEscapedToolCallArgs[] = "{\"query\":\"brace \\\"}\\\" stays in string\",\"k\":1}";
     constexpr char kRagDocument[] = "alpha beta gamma";
     constexpr char kRagExpectedContext[] = "beta\ngamma";
     constexpr uint32_t kRagChunkCount = 3;
@@ -1683,10 +1690,41 @@ TEST(inference_toolset_parse_and_bind_mock) {
 
     call = {};
     call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr(kNestedToolCallJson), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSearchToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+    const std::string nested_args(reinterpret_cast<const char*>(call.arguments_json.data), call.arguments_json.len);
+    ASSERT_EQ(nested_args, std::string(kNestedToolCallArgs));
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr(kEscapedToolCallJson), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSearchToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+    const std::string escaped_args(reinterpret_cast<const char*>(call.arguments_json.data), call.arguments_json.len);
+    ASSERT_EQ(escaped_args, std::string(kEscapedToolCallArgs));
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
     err = astral_toolset_parse_call(toolset, span_from_cstr("{\"name\":\"search\",\"arguments\":\"bad\"}"), &call);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(call.tool_id, kSearchToolId);
     ASSERT_EQ(call.parse_status, ASTRAL_E_INVALID);
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr("{\"name\":\"search\"}"), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSearchToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_E_INVALID);
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr("{\"name\":\"missing\",\"arguments\":{}}"), &call);
+    ASSERT_EQ(err, ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(call.tool_id, kNoToolId);
 
     call = {};
     call.size = sizeof(AstralToolCallResult);
