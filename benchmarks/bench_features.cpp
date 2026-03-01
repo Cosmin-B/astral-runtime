@@ -76,6 +76,7 @@ static constexpr char kBenchSystemPromptText[] =
 static constexpr char kBenchMemoryCapacityEnv[] = "ASTRAL_BENCH_MEMORY_CAPACITY";
 static constexpr char kBenchMemoryDimEnv[] = "ASTRAL_BENCH_MEMORY_DIM";
 static constexpr char kBenchMemoryMetricEnv[] = "ASTRAL_BENCH_MEMORY_METRIC";
+static constexpr char kBenchMemoryOnlyEnv[] = "ASTRAL_BENCH_MEMORY_ONLY";
 static constexpr char kBenchMemorySweepEnv[] = "ASTRAL_BENCH_MEMORY_SWEEP";
 static constexpr char kBenchMemoryMetricDot[] = "dot";
 static constexpr char kBenchMemoryMetricL2[] = "l2";
@@ -1979,6 +1980,28 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
 } // namespace
 
 void bench_feature_surfaces_print(void) {
+    if (env_enabled(kBenchMemoryOnlyEnv)) {
+        const uint64_t iters = parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", kFeatureDefaultIters);
+
+        AstralInit cfg{};
+        cfg.reserve_bytes = kPromptCacheOnlyReserveBytes;
+        cfg.thread_count = parse_u32_env("ASTRAL_BENCH_RUNTIME_THREADS", 1);
+        cfg.numa_node = 0xFFFFFFFFu;
+        cfg.enable_hugepages = 0;
+
+        const AstralErr init_err = astral_init(&cfg);
+        if (init_err != ASTRAL_OK) {
+            std::fprintf(stderr, "[bench] astral_init failed: %s (%s)\n",
+                         astral_error_string(init_err), astral_last_error());
+            return;
+        }
+
+        std::printf("%-28s  %8s  %12s  %12s  %12s\n", "benchmark", "clock", "ops", "ns/op", "ticks/op");
+        print_memory_benchmarks(iters);
+        astral_shutdown();
+        return;
+    }
+
     if (env_enabled("ASTRAL_BENCH_PROMPT_CACHE_ONLY")) {
         const uint64_t iters = parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", kFeatureDefaultIters);
 

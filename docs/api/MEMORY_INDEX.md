@@ -83,7 +83,10 @@ Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, and `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`,
 or `l2`) so local runs can cover 100, 1k, 10k, and 100k vector scans without
 changing source. Set `ASTRAL_BENCH_MEMORY_SWEEP=1` to run the built-in
-100/1k/10k/100k flat-index sweep in one invocation.
+100/1k/10k/100k flat-index sweep in one invocation. Set
+`ASTRAL_BENCH_MEMORY_ONLY=1` when collecting hardware counters so tokenization,
+prompt cache, tool, chunk, and agent benchmarks do not dilute the memory-index
+counter profile.
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
@@ -166,6 +169,7 @@ ctest --preset dev -R '^(test_inference|test_abi_invalid_args|gate_abi_layout_re
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
+perf stat -e cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses,dTLB-loads,dTLB-load-misses -- env ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_SWEEP=1 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ```
 
 Native tests include `inference_memory_index_graph_mock` for graph search,
