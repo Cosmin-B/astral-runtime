@@ -78,6 +78,10 @@ The graph index allocates adjacency, candidate, and visited buffers at creation
 time. Query execution reuses those buffers and the same SIMD scoring kernels.
 Add/update/remove are colder ingest operations; updates and removals may rebuild
 the graph to keep neighbor links consistent.
+Treat flat search as the recall oracle when tuning graph search. The
+`features.memory graph_recall` benchmark reports top-k overlap between graph
+search and exact flat search, so graph improvements can be judged by both
+latency and recall.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, and `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`,
@@ -177,6 +181,7 @@ filtered exact fallback, save/load, and remove/rebuild behavior.
 
 Expected markers include `features.memory add_batch`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
-`features.memory graph_search`, and `features.memory cursor_begin_fetch`. Sweep runs also include
+`features.memory graph_search`, `features.memory graph_recall`, and
+`features.memory cursor_begin_fetch`. Sweep runs also include
 `features.memory top1_100`, `features.memory top1_1k`,
 `features.memory top1_10k`, and `features.memory top1_100k`.
