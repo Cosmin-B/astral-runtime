@@ -79,6 +79,8 @@ static constexpr char kBenchMemoryDimEnv[] = "ASTRAL_BENCH_MEMORY_DIM";
 static constexpr char kBenchMemoryMetricEnv[] = "ASTRAL_BENCH_MEMORY_METRIC";
 static constexpr char kBenchMemoryOnlyEnv[] = "ASTRAL_BENCH_MEMORY_ONLY";
 static constexpr char kBenchMemorySweepEnv[] = "ASTRAL_BENCH_MEMORY_SWEEP";
+static constexpr char kBenchMemoryGraphNeighborsEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS";
+static constexpr char kBenchMemoryGraphSearchEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_SEARCH";
 static constexpr char kBenchMemoryMetricDot[] = "dot";
 static constexpr char kBenchMemoryMetricL2[] = "l2";
 static constexpr char kBenchMemoryMetricCosine[] = "cosine";
@@ -184,6 +186,14 @@ static AstralMemoryMetric parse_memory_metric_env() {
         return ASTRAL_MEMORY_METRIC_L2;
     }
     return ASTRAL_MEMORY_METRIC_COSINE;
+}
+
+static uint32_t memory_graph_neighbors() {
+    return bounded_env_u32(kBenchMemoryGraphNeighborsEnv, kBenchMemoryGraphNeighbors, 1u, kBenchMemoryGraphNeighbors);
+}
+
+static uint32_t memory_graph_search() {
+    return bounded_env_u32(kBenchMemoryGraphSearchEnv, kBenchMemoryGraphSearch, 4u, UINT32_MAX);
 }
 
 static uint32_t memory_bench_dim() {
@@ -1080,8 +1090,8 @@ static BenchResult bench_memory_graph_search(uint64_t iters) {
     desc.capacity = capacity;
     desc.metric = metric;
     desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
-    desc.graph_neighbors = kBenchMemoryGraphNeighbors;
-    desc.graph_search = kBenchMemoryGraphSearch;
+    desc.graph_neighbors = memory_graph_neighbors();
+    desc.graph_search = memory_graph_search();
 
     AstralHandle index = 0;
     AstralErr err = astral_memory_create(&desc, &index);
@@ -1144,8 +1154,8 @@ static BenchResult bench_memory_graph_recall(uint64_t iters) {
 
     AstralMemoryIndexDesc graph_desc = flat_desc;
     graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
-    graph_desc.graph_neighbors = kBenchMemoryGraphNeighbors;
-    graph_desc.graph_search = kBenchMemoryGraphSearch;
+    graph_desc.graph_neighbors = memory_graph_neighbors();
+    graph_desc.graph_search = memory_graph_search();
 
     AstralHandle flat_index = 0;
     AstralHandle graph_index = 0;
@@ -2068,6 +2078,8 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
                 std::getenv(kBenchMemoryMetricEnv) ? std::getenv(kBenchMemoryMetricEnv) : kBenchMemoryMetricCosine);
     std::printf("  ASTRAL_BENCH_MEMORY_SWEEP=%s\n",
                 std::getenv(kBenchMemorySweepEnv) ? std::getenv(kBenchMemorySweepEnv) : "");
+    std::printf("  ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=%u\n", memory_graph_neighbors());
+    std::printf("  ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=%u\n", memory_graph_search());
     std::printf("  ASTRAL_BENCH_EMBED_MODEL=%s\n", std::getenv("ASTRAL_BENCH_EMBED_MODEL") ? std::getenv("ASTRAL_BENCH_EMBED_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MODEL=%s\n", std::getenv("ASTRAL_BENCH_VISION_MODEL") ? std::getenv("ASTRAL_BENCH_VISION_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MEDIA=%s\n", std::getenv("ASTRAL_BENCH_VISION_MEDIA") ? std::getenv("ASTRAL_BENCH_VISION_MEDIA") : "");
