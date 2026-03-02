@@ -44,6 +44,11 @@ static constexpr uint32_t kBenchMemorySweepLarge = 100000;
 static constexpr uint32_t kBenchMemoryValueMask = 0xFu;
 static constexpr uint32_t kBenchMemoryColumnBias = 3;
 static constexpr uint32_t kBenchMemoryQueryMask = 7u;
+static constexpr uint32_t kBenchMemoryQueryColumnBias = 5u;
+static constexpr uint32_t kBenchMemoryQueryRowBias = 11u;
+static constexpr uint32_t kBenchMemoryRecallQueries = 32u;
+static constexpr uint32_t kBenchMemoryMinRecallQueries = 1u;
+static constexpr uint32_t kBenchMemoryMaxRecallQueries = 4096u;
 static constexpr uint32_t kBenchMemoryGroupMask = 1u;
 static constexpr uint32_t kBenchMemoryDocShift = 4u;
 static constexpr uint64_t kBenchMemoryKeyBase = 1u;
@@ -81,6 +86,7 @@ static constexpr char kBenchMemoryOnlyEnv[] = "ASTRAL_BENCH_MEMORY_ONLY";
 static constexpr char kBenchMemorySweepEnv[] = "ASTRAL_BENCH_MEMORY_SWEEP";
 static constexpr char kBenchMemoryGraphNeighborsEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS";
 static constexpr char kBenchMemoryGraphSearchEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_SEARCH";
+static constexpr char kBenchMemoryRecallQueriesEnv[] = "ASTRAL_BENCH_MEMORY_RECALL_QUERIES";
 static constexpr char kBenchMemoryMetricDot[] = "dot";
 static constexpr char kBenchMemoryMetricL2[] = "l2";
 static constexpr char kBenchMemoryMetricCosine[] = "cosine";
@@ -194,6 +200,14 @@ static uint32_t memory_graph_neighbors() {
 
 static uint32_t memory_graph_search() {
     return bounded_env_u32(kBenchMemoryGraphSearchEnv, kBenchMemoryGraphSearch, 4u, UINT32_MAX);
+}
+
+static uint32_t memory_recall_queries() {
+    return bounded_env_u32(
+        kBenchMemoryRecallQueriesEnv,
+        kBenchMemoryRecallQueries,
+        kBenchMemoryMinRecallQueries,
+        kBenchMemoryMaxRecallQueries);
 }
 
 static uint32_t memory_bench_dim() {
@@ -965,6 +979,16 @@ static void fill_memory_query(std::vector<float>& query) {
     }
 }
 
+static void fill_memory_query(std::vector<float>& query, uint32_t query_index) {
+    const uint32_t row = query_index + kBenchMemoryKeyBase;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.size()); ++i) {
+        const uint32_t value =
+            ((row * (i + kBenchMemoryQueryColumnBias)) + (query_index * kBenchMemoryQueryRowBias)) &
+            kBenchMemoryValueMask;
+        query[i] = static_cast<float>(value) + kBenchMemoryValueBias;
+    }
+}
+
 static BenchResult bench_memory_add_batch_impl(uint32_t capacity, const char* name) {
     BenchResult r{};
     r.name = name;
@@ -1143,6 +1167,7 @@ static BenchResult bench_memory_graph_recall(uint64_t iters) {
     r.ops = iters;
     const uint32_t dim = memory_bench_dim();
     const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+    const uint32_t recall_queries = memory_recall_queries();
     const AstralMemoryMetric metric = parse_memory_metric_env();
 
     AstralMemoryIndexDesc flat_desc{};
@@ -1186,7 +1211,6 @@ static BenchResult bench_memory_graph_recall(uint64_t iters) {
     }
 
     std::vector<float> query(dim);
-    fill_memory_query(query);
     AstralMemorySearchDesc search{};
     search.size = sizeof(AstralMemorySearchDesc);
     search.top_k = kBenchMemoryTopK;
@@ -1201,6 +1225,7 @@ static BenchResult bench_memory_graph_recall(uint64_t iters) {
     const uint64_t t0 = ticks_now();
     const uint64_t n0 = ns_now();
     for (uint64_t i = 0; i < iters; ++i) {
+        fill_memory_query(query, static_cast<uint32_t>(i % recall_queries));
         err = astral_memory_search(flat_index, &search, query.data(), flat_results, kBenchMemoryTopK, &flat_count);
         if (err == ASTRAL_OK) {
             err = astral_memory_search(graph_index, &search, query.data(), graph_results, kBenchMemoryTopK, &graph_count);
@@ -2080,6 +2105,7 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
                 std::getenv(kBenchMemorySweepEnv) ? std::getenv(kBenchMemorySweepEnv) : "");
     std::printf("  ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=%u\n", memory_graph_neighbors());
     std::printf("  ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=%u\n", memory_graph_search());
+    std::printf("  ASTRAL_BENCH_MEMORY_RECALL_QUERIES=%u\n", memory_recall_queries());
     std::printf("  ASTRAL_BENCH_EMBED_MODEL=%s\n", std::getenv("ASTRAL_BENCH_EMBED_MODEL") ? std::getenv("ASTRAL_BENCH_EMBED_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MODEL=%s\n", std::getenv("ASTRAL_BENCH_VISION_MODEL") ? std::getenv("ASTRAL_BENCH_VISION_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MEDIA=%s\n", std::getenv("ASTRAL_BENCH_VISION_MEDIA") ? std::getenv("ASTRAL_BENCH_VISION_MEDIA") : "");

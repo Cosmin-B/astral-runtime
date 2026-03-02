@@ -84,17 +84,21 @@ time. Query execution reuses those buffers and the same SIMD scoring kernels.
 Add/update/remove are colder ingest operations; updates and removals may rebuild
 the graph to keep neighbor links consistent.
 Treat flat search as the recall oracle when tuning graph search. The
-`features.memory graph_recall` benchmark reports top-k overlap between graph
-search and exact flat search, so graph improvements can be judged by both
-latency and recall. A graph configuration is not production-ready just because
-it is faster than flat search; it must hit the required recall target for the
-dataset and embedding model.
+`features.memory graph_recall` benchmark reports aggregate top-k overlap
+between graph search and exact flat search across deterministic recall queries,
+so graph improvements can be judged by both latency and recall. A graph
+configuration is not production-ready just because it is faster than flat
+search; it must hit the required recall target for the dataset and embedding
+model.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
 `l2`), `ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS`, and
-`ASTRAL_BENCH_MEMORY_GRAPH_SEARCH` so local runs can cover vector scans and
-graph recall/latency tuning without changing source. Set
+`ASTRAL_BENCH_MEMORY_GRAPH_SEARCH`. Set
+`ASTRAL_BENCH_MEMORY_RECALL_QUERIES` to choose how many deterministic query
+vectors are rotated through the graph recall benchmark. These controls let local
+runs cover vector scans and graph recall/latency tuning without changing source.
+Set
 `ASTRAL_BENCH_MEMORY_SWEEP=1` to run the built-in 100/1k/10k/100k flat-index
 sweep in one invocation. Set
 `ASTRAL_BENCH_MEMORY_ONLY=1` when collecting hardware counters so tokenization,
@@ -183,7 +187,7 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/b
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
 perf stat -e cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses,dTLB-loads,dTLB-load-misses -- env ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_SWEEP=1 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
-ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=20 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
 ```
 
 Native tests include `inference_memory_index_graph_mock` for graph search,
