@@ -2,7 +2,9 @@
 
 Astral memory indexes store embedding vectors in native memory and return stable
 keys and scores for retrieval. The flat index is the exact correctness baseline.
-The graph index adds a bounded native ANN path for larger all-group searches.
+The graph index is a bounded native candidate graph for larger all-group
+searches. Treat it as a tunable experimental path until recall evidence for the
+target dataset meets the product threshold.
 
 ## C ABI
 
@@ -38,6 +40,8 @@ engine objects for the selected keys.
   uses a fixed-size candidate pool for all-group top-k search. Set
   `graph_neighbors` and `graph_search` to tune recall/latency, or leave them
   zero for native defaults. Group-filtered searches use the exact flat scanner.
+  Use the graph recall benchmark before choosing this path for production
+  retrieval.
 
 `astral_memory_record_from_chunk()` maps an `AstralChunkRange` into an
 `AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
@@ -81,7 +85,9 @@ the graph to keep neighbor links consistent.
 Treat flat search as the recall oracle when tuning graph search. The
 `features.memory graph_recall` benchmark reports top-k overlap between graph
 search and exact flat search, so graph improvements can be judged by both
-latency and recall.
+latency and recall. A graph configuration is not production-ready just because
+it is faster than flat search; it must hit the required recall target for the
+dataset and embedding model.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
