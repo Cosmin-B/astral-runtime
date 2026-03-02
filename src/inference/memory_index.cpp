@@ -40,6 +40,7 @@ constexpr uint32_t kGraphDefaultNeighbors = 16;
 constexpr uint32_t kGraphMaxNeighbors = 64;
 constexpr uint32_t kGraphDefaultSearch = 64;
 constexpr uint32_t kGraphMinSearch = 4;
+constexpr uint32_t kGraphLongLinkCount = 4;
 constexpr float kWorstScore = -3.4028234663852886e38f;
 #if defined(__AVX2__)
 constexpr uint32_t kAvx2F32Lanes = 8;
@@ -595,6 +596,25 @@ void insert_graph_neighbor(MemoryIndex* index, uint32_t owner_slot, uint32_t nei
   }
 }
 
+void force_graph_neighbor(MemoryIndex* index, uint32_t owner_slot, uint32_t neighbor_slot, uint32_t position) {
+  if (owner_slot == neighbor_slot || position >= index->graph_neighbor_capacity) {
+    return;
+  }
+  uint32_t* neighbors = graph_neighbors_at(index, owner_slot);
+  uint32_t& count = index->graph_neighbor_counts[owner_slot];
+  for (uint32_t i = 0; i < count; ++i) {
+    if (neighbors[i] == neighbor_slot) {
+      return;
+    }
+  }
+  if (position >= count) {
+    neighbors[count] = neighbor_slot;
+    ++count;
+    return;
+  }
+  neighbors[position] = neighbor_slot;
+}
+
 void insert_graph_build_candidate(MemoryIndex* index, uint32_t* filled, uint32_t slot, float score) {
   uint32_t pos = *filled;
   if (pos < index->graph_neighbor_capacity) {
@@ -688,6 +708,17 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
   for (uint32_t i = 0; i < filled; ++i) {
     neighbors[i] = index->graph_build_slots[i];
     insert_graph_neighbor(index, index->graph_build_slots[i], slot);
+  }
+  if (index->count > index->graph_neighbor_capacity && index->graph_neighbor_capacity > kGraphLongLinkCount) {
+    const uint32_t long_links = kGraphLongLinkCount < index->graph_neighbor_capacity ? kGraphLongLinkCount
+                                                                                     : index->graph_neighbor_capacity;
+    const uint32_t stride = index->count / long_links;
+    const uint32_t first_long_pos = index->graph_neighbor_capacity - long_links;
+    for (uint32_t i = 0; i < long_links; ++i) {
+      const uint32_t linked = active_slot_at(index, i * stride);
+      force_graph_neighbor(index, slot, linked, first_long_pos + i);
+      force_graph_neighbor(index, linked, slot, first_long_pos + i);
+    }
   }
   index->graph_entry_slot = slot;
 }

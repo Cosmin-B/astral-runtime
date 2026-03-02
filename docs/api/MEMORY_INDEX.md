@@ -41,7 +41,8 @@ engine objects for the selected keys.
   `graph_neighbors` and `graph_search` to tune recall/latency, or leave them
   zero for native defaults. Group-filtered searches use the exact flat scanner.
   Use the graph recall benchmark before choosing this path for production
-  retrieval.
+  retrieval. Graph construction keeps nearest-neighbor links and a few
+  deterministic spread links to avoid purely local neighborhoods.
 
 `astral_memory_record_from_chunk()` maps an `AstralChunkRange` into an
 `AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
