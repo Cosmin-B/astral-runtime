@@ -41,11 +41,14 @@ static constexpr uint32_t kBenchMemorySweepTiny = 100;
 static constexpr uint32_t kBenchMemorySweepSmall = 1000;
 static constexpr uint32_t kBenchMemorySweepMedium = 10000;
 static constexpr uint32_t kBenchMemorySweepLarge = 100000;
-static constexpr uint32_t kBenchMemoryValueMask = 0xFu;
-static constexpr uint32_t kBenchMemoryColumnBias = 3;
-static constexpr uint32_t kBenchMemoryQueryMask = 7u;
-static constexpr uint32_t kBenchMemoryQueryColumnBias = 5u;
-static constexpr uint32_t kBenchMemoryQueryRowBias = 11u;
+static constexpr uint32_t kBenchMemoryHashMul0 = 0x7FEB352Du;
+static constexpr uint32_t kBenchMemoryHashMul1 = 0x846CA68Bu;
+static constexpr uint32_t kBenchMemoryHashShift0 = 16u;
+static constexpr uint32_t kBenchMemoryHashShift1 = 15u;
+static constexpr uint32_t kBenchMemoryHashShift2 = 16u;
+static constexpr uint32_t kBenchMemoryHashRowMul = 0x9E3779B9u;
+static constexpr uint32_t kBenchMemoryHashColMul = 0x85EBCA6Bu;
+static constexpr float kBenchMemoryI32Scale = 1.0f / 2147483648.0f;
 static constexpr uint32_t kBenchMemoryRecallQueries = 32u;
 static constexpr uint32_t kBenchMemoryMinRecallQueries = 1u;
 static constexpr uint32_t kBenchMemoryMaxRecallQueries = 4096u;
@@ -53,9 +56,9 @@ static constexpr uint32_t kBenchMemoryGroupMask = 1u;
 static constexpr uint32_t kBenchMemoryDocShift = 4u;
 static constexpr uint64_t kBenchMemoryKeyBase = 1u;
 static constexpr uint32_t kBenchMemoryGraphNeighbors = 16;
+static constexpr uint32_t kBenchMemoryGraphMaxNeighbors = 64;
 static constexpr uint32_t kBenchMemoryGraphSearch = 64;
 static constexpr double kBenchMemoryPercentScale = 100.0;
-static constexpr float kBenchMemoryValueBias = 1.0f;
 static constexpr uint32_t kBenchAgentContextTokens = 256;
 static constexpr uint32_t kBenchAgentSlots = 1;
 static constexpr uint32_t kBenchAgentBatchTokens = 16;
@@ -195,7 +198,11 @@ static AstralMemoryMetric parse_memory_metric_env() {
 }
 
 static uint32_t memory_graph_neighbors() {
-    return bounded_env_u32(kBenchMemoryGraphNeighborsEnv, kBenchMemoryGraphNeighbors, 1u, kBenchMemoryGraphNeighbors);
+    return bounded_env_u32(
+        kBenchMemoryGraphNeighborsEnv,
+        kBenchMemoryGraphNeighbors,
+        1u,
+        kBenchMemoryGraphMaxNeighbors);
 }
 
 static uint32_t memory_graph_search() {
@@ -216,6 +223,20 @@ static uint32_t memory_bench_dim() {
 
 static uint32_t memory_bench_capacity(uint32_t fallback, uint32_t dim) {
     return bounded_env_u32(kBenchMemoryCapacityEnv, fallback, kBenchMemoryMinCapacity, UINT32_MAX / dim);
+}
+
+static uint32_t memory_bench_mix(uint32_t x) {
+    x ^= x >> kBenchMemoryHashShift0;
+    x *= kBenchMemoryHashMul0;
+    x ^= x >> kBenchMemoryHashShift1;
+    x *= kBenchMemoryHashMul1;
+    x ^= x >> kBenchMemoryHashShift2;
+    return x;
+}
+
+static float memory_bench_value(uint32_t row, uint32_t col) {
+    const uint32_t mixed = memory_bench_mix(row * kBenchMemoryHashRowMul + col * kBenchMemoryHashColMul);
+    return static_cast<float>(static_cast<int32_t>(mixed)) * kBenchMemoryI32Scale;
 }
 
 static const char* find_model_path() {
@@ -966,26 +987,20 @@ static void fill_memory_fixture(std::vector<AstralMemoryRecord>& records,
         records[row].document_id = row >> kBenchMemoryDocShift;
         records[row].chunk_id = row;
         for (uint32_t col = 0; col < dim; ++col) {
-            vectors[static_cast<size_t>(row) * dim + col] =
-                static_cast<float>(((row + kBenchMemoryKeyBase) * (col + kBenchMemoryColumnBias)) & kBenchMemoryValueMask) +
-                kBenchMemoryValueBias;
+            vectors[static_cast<size_t>(row) * dim + col] = memory_bench_value(row, col);
         }
     }
 }
 
 static void fill_memory_query(std::vector<float>& query) {
     for (uint32_t i = 0; i < static_cast<uint32_t>(query.size()); ++i) {
-        query[i] = static_cast<float>((i & kBenchMemoryQueryMask) + kBenchMemoryValueBias);
+        query[i] = memory_bench_value(0, i);
     }
 }
 
 static void fill_memory_query(std::vector<float>& query, uint32_t query_index) {
-    const uint32_t row = query_index + kBenchMemoryKeyBase;
     for (uint32_t i = 0; i < static_cast<uint32_t>(query.size()); ++i) {
-        const uint32_t value =
-            ((row * (i + kBenchMemoryQueryColumnBias)) + (query_index * kBenchMemoryQueryRowBias)) &
-            kBenchMemoryValueMask;
-        query[i] = static_cast<float>(value) + kBenchMemoryValueBias;
+        query[i] = memory_bench_value(query_index, i);
     }
 }
 
@@ -1225,7 +1240,10 @@ static BenchResult bench_memory_graph_recall(uint64_t iters) {
     const uint64_t t0 = ticks_now();
     const uint64_t n0 = ns_now();
     for (uint64_t i = 0; i < iters; ++i) {
-        fill_memory_query(query, static_cast<uint32_t>(i % recall_queries));
+        const uint32_t query_row =
+            static_cast<uint32_t>((static_cast<uint64_t>(i % recall_queries) * capacity) /
+                                  static_cast<uint64_t>(recall_queries));
+        fill_memory_query(query, query_row);
         err = astral_memory_search(flat_index, &search, query.data(), flat_results, kBenchMemoryTopK, &flat_count);
         if (err == ASTRAL_OK) {
             err = astral_memory_search(graph_index, &search, query.data(), graph_results, kBenchMemoryTopK, &graph_count);

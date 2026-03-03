@@ -331,7 +331,6 @@ struct MemoryIndex {
   uint32_t* graph_neighbor_counts;
   uint32_t* graph_candidates;
   float* graph_candidate_scores;
-  uint8_t* graph_candidate_expanded;
   uint32_t* graph_build_slots;
   float* graph_build_scores;
   uint32_t* graph_visited;
@@ -540,6 +539,7 @@ void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
                         AstralMemorySearchResult* out_results, uint32_t* out_count);
 void graph_begin_visit(MemoryIndex* index);
 void graph_add_candidate(MemoryIndex* index, uint32_t slot, float score, uint32_t* candidate_count);
+bool graph_pop_candidate(MemoryIndex* index, uint32_t* candidate_count, uint32_t* out_slot, float* out_score);
 inline void graph_mark_visited(MemoryIndex* index, uint32_t slot);
 inline bool graph_was_visited(const MemoryIndex* index, uint32_t slot);
 
@@ -659,23 +659,15 @@ void graph_collect_neighbors_bounded(MemoryIndex* index, uint32_t slot, uint32_t
   graph_mark_visited(index, entry);
   graph_add_candidate(index, entry, score_pair(index, slot, entry), &candidate_count);
 
-  while (expanded_count < candidate_count && expanded_count < index->graph_search_capacity) {
-    uint32_t best_pos = kU32Max;
-    float best_score = kWorstScore;
-    for (uint32_t i = 0; i < candidate_count; ++i) {
-      if (index->graph_candidate_expanded[i] == 0 && index->graph_candidate_scores[i] > best_score) {
-        best_score = index->graph_candidate_scores[i];
-        best_pos = i;
-      }
-    }
-    if (best_pos == kU32Max) {
+  while (candidate_count != 0 && expanded_count < index->graph_search_capacity) {
+    uint32_t current = kU32Max;
+    float current_score = kWorstScore;
+    if (!graph_pop_candidate(index, &candidate_count, &current, &current_score)) {
       break;
     }
 
-    index->graph_candidate_expanded[best_pos] = 1;
     ++expanded_count;
-    const uint32_t current = index->graph_candidates[best_pos];
-    insert_graph_build_candidate(index, filled, current, index->graph_candidate_scores[best_pos]);
+    insert_graph_build_candidate(index, filled, current, current_score);
 
     const uint32_t* neighbors = graph_neighbors_at(index, current);
     const uint32_t neighbor_count = index->graph_neighbor_counts[current];
@@ -753,9 +745,18 @@ void graph_begin_visit(MemoryIndex* index) {
 void graph_add_candidate(MemoryIndex* index, uint32_t slot, float score, uint32_t* candidate_count) {
   uint32_t count = *candidate_count;
   if (count < index->graph_search_capacity) {
-    index->graph_candidates[count] = slot;
-    index->graph_candidate_scores[count] = score;
-    index->graph_candidate_expanded[count] = 0;
+    uint32_t pos = count;
+    while (pos > 0) {
+      const uint32_t parent = (pos - 1u) >> 1u;
+      if (index->graph_candidate_scores[parent] >= score) {
+        break;
+      }
+      index->graph_candidates[pos] = index->graph_candidates[parent];
+      index->graph_candidate_scores[pos] = index->graph_candidate_scores[parent];
+      pos = parent;
+    }
+    index->graph_candidates[pos] = slot;
+    index->graph_candidate_scores[pos] = score;
     *candidate_count = count + 1u;
     return;
   }
@@ -769,10 +770,56 @@ void graph_add_candidate(MemoryIndex* index, uint32_t slot, float score, uint32_
     }
   }
   if (score > worst_score) {
-    index->graph_candidates[worst_pos] = slot;
-    index->graph_candidate_scores[worst_pos] = score;
-    index->graph_candidate_expanded[worst_pos] = 0;
+    uint32_t pos = worst_pos;
+    while (pos > 0) {
+      const uint32_t parent = (pos - 1u) >> 1u;
+      if (index->graph_candidate_scores[parent] >= score) {
+        break;
+      }
+      index->graph_candidates[pos] = index->graph_candidates[parent];
+      index->graph_candidate_scores[pos] = index->graph_candidate_scores[parent];
+      pos = parent;
+    }
+    index->graph_candidates[pos] = slot;
+    index->graph_candidate_scores[pos] = score;
   }
+}
+
+bool graph_pop_candidate(MemoryIndex* index, uint32_t* candidate_count, uint32_t* out_slot, float* out_score) {
+  uint32_t count = *candidate_count;
+  if (count == 0) {
+    return false;
+  }
+
+  *out_slot = index->graph_candidates[0];
+  *out_score = index->graph_candidate_scores[0];
+  --count;
+  if (count != 0) {
+    const uint32_t slot = index->graph_candidates[count];
+    const float score = index->graph_candidate_scores[count];
+    uint32_t pos = 0;
+    for (;;) {
+      const uint32_t left = (pos << 1u) + 1u;
+      if (left >= count) {
+        break;
+      }
+      const uint32_t right = left + 1u;
+      uint32_t child = left;
+      if (right < count && index->graph_candidate_scores[right] > index->graph_candidate_scores[left]) {
+        child = right;
+      }
+      if (index->graph_candidate_scores[child] <= score) {
+        break;
+      }
+      index->graph_candidates[pos] = index->graph_candidates[child];
+      index->graph_candidate_scores[pos] = index->graph_candidate_scores[child];
+      pos = child;
+    }
+    index->graph_candidates[pos] = slot;
+    index->graph_candidate_scores[pos] = score;
+  }
+  *candidate_count = count;
+  return true;
 }
 
 void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
@@ -798,22 +845,15 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
   fill_result(&entry_result, index->slots[entry], entry_score);
   insert_result(out_results, desc->top_k, &filled, entry_result);
 
-  while (expanded_count < candidate_count && expanded_count < index->graph_search_capacity) {
-    uint32_t best_pos = kU32Max;
-    float best_score = kWorstScore;
-    for (uint32_t i = 0; i < candidate_count; ++i) {
-      if (index->graph_candidate_expanded[i] == 0 && index->graph_candidate_scores[i] > best_score) {
-        best_score = index->graph_candidate_scores[i];
-        best_pos = i;
-      }
-    }
-    if (best_pos == kU32Max) {
+  while (candidate_count != 0 && expanded_count < index->graph_search_capacity) {
+    uint32_t slot = kU32Max;
+    float slot_score = kWorstScore;
+    if (!graph_pop_candidate(index, &candidate_count, &slot, &slot_score)) {
       break;
     }
+    (void)slot_score;
 
-    index->graph_candidate_expanded[best_pos] = 1;
     ++expanded_count;
-    const uint32_t slot = index->graph_candidates[best_pos];
     const uint32_t* neighbors = graph_neighbors_at(index, slot);
     const uint32_t neighbor_count = index->graph_neighbor_counts[slot];
     for (uint32_t i = 0; i < neighbor_count; ++i) {
@@ -1189,10 +1229,6 @@ void destroy_allocations(MemoryIndex* index) {
     core::runtime_free_array(index->graph_candidate_scores, index->graph_search_capacity);
     index->graph_candidate_scores = nullptr;
   }
-  if (index->graph_candidate_expanded != nullptr) {
-    core::runtime_free_array(index->graph_candidate_expanded, index->graph_search_capacity);
-    index->graph_candidate_expanded = nullptr;
-  }
   if (index->graph_build_slots != nullptr) {
     core::runtime_free_array(index->graph_build_slots, index->graph_neighbor_capacity);
     index->graph_build_slots = nullptr;
@@ -1251,7 +1287,6 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->graph_neighbor_counts = nullptr;
   index->graph_candidates = nullptr;
   index->graph_candidate_scores = nullptr;
-  index->graph_candidate_expanded = nullptr;
   index->graph_build_slots = nullptr;
   index->graph_build_scores = nullptr;
   index->graph_visited = nullptr;
@@ -1273,7 +1308,6 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     index->graph_neighbor_counts = core::runtime_alloc_array<uint32_t>(desc->capacity);
     index->graph_candidates = core::runtime_alloc_array<uint32_t>(graph_search_capacity);
     index->graph_candidate_scores = core::runtime_alloc_array<float>(graph_search_capacity);
-    index->graph_candidate_expanded = core::runtime_alloc_array<uint8_t>(graph_search_capacity);
     index->graph_build_slots = core::runtime_alloc_array<uint32_t>(graph_neighbor_capacity);
     index->graph_build_scores = core::runtime_alloc_array<float>(graph_neighbor_capacity);
     index->graph_visited = core::runtime_alloc_array<uint32_t>(desc->capacity);
@@ -1283,8 +1317,8 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
       (graph_neighbor_capacity != 0 &&
        (index->graph_neighbors == nullptr || index->graph_neighbor_counts == nullptr ||
         index->graph_candidates == nullptr || index->graph_candidate_scores == nullptr ||
-        index->graph_candidate_expanded == nullptr || index->graph_build_slots == nullptr ||
-        index->graph_build_scores == nullptr || index->graph_visited == nullptr))) {
+        index->graph_build_slots == nullptr || index->graph_build_scores == nullptr ||
+        index->graph_visited == nullptr))) {
     destroy_allocations(index);
     core::runtime_delete(index);
     return ASTRAL_E_NOMEM;
@@ -1299,7 +1333,6 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     std::memset(index->graph_neighbor_counts, 0, sizeof(uint32_t) * desc->capacity);
     std::memset(index->graph_candidates, 0, sizeof(uint32_t) * graph_search_capacity);
     std::memset(index->graph_candidate_scores, 0, sizeof(float) * graph_search_capacity);
-    std::memset(index->graph_candidate_expanded, 0, sizeof(uint8_t) * graph_search_capacity);
     std::memset(index->graph_build_slots, 0, sizeof(uint32_t) * graph_neighbor_capacity);
     std::memset(index->graph_build_scores, 0, sizeof(float) * graph_neighbor_capacity);
     std::memset(index->graph_visited, 0, sizeof(uint32_t) * desc->capacity);

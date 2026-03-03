@@ -85,16 +85,16 @@ Add/update/remove are colder ingest operations; updates and removals may rebuild
 the graph to keep neighbor links consistent.
 Treat flat search as the recall oracle when tuning graph search. The
 `features.memory graph_recall` benchmark reports aggregate top-k overlap
-between graph search and exact flat search across deterministic recall queries,
-so graph improvements can be judged by both latency and recall. A graph
-configuration is not production-ready just because it is faster than flat
-search; it must hit the required recall target for the dataset and embedding
-model.
+between graph search and exact flat search across deterministic, high-entropy
+recall queries spread across the indexed capacity, so graph improvements can be
+judged by both latency and recall. A graph configuration is not production-ready
+just because it is faster than flat search; it must hit the required recall
+target for the dataset and embedding model.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
-`l2`), `ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS`, and
-`ASTRAL_BENCH_MEMORY_GRAPH_SEARCH`. Set
+`l2`), `ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS` up to the native graph-neighbor
+limit, and `ASTRAL_BENCH_MEMORY_GRAPH_SEARCH`. Set
 `ASTRAL_BENCH_MEMORY_RECALL_QUERIES` to choose how many deterministic query
 vectors are rotated through the graph recall benchmark. These controls let local
 runs cover vector scans and graph recall/latency tuning without changing source.
