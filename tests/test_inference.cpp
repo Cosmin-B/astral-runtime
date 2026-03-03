@@ -312,6 +312,74 @@ TEST(inference_request_lifecycle_session_mock) {
     astral_shutdown();
 }
 
+TEST(inference_request_lifecycle_conversation_mock) {
+    constexpr uint32_t kReserveBytes = 32 * 1024 * 1024;
+    constexpr uint32_t kMaxTokens = 8;
+    constexpr uint32_t kRequestTimeoutMs = 1000;
+
+    AstralInit cfg{};
+    cfg.reserve_bytes = kReserveBytes;
+    cfg.thread_count = 2;
+    ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+    AstralHandle model = load_mock_model(nullptr);
+
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = 1;
+    ex.max_batch_tokens = kMaxTokens;
+    ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
+
+    AstralConvDesc conv_desc{};
+    conv_desc.size = sizeof(AstralConvDesc);
+    conv_desc.model = model;
+    conv_desc.max_tokens = kMaxTokens;
+    conv_desc.temperature = 0.0f;
+    conv_desc.top_p = 1.0f;
+    conv_desc.stream_enabled = 1;
+    conv_desc.seed = 1;
+
+    AstralHandle conv = 0;
+    ASSERT_EQ(astral_conv_create(&conv_desc, &conv), ASTRAL_OK);
+
+    AstralRequestRef request{};
+    ASSERT_EQ(astral_request_from_conversation(conv, &request), ASTRAL_OK);
+    ASSERT_EQ(request.kind, ASTRAL_REQUEST_CONVERSATION);
+    ASSERT_EQ(request.owner, conv);
+    ASSERT_EQ(request.ticket, 0ull);
+
+    AstralRequestStatus status{};
+    status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_state(&request, &status), ASTRAL_OK);
+    ASSERT_EQ(status.kind, ASTRAL_REQUEST_CONVERSATION);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_QUEUED);
+    ASSERT_EQ(status.flags & ASTRAL_REQUEST_FLAG_STREAM, ASTRAL_REQUEST_FLAG_STREAM);
+    ASSERT_EQ(status.owner, conv);
+    ASSERT_EQ(status.ticket, 0ull);
+
+    ASSERT_EQ(astral_conv_feed(conv, span_from_cstr("hello"), 1), ASTRAL_OK);
+    ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+
+    const std::string output = read_conv_stream_all(conv);
+    ASSERT_FALSE(output.empty());
+
+    status = AstralRequestStatus{};
+    status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_wait(&request, kRequestTimeoutMs, &status), ASTRAL_OK);
+    ASSERT_EQ(status.state, ASTRAL_REQUEST_COMPLETED);
+    ASSERT_EQ(status.result, ASTRAL_OK);
+
+    astral_conv_destroy(conv);
+
+    status = AstralRequestStatus{};
+    status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_state(&request, &status), ASTRAL_E_INVALID);
+    ASSERT_EQ(status.result, ASTRAL_E_INVALID);
+
+    astral_model_release(model);
+    astral_shutdown();
+}
+
 TEST(inference_mock_lifecycle_churn) {
     constexpr uint32_t kRuntimeCycles = 8;
     constexpr uint32_t kModelsPerRuntime = 2;

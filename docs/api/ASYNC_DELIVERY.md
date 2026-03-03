@@ -115,3 +115,9 @@ embedding tickets, and memory search cursors.
 cmake --build --preset unity-plugin -j8
 ctest --preset dev -R '^(test_inference|test_media|test_abi_invalid_args|gate_source_scans|gate_doc_links)$' --output-on-failure
 ```
+
+Native request-lifecycle tests cover session, conversation, agent chat,
+embedding tickets, and memory-search cursors through the unified
+`AstralRequestRef` path. They check state polling, waits, cancellation where the
+owner supports it, queue-depth reporting for cursors and tickets, and invalid
+status after a non-owning request ref outlives its native owner.
