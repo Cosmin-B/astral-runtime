@@ -422,8 +422,8 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     int32 AgentAssignedSlot = -1;
     const FAstralOperationResult GetAgentSlot =
         UAstralBlueprintLibrary::GetAgentAssignedSlotResult(AgentCreate.Handle, AgentAssignedSlot);
-    TestTrue(TEXT("get agent assigned slot succeeds"), GetAgentSlot.bSuccess);
-    TestEqual(TEXT("agent assigned slot"), AgentAssignedSlot, AgentSlotA);
+    TestFalse(TEXT("new agent has no assigned slot before chat"), GetAgentSlot.bSuccess);
+    TestEqual(TEXT("new agent assigned slot error"), GetAgentSlot.ErrorCode, static_cast<int32>(ASTRAL_E_NOT_FOUND));
 
     FAstralToolCallResult AgentToolCall;
     const FAstralOperationResult ParseAgentTool =
@@ -448,8 +448,8 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     int32 AgentBAssignedSlot = -1;
     const FAstralOperationResult GetAgentBSlot =
         UAstralBlueprintLibrary::GetAgentAssignedSlotResult(AgentBCreate.Handle, AgentBAssignedSlot);
-    TestTrue(TEXT("get second shared-model agent slot succeeds"), GetAgentBSlot.bSuccess);
-    TestEqual(TEXT("second shared-model agent assigned slot"), AgentBAssignedSlot, AgentSlotB);
+    TestFalse(TEXT("second shared-model agent has no assigned slot before chat"), GetAgentBSlot.bSuccess);
+    TestEqual(TEXT("second shared-model agent assigned slot error"), GetAgentBSlot.ErrorCode, static_cast<int32>(ASTRAL_E_NOT_FOUND));
 
     FString ReadAgentSystemPrompt;
     const FAstralOperationResult GetAgentSystem =
@@ -490,11 +490,19 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         UAstralBlueprintLibrary::EnqueueAgentChatResult(AgentCreate.Handle, TEXT("ping"), false);
     TestTrue(TEXT("enqueue agent chat succeeds"), EnqueueAgentChat.bSuccess);
     TestEqual(TEXT("enqueue agent chat byte count"), EnqueueAgentChat.Count, AgentChatUserBytes);
+    const FAstralOperationResult GetAgentSlotAfterChat =
+        UAstralBlueprintLibrary::GetAgentAssignedSlotResult(AgentCreate.Handle, AgentAssignedSlot);
+    TestTrue(TEXT("get agent assigned slot after chat succeeds"), GetAgentSlotAfterChat.bSuccess);
+    TestEqual(TEXT("agent assigned slot after chat"), AgentAssignedSlot, AgentSlotA);
 
     const FAstralOperationResult EnqueueAgentBChat =
         UAstralBlueprintLibrary::EnqueueAgentChatResult(AgentBCreate.Handle, TEXT("pong"), false);
     TestTrue(TEXT("enqueue second shared-model agent chat succeeds"), EnqueueAgentBChat.bSuccess);
     TestEqual(TEXT("enqueue second shared-model agent byte count"), EnqueueAgentBChat.Count, AgentChatUserBytes);
+    const FAstralOperationResult GetAgentBSlotAfterChat =
+        UAstralBlueprintLibrary::GetAgentAssignedSlotResult(AgentBCreate.Handle, AgentBAssignedSlot);
+    TestTrue(TEXT("get second shared-model agent assigned slot after chat succeeds"), GetAgentBSlotAfterChat.bSuccess);
+    TestEqual(TEXT("second shared-model agent assigned slot after chat"), AgentBAssignedSlot, AgentSlotB);
 
     FAstralRequestRef AgentChatRequest;
     const FAstralOperationResult CreateAgentChatRequest =
