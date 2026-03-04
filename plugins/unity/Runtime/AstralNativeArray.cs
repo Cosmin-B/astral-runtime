@@ -300,28 +300,12 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Create a NativeArray view over managed byte array (zero-copy).
-        ///  Managed array must be pinned or this is unsafe.
-        /// Use with extreme caution.
+        /// Copy a managed byte array into a temporary NativeArray.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe NativeArray<byte> AsNativeArray(byte[] managedArray)
+        public static NativeArray<byte> AsNativeArray(byte[] managedArray)
         {
-            //  This is unsafe if managed array is moved by GC
-            // Only use if array is pinned or within fixed block
-            var array = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(
-                managedArray,
-                managedArray.Length,
-                Allocator.None
-            );
-
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-            // Set safety handle (debug only)
-            var safety = AtomicSafetyHandle.Create();
-            NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref array, safety);
-#endif
-
-            return array;
+            return new NativeArray<byte>(managedArray, Allocator.Temp);
         }
     }
 }

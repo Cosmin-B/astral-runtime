@@ -845,14 +845,7 @@ namespace Astral.Runtime
 
             if (bytesRead > 0)
             {
-                // Convert UTF-8 to string (GC allocation)
-                unsafe
-                {
-                    fixed (byte* ptr = &m_streamBuffer[0])
-                    {
-                        return Encoding.UTF8.GetString(ptr, bytesRead);
-                    }
-                }
+                return new NativeSlice<byte>(m_streamBuffer, 0, bytesRead).ToUtf8String();
             }
             else if (bytesRead == AstralNative.ASTRAL_E_TIMEOUT)
             {
@@ -891,14 +884,8 @@ namespace Astral.Runtime
 
                 if (bytesRead > 0)
                 {
-                    unsafe
-                    {
-                        fixed (byte* ptr = &m_streamBuffer[0])
-                        {
-                            string token = Encoding.UTF8.GetString(ptr, bytesRead);
-                            onToken?.Invoke(token);
-                        }
-                    }
+                    string token = new NativeSlice<byte>(m_streamBuffer, 0, bytesRead).ToUtf8String();
+                    onToken?.Invoke(token);
                     continue;
                 }
 
@@ -939,15 +926,8 @@ namespace Astral.Runtime
 
                 if (bytesRead > 0)
                 {
-                    // Convert UTF-8 to string
-                    unsafe
-                    {
-                        fixed (byte* ptr = &m_streamBuffer[0])
-                        {
-                            string token = Encoding.UTF8.GetString(ptr, bytesRead);
-                            onToken?.Invoke(token);
-                        }
-                    }
+                    string token = new NativeSlice<byte>(m_streamBuffer, 0, bytesRead).ToUtf8String();
+                    onToken?.Invoke(token);
                 }
                 else if (bytesRead == AstralNative.ASTRAL_E_TIMEOUT)
                 {

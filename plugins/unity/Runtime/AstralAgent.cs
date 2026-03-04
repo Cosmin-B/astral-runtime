@@ -127,7 +127,7 @@ namespace Astral.Runtime
         {
             get
             {
-                ThrowIfDisposed();
+                ThrowIfInvalid();
                 int err = AstralNative.astral_agent_assigned_slot(m_handle, out uint slot);
                 if (err != AstralNative.ASTRAL_OK)
                 {

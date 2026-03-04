@@ -16,6 +16,7 @@ option(ASTRAL_BUILD_BENCHMARKS "Build benchmarks" ON)
 option(ASTRAL_BUILD_EXAMPLES "Build examples" OFF)
 option(ASTRAL_BUILD_UNITY_PLUGIN "Build Unity plugin" OFF)
 option(ASTRAL_BUILD_UNREAL_PLUGIN "Build Unreal plugin" OFF)
+option(ASTRAL_UNITY_STATIC_CXX_RUNTIME "Link Linux Unity plugin builds with a static C++ runtime" ON)
 option(ASTRAL_NO_EXCEPTIONS "Build Astral sources without C++ exceptions (experimental; embedded)" OFF)
 option(ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR "Enable JSON schema -> GBNF grammar support (requires exceptions from llama.cpp helpers)" ON)
 option(ASTRAL_ENABLE_DYNAMIC_BACKENDS "Enable runtime-loadable backend providers (dlopen/LoadLibrary)" ON)
@@ -302,6 +303,12 @@ if(ASTRAL_BUILD_SHARED_LIB)
             "LINKER:--version-script=${_ASTRAL_EXPORTS_MAP}"
             "LINKER:--exclude-libs,ALL"
         )
+        if(ASTRAL_BUILD_UNITY_PLUGIN AND ASTRAL_UNITY_STATIC_CXX_RUNTIME)
+            target_link_options(astral_rt_shared PRIVATE
+                $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-static-libstdc++>
+                $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-static-libgcc>
+            )
+        endif()
     endif()
 
     if(WIN32)

@@ -8,6 +8,7 @@ unity_version=""
 image_version="${ASTRAL_UNITY_GAMECI_IMAGE_VERSION:-3.2.2}"
 image_component="${ASTRAL_UNITY_GAMECI_COMPONENT:-base}"
 image="${ASTRAL_UNITY_GAMECI_IMAGE:-}"
+native_build_image="${ASTRAL_UNITY_NATIVE_BUILD_IMAGE:-}"
 gameci_docs_url="https://game.ci/docs/docker/docker-images/"
 docker_bin="${DOCKER:-docker}"
 pull_image=1
@@ -27,6 +28,8 @@ Options:
   --component <name>       GameCI image component (default: base)
   --project <path>         Unity project path (default: ci/unity/AstralCiUnityProject)
   --results-dir <path>     Result directory (default: build/unity-gameci-results)
+  --native-build-image <ref>
+                          Build the native plugin in this Linux container before launching Unity
   --skip-build             Do not build the native Unity plugin before container launch
   --skip-pull              Do not pull the Docker image before launch
   --dry-run                Print the resolved docker command and exit
@@ -55,6 +58,7 @@ while [[ $# -gt 0 ]]; do
     --component) image_component="${2:-}"; shift 2 ;;
     --project) project_dir="$(cd "${2:-}" && pwd)"; shift 2 ;;
     --results-dir) results_dir="$(mkdir -p "${2:-}" && cd "${2:-}" && pwd)"; shift 2 ;;
+    --native-build-image) native_build_image="${2:-}"; shift 2 ;;
     --skip-build) build_native=0; shift ;;
     --skip-pull) pull_image=0; shift ;;
     --dry-run) dry_run=1; shift ;;
@@ -114,22 +118,31 @@ if [[ "${dry_run}" -eq 1 ]]; then
   exit 0
 fi
 
-if [[ "${build_native}" -eq 1 ]]; then
-  echo "[unity-gameci] Configure native plugin"
-  cmake --preset unity-plugin
+if ! command -v "${docker_bin}" >/dev/null 2>&1; then
+  echo "Docker executable not found: ${docker_bin}" >&2
+  exit 2
+fi
 
-  echo "[unity-gameci] Build native plugin"
-  cmake --build --preset unity-plugin -j
+if [[ "${build_native}" -eq 1 ]]; then
+  if [[ -n "${native_build_image}" ]]; then
+    echo "[unity-gameci] Build native plugin in ${native_build_image}"
+    "${docker_bin}" run --rm \
+      --workdir /workspace \
+      --volume "${root_dir}:/workspace" \
+      "${native_build_image}" \
+      bash -lc "set -euo pipefail; export DEBIAN_FRONTEND=noninteractive; apt-get update >/dev/null; apt-get install -y --no-install-recommends ca-certificates build-essential cmake >/dev/null; cmake -S . -B build/unity-linux-ci -DCMAKE_BUILD_TYPE=Release -DLLAMA_CPP_DIR=/workspace/external/llama.cpp -DASTRAL_BUILD_TESTS=OFF -DASTRAL_BUILD_BENCHMARKS=OFF -DASTRAL_BUILD_UNITY_PLUGIN=ON -DASTRAL_BUILD_STATIC_LIB=OFF -DASTRAL_BUILD_SHARED_LIB=ON; cmake --build build/unity-linux-ci -j\"\$(nproc)\" --target astral_unity_plugin_package; chown -R $(id -u):$(id -g) build/unity-linux-ci plugins/unity/Runtime/Plugins/x86_64/libastral_rt.so"
+  else
+    echo "[unity-gameci] Configure native plugin"
+    cmake --preset unity-plugin
+
+    echo "[unity-gameci] Build native plugin"
+    cmake --build --preset unity-plugin -j
+  fi
 fi
 
 native_library="${root_dir}/plugins/unity/Runtime/Plugins/x86_64/libastral_rt.so"
 if [[ ! -s "${native_library}" ]]; then
   echo "Unity native runtime missing or empty: ${native_library}" >&2
-  exit 2
-fi
-
-if ! command -v "${docker_bin}" >/dev/null 2>&1; then
-  echo "Docker executable not found: ${docker_bin}" >&2
   exit 2
 fi
 
