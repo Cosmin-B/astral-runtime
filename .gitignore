@@ -55,6 +55,15 @@ astral-perf-runs/
 astral-alloc-runs/
 astral-arm64-runs/
 
+# Unity import products from the lightweight CI project
+ci/unity/AstralCiUnityProject/Library/
+ci/unity/AstralCiUnityProject/Temp/
+ci/unity/AstralCiUnityProject/UserSettings/
+ci/unity/AstralCiUnityProject/Logs/
+ci/unity/AstralCiUnityProject/Packages/packages-lock.json
+ci/unity/AstralCiUnityProject/ProjectSettings/*.asset
+plugins/unity/**/*.meta
+
 # Downloaded models (do not commit)
 tests/models/*.gguf
 tests/models/*.bin

@@ -6,7 +6,6 @@
 // Thread-safety: NativeArray owns the cross-thread byte buffers.
 
 using System;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine;
@@ -16,7 +15,7 @@ namespace Astral.Runtime
     /// <summary>
     /// Job for polling Astral token stream on background thread.
     ///
-    /// BURST COMPATIBILITY:
+    /// JOB DATA:
     /// - All fields are blittable types
     /// - No managed references (IntPtr for session handle)
     /// - No exceptions (returns error codes)
@@ -27,11 +26,10 @@ namespace Astral.Runtime
     /// - No shared state between jobs
     ///
     /// PERFORMANCE:
-    /// - Burst compiles the job wrapper.
+    /// - The job wrapper only forwards caller-owned buffers to native code.
     /// - Caller-owned buffers avoid per-token managed string conversion.
     /// - Native stream reads come from the runtime SPSC queue.
     /// </summary>
-    [BurstCompile(CompileSynchronously = true)]
     public struct AstralStreamReadJob : IJob
     {
         /// <summary>Session handle (opaque pointer from astral_session_create)</summary>
@@ -66,7 +64,6 @@ namespace Astral.Runtime
     /// Use case: Large prompts can be fed incrementally on background thread
     /// to avoid blocking main thread.
     /// </summary>
-    [BurstCompile(CompileSynchronously = true)]
     public struct AstralSessionFeedJob : IJob
     {
         /// <summary>Session handle</summary>
@@ -84,7 +81,7 @@ namespace Astral.Runtime
         public void Execute()
         {
             // Convert NativeArray to read-only span (zero-copy)
-            var span = promptChunk.AsSpan();
+            var span = AstralNative.AstralSpanU8.FromNativeArray(promptChunk);
 
             // Feed to Astral session
             int result = (int)AstralNative.astral_session_feed(session, span, finalize);
@@ -99,7 +96,6 @@ namespace Astral.Runtime
     ///
     /// Use case: Kick off inference on background thread, main thread polls results.
     /// </summary>
-    [BurstCompile(CompileSynchronously = true)]
     public struct AstralSessionDecodeJob : IJob
     {
         /// <summary>Session handle</summary>
@@ -124,7 +120,7 @@ namespace Astral.Runtime
     /// DESIGN PATTERNS:
     /// - All methods return JobHandle for dependency chaining
     /// - All NativeArrays must be disposed by caller after job completes
-    /// - Job data stays blittable for Burst-compatible scheduling.
+    /// - Job data stays blittable for Unity job scheduling.
     ///
     /// USAGE PATTERN:
     ///   // Schedule decode job

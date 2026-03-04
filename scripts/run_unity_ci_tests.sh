@@ -93,6 +93,11 @@ ASTRAL_UNITY_REQUIRE_NATIVE=1 "${unity_editor}" \
   -logFile "${results_dir}/unity-editmode.log"
 
 if [[ ! -s "${results_dir}/editmode-results.xml" ]]; then
+  if [[ -f "${results_dir}/unity-editmode.log" ]] && grep -q "com.unity.editor.headless" "${results_dir}/unity-editmode.log"; then
+    echo "Unity did not write EditMode results because the headless editor entitlement is unavailable." >&2
+    echo "Provide UNITY_LICENSE, UNITY_SERIAL credentials, or UNITY_LICENSING_SERVER to run this lane." >&2
+    exit 3
+  fi
   echo "Unity did not write EditMode results: ${results_dir}/editmode-results.xml" >&2
   exit 1
 fi

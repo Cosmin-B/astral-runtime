@@ -827,12 +827,8 @@ namespace Astral.Runtime.Tests
                 };
 
                 ulong ticket;
-                fixed (AstralNative.AstralImageDesc* pImage = &imageDesc)
-                fixed (AstralNative.AstralAudioDesc* pAudio = &audioDesc)
-                {
-                    err = AstralNative.astral_embed_enqueue_multimodal(emb, textSpan, (IntPtr)pImage, (IntPtr)pAudio, out ticket);
-                    Assert.AreEqual(AstralNative.ASTRAL_OK, err);
-                }
+                err = AstralNative.astral_embed_enqueue_multimodal(emb, textSpan, (IntPtr)(&imageDesc), (IntPtr)(&audioDesc), out ticket);
+                Assert.AreEqual(AstralNative.ASTRAL_OK, err);
 
                 using var outVec = new NativeArray<float>((int)dim, Allocator.Temp);
                 var outSpan = new AstralNative.AstralMutSpanU8
