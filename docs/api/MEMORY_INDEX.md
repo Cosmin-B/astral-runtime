@@ -37,12 +37,12 @@ engine objects for the selected keys.
 - `ASTRAL_MEMORY_INDEX_FLAT` scans contiguous row-major vectors and returns exact
   top-k results.
 - `ASTRAL_MEMORY_INDEX_GRAPH` builds a bounded adjacency graph during ingest and
-  uses a fixed-size candidate pool for all-group top-k search. Set
-  `graph_neighbors` and `graph_search` to tune recall/latency, or leave them
-  zero for native defaults. Group-filtered searches use the exact flat scanner.
-  Use the graph recall benchmark before choosing this path for production
-  retrieval. Graph construction keeps nearest-neighbor links and a few
-  deterministic spread links to avoid purely local neighborhoods.
+  uses fixed-size frontier and top-candidate pools for all-group top-k search.
+  Set `graph_neighbors` and `graph_search` to tune recall/latency, or leave
+  them zero for native defaults. Group-filtered searches use the exact flat
+  scanner. Use the graph recall benchmark before choosing this path for
+  production retrieval. Graph construction keeps nearest-neighbor links and a
+  few deterministic spread links to avoid purely local neighborhoods.
 
 `astral_memory_record_from_chunk()` maps an `AstralChunkRange` into an
 `AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
@@ -79,10 +79,12 @@ through a generic scorer for every stored vector.
 Batch ingest uses the same fixed-capacity vector storage and a free-slot cursor
 so sequential adds do not scan old slots to find the next open row.
 
-The graph index allocates adjacency, candidate, and visited buffers at creation
-time. Query execution reuses those buffers and the same SIMD scoring kernels.
-Add/update/remove are colder ingest operations; updates and removals may rebuild
-the graph to keep neighbor links consistent.
+The graph index allocates adjacency, frontier, top-candidate, and visited
+buffers at creation time. Query execution reuses those buffers and the same SIMD
+scoring kernels. The traversal stops when the best frontier candidate can no
+longer improve the bounded top-candidate pool. Add/update/remove are colder
+ingest operations; updates and removals may rebuild the graph to keep neighbor
+links consistent.
 Treat flat search as the recall oracle when tuning graph search. The
 `features.memory graph_recall` benchmark reports aggregate top-k overlap
 between graph search and exact flat search across deterministic, high-entropy
