@@ -72,9 +72,12 @@ System prompts must be set before normal prompt text is fed. A late call returns
 ## Performance Model
 
 The cache uses a fixed-size open-addressed table with a power-of-two backing
-array and bounded token storage. Lookups allocate no memory. The default path
-does not write hit/miss counters; enable `ASTRAL_PROMPT_CACHE_FLAG_TRACK_STATS`
-only for diagnostics because counters add hot-path stores.
+array and bounded token storage. Lookups allocate no memory. FIFO eviction
+advances through the oldest entries, and non-oldest updates compact live token
+spans immediately when the arena has not wrapped, keeping later reservations on
+the head-only path. The default path does not write hit/miss counters; enable
+`ASTRAL_PROMPT_CACHE_FLAG_TRACK_STATS` only for diagnostics because counters add
+hot-path stores.
 
 Use `astral_prompt_cache_get_token_view()` for native prompt assembly when the
 cache lifetime is already controlled. Feed that view directly with
@@ -134,4 +137,5 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10000000 ./build/dev
 Expected evidence markers include `test_prompt_cache Passed`,
 `features.prompt_cache get`, `features.prompt_cache view`,
 `features.prompt_cache hot_view`, `features.prompt_cache miss`,
-`features.system_prompt cached_tokens`, and `features.agent prompt_cache_warmup`.
+`features.prompt_cache compacted_evict`, `features.system_prompt cached_tokens`,
+and `features.agent prompt_cache_warmup`.

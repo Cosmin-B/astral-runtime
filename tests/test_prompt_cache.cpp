@@ -198,8 +198,46 @@ TEST(prompt_cache_eviction_keeps_lookup_cluster_valid) {
     ASSERT_EQ(stats.entries, 2u);
     ASSERT_EQ(stats.evictions, 1ull);
 
-  astral_prompt_cache_destroy(cache);
-  astral_shutdown();
+    astral_prompt_cache_destroy(cache);
+    astral_shutdown();
+}
+
+TEST(prompt_cache_update_compacts_token_arena) {
+    init_runtime();
+
+    AstralHandle cache = 0;
+    const AstralPromptCacheDesc desc = cache_desc(4, 8);
+    ASSERT_EQ(astral_prompt_cache_create(&desc, &cache), ASTRAL_OK);
+
+    const int32_t first[] = {1, 2};
+    const int32_t second[] = {3, 4};
+    const int32_t second_update[] = {9};
+    const int32_t third[] = {5, 6};
+    const int32_t fourth[] = {10, 11, 12, 13};
+    const AstralPromptCacheKey key0 = cache_key(10, 1);
+    const AstralPromptCacheKey key1 = cache_key(20, 1);
+    const AstralPromptCacheKey key2 = cache_key(30, 1);
+    const AstralPromptCacheKey key3 = cache_key(40, 1);
+
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key0, first, 2), ASTRAL_OK);
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key1, second, 2), ASTRAL_OK);
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key2, third, 2), ASTRAL_OK);
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key1, second_update, 1), ASTRAL_OK);
+    ASSERT_EQ(astral_prompt_cache_put_tokens(cache, &key3, fourth, 4), ASTRAL_OK);
+
+    int32_t out[4]{};
+    uint32_t count = 0;
+    ASSERT_EQ(astral_prompt_cache_get_tokens(cache, &key0, out, 4, &count), ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(astral_prompt_cache_get_tokens(cache, &key2, out, 4, &count), ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(astral_prompt_cache_get_tokens(cache, &key1, out, 4, &count), ASTRAL_OK);
+    ASSERT_EQ(count, 1u);
+    ASSERT_EQ(out[0], second_update[0]);
+    ASSERT_EQ(astral_prompt_cache_get_tokens(cache, &key3, out, 4, &count), ASTRAL_OK);
+    ASSERT_EQ(count, 4u);
+    ASSERT_EQ(out[3], fourth[3]);
+
+    astral_prompt_cache_destroy(cache);
+    astral_shutdown();
 }
 
 TEST(prompt_cache_save_and_load_roundtrip) {

@@ -834,6 +834,79 @@ static BenchResult bench_prompt_cache_fifo_evict(uint64_t iters) {
     return r;
 }
 
+static BenchResult bench_prompt_cache_compacted_evict(uint64_t iters) {
+    static constexpr uint32_t kEntryCount = 1024;
+    static constexpr uint32_t kTokenBudgetKiB = 8;
+    static constexpr uint32_t kTokenBudget = kTokenBudgetKiB * kBenchBytesPerKiB;
+    static constexpr uint32_t kTokenCount = 8;
+    static constexpr uint32_t kUpdatedTokenCount = 1;
+    static constexpr AstralHandle kModelHandle = 0x0100000100000001ull;
+    static constexpr uint64_t kKeyBase = 0xA57A9000ull;
+    static constexpr uint32_t kGeneration = 1;
+    static constexpr uint32_t kTokenSeed = 3;
+
+    BenchResult r{};
+    r.name = "features.prompt_cache compacted_evict";
+    r.ops = iters;
+
+    AstralPromptCacheDesc desc{};
+    desc.size = sizeof(AstralPromptCacheDesc);
+    desc.max_entries = kEntryCount;
+    desc.max_tokens = kTokenBudget;
+    desc.eviction_policy = ASTRAL_PROMPT_CACHE_EVICT_FIFO;
+
+    AstralHandle cache = 0;
+    if (astral_prompt_cache_create(&desc, &cache) != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    int32_t tokens[kTokenCount]{};
+    for (uint32_t i = 0; i < kTokenCount; ++i) {
+        tokens[i] = static_cast<int32_t>(i + kTokenSeed);
+    }
+
+    AstralPromptCacheKey key{};
+    key.size = sizeof(AstralPromptCacheKey);
+    key.section_kind = ASTRAL_PROMPT_SECTION_SYSTEM;
+    key.model = kModelHandle;
+    key.generation = kGeneration;
+
+    for (uint32_t i = 0; i < kEntryCount; ++i) {
+        key.key = kKeyBase + i;
+        if (astral_prompt_cache_put_tokens(cache, &key, tokens, kTokenCount) != ASTRAL_OK) {
+            astral_prompt_cache_destroy(cache);
+            r.ops = 0;
+            return r;
+        }
+    }
+
+    key.key = kKeyBase + (kEntryCount >> 1u);
+    if (astral_prompt_cache_put_tokens(cache, &key, tokens, kUpdatedTokenCount) != ASTRAL_OK) {
+        astral_prompt_cache_destroy(cache);
+        r.ops = 0;
+        return r;
+    }
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        key.key = kKeyBase + kEntryCount + i;
+        const AstralErr err = astral_prompt_cache_put_tokens(cache, &key, tokens, kTokenCount);
+        if (err != ASTRAL_OK) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_prompt_cache_destroy(cache);
+    return r;
+}
+
 static BenchResult bench_toolset_parse(uint64_t iters) {
     BenchResult r{};
     r.name = "features.toolset parse";
@@ -2184,6 +2257,7 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_prompt_cache_hot_view(iters), clock_info().name);
         print_result(bench_prompt_cache_miss(iters), clock_info().name);
         print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
+        print_result(bench_prompt_cache_compacted_evict(iters), clock_info().name);
         print_result(bench_system_prompt_text(iters), clock_info().name);
         print_result(bench_system_prompt_cached_tokens(iters), clock_info().name);
         print_result(bench_adapter_attach_clear(iters), clock_info().name);
@@ -2231,6 +2305,7 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_prompt_cache_hot_view(iters), clock_info().name);
     print_result(bench_prompt_cache_miss(iters), clock_info().name);
     print_result(bench_prompt_cache_fifo_evict(iters), clock_info().name);
+    print_result(bench_prompt_cache_compacted_evict(iters), clock_info().name);
     print_result(bench_system_prompt_text(iters), clock_info().name);
     print_result(bench_system_prompt_cached_tokens(iters), clock_info().name);
     print_result(bench_adapter_attach_clear(iters), clock_info().name);

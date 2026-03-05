@@ -656,6 +656,32 @@ inline bool prompt_cache_token_range_any_overlap(PromptCache* cache, uint32_t of
     return false;
 }
 
+inline bool prompt_cache_compact_tokens(PromptCache* cache) {
+    uint32_t previous_end = 0;
+    for (uint32_t slot = cache->fifo_head; slot != kPromptCacheNoSlot; slot = cache->entries[slot].fifo_next) {
+        const PromptCacheEntry& entry = cache->entries[slot];
+        if (entry.token_offset < previous_end) {
+            return false;
+        }
+        previous_end = entry.token_offset + entry.token_count;
+    }
+
+    uint32_t offset = 0;
+    for (uint32_t slot = cache->fifo_head; slot != kPromptCacheNoSlot; slot = cache->entries[slot].fifo_next) {
+        PromptCacheEntry& entry = cache->entries[slot];
+        if (entry.token_count != 0 && entry.token_offset != offset) {
+            std::memmove(cache->token_storage + offset, entry.tokens,
+                         static_cast<size_t>(entry.token_count) * sizeof(int32_t));
+            entry.tokens = cache->token_storage + offset;
+            entry.token_offset = offset;
+        }
+        offset += entry.token_count;
+    }
+    cache->token_write_offset = offset;
+    cache->token_arena_fragmented = 0;
+    return true;
+}
+
 inline void prompt_cache_release_entry_payload(PromptCache* cache, PromptCacheEntry& entry, uint8_t next_state) {
     if (entry.state != kPromptCacheSlotOccupied) {
         return;
@@ -677,9 +703,7 @@ inline void prompt_cache_remove_entry(PromptCache* cache, PromptCacheEntry* entr
     }
 
     prompt_cache_forget_last_hit(cache);
-    if (prompt_cache_slot_index(cache, entry) != cache->fifo_head) {
-        cache->token_arena_fragmented = 1u;
-    }
+    const bool compact_after_remove = prompt_cache_slot_index(cache, entry) != cache->fifo_head;
     const uint32_t hole = prompt_cache_slot_index(cache, entry);
     prompt_cache_release_entry_payload(cache, *entry, kPromptCacheSlotEmpty);
 
@@ -693,6 +717,9 @@ inline void prompt_cache_remove_entry(PromptCache* cache, PromptCacheEntry* entr
         prompt_cache_fifo_relocate(cache, slot, prompt_cache_slot_index(cache, dst));
 
         slot = (slot + 1u) & cache->table_mask;
+    }
+    if (compact_after_remove) {
+        cache->token_arena_fragmented = prompt_cache_compact_tokens(cache) ? 0u : 1u;
     }
 }
 
