@@ -37,7 +37,8 @@ engine objects for the selected keys.
 - `ASTRAL_MEMORY_INDEX_FLAT` scans contiguous row-major vectors and returns exact
   top-k results.
 - `ASTRAL_MEMORY_INDEX_GRAPH` builds a bounded adjacency graph during ingest and
-  uses fixed-size frontier and top-candidate pools for all-group top-k search.
+  uses fixed-size frontier and top-candidate pools for all-group top-1 and top-k
+  search.
   Set `graph_neighbors` and `graph_search` to tune recall/latency, or leave
   them zero for native defaults. Group-filtered searches use the exact flat
   scanner. Use the graph recall benchmark before choosing this path for
@@ -197,7 +198,8 @@ filtered exact fallback, save/load, and remove/rebuild behavior.
 
 Expected markers include `features.memory add_batch`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
-`features.memory graph_search`, `features.memory graph_recall`, and
-`features.memory cursor_begin_fetch`. Sweep runs also include
+`features.memory graph_top1`, `features.memory graph_search`,
+`features.memory graph_recall`, and `features.memory cursor_begin_fetch`.
+Sweep runs also include
 `features.memory top1_100`, `features.memory top1_1k`,
 `features.memory top1_10k`, and `features.memory top1_100k`.
