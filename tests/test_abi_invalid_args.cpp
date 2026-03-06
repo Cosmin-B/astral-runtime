@@ -391,6 +391,7 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_agent_history_load(0, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_chat_enqueue(0, &agent_chat), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_chat_cancel(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_release_slot(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_chat_stream_read(0, text_out, 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_chat_tool_call_result(0, &tool_call), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_agent_chat_tool_call_result(kInvalidAgentHandle, nullptr), ASTRAL_E_INVALID);

@@ -92,6 +92,11 @@ struct AgentChatRuntime {
     uint32_t prompt_cache_hits;
     uint32_t prompt_cache_misses;
     double prompt_build_ms;
+    uint64_t released_generated_tokens;
+    double released_t_first_token_ms;
+    double released_tok_per_s;
+    uint32_t released_state;
+    uint8_t has_released_result;
     AstralErr last_error;
 };
 
@@ -1123,6 +1128,41 @@ AstralErr agent_assigned_slot(Agent* agent, uint32_t* out_slot) {
     return ASTRAL_OK;
 }
 
+AstralErr agent_release_slot(Agent* agent) {
+    if (agent == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    Conversation* conv = agent->conv_ptr;
+    if (conv == nullptr) {
+        return ASTRAL_E_NOT_FOUND;
+    }
+
+    AstralSessionState state = ASTRAL_SESSION_FAILED;
+    const AstralErr state_err = conv_state(conv, &state);
+    if (state_err != ASTRAL_OK) {
+        return state_err;
+    }
+    if (state == ASTRAL_SESSION_DECODING) {
+        return ASTRAL_E_STATE;
+    }
+    if (conv->pending_len > conv->pending_off || !conv->token_ring.empty()) {
+        return ASTRAL_E_BUSY;
+    }
+
+    AstralConvStats stats{};
+    const AstralErr stats_err = conv_stats(conv, &stats);
+    agent->chat.released_state = state;
+    agent->chat.released_generated_tokens = stats_err == ASTRAL_OK ? stats.generated_tokens : 0;
+    agent->chat.released_t_first_token_ms = stats_err == ASTRAL_OK ? stats.t_first_token_ms : 0.0;
+    agent->chat.released_tok_per_s = stats_err == ASTRAL_OK ? stats.tok_per_s : 0.0;
+    agent->chat.has_released_result = 1;
+
+    conv_destroy(conv);
+    agent->conv = 0;
+    agent->conv_ptr = nullptr;
+    return ASTRAL_OK;
+}
+
 AstralErr agent_set_system_prompt(Agent* agent, AstralSpanU8 system_prompt) {
     if (agent == nullptr) {
         return ASTRAL_E_INVALID;
@@ -1533,6 +1573,7 @@ AstralErr agent_chat_enqueue(Agent* agent, const AstralAgentChatDesc* desc) {
         return err;
     }
     reset_prompt_cache_stats(agent);
+    agent->chat.has_released_result = 0;
     if (state == ASTRAL_SESSION_DECODING) {
         agent->chat.last_error = ASTRAL_E_STATE;
         return ASTRAL_E_STATE;
@@ -1655,6 +1696,9 @@ AstralErr agent_chat_result(Agent* agent, AstralAgentChatResult* out_result) {
     }
     if (agent->conv_ptr == nullptr) {
         out_result->state = ASTRAL_SESSION_IDLE;
+        if (agent->chat.has_released_result != 0) {
+            out_result->state = agent->chat.released_state;
+        }
         out_result->prompt_bytes = agent->chat.prompt_bytes;
         out_result->history_messages = agent->message_count;
         out_result->prompt_tokens = agent->chat.prompt_tokens;
@@ -1664,9 +1708,11 @@ AstralErr agent_chat_result(Agent* agent, AstralAgentChatResult* out_result) {
         out_result->prompt_cache_misses = agent->chat.prompt_cache_misses;
         out_result->last_error = agent->chat.last_error;
         out_result->prompt_build_ms = agent->chat.prompt_build_ms;
-        out_result->generated_tokens = 0;
-        out_result->t_first_token_ms = 0.0;
-        out_result->tok_per_s = 0.0;
+        out_result->generated_tokens =
+            agent->chat.has_released_result != 0 ? agent->chat.released_generated_tokens : 0;
+        out_result->t_first_token_ms =
+            agent->chat.has_released_result != 0 ? agent->chat.released_t_first_token_ms : 0.0;
+        out_result->tok_per_s = agent->chat.has_released_result != 0 ? agent->chat.released_tok_per_s : 0.0;
         return ASTRAL_OK;
     }
     AstralConvStats stats{};

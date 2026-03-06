@@ -137,6 +137,16 @@ namespace Astral.Runtime
             }
         }
 
+        public void ReleaseSlot()
+        {
+            ThrowIfInvalid();
+            int err = AstralNative.astral_agent_release_slot(m_handle);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_agent_release_slot failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
         public void SetSystemPrompt(string systemPrompt)
         {
             SetText(AgentTextSlot.SystemPrompt, systemPrompt, nameof(systemPrompt));

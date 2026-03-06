@@ -1975,6 +1975,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stats(AstralHandle conv, AstralConv
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_create(const AstralAgentDesc* desc, AstralHandle* out_agent);
 ASTRAL_API void ASTRAL_CALL astral_agent_destroy(AstralHandle agent);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_assigned_slot(AstralHandle agent, uint32_t* out_slot);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_release_slot(AstralHandle agent);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_system_prompt(AstralHandle agent, AstralSpanU8 system_prompt);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt_size(AstralHandle agent, uint32_t* out_bytes);
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt(

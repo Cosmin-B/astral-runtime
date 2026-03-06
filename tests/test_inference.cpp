@@ -854,6 +854,35 @@ TEST(inference_agents_share_model_executor_mock) {
     ASSERT_GT(result_a.generated_tokens, 0ull);
     ASSERT_GT(result_b.generated_tokens, 0ull);
 
+    ASSERT_EQ(astral_agent_release_slot(idle_agent), ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(astral_agent_release_slot(agent_a), ASTRAL_OK);
+    slot_a = kNoAssignedSlot;
+    ASSERT_EQ(astral_agent_assigned_slot(agent_a, &slot_a), ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(slot_a, kNoAssignedSlot);
+
+    AstralAgentChatResult released_result{};
+    released_result.size = sizeof(AstralAgentChatResult);
+    ASSERT_EQ(astral_agent_chat_result(agent_a, &released_result), ASTRAL_OK);
+    ASSERT_EQ(released_result.state, ASTRAL_SESSION_COMPLETED);
+    ASSERT_EQ(released_result.generated_tokens, result_a.generated_tokens);
+
+    ASSERT_EQ(astral_agent_chat_enqueue(overflow_agent, &overflow_chat), ASTRAL_OK);
+    uint32_t overflow_slot = kNoAssignedSlot;
+    ASSERT_EQ(astral_agent_assigned_slot(overflow_agent, &overflow_slot), ASTRAL_OK);
+    ASSERT_EQ(overflow_slot, kAgentASlot);
+    AstralRequestRef overflow_request{};
+    ASSERT_EQ(astral_request_from_agent_chat(overflow_agent, &overflow_request), ASTRAL_OK);
+    AstralRequestStatus overflow_status{};
+    overflow_status.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_wait(&overflow_request, kRequestTimeoutMs, &overflow_status), ASTRAL_OK);
+    ASSERT_EQ(overflow_status.state, ASTRAL_REQUEST_COMPLETED);
+    (void)read_agent_stream_all(overflow_agent);
+    AstralAgentChatResult overflow_result{};
+    overflow_result.size = sizeof(AstralAgentChatResult);
+    ASSERT_EQ(astral_agent_chat_result(overflow_agent, &overflow_result), ASTRAL_OK);
+    ASSERT_EQ(overflow_result.state, ASTRAL_SESSION_COMPLETED);
+    ASSERT_GT(overflow_result.generated_tokens, 0ull);
+
     astral_agent_destroy(agent_a);
     astral_agent_destroy(agent_b);
     astral_agent_destroy(idle_agent);

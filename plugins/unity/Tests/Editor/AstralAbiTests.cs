@@ -203,6 +203,7 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_from_agent_chat(invalidHandle, out request));
             Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_from_embedding(invalidHandle, 1, out request));
             Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_request_from_memory_search(invalidHandle, out request));
+            Assert.AreEqual(AstralNative.ASTRAL_E_INVALID, AstralNative.astral_agent_release_slot(invalidHandle));
 
             request = new AstralNative.AstralRequestRef
             {
