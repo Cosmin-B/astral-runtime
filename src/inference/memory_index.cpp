@@ -1537,7 +1537,7 @@ AstralErr memory_search(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
     return ASTRAL_E_NOMEM;
   }
 
-  if (index->index_kind == ASTRAL_MEMORY_INDEX_GRAPH && desc->top_k != kTopOne) {
+  if (index->index_kind == ASTRAL_MEMORY_INDEX_GRAPH) {
     memory_search_graph(index, desc, query, out_results, out_count);
   } else {
     memory_search_flat(index, desc, query, out_results, out_count);
