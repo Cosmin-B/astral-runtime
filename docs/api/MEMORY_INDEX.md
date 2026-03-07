@@ -197,6 +197,7 @@ Native tests include `inference_memory_index_graph_mock` for graph search,
 filtered exact fallback, save/load, and remove/rebuild behavior.
 
 Expected markers include `features.memory add_batch`,
+`features.memory graph_add_batch`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
 `features.memory graph_top1`, `features.memory graph_search`,
 `features.memory graph_recall`, and `features.memory cursor_begin_fetch`.
