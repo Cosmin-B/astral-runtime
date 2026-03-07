@@ -945,6 +945,10 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestFalse(TEXT("invalid agent cancel fails"), InvalidAgentCancel.bSuccess);
     TestEqual(TEXT("invalid agent cancel error"), InvalidAgentCancel.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
 
+    const FAstralOperationResult InvalidAgentRelease = UAstralBlueprintLibrary::ReleaseAgentSlotResult(InvalidHandle);
+    TestFalse(TEXT("invalid agent release fails"), InvalidAgentRelease.bSuccess);
+    TestEqual(TEXT("invalid agent release error"), InvalidAgentRelease.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
     FAstralRequestRef InvalidRequest;
     const FAstralOperationResult InvalidSessionRequest =
         UAstralBlueprintLibrary::CreateSessionRequestResult(nullptr, InvalidRequest);

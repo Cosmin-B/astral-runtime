@@ -1397,6 +1397,9 @@ namespace Astral.Runtime
         public static extern int astral_agent_assigned_slot(AstralHandle agent, out uint out_slot);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_release_slot(AstralHandle agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_agent_set_system_prompt(AstralHandle agent, AstralSpanU8 system_prompt);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]

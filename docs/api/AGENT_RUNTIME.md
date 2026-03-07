@@ -36,6 +36,7 @@ history themselves.
 - `astral_agent_chat_tool_call_result()`
 - `astral_agent_chat_result()`
 - `astral_agent_assigned_slot()`
+- `astral_agent_release_slot()`
 
 Agents run on the existing model-scoped conversation executor. Configure the
 executor before creating agents for a model. Initial system prompt, rolling
@@ -57,6 +58,12 @@ the preferred slot is occupied at enqueue time, the request returns
 creation returns `ASTRAL_E_INVALID`. `astral_agent_assigned_slot()` reports the
 zero-based slot after the agent has started a chat and returns
 `ASTRAL_E_NOT_FOUND` before a slot is assigned.
+`astral_agent_release_slot()` frees a completed, canceled, failed, or idle
+conversation slot while keeping the agent handle, prompts, memory context, and
+history alive. It returns `ASTRAL_E_STATE` while decode is active,
+`ASTRAL_E_BUSY` while stream bytes remain unread, and `ASTRAL_E_NOT_FOUND`
+when the agent has no assigned slot. The next chat enqueue reacquires a slot
+through the same executor and affinity rules.
 
 ## Ownership
 
@@ -103,6 +110,8 @@ Creation and destruction are control-path operations. A single control thread
 should mutate one agent's system prompt, summary, memory context, or history.
 Chat streaming follows the same rule as conversations: one consumer may read
 from the stream while decode is active.
+Release an agent slot from the same control path used for chat lifecycle calls,
+after wait/cancel and stream drain.
 
 ## Performance
 
@@ -112,6 +121,10 @@ Prompt assembly is outside the decode loop. The assembled buffer is bounded by
 prompt-build path avoids per-message heap objects and stays a forward scan over
 contiguous metadata. The decode hot path remains the existing conversation
 executor, stream ring, sampler, grammar, and backend slot machinery.
+Slot release is a control-path operation. It does not add queue arbitration or
+extra checks to token streaming or decode loops; applications that need fairness
+across more agents than executor slots can wait for a request, drain its stream,
+release its slot, and enqueue the next ready agent.
 
 `AstralAgentChatResult` reports `prompt_cache_reused_tokens`,
 `prompt_cache_new_tokens`, `prompt_cache_hits`, and `prompt_cache_misses` for
@@ -176,5 +189,6 @@ Expected markers include `features.agent prompt_warmup`,
 `features.agent prompt_cache_warmup`, and
 `features.system_prompt cached_tokens`. Native tests include agent-bound tool
 call parsing in `inference_toolset_parse_and_bind_mock` and shared-model agent
-slot isolation plus cancel isolation in `inference_agents_share_model_executor_mock`
-and `inference_agents_cancel_one_shared_model_mock`.
+slot isolation, slot release/reacquire, and cancel isolation in
+`inference_agents_share_model_executor_mock` and
+`inference_agents_cancel_one_shared_model_mock`.

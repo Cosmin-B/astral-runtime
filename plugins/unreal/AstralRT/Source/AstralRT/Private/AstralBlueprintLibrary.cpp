@@ -1986,6 +1986,25 @@ FAstralOperationResult UAstralBlueprintLibrary::GetAgentAssignedSlotResult(int64
     return make_operation_result(ASTRAL_OK, AgentHandle, OutSlot);
 }
 
+bool UAstralBlueprintLibrary::ReleaseAgentSlot(int64 AgentHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = ReleaseAgentSlotResult(AgentHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ReleaseAgentSlotResult(int64 AgentHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ReleaseAgentSlot);
+
+    const AstralErr Err = astral_agent_release_slot(static_cast<AstralHandle>(AgentHandle));
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle);
+}
+
 void UAstralBlueprintLibrary::DestroyAgent(int64 AgentHandle)
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyAgent);

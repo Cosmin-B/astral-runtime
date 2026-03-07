@@ -10,6 +10,7 @@ AstralHandle agent_handle(Agent* agent);
 AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent);
 void agent_destroy(Agent* agent);
 AstralErr agent_assigned_slot(Agent* agent, uint32_t* out_slot);
+AstralErr agent_release_slot(Agent* agent);
 AstralErr agent_set_system_prompt(Agent* agent, AstralSpanU8 system_prompt);
 AstralErr agent_get_system_prompt_size(Agent* agent, uint32_t* out_bytes);
 AstralErr agent_get_system_prompt(Agent* agent, AstralMutSpanU8 out_text, uint32_t* out_len);
