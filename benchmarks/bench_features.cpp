@@ -1125,6 +1125,52 @@ static BenchResult bench_memory_add_batch(uint64_t iters) {
     return bench_memory_add_batch_impl(memory_bench_capacity(kBenchMemoryCapacity, dim), "features.memory add_batch");
 }
 
+static BenchResult bench_memory_graph_add_batch(uint64_t iters) {
+    (void)iters;
+    BenchResult r{};
+    r.name = "features.memory graph_add_batch";
+    const uint32_t dim = memory_bench_dim();
+    const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+    r.ops = capacity;
+    const AstralMemoryMetric metric = parse_memory_metric_env();
+
+    AstralMemoryIndexDesc desc{};
+    desc.size = sizeof(AstralMemoryIndexDesc);
+    desc.dim = dim;
+    desc.capacity = capacity;
+    desc.metric = metric;
+    desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+    desc.graph_neighbors = memory_graph_neighbors();
+    desc.graph_search = memory_graph_search();
+
+    AstralHandle index = 0;
+    AstralErr err = astral_memory_create(&desc, &index);
+    if (err != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<AstralMemoryRecord> records(capacity);
+    std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+    fill_memory_fixture(records, vectors, capacity, dim);
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+    if (err != ASTRAL_OK) {
+        astral_memory_destroy(index);
+        r.ops = 0;
+        return r;
+    }
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_memory_destroy(index);
+    return r;
+}
+
 static BenchResult bench_memory_flat_search_impl(uint64_t iters, uint32_t capacity, const char* name) {
     BenchResult r{};
     r.name = name;
@@ -1554,6 +1600,7 @@ static BenchResult bench_memory_cursor_fetch(uint64_t iters) {
 static void print_memory_benchmarks(uint64_t iters) {
     if (!env_enabled(kBenchMemorySweepEnv)) {
         print_result(bench_memory_add_batch(iters), clock_info().name);
+        print_result(bench_memory_graph_add_batch(iters), clock_info().name);
         print_result(bench_memory_flat_search_top1(iters), clock_info().name);
         print_result(bench_memory_flat_search(iters), clock_info().name);
         print_result(bench_memory_graph_top1(iters), clock_info().name);
