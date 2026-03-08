@@ -4,6 +4,11 @@ Astral loads LoRA adapters as model-scoped native handles, then attaches them to
 sessions between requests. Adapter changes are setup operations; decoding must
 be canceled or completed before changing the active adapter set.
 
+Adapters are session scoped. Agent chats that run through a shared executor do
+not accept per-agent adapter overrides, because the active adapter set belongs to
+the backend session rather than an individual executor slot. Use separate
+sessions when different adapters must be active at the same time.
+
 ## C ABI
 
 - `AstralAdapterDesc`
@@ -39,7 +44,8 @@ state.
 Adapter file loading is a cold path. Attach, clear, query, and scale updates are
 bounded setup-time operations over the fixed session adapter array. The decode
 and stream-read paths do not parse adapter paths or inspect wrapper-owned
-collections.
+collections. Shared-executor agent dispatch does not switch adapters per
+request, so adapter setup never enters the slot scheduling path.
 
 ## Unity
 
