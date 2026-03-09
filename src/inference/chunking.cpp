@@ -22,6 +22,7 @@ constexpr uint8_t kAsciiWhitespaceMax = ' ';
 constexpr uint64_t kByteHighBits = 0x8080808080808080ull;
 constexpr uint64_t kAsciiWhitespaceLimitBytes = 0x2121212121212121ull;
 constexpr uint32_t kBitsPerByte = 8u;
+constexpr uint32_t kSingleChunk = 1u;
 constexpr uint8_t kDefaultSentenceDelimiters[] = {'.', '!', '?', '\n'};
 
 struct UnitRange {
@@ -43,6 +44,18 @@ inline bool desc_valid(const AstralChunkerDesc* desc) {
 
 inline bool text_valid(AstralSpanU8 text) {
   return text.data != nullptr || text.len == 0;
+}
+
+inline uint32_t token_chunk_count_fast(const AstralChunkerDesc* desc, uint32_t token_count) {
+  if (token_count == 0) {
+    return 0;
+  }
+  if (token_count <= desc->max_units) {
+    return kSingleChunk;
+  }
+  const uint32_t stride = desc->max_units - desc->overlap_units;
+  const uint32_t remaining = token_count - desc->max_units;
+  return kSingleChunk + ((remaining + stride - 1u) / stride);
 }
 
 inline bool is_space(uint8_t c) {
@@ -407,7 +420,8 @@ AstralErr token_chunk_count(const AstralChunkerDesc* desc, uint32_t token_count,
   if (!desc_valid(desc) || desc->mode != ASTRAL_CHUNK_MODE_TOKEN || out_count == nullptr) {
     return ASTRAL_E_INVALID;
   }
-  return emit_token_chunks(desc, token_count, nullptr, 0, out_count);
+  *out_count = token_chunk_count_fast(desc, token_count);
+  return ASTRAL_OK;
 }
 
 AstralErr token_chunk_ranges(const AstralChunkerDesc* desc, uint32_t token_count,
