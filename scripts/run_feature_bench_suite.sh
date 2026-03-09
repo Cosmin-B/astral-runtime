@@ -18,12 +18,14 @@ Options:
   --gpu-layers <N>      GPU layers when backend=cuda (default: 16)
   --iters <N>           ASTRAL_BENCH_FEATURE_ITERS (default: 200)
   --tokens <N>          ASTRAL_BENCH_FEATURE_TOKENS (default: 64)
+  --tokenize-only       Run only tokenization markers for each model
   --filter <regex>      Only run models whose filename matches this regex
   --help                Show help
 
 Examples:
   scripts/run_feature_bench_suite.sh --models-dir tests/models/hf --out benchmarks/results/local-hf-cpu.txt
   scripts/run_feature_bench_suite.sh --preset dev-cuda --backend cuda --gpu-layers 32 --models-dir tests/models/hf --out benchmarks/results/hetzner-hf-cuda.txt
+  scripts/run_feature_bench_suite.sh --preset release-with-tests --models-dir tests/models --tokenize-only --out /tmp/tokenizers.txt
 EOF
 }
 
@@ -35,6 +37,7 @@ gpu_layers="16"
 iters="200"
 tokens="64"
 filter_re=""
+tokenize_only="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     --gpu-layers) gpu_layers="${2:-}"; shift 2 ;;
     --iters) iters="${2:-}"; shift 2 ;;
     --tokens) tokens="${2:-}"; shift 2 ;;
+    --tokenize-only) tokenize_only="1"; shift ;;
     --filter) filter_re="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
@@ -85,6 +89,7 @@ mkdir -p "$(dirname "${out_file}")"
   echo "# gpu_layers: ${gpu_layers}"
   echo "# iters: ${iters}"
   echo "# tokens: ${tokens}"
+  echo "# tokenize_only: ${tokenize_only}"
   echo
 } > "${out_file}"
 
@@ -114,6 +119,7 @@ for m in "${models[@]}"; do
   ASTRAL_BENCH_GPU_LAYERS="${gpu_layers}" \
   ASTRAL_BENCH_FEATURE_ITERS="${iters}" \
   ASTRAL_BENCH_FEATURE_TOKENS="${tokens}" \
+  ASTRAL_BENCH_TOKENIZE_ONLY="${tokenize_only}" \
   "${bench_bin}" --only features >> "${out_file}" 2>&1
 
   ran=$((ran+1))

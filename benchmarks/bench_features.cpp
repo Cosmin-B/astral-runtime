@@ -90,6 +90,7 @@ static constexpr char kBenchMemorySweepEnv[] = "ASTRAL_BENCH_MEMORY_SWEEP";
 static constexpr char kBenchMemoryGraphNeighborsEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS";
 static constexpr char kBenchMemoryGraphSearchEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_SEARCH";
 static constexpr char kBenchMemoryRecallQueriesEnv[] = "ASTRAL_BENCH_MEMORY_RECALL_QUERIES";
+static constexpr char kBenchTokenizeOnlyEnv[] = "ASTRAL_BENCH_TOKENIZE_ONLY";
 static constexpr char kBenchMemoryMetricDot[] = "dot";
 static constexpr char kBenchMemoryMetricL2[] = "l2";
 static constexpr char kBenchMemoryMetricCosine[] = "cosine";
@@ -2404,7 +2405,26 @@ void bench_feature_surfaces_print(void) {
     const AstralErr init_err = astral_init(&cfg);
     if (init_err != ASTRAL_OK) {
         std::fprintf(stderr, "[bench] astral_init failed: %s (%s)\n",
-                     astral_error_string(init_err), astral_last_error());
+                         astral_error_string(init_err), astral_last_error());
+        return;
+    }
+
+    if (env_enabled(kBenchTokenizeOnlyEnv)) {
+        std::printf("\n== Tokenization (%s, gpu_layers=%u) ==\n", backend, gpu_layers);
+        std::printf("model: %s\n", model_path);
+        std::printf("env:\n");
+        std::printf("  ASTRAL_BENCH_FEATURE_BACKEND=%s\n", backend);
+        std::printf("  ASTRAL_BENCH_GPU_LAYERS=%u\n", gpu_layers);
+        std::printf("  ASTRAL_BENCH_FEATURE_ITERS=%llu\n", (unsigned long long)iters);
+        std::printf("  ASTRAL_BENCH_TOKENIZE_ONLY=1\n");
+        std::printf("%-28s  %8s  %12s  %12s  %12s\n", "benchmark", "clock", "ops", "ns/op", "ticks/op");
+        const AstralHandle model = load_model(backend, model_path, gpu_layers, /*embeddings_only=*/0);
+        if (astral_handle_valid(model)) {
+            print_result(bench_tokenize_count(model, iters), clock_info().name);
+            print_result(bench_tokenize_batch(model, iters), clock_info().name);
+            astral_model_release(model);
+        }
+        astral_shutdown();
         return;
     }
 
