@@ -2054,6 +2054,7 @@ TEST(inference_chunking_ranges_mock) {
     constexpr uint32_t kSecondTokenEnd = 7;
     constexpr uint32_t kThirdTokenBegin = 6;
     constexpr uint32_t kRangeCapacity = 4;
+    constexpr uint32_t kTooSmallTokenRangeCapacity = 2;
 
     AstralChunkerDesc desc{};
     desc.size = sizeof(AstralChunkerDesc);
@@ -2142,6 +2143,9 @@ TEST(inference_chunking_ranges_mock) {
     desc.mode = ASTRAL_CHUNK_MODE_TOKEN;
     desc.max_units = kTokenMaxUnits;
     desc.overlap_units = kTokenOverlapUnits;
+    err = astral_token_chunk_count(&desc, kTokenCount, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTokenRangeCount);
     err = astral_token_chunk_ranges(&desc, kTokenCount, ranges, kRangeCapacity, &count);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(count, kTokenRangeCount);
@@ -2151,6 +2155,9 @@ TEST(inference_chunking_ranges_mock) {
     ASSERT_EQ(ranges[1].token_end, kSecondTokenEnd);
     ASSERT_EQ(ranges[2].token_begin, kThirdTokenBegin);
     ASSERT_EQ(ranges[2].token_end, kTokenCount);
+    err = astral_token_chunk_ranges(&desc, kTokenCount, ranges, kTooSmallTokenRangeCapacity, &count);
+    ASSERT_EQ(err, ASTRAL_E_NOMEM);
+    ASSERT_EQ(count, kTokenRangeCount);
 }
 
 TEST(inference_memory_index_flat_mock) {

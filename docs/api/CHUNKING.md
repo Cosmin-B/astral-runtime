@@ -64,8 +64,9 @@ temporary string buffer for selected chunks.
 
 The range path scans the input span directly and emits POD records. Overlap is
 handled by restarting at the overlapping unit boundary, so overlap should stay
-small relative to `max_units`. Token chunking works on counts and does not touch
-token memory, which keeps it suitable for chunk planning after tokenization.
+small relative to `max_units`. Token count sizing is constant time. Token range
+emission walks chunk boundaries only and does not touch token memory, which
+keeps it suitable for chunk planning after tokenization.
 
 ## Example
 
@@ -100,4 +101,5 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/b
 Native tests include `inference_rag_ingest_chunk_search_mock`, which plans
 document chunks, converts ranges to memory records, searches the flat index, and
 copies the retrieved chunk text.
-Benchmark output should include `features.chunk word_ranges`.
+Benchmark output should include `features.chunk word_ranges`,
+`features.chunk token_count`, and `features.chunk token_ranges`.

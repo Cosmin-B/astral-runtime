@@ -29,6 +29,10 @@ static constexpr uint32_t kBenchToolManyIdBase = 100;
 static constexpr uint32_t kBenchChunkMaxWords = 32;
 static constexpr uint32_t kBenchChunkOverlapWords = 4;
 static constexpr uint32_t kBenchChunkRangeCapacity = 64;
+static constexpr uint32_t kBenchChunkTokenCount = 4096;
+static constexpr uint32_t kBenchChunkMaxTokens = 256;
+static constexpr uint32_t kBenchChunkOverlapTokens = 32;
+static constexpr uint32_t kBenchChunkTokenRangeCapacity = 19;
 static constexpr uint32_t kBenchMemoryDim = 32;
 static constexpr uint32_t kBenchMemoryCapacity = 1024;
 static constexpr uint32_t kBenchMemoryTopOne = 1;
@@ -1037,6 +1041,71 @@ static BenchResult bench_chunk_word_ranges(uint64_t iters) {
     const uint64_t n0 = ns_now();
     for (uint64_t i = 0; i < iters; ++i) {
         err = astral_chunk_ranges(&desc, text, ranges, kBenchChunkRangeCapacity, &count);
+        if (err != ASTRAL_OK || count == 0) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    return r;
+}
+
+static BenchResult bench_chunk_token_count(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.chunk token_count";
+    r.ops = iters;
+
+    AstralChunkerDesc desc{};
+    desc.size = sizeof(AstralChunkerDesc);
+    desc.mode = ASTRAL_CHUNK_MODE_TOKEN;
+    desc.max_units = kBenchChunkMaxTokens;
+    desc.overlap_units = kBenchChunkOverlapTokens;
+
+    uint32_t count = 0;
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        const AstralErr err = astral_token_chunk_count(&desc, kBenchChunkTokenCount, &count);
+        if (err != ASTRAL_OK || count == 0) {
+            r.ops = i;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    return r;
+}
+
+static BenchResult bench_chunk_token_ranges(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.chunk token_ranges";
+    r.ops = iters;
+
+    AstralChunkerDesc desc{};
+    desc.size = sizeof(AstralChunkerDesc);
+    desc.mode = ASTRAL_CHUNK_MODE_TOKEN;
+    desc.max_units = kBenchChunkMaxTokens;
+    desc.overlap_units = kBenchChunkOverlapTokens;
+
+    AstralChunkRange ranges[kBenchChunkTokenRangeCapacity]{};
+    uint32_t count = 0;
+    AstralErr err = astral_token_chunk_ranges(&desc, kBenchChunkTokenCount, ranges, kBenchChunkTokenRangeCapacity, &count);
+    if (err != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        err = astral_token_chunk_ranges(&desc, kBenchChunkTokenCount, ranges, kBenchChunkTokenRangeCapacity, &count);
         if (err != ASTRAL_OK || count == 0) {
             r.ops = i;
             break;
@@ -2374,6 +2443,8 @@ void bench_feature_surfaces_print(void) {
         print_result(bench_toolset_parse(iters), clock_info().name);
         print_result(bench_toolset_parse_many(iters), clock_info().name);
         print_result(bench_chunk_word_ranges(iters), clock_info().name);
+        print_result(bench_chunk_token_count(iters), clock_info().name);
+        print_result(bench_chunk_token_ranges(iters), clock_info().name);
         print_memory_benchmarks(iters);
         print_result(bench_agent_prompt_warmup(iters), clock_info().name);
         print_result(bench_agent_prompt_cache_warmup(iters), clock_info().name);
@@ -2441,6 +2512,8 @@ void bench_feature_surfaces_print(void) {
     print_result(bench_toolset_parse(iters), clock_info().name);
     print_result(bench_toolset_parse_many(iters), clock_info().name);
     print_result(bench_chunk_word_ranges(iters), clock_info().name);
+    print_result(bench_chunk_token_count(iters), clock_info().name);
+    print_result(bench_chunk_token_ranges(iters), clock_info().name);
     print_memory_benchmarks(iters);
     print_result(bench_agent_prompt_warmup(iters), clock_info().name);
     print_result(bench_agent_prompt_cache_warmup(iters), clock_info().name);
