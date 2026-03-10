@@ -3,8 +3,8 @@
 Astral memory indexes store embedding vectors in native memory and return stable
 keys and scores for retrieval. The flat index is the exact correctness baseline.
 The graph index is a bounded native candidate graph for larger all-group
-searches. Treat it as a tunable experimental path until recall evidence for the
-target dataset meets the product threshold.
+searches. Treat it as an approximate index: tune it against the target dataset
+and keep the flat index as the recall oracle.
 
 ## C ABI
 
@@ -42,8 +42,8 @@ engine objects for the selected keys.
   Set `graph_neighbors` and `graph_search` to tune recall/latency, or leave
   them zero for native defaults. Group-filtered searches use the exact flat
   scanner. Use the graph recall benchmark before choosing this path for
-  production retrieval. Graph construction keeps nearest-neighbor links and a
-  few deterministic spread links to avoid purely local neighborhoods.
+  retrieval. Graph construction keeps nearest-neighbor links and a few
+  deterministic spread links to avoid purely local neighborhoods.
 
 `astral_memory_record_from_chunk()` maps an `AstralChunkRange` into an
 `AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
@@ -90,9 +90,9 @@ Treat flat search as the recall oracle when tuning graph search. The
 `features.memory graph_recall` benchmark reports aggregate top-k overlap
 between graph search and exact flat search across deterministic, high-entropy
 recall queries spread across the indexed capacity, so graph improvements can be
-judged by both latency and recall. A graph configuration is not production-ready
-just because it is faster than flat search; it must hit the required recall
-target for the dataset and embedding model.
+judged by both latency and recall. Do not select a graph configuration solely
+because it is faster than flat search; use the recall target for the dataset
+and embedding model as the acceptance check.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
