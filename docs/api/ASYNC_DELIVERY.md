@@ -88,7 +88,9 @@ queue hot paths. Engines poll or wait at their boundary and then marshal only th
 data they need. Ticketed embedding queues keep capacity bounded and allow callers
 to shed queued work without growing memory.
 Memory search cursor polling reads cursor metadata only and does not re-run
-vector search.
+vector search. Feature benchmarks include a completed memory-search request
+status marker so engine queue polling overhead can be tracked independently
+from search cost.
 
 ## Unity
 
@@ -114,6 +116,7 @@ embedding tickets, and memory search cursors.
 ```bash
 cmake --build --preset unity-plugin -j8
 ctest --preset dev -R '^(test_inference|test_media|test_abi_invalid_args|gate_source_scans|gate_doc_links)$' --output-on-failure
+ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=200000 ./build/dev/benchmarks/astral_benchmarks --only features
 ```
 
 Native request-lifecycle tests cover session, conversation, agent chat,
@@ -121,3 +124,4 @@ embedding tickets, and memory-search cursors through the unified
 `AstralRequestRef` path. They check state polling, waits, cancellation where the
 owner supports it, queue-depth reporting for cursors and tickets, and invalid
 status after a non-owning request ref outlives its native owner.
+Benchmark output should include `features.request memory_status`.
