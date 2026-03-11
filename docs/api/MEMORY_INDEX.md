@@ -106,7 +106,9 @@ Set
 sweep in one invocation. Set
 `ASTRAL_BENCH_MEMORY_ONLY=1` when collecting hardware counters so tokenization,
 prompt cache, tool, chunk, and agent benchmarks do not dilute the memory-index
-counter profile.
+counter profile. Use `scripts/run_memory_bench_matrix.sh` to run the
+memory-only benchmark across multiple metrics, dimensions, and capacities in one
+log.
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
@@ -191,6 +193,7 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_ME
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
 perf stat -e cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses,dTLB-loads,dTLB-load-misses -- env ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_SWEEP=1 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
+scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
 ```
 
 Native tests include `inference_memory_index_graph_mock` for graph search,
