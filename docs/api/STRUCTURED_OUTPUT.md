@@ -61,10 +61,41 @@ Tool definition copying and result parsing are setup/finalization work. The
 decode loop does not inspect tool descriptors or parse JSON. The result parser
 is a small single-pass scanner for the `name`/`tool` field and the raw
 `arguments` object span; it does not build a DOM or allocate.
+If generated text contains wrapper metadata, the parser prefers a top-level
+known tool call over earlier nested fields with the same key names. When no
+top-level tool call exists, it can still extract the first known nested tool
+object with an `arguments` object.
 
 Agent chat capture is enabled only when the agent has a toolset. It reuses a
 bounded native buffer sized from the request token limit and appends drained
 stream bytes outside the decode loop.
+
+## Dispatch Pattern
+
+Use stable numeric `tool_id` values as the application dispatch key. The native
+parser already verifies the tool name against the bound toolset, so callers can
+switch on `tool_id` and pass `arguments_json` directly to their own JSON reader.
+Do not route by comparing generated text or by reparsing the tool name in engine
+code.
+
+```c
+AstralToolCallResult call = {0};
+call.size = sizeof(AstralToolCallResult);
+
+AstralErr err = astral_toolset_parse_call(toolset, generated, &call);
+if (err == ASTRAL_OK && call.parse_status == ASTRAL_OK) {
+    switch (call.tool_id) {
+    case 1:
+        /* parse call.arguments_json as the search arguments object */
+        break;
+    case 2:
+        /* parse call.arguments_json as the open-result arguments object */
+        break;
+    default:
+        break;
+    }
+}
+```
 
 ## Unreal And Unity
 
