@@ -1721,6 +1721,12 @@ TEST(inference_toolset_parse_and_bind_mock) {
     constexpr char kEscapedToolCallJson[] =
         "{\"name\":\"search\",\"arguments\":{\"query\":\"brace \\\"}\\\" stays in string\",\"k\":1}}";
     constexpr char kEscapedToolCallArgs[] = "{\"query\":\"brace \\\"}\\\" stays in string\",\"k\":1}";
+    constexpr char kNestedMetadataToolCallJson[] =
+        "{\"meta\":{\"name\":\"search\",\"arguments\":{\"query\":\"inner\"}},\"name\":\"open\",\"arguments\":{\"id\":9}}";
+    constexpr char kNestedMetadataToolCallArgs[] = "{\"id\":9}";
+    constexpr char kWrappedToolCallJson[] =
+        "{\"message\":{\"function\":{\"name\":\"search\",\"arguments\":{\"query\":\"wrapped\",\"filters\":[\"trace\",\"hot\"]}}}}";
+    constexpr char kWrappedToolCallArgs[] = "{\"query\":\"wrapped\",\"filters\":[\"trace\",\"hot\"]}";
     constexpr char kRagDocument[] = "alpha beta gamma";
     constexpr char kRagExpectedContext[] = "beta\ngamma";
     constexpr uint32_t kRagChunkCount = 3;
@@ -1811,6 +1817,24 @@ TEST(inference_toolset_parse_and_bind_mock) {
     ASSERT_EQ(call.parse_status, ASTRAL_OK);
     const std::string escaped_args(reinterpret_cast<const char*>(call.arguments_json.data), call.arguments_json.len);
     ASSERT_EQ(escaped_args, std::string(kEscapedToolCallArgs));
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr(kNestedMetadataToolCallJson), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kOpenToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+    const std::string nested_metadata_args(reinterpret_cast<const char*>(call.arguments_json.data), call.arguments_json.len);
+    ASSERT_EQ(nested_metadata_args, std::string(kNestedMetadataToolCallArgs));
+
+    call = {};
+    call.size = sizeof(AstralToolCallResult);
+    err = astral_toolset_parse_call(toolset, span_from_cstr(kWrappedToolCallJson), &call);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(call.tool_id, kSearchToolId);
+    ASSERT_EQ(call.parse_status, ASTRAL_OK);
+    const std::string wrapped_args(reinterpret_cast<const char*>(call.arguments_json.data), call.arguments_json.len);
+    ASSERT_EQ(wrapped_args, std::string(kWrappedToolCallArgs));
 
     call = {};
     call.size = sizeof(AstralToolCallResult);

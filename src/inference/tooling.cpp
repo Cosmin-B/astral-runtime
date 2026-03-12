@@ -64,62 +64,88 @@ inline bool is_ws(uint8_t c) {
   return c == ' ' || c == '\n' || c == '\r' || c == '\t';
 }
 
-bool find_json_string_key(
-    AstralSpanU8 text,
-    const char* key,
-    uint32_t key_len,
-    AstralSpanU8* out_value,
-    uint32_t* out_end
-) {
-  if (text.data == nullptr || out_value == nullptr) {
-    return false;
-  }
-  if (key_len == 0 || text.len < key_len + kJsonQuotedKeyMinOverhead) {
+bool find_json_tool_name_key(AstralSpanU8 text, uint32_t start, AstralSpanU8* out_value,
+                             uint32_t* out_end, uint32_t* out_depth) {
+  if (text.data == nullptr || out_value == nullptr || out_end == nullptr || out_depth == nullptr) {
     return false;
   }
 
   const uint8_t* data = text.data;
-  for (uint32_t i = 0; i + key_len + kJsonQuotedKeyScanOverhead < text.len; ++i) {
-    if (data[i] != '"' || std::memcmp(data + i + 1u, key, key_len) != 0 ||
-        data[i + key_len + 1u] != '"') {
-      continue;
-    }
-    uint32_t p = i + key_len + 2u;
-    while (p < text.len && is_ws(data[p])) {
+  uint32_t depth = 0;
+  uint32_t p = start;
+  while (p < text.len) {
+    const uint8_t c = data[p];
+    if (c == '"') {
+      uint32_t key_len = 0;
+      if (p + kJsonNameKeyLen + 1u < text.len &&
+          std::memcmp(data + p + 1u, kJsonNameKey, kJsonNameKeyLen) == 0 &&
+          data[p + kJsonNameKeyLen + 1u] == '"') {
+        key_len = kJsonNameKeyLen;
+      } else if (p + kJsonToolKeyLen + 1u < text.len &&
+                 std::memcmp(data + p + 1u, kJsonToolKey, kJsonToolKeyLen) == 0 &&
+                 data[p + kJsonToolKeyLen + 1u] == '"') {
+        key_len = kJsonToolKeyLen;
+      }
+
+      if (key_len != 0) {
+        uint32_t value_pos = p + key_len + 2u;
+        while (value_pos < text.len && is_ws(data[value_pos])) {
+          ++value_pos;
+        }
+        if (value_pos >= text.len || data[value_pos] != ':') {
+          return false;
+        }
+        ++value_pos;
+        while (value_pos < text.len && is_ws(data[value_pos])) {
+          ++value_pos;
+        }
+        if (value_pos >= text.len || data[value_pos] != '"') {
+          return false;
+        }
+        const uint32_t begin = ++value_pos;
+        while (value_pos < text.len) {
+          if (data[value_pos] == '\\') {
+            value_pos += (value_pos + 1u < text.len) ? 2u : 1u;
+            continue;
+          }
+          if (data[value_pos] == '"') {
+            out_value->data = data + begin;
+            out_value->len = value_pos - begin;
+            *out_end = value_pos + 1u;
+            *out_depth = depth;
+            return true;
+          }
+          ++value_pos;
+        }
+        return false;
+      }
+
       ++p;
-    }
-    if (p >= text.len || data[p] != ':') {
+      while (p < text.len) {
+        if (data[p] == '\\') {
+          p += (p + 1u < text.len) ? 2u : 1u;
+          continue;
+        }
+        if (data[p] == '"') {
+          ++p;
+          break;
+        }
+        ++p;
+      }
       continue;
+    }
+    if (c == '{') {
+      ++depth;
+    } else if (c == '}' && depth != 0) {
+      --depth;
     }
     ++p;
-    while (p < text.len && is_ws(data[p])) {
-      ++p;
-    }
-    if (p >= text.len || data[p] != '"') {
-      return false;
-    }
-    const uint32_t begin = ++p;
-    while (p < text.len) {
-      if (data[p] == '\\') {
-        p += (p + 1u < text.len) ? 2u : 1u;
-        continue;
-      }
-      if (data[p] == '"') {
-        out_value->data = data + begin;
-        out_value->len = p - begin;
-        if (out_end != nullptr) {
-          *out_end = p + 1u;
-        }
-        return true;
-      }
-      ++p;
-    }
-    return false;
   }
   return false;
 }
 
-bool find_json_object_key(AstralSpanU8 text, const char* key, uint32_t key_len, AstralSpanU8* out_value) {
+bool find_json_object_key(AstralSpanU8 text, const char* key, uint32_t key_len,
+                          AstralSpanU8* out_value) {
   if (text.data == nullptr || out_value == nullptr) {
     return false;
   }
@@ -336,29 +362,62 @@ AstralErr toolset_parse_call(Toolset* toolset, AstralSpanU8 generated_text,
   out_result->name = {};
   out_result->arguments_json = {};
 
-  AstralSpanU8 name{};
-  uint32_t name_end = 0;
-  if (!find_json_string_key(generated_text, kJsonNameKey, kJsonNameKeyLen, &name, &name_end) &&
-      !find_json_string_key(generated_text, kJsonToolKey, kJsonToolKeyLen, &name, &name_end)) {
-    return ASTRAL_E_NOT_FOUND;
+  ToolRecord* tool = nullptr;
+  ToolRecord* first_known_tool = nullptr;
+  AstralSpanU8 best_arguments{};
+  ToolRecord* best_tool = nullptr;
+  uint32_t best_depth = kU32Max;
+  uint32_t scan = 0;
+  while (scan < generated_text.len) {
+    AstralSpanU8 candidate_name{};
+    uint32_t name_end = 0;
+    uint32_t name_depth = 0;
+    if (!find_json_tool_name_key(generated_text, scan, &candidate_name, &name_end, &name_depth)) {
+      break;
+    }
+    ToolRecord* candidate_tool = find_tool_by_name(toolset, candidate_name);
+    if (candidate_tool != nullptr) {
+      AstralSpanU8 argument_scan = generated_text;
+      argument_scan.data = generated_text.data + name_end;
+      argument_scan.len = generated_text.len - name_end;
+      AstralSpanU8 candidate_arguments{};
+      const bool has_arguments =
+          find_json_object_key(argument_scan, kJsonArgumentsKey, kJsonArgumentsKeyLen,
+                               &candidate_arguments) ||
+          (name_depth == 1u && find_json_object_key(generated_text, kJsonArgumentsKey,
+                                                    kJsonArgumentsKeyLen, &candidate_arguments));
+      if (has_arguments) {
+        if (best_tool == nullptr || name_depth < best_depth) {
+          best_tool = candidate_tool;
+          best_arguments = candidate_arguments;
+          best_depth = name_depth;
+          if (name_depth <= 1u) {
+            break;
+          }
+        }
+      } else if (first_known_tool == nullptr) {
+        first_known_tool = candidate_tool;
+      }
+    }
+    scan = name_end;
   }
 
-  ToolRecord* tool = find_tool_by_name(toolset, name);
+  if (tool == nullptr && best_tool != nullptr) {
+    tool = best_tool;
+    out_result->arguments_json = best_arguments;
+  }
+  if (tool == nullptr && first_known_tool != nullptr) {
+    tool = first_known_tool;
+    out_result->parse_status = ASTRAL_E_INVALID;
+  }
   if (tool == nullptr) {
     return ASTRAL_E_NOT_FOUND;
   }
 
   out_result->tool_id = tool->tool_id;
   out_result->name = tool_span(toolset, tool->name_off, tool->name_len);
-  out_result->parse_status = ASTRAL_OK;
-  AstralSpanU8 argument_scan = generated_text;
-  if (name_end < generated_text.len) {
-    argument_scan.data = generated_text.data + name_end;
-    argument_scan.len = generated_text.len - name_end;
-  }
-  if (!find_json_object_key(argument_scan, kJsonArgumentsKey, kJsonArgumentsKeyLen, &out_result->arguments_json) &&
-      !find_json_object_key(generated_text, kJsonArgumentsKey, kJsonArgumentsKeyLen, &out_result->arguments_json)) {
-    out_result->parse_status = ASTRAL_E_INVALID;
+  if (out_result->arguments_json.data != nullptr) {
+    out_result->parse_status = ASTRAL_OK;
   }
   return ASTRAL_OK;
 }
