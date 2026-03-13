@@ -16,6 +16,7 @@ package/sample-matrix eligibility.
 - `scripts/model_preset_tool.py info <preset> --dir <dir>`
 - `scripts/model_preset_tool.py inspect <preset> --dir <dir> --validate`
 - `scripts/model_preset_tool.py status-all --type embedding --format json`
+- `scripts/model_preset_tool.py status-all --only not-ready --format json`
 - `scripts/model_preset_tool.py validate-file --preset <preset> --dir <dir> --validate-metadata`
 - `tests/model_downloader.sh --preset <preset> --dry-run`
 - `tests/model_downloader.sh --preset <preset> --validate-only --validate-metadata`
@@ -23,6 +24,7 @@ package/sample-matrix eligibility.
 - `tests/model_downloader.sh --preset <preset> --info`
 - `tests/model_downloader.sh --preset <preset> --status`
 - `tests/model_downloader.sh --status-all --list-type embedding --status-format json`
+- `tests/model_downloader.sh --status-all --status-only not-ready --status-format json`
 - `tests/model_downloader.sh --preset <preset> --print-path`
 - `tests/model_downloader.sh --list-presets --list-type text`
 - `tests/model_downloader.sh --list-package --list-format json`
@@ -52,6 +54,9 @@ value is `missing`, `partial`, `invalid`, or `ready`; each record includes
 final-file bytes, `.part` bytes, expected bytes, checksum result, an error
 string for invalid files, and the repeatable downloader command. Engine setup
 screens can use this before starting a first-run download.
+Use `status-all --only missing`, `partial`, `invalid`, `ready`, or `not-ready`
+when a setup UI only needs rows that require download or repair. The
+`tests/model_downloader.sh` wrapper exposes the same filter as `--status-only`.
 
 `inspect` prints GGUF metadata derived from the local file header: architecture,
 context length, embedding dimension, embedding support, and metadata entry count.
@@ -89,10 +94,12 @@ python3 scripts/model_preset_tool.py info qwen3-0.6b-q8 --dir tests/models
 python3 scripts/model_preset_tool.py inspect qwen3-embed-0.6b-q8 --dir tests/models --validate
 python3 scripts/model_preset_tool.py status qwen3-0.6b-q8 --dir tests/models
 python3 scripts/model_preset_tool.py status-all --type embedding --format json --dir tests/models
+python3 scripts/model_preset_tool.py status-all --only not-ready --format json --dir tests/models
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --inspect-metadata
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --status
 ./tests/model_downloader.sh --status-all --list-package --status-format text
+./tests/model_downloader.sh --status-all --status-only not-ready --status-format json
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --list-presets --list-type text
 ./tests/model_downloader.sh --list-package --list-format json
