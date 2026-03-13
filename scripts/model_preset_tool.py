@@ -49,6 +49,16 @@ MODEL_STATUS_READY = "ready"
 MODEL_STATUS_MISSING = "missing"
 MODEL_STATUS_PARTIAL = "partial"
 MODEL_STATUS_INVALID = "invalid"
+MODEL_STATUS_NOT_READY = "not-ready"
+MODEL_STATUS_ANY = "any"
+MODEL_STATUS_FILTERS = (
+    MODEL_STATUS_ANY,
+    MODEL_STATUS_READY,
+    MODEL_STATUS_MISSING,
+    MODEL_STATUS_PARTIAL,
+    MODEL_STATUS_INVALID,
+    MODEL_STATUS_NOT_READY,
+)
 PARTIAL_DOWNLOAD_SUFFIX = ".part"
 GGUF_MAGIC = b"GGUF"
 GGUF_HEADER_BYTES = 24
@@ -680,6 +690,10 @@ def cmd_status_all(args: argparse.Namespace) -> int:
     output_dir = _repo_root_path(args.dir)
     presets = _select_presets(args, _load_presets(Path(args.manifest)))
     records = [_status_record(preset, output_dir) for preset in presets]
+    if args.only == MODEL_STATUS_NOT_READY:
+        records = [record for record in records if record["status"] != MODEL_STATUS_READY]
+    elif args.only != MODEL_STATUS_ANY:
+        records = [record for record in records if record["status"] == args.only]
     if args.format == "json":
         json.dump(records, sys.stdout, indent=2, sort_keys=True)
         print()
@@ -812,6 +826,7 @@ def main(argv: List[str]) -> int:
     status_all_parser.add_argument("--type", choices=(MODEL_TYPE_ALL, MODEL_TYPE_TEXT, MODEL_TYPE_EMBEDDING), default=MODEL_TYPE_ALL)
     status_all_parser.add_argument("--dir", default="tests/models")
     status_all_parser.add_argument("--format", choices=("json", "text"), default="json")
+    status_all_parser.add_argument("--only", choices=MODEL_STATUS_FILTERS, default=MODEL_STATUS_ANY)
     status_all_parser.set_defaults(func=cmd_status_all)
 
     preset_for_file_parser = sub.add_parser("preset-for-file")

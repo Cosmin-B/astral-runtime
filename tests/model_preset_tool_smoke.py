@@ -171,6 +171,23 @@ def main(argv: list[str]) -> int:
     require(any(row["name"] == QWEN_EMBED_PRESET for row in embedding_status), "embedding status missed Qwen embed preset")
     require(all(row["model_type"] == MODEL_TYPE_EMBEDDING for row in embedding_status), "embedding status mixed model types")
     require(all("status" in row and "download_command" in row for row in embedding_status), "status rows are incomplete")
+    missing_embedding_status = json.loads(
+        run_tool(
+            root,
+            "status-all",
+            "--type",
+            MODEL_TYPE_EMBEDDING,
+            "--dir",
+            CUSTOM_OUTPUT_DIR,
+            "--only",
+            STATUS_MISSING,
+        ).stdout
+    )
+    require(
+        any(row["name"] == QWEN_EMBED_PRESET for row in missing_embedding_status),
+        "missing embedding status missed Qwen embed preset",
+    )
+    require(all(row["status"] == STATUS_MISSING for row in missing_embedding_status), "missing filter mixed statuses")
 
     text_presets = run_tool(root, "list", "--type", MODEL_TYPE_TEXT).stdout
     require(QWEN_TEXT_PRESET in text_presets, "text list missed Qwen text preset")
@@ -251,6 +268,26 @@ def main(argv: list[str]) -> int:
         invalid_status = json.loads(run_tool(root, "status", QWEN_TEXT_PRESET, "--dir", temp_dir).stdout)
         require(invalid_status["status"] == STATUS_INVALID, "invalid status did not report invalid")
         require("size mismatch" in invalid_status["error"], "invalid status should name size mismatch")
+
+        not_ready = json.loads(
+            run_tool(root, "status-all", "--type", MODEL_TYPE_TEXT, "--dir", temp_dir, "--only", "not-ready").stdout
+        )
+        require(any(row["name"] == QWEN_TEXT_PRESET for row in not_ready), "not-ready status missed invalid file")
+        require(all(row["status"] != STATUS_READY for row in not_ready), "not-ready filter included ready status")
+
+        wrapper_not_ready = run_downloader(
+            root,
+            "--status-all",
+            "--list-type",
+            MODEL_TYPE_TEXT,
+            "--status-only",
+            "not-ready",
+            "--status-format",
+            "json",
+            "--dir",
+            temp_dir,
+        ).stdout
+        require(QWEN_TEXT_PRESET in wrapper_not_ready, "wrapper not-ready status missed invalid file")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)

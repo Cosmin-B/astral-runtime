@@ -23,6 +23,7 @@ Options:
   --status              Print existing local file state as JSON
   --status-all          Print local file state for selected presets as JSON
   --status-format <fmt> Print --status/--status-all as json or text
+  --status-only <state> Filter --status-all by any, ready, missing, partial, invalid, or not-ready
   --list-presets        Print available presets
   --list-package        Print presets marked for packaged samples
   --list-unreal-matrix  Print presets marked for Unreal sample matrix runs
@@ -76,6 +77,7 @@ output_dir="tests/models"
 list_type="all"
 list_format="text"
 status_format="json"
+status_only="any"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -90,6 +92,7 @@ while [[ $# -gt 0 ]]; do
     --status) print_status=1; shift ;;
     --status-all) print_status_all=1; shift ;;
     --status-format) status_format="${2:-}"; shift 2 ;;
+    --status-only) status_only="${2:-}"; shift 2 ;;
     --list-type) list_type="${2:-}"; shift 2 ;;
     --list-format) list_format="${2:-}"; shift 2 ;;
     --token) args+=(--token "${2:-}"); shift 2 ;;
@@ -170,7 +173,7 @@ if [[ "${print_status}" -eq 1 ]]; then
 fi
 
 if [[ "${print_status_all}" -eq 1 ]]; then
-  status_args=(status-all --type "${list_type}" --dir "${output_dir}" --format "${status_format}")
+  status_args=(status-all --type "${list_type}" --dir "${output_dir}" --format "${status_format}" --only "${status_only}")
   if [[ "${list_package}" -eq 1 ]]; then
     status_args+=(--package)
   fi
