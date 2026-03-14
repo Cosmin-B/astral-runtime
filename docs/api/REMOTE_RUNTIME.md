@@ -40,8 +40,10 @@ The current provider uses a small text protocol:
 - `POST /embeddings`: request body is UTF-8 text; response is a comma-separated
   or JSON-like list of float values.
 
-If `/tokenize` is not available, the provider falls back to byte tokens so basic
-session flow can still run against very small loopback services.
+If `/tokenize` returns `404`, `405`, or `501`, the provider falls back to byte
+tokens so basic session flow can still run against very small loopback
+services. If `/completion/stream` returns one of those statuses, the provider
+uses `/completion` for the request instead.
 
 ## Ownership
 
@@ -95,6 +97,8 @@ ctest --preset release-with-tests -R '^test_backend$' --output-on-failure
 Expected markers:
 
 - `backend_remote_loopback_completion_and_embeddings` passes.
+- `backend_remote_tokenize_falls_back_to_byte_tokens` passes.
+- `backend_remote_stream_falls_back_to_completion` passes.
 - `backend_remote_auth_failure` passes.
 - `backend_remote_https_requires_tls_build` passes.
 - `backend_remote_health_retry_and_timeout_status` passes.
