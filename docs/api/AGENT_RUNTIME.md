@@ -49,12 +49,14 @@ handle for completed output parsing.
 Idle agents do not occupy executor slots. A chat request acquires the
 agent's slot-backed conversation on first enqueue, so applications can create
 larger native character pools than the active decode slot count. If every slot
-is already occupied when a new agent chat starts, enqueue returns
-`ASTRAL_E_BUSY`.
+is occupied when a new agent chat starts, enqueue first reclaims one completed,
+canceled, failed, or idle agent slot with no unread stream bytes. If no such
+slot exists, enqueue returns `ASTRAL_E_BUSY`.
 `AstralAgentDesc::slot_affinity` is a one-based preferred executor slot. It is
 validated at creation time and applied when the first chat request starts. If
-the preferred slot is occupied at enqueue time, the request returns
-`ASTRAL_E_BUSY`; if the requested slot is outside the configured executor,
+the preferred slot is occupied at enqueue time, the request only reclaims a
+finished agent already assigned to that slot; otherwise it returns
+`ASTRAL_E_BUSY`. If the requested slot is outside the configured executor,
 creation returns `ASTRAL_E_INVALID`. `astral_agent_assigned_slot()` reports the
 zero-based slot after the agent has started a chat and returns
 `ASTRAL_E_NOT_FOUND` before a slot is assigned.
@@ -121,10 +123,10 @@ Prompt assembly is outside the decode loop. The assembled buffer is bounded by
 prompt-build path avoids per-message heap objects and stays a forward scan over
 contiguous metadata. The decode hot path remains the existing conversation
 executor, stream ring, sampler, grammar, and backend slot machinery.
-Slot release is a control-path operation. It does not add queue arbitration or
-extra checks to token streaming or decode loops; applications that need fairness
-across more agents than executor slots can wait for a request, drain its stream,
-release its slot, and enqueue the next ready agent.
+Slot release and automatic completed-slot reuse are control-path operations.
+They do not add checks to token streaming or decode loops. Applications that
+need strict fairness across more agents than executor slots can still wait for
+a request, drain its stream, release its slot, and enqueue the next ready agent.
 
 `AstralAgentChatResult` reports `prompt_cache_reused_tokens`,
 `prompt_cache_new_tokens`, `prompt_cache_hits`, and `prompt_cache_misses` for

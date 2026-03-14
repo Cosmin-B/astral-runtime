@@ -8,6 +8,7 @@
 namespace astral::inference {
 
 struct ModelExecutor;
+struct Agent;
 
 /// Model handle structure.
 ///
@@ -30,6 +31,7 @@ struct Model {
     std::atomic<ModelExecutor*> executor; // lazily created
     AstralExecutorDesc executor_desc;     // configured by astral_model_executor_configure()
     std::atomic_flag executor_lock = ATOMIC_FLAG_INIT;
+    Agent* agents;                        // model-local agent list for control-path slot reuse
 };
 
 /// Load a GGUF model.

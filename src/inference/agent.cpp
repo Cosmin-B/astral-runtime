@@ -2,6 +2,7 @@
 
 #include "../core/handles.hpp"
 #include "../core/runtime_alloc.hpp"
+#include "../platform/atomics.h"
 #include "../platform/time.h"
 
 #include "../concurrency/spsc_ring.hpp"
@@ -48,6 +49,25 @@ constexpr char kUserLabel[] = "User: ";
 constexpr char kAssistantLabel[] = "Assistant: ";
 constexpr char kToolLabel[] = "Tool: ";
 constexpr char kLineBreak[] = "\n";
+
+inline void lock_flag(std::atomic_flag& f) {
+    uint32_t spins = 0;
+    while (f.test_and_set(std::memory_order_acquire)) {
+        if (spins < 64) {
+            platform::cpu_pause();
+        } else {
+            platform::cpu_wait_for_event();
+        }
+        if (spins < 1024) {
+            ++spins;
+        }
+    }
+}
+
+inline void unlock_flag(std::atomic_flag& f) {
+    f.clear(std::memory_order_release);
+    platform::cpu_signal_event();
+}
 
 struct AgentMessageStorage {
     AstralAgentRole role;
@@ -187,6 +207,9 @@ void free_bytes(uint8_t*& bytes, uint32_t len) {
 struct Agent {
     AstralHandle handle;
     AstralAgentDesc desc;
+    Model* model;
+    Agent* model_prev;
+    Agent* model_next;
     AstralHandle conv;
     Conversation* conv_ptr;
     Toolset* toolset;
@@ -213,6 +236,38 @@ namespace {
 
 void invalidate_prompt_metadata(Agent* agent) {
     agent->chat.prefix.valid = 0;
+}
+
+void model_agent_link(Model* model, Agent* agent) {
+    lock_flag(model->executor_lock);
+    agent->model = model;
+    agent->model_prev = nullptr;
+    agent->model_next = model->agents;
+    if (model->agents != nullptr) {
+        model->agents->model_prev = agent;
+    }
+    model->agents = agent;
+    unlock_flag(model->executor_lock);
+}
+
+void model_agent_unlink(Agent* agent) {
+    Model* model = agent != nullptr ? agent->model : nullptr;
+    if (model == nullptr) {
+        return;
+    }
+    lock_flag(model->executor_lock);
+    if (agent->model_prev != nullptr) {
+        agent->model_prev->model_next = agent->model_next;
+    } else if (model->agents == agent) {
+        model->agents = agent->model_next;
+    }
+    if (agent->model_next != nullptr) {
+        agent->model_next->model_prev = agent->model_prev;
+    }
+    agent->model = nullptr;
+    agent->model_prev = nullptr;
+    agent->model_next = nullptr;
+    unlock_flag(model->executor_lock);
 }
 
 void release_history(Agent* agent) {
@@ -981,6 +1036,45 @@ AstralErr agent_active_state(Agent* agent, AstralSessionState* out_state) {
     return conv_state(agent->conv_ptr, out_state);
 }
 
+bool agent_slot_matches_request(const Agent* requester, const Agent* candidate) {
+    if (requester->desc.slot_affinity == ASTRAL_AGENT_SLOT_AUTO) {
+        return true;
+    }
+    if (candidate->conv_ptr == nullptr) {
+        return false;
+    }
+    const uint32_t preferred_slot = requester->desc.slot_affinity - 1u;
+    return candidate->conv_ptr->slot_id.load(std::memory_order_acquire) == preferred_slot;
+}
+
+AstralErr reclaim_completed_agent_slot(Agent* requester) {
+    Model* model = requester != nullptr ? requester->model : nullptr;
+    if (model == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+
+    Agent* reclaim = nullptr;
+    lock_flag(model->executor_lock);
+    for (Agent* candidate = model->agents; candidate != nullptr; candidate = candidate->model_next) {
+        if (candidate == requester || !agent_slot_matches_request(requester, candidate) ||
+            candidate->conv_ptr == nullptr) {
+            continue;
+        }
+
+        AstralSessionState state = ASTRAL_SESSION_FAILED;
+        if (conv_state(candidate->conv_ptr, &state) != ASTRAL_OK || state == ASTRAL_SESSION_DECODING ||
+            candidate->conv_ptr->pending_len > candidate->conv_ptr->pending_off ||
+            !candidate->conv_ptr->token_ring.empty()) {
+            continue;
+        }
+
+        reclaim = candidate;
+        break;
+    }
+    unlock_flag(model->executor_lock);
+    return reclaim != nullptr ? agent_release_slot(reclaim) : ASTRAL_E_BUSY;
+}
+
 AstralErr agent_ensure_conversation(Agent* agent, const AstralConvDesc* conv_desc) {
     if (agent == nullptr || conv_desc == nullptr) {
         return ASTRAL_E_INVALID;
@@ -991,6 +1085,9 @@ AstralErr agent_ensure_conversation(Agent* agent, const AstralConvDesc* conv_des
 
     Conversation* conv = nullptr;
     AstralErr err = conv_create_affine(conv_desc, agent->desc.slot_affinity, &conv);
+    if (err == ASTRAL_E_BUSY && reclaim_completed_agent_slot(agent) == ASTRAL_OK) {
+        err = conv_create_affine(conv_desc, agent->desc.slot_affinity, &conv);
+    }
     if (err != ASTRAL_OK) {
         return err;
     }
@@ -1104,6 +1201,7 @@ AstralErr agent_create(const AstralAgentDesc* desc, Agent** out_agent) {
     }
 
     agent->handle = handle;
+    model_agent_link(model, agent);
     *out_agent = agent;
     return ASTRAL_OK;
 }
@@ -1113,6 +1211,7 @@ void agent_destroy(Agent* agent) {
         return;
     }
     core::unregister_handle(agent->handle, core::HandleKind::Agent);
+    model_agent_unlink(agent);
     destroy_agent_allocations(agent);
     core::runtime_delete(agent);
 }
