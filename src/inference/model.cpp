@@ -53,6 +53,7 @@ AstralErr model_load(const AstralModelDesc* desc, Model** out_model) {
     model->backend_model_ctx = backend_model_ctx;
     model->desc = *desc;
     model->executor.store(nullptr, std::memory_order_relaxed);
+    model->agents = nullptr;
     std::memset(&model->executor_desc, 0, sizeof(model->executor_desc));
     model->executor_desc.size = sizeof(AstralExecutorDesc);
     model->executor_desc.max_slots = 1;
