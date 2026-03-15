@@ -22,6 +22,7 @@ Options:
   --info                Print resolved preset metadata as JSON
   --status              Print existing local file state as JSON
   --status-all          Print local file state for selected presets as JSON
+  --status-summary      Print aggregate local file state for selected presets as JSON
   --status-format <fmt> Print --status/--status-all as json or text
   --status-only <state> Filter --status-all by any, ready, missing, partial, invalid, or not-ready
   --list-presets        Print available presets
@@ -68,6 +69,7 @@ print_path=0
 print_info=0
 print_status=0
 print_status_all=0
+print_status_summary=0
 inspect_metadata=0
 list_presets=0
 list_package=0
@@ -91,6 +93,7 @@ while [[ $# -gt 0 ]]; do
     --info) print_info=1; shift ;;
     --status) print_status=1; shift ;;
     --status-all) print_status_all=1; shift ;;
+    --status-summary) print_status_summary=1; shift ;;
     --status-format) status_format="${2:-}"; shift 2 ;;
     --status-only) status_only="${2:-}"; shift 2 ;;
     --list-type) list_type="${2:-}"; shift 2 ;;
@@ -129,7 +132,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "${list_presets}" -eq 1 && "${print_status_all}" -eq 0 ]]; then
+if [[ "${list_presets}" -eq 1 && "${print_status_all}" -eq 0 && "${print_status_summary}" -eq 0 ]]; then
   list_args=(list --type "${list_type}" --format "${list_format}" --dir "${output_dir}")
   if [[ "${list_package}" -eq 1 ]]; then
     list_args+=(--package)
@@ -181,6 +184,17 @@ if [[ "${print_status_all}" -eq 1 ]]; then
     status_args+=(--unreal-matrix)
   fi
   exec python3 "${tool}" "${status_args[@]}"
+fi
+
+if [[ "${print_status_summary}" -eq 1 ]]; then
+  summary_args=(status-summary --type "${list_type}" --dir "${output_dir}" --format "${status_format}")
+  if [[ "${list_package}" -eq 1 ]]; then
+    summary_args+=(--package)
+  fi
+  if [[ "${list_unreal_matrix}" -eq 1 ]]; then
+    summary_args+=(--unreal-matrix)
+  fi
+  exec python3 "${tool}" "${summary_args[@]}"
 fi
 
 exec python3 "${tool}" download "${args[@]}"
