@@ -47,6 +47,13 @@ engine objects for the selected keys.
   deterministic spread links at the base layer to avoid purely local
   neighborhoods.
 
+Choose the flat index when exact ranking, filtered search, or small-to-medium
+corpora matter more than avoiding a full scan. Choose the graph index only after
+measuring recall on the target vectors. Higher `graph_neighbors` and
+`graph_search` values usually improve recall, but they also increase ingest
+cost, memory traffic, and query latency; high-recall graph settings can be
+slower than exact flat search on smaller collections.
+
 `astral_memory_record_from_chunk()` maps an `AstralChunkRange` into an
 `AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
 chunk, and group metadata consistent with the native chunker while the caller
@@ -111,6 +118,13 @@ prompt cache, tool, chunk, and agent benchmarks do not dilute the memory-index
 counter profile. Use `scripts/run_memory_bench_matrix.sh` to run the
 memory-only benchmark across multiple metrics, dimensions, and capacities in one
 log.
+
+For release tuning, capture both `features.memory flat_search_top1` and
+`features.memory graph_recall` for the same dimension, metric, capacity,
+neighbor count, and search budget. A graph run is useful only when its recall
+meets the product target and its latency beats the exact flat baseline for that
+dataset. Keep the flat index available as the correctness oracle while tuning
+new embedding models or document distributions.
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
