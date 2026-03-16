@@ -102,6 +102,10 @@ recall queries spread across the indexed capacity, so graph improvements can be
 judged by both latency and recall. Do not select a graph configuration solely
 because it is faster than flat search; use the recall target for the dataset
 and embedding model as the acceptance check.
+`features.memory graph_recall_search` precomputes the exact flat oracle outside
+the timed region, then reports graph-only query latency with the same recall
+percentage. Use that marker for ANN perf counters when exact-search work would
+otherwise dominate the profile.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
@@ -219,7 +223,8 @@ Expected markers include `features.memory add_batch`,
 `features.memory graph_add_batch`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
 `features.memory graph_top1`, `features.memory graph_search`,
-`features.memory graph_recall`, and `features.memory cursor_begin_fetch`.
+`features.memory graph_recall`, `features.memory graph_recall_search`, and
+`features.memory cursor_begin_fetch`.
 Sweep runs also include
 `features.memory top1_100`, `features.memory top1_1k`,
 `features.memory top1_10k`, and `features.memory top1_100k`.
