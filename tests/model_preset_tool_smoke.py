@@ -171,6 +171,16 @@ def main(argv: list[str]) -> int:
     require(any(row["name"] == QWEN_EMBED_PRESET for row in embedding_status), "embedding status missed Qwen embed preset")
     require(all(row["model_type"] == MODEL_TYPE_EMBEDDING for row in embedding_status), "embedding status mixed model types")
     require(all("status" in row and "download_command" in row for row in embedding_status), "status rows are incomplete")
+    embedding_summary = json.loads(
+        run_tool(root, "status-summary", "--type", MODEL_TYPE_EMBEDDING, "--dir", CUSTOM_OUTPUT_DIR).stdout
+    )
+    require(embedding_summary["total"] == len(embedding_status), "embedding summary total mismatched rows")
+    require(
+        embedding_summary["not_ready"]
+        == embedding_summary["missing"] + embedding_summary["partial"] + embedding_summary["invalid"],
+        "embedding summary not-ready count mismatched",
+    )
+    require(embedding_summary["expected_bytes"] > 0, "embedding summary missed expected bytes")
     missing_embedding_status = json.loads(
         run_tool(
             root,
@@ -200,6 +210,10 @@ def main(argv: list[str]) -> int:
     package_status = run_tool(root, "status-all", "--package", "--format", "text", "--dir", CUSTOM_OUTPUT_DIR).stdout
     require(PACKAGE_PRESET in package_status, "package status missed default text preset")
     require(QWEN_TEXT_PRESET not in package_status, "package status included disabled preset")
+    package_summary = json.loads(
+        run_tool(root, "status-summary", "--package", "--format", "json", "--dir", CUSTOM_OUTPUT_DIR).stdout
+    )
+    require(package_summary["total"] == len(package_presets), "package summary total mismatched preset count")
 
     unreal_matrix_presets = json.loads(run_tool(root, "list", "--unreal-matrix", "--format", "json").stdout)
     require(
@@ -274,6 +288,13 @@ def main(argv: list[str]) -> int:
         )
         require(any(row["name"] == QWEN_TEXT_PRESET for row in not_ready), "not-ready status missed invalid file")
         require(all(row["status"] != STATUS_READY for row in not_ready), "not-ready filter included ready status")
+        text_summary = json.loads(run_tool(root, "status-summary", "--type", MODEL_TYPE_TEXT, "--dir", temp_dir).stdout)
+        require(text_summary["invalid"] >= 1, "text summary missed invalid file")
+        require(text_summary["partial_bytes"] == len(b"partial"), "text summary missed partial byte count")
+        require(
+            text_summary["not_ready"] == text_summary["missing"] + text_summary["partial"] + text_summary["invalid"],
+            "text summary not-ready count mismatched",
+        )
 
         wrapper_not_ready = run_downloader(
             root,
@@ -288,6 +309,17 @@ def main(argv: list[str]) -> int:
             temp_dir,
         ).stdout
         require(QWEN_TEXT_PRESET in wrapper_not_ready, "wrapper not-ready status missed invalid file")
+        wrapper_summary = run_downloader(
+            root,
+            "--status-summary",
+            "--list-type",
+            MODEL_TYPE_TEXT,
+            "--status-format",
+            "text",
+            "--dir",
+            temp_dir,
+        ).stdout
+        require("not_ready:" in wrapper_summary, "wrapper summary text missed not-ready count")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)

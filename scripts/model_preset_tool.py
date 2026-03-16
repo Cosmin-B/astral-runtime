@@ -707,6 +707,56 @@ def cmd_status_all(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _status_summary_record(records: List[Dict[str, object]]) -> Dict[str, int]:
+    ready = 0
+    missing = 0
+    partial = 0
+    invalid = 0
+    expected_bytes = 0
+    present_bytes = 0
+    partial_bytes = 0
+
+    for record in records:
+        status = record["status"]
+        if status == MODEL_STATUS_READY:
+            ready += 1
+        elif status == MODEL_STATUS_MISSING:
+            missing += 1
+        elif status == MODEL_STATUS_PARTIAL:
+            partial += 1
+        elif status == MODEL_STATUS_INVALID:
+            invalid += 1
+        expected_bytes += int(record["expected_bytes"])
+        present_bytes += int(record["present_bytes"])
+        partial_bytes += int(record["partial_bytes"])
+
+    return {
+        "total": len(records),
+        "ready": ready,
+        "missing": missing,
+        "partial": partial,
+        "invalid": invalid,
+        "not_ready": missing + partial + invalid,
+        "expected_bytes": expected_bytes,
+        "present_bytes": present_bytes,
+        "partial_bytes": partial_bytes,
+    }
+
+
+def cmd_status_summary(args: argparse.Namespace) -> int:
+    output_dir = _repo_root_path(args.dir)
+    presets = _select_presets(args, _load_presets(Path(args.manifest)))
+    summary = _status_summary_record([_status_record(preset, output_dir) for preset in presets])
+    if args.format == "json":
+        json.dump(summary, sys.stdout, indent=2, sort_keys=True)
+        print()
+        return EXIT_OK
+
+    for key, value in summary.items():
+        print(f"{key}: {value}")
+    return EXIT_OK
+
+
 def cmd_validate_file(args: argparse.Namespace) -> int:
     preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
     output_path = Path(args.path).expanduser() if args.path else _resolved_output_path(args, preset)
@@ -828,6 +878,16 @@ def main(argv: List[str]) -> int:
     status_all_parser.add_argument("--format", choices=("json", "text"), default="json")
     status_all_parser.add_argument("--only", choices=MODEL_STATUS_FILTERS, default=MODEL_STATUS_ANY)
     status_all_parser.set_defaults(func=cmd_status_all)
+
+    status_summary_parser = sub.add_parser("status-summary")
+    status_summary_parser.add_argument("--unreal-matrix", action="store_true")
+    status_summary_parser.add_argument("--package", action="store_true")
+    status_summary_parser.add_argument(
+        "--type", choices=(MODEL_TYPE_ALL, MODEL_TYPE_TEXT, MODEL_TYPE_EMBEDDING), default=MODEL_TYPE_ALL
+    )
+    status_summary_parser.add_argument("--dir", default="tests/models")
+    status_summary_parser.add_argument("--format", choices=("json", "text"), default="json")
+    status_summary_parser.set_defaults(func=cmd_status_summary)
 
     preset_for_file_parser = sub.add_parser("preset-for-file")
     preset_for_file_parser.add_argument("filename")

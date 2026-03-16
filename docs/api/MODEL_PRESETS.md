@@ -17,6 +17,7 @@ package/sample-matrix eligibility.
 - `scripts/model_preset_tool.py inspect <preset> --dir <dir> --validate`
 - `scripts/model_preset_tool.py status-all --type embedding --format json`
 - `scripts/model_preset_tool.py status-all --only not-ready --format json`
+- `scripts/model_preset_tool.py status-summary --type embedding --format json`
 - `scripts/model_preset_tool.py validate-file --preset <preset> --dir <dir> --validate-metadata`
 - `tests/model_downloader.sh --preset <preset> --dry-run`
 - `tests/model_downloader.sh --preset <preset> --validate-only --validate-metadata`
@@ -25,6 +26,7 @@ package/sample-matrix eligibility.
 - `tests/model_downloader.sh --preset <preset> --status`
 - `tests/model_downloader.sh --status-all --list-type embedding --status-format json`
 - `tests/model_downloader.sh --status-all --status-only not-ready --status-format json`
+- `tests/model_downloader.sh --status-summary --list-type embedding --status-format json`
 - `tests/model_downloader.sh --preset <preset> --print-path`
 - `tests/model_downloader.sh --list-presets --list-type text`
 - `tests/model_downloader.sh --list-package --list-format json`
@@ -57,6 +59,10 @@ screens can use this before starting a first-run download.
 Use `status-all --only missing`, `partial`, `invalid`, `ready`, or `not-ready`
 when a setup UI only needs rows that require download or repair. The
 `tests/model_downloader.sh` wrapper exposes the same filter as `--status-only`.
+Use `status-summary` when an engine setup panel, CI check, or editor bootstrap
+only needs aggregate readiness counts and byte totals for the selected preset
+set. The summary reports total, ready, missing, partial, invalid, not-ready,
+expected bytes, present bytes, and partial bytes without network access.
 
 `inspect` prints GGUF metadata derived from the local file header: architecture,
 context length, embedding dimension, embedding support, and metadata entry count.
@@ -95,11 +101,13 @@ python3 scripts/model_preset_tool.py inspect qwen3-embed-0.6b-q8 --dir tests/mod
 python3 scripts/model_preset_tool.py status qwen3-0.6b-q8 --dir tests/models
 python3 scripts/model_preset_tool.py status-all --type embedding --format json --dir tests/models
 python3 scripts/model_preset_tool.py status-all --only not-ready --format json --dir tests/models
+python3 scripts/model_preset_tool.py status-summary --type embedding --format json --dir tests/models
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --inspect-metadata
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8 --status
 ./tests/model_downloader.sh --status-all --list-package --status-format text
 ./tests/model_downloader.sh --status-all --status-only not-ready --status-format json
+./tests/model_downloader.sh --status-summary --list-package --status-format text
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
 ./tests/model_downloader.sh --list-presets --list-type text
 ./tests/model_downloader.sh --list-package --list-format json
@@ -108,4 +116,5 @@ python3 scripts/model_preset_tool.py status-all --only not-ready --format json -
 ```
 
 Expected evidence markers include `manifest OK`, `preset: qwen3-0.6b-q8`,
-`"download_command"`, `"status"`, `sha256:`, and a resolved `.gguf` path.
+`"download_command"`, `"status"`, `"not_ready"`, `sha256:`, and a resolved
+`.gguf` path.
