@@ -198,6 +198,15 @@ def main(argv: list[str]) -> int:
         "missing embedding status missed Qwen embed preset",
     )
     require(all(row["status"] == STATUS_MISSING for row in missing_embedding_status), "missing filter mixed statuses")
+    embedding_plan = json.loads(
+        run_tool(root, "download-plan", "--type", MODEL_TYPE_EMBEDDING, "--dir", CUSTOM_OUTPUT_DIR).stdout
+    )
+    require(any(row["name"] == QWEN_EMBED_PRESET for row in embedding_plan), "download plan missed Qwen embed preset")
+    require(all(row["status"] != STATUS_READY for row in embedding_plan), "download plan included ready preset")
+    require(
+        all("download_command" in row and row["download_command"] for row in embedding_plan),
+        "download plan rows missed commands",
+    )
 
     text_presets = run_tool(root, "list", "--type", MODEL_TYPE_TEXT).stdout
     require(QWEN_TEXT_PRESET in text_presets, "text list missed Qwen text preset")
@@ -309,6 +318,18 @@ def main(argv: list[str]) -> int:
             temp_dir,
         ).stdout
         require(QWEN_TEXT_PRESET in wrapper_not_ready, "wrapper not-ready status missed invalid file")
+        wrapper_plan = run_downloader(
+            root,
+            "--download-plan",
+            "--list-type",
+            MODEL_TYPE_TEXT,
+            "--status-format",
+            "text",
+            "--dir",
+            temp_dir,
+        ).stdout
+        require(QWEN_TEXT_PRESET in wrapper_plan, "wrapper download plan missed invalid file")
+        require("model_downloader.sh" in wrapper_plan, "wrapper download plan missed repeatable command")
         wrapper_summary = run_downloader(
             root,
             "--status-summary",
