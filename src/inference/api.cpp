@@ -2232,6 +2232,22 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_count(AstralHandle index, uint32_
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_stats(AstralHandle index, AstralMemoryStats* out_stats) {
+    ASTRAL_ABI_TRY_BEGIN
+    ASTRAL_ZONE_N("astral.abi.memory_stats");
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr || out_stats == nullptr) {
+        set_err_invalid("index/out_stats");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_stats(mem, out_stats);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_clear(AstralHandle index) {
     ASTRAL_ABI_TRY_BEGIN
     ASTRAL_ZONE_N("astral.abi.memory_clear");

@@ -94,6 +94,32 @@ static AstralMemoryIndexKind to_native_memory_index_kind(EAstralMemoryIndexKind 
     }
 }
 
+static EAstralMemoryMetric from_native_memory_metric(AstralMemoryMetric Metric)
+{
+    switch (Metric)
+    {
+    case ASTRAL_MEMORY_METRIC_DOT:
+        return EAstralMemoryMetric::Dot;
+    case ASTRAL_MEMORY_METRIC_L2:
+        return EAstralMemoryMetric::L2;
+    case ASTRAL_MEMORY_METRIC_COSINE:
+    default:
+        return EAstralMemoryMetric::Cosine;
+    }
+}
+
+static EAstralMemoryIndexKind from_native_memory_index_kind(AstralMemoryIndexKind Kind)
+{
+    switch (Kind)
+    {
+    case ASTRAL_MEMORY_INDEX_GRAPH:
+        return EAstralMemoryIndexKind::Graph;
+    case ASTRAL_MEMORY_INDEX_FLAT:
+    default:
+        return EAstralMemoryIndexKind::Flat;
+    }
+}
+
 static AstralMemoryIndexDesc to_native_memory_desc(const FAstralMemoryIndexDesc& Desc)
 {
     AstralMemoryIndexDesc Native{};
@@ -334,6 +360,25 @@ static FAstralMemorySearchResult from_native_memory_result(const AstralMemorySea
     Result.Score = Native.score;
     Result.Flags = static_cast<int32>(Native.flags);
     return Result;
+}
+
+static FAstralMemoryStats from_native_memory_stats(const AstralMemoryStats& Native)
+{
+    FAstralMemoryStats Stats;
+    Stats.Dimension = static_cast<int32>(Native.dim);
+    Stats.Capacity = static_cast<int32>(Native.capacity);
+    Stats.Count = static_cast<int32>(Native.count);
+    Stats.Metric = from_native_memory_metric(Native.metric);
+    Stats.IndexKind = from_native_memory_index_kind(Native.index_kind);
+    Stats.GraphNeighbors = static_cast<int32>(Native.graph_neighbors);
+    Stats.GraphSearch = static_cast<int32>(Native.graph_search);
+    Stats.GraphLevels = static_cast<int32>(Native.graph_levels);
+    Stats.VectorBytes = static_cast<int64>(Native.vector_bytes);
+    Stats.MetadataBytes = static_cast<int64>(Native.metadata_bytes);
+    Stats.GraphBytes = static_cast<int64>(Native.graph_bytes);
+    Stats.TotalBytes = static_cast<int64>(Native.total_bytes);
+    Stats.SaveBytes = static_cast<int64>(Native.save_bytes);
+    return Stats;
 }
 
 static FAstralMemoryRecord from_native_memory_record(const AstralMemoryRecord& Native)
@@ -994,6 +1039,35 @@ FAstralOperationResult UAstralBlueprintLibrary::GetMemoryRecordCountResult(int64
 
     OutCount = static_cast<int32>(Count);
     return make_operation_result(ASTRAL_OK, MemoryHandle, OutCount);
+}
+
+bool UAstralBlueprintLibrary::GetMemoryStats(int64 MemoryHandle, FAstralMemoryStats& OutStats, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetMemoryStatsResult(MemoryHandle, OutStats);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetMemoryStatsResult(int64 MemoryHandle, FAstralMemoryStats& OutStats)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetMemoryStats);
+
+    OutStats = FAstralMemoryStats{};
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralMemoryStats Native{};
+    Native.size = sizeof(AstralMemoryStats);
+    const AstralErr Err = astral_memory_stats(static_cast<AstralHandle>(MemoryHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutStats = from_native_memory_stats(Native);
+    return make_operation_result(ASTRAL_OK, MemoryHandle, OutStats.Count);
 }
 
 bool UAstralBlueprintLibrary::RemoveMemoryRecord(int64 MemoryHandle, int64 Key, int32& OutErrorCode)

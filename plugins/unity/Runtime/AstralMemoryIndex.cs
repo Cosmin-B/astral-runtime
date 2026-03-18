@@ -86,6 +86,18 @@ namespace Astral.Runtime
             return count;
         }
 
+        public AstralNative.AstralMemoryStats GetStats()
+        {
+            ThrowIfInvalid();
+            var stats = new AstralNative.AstralMemoryStats
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralMemoryStats>()
+            };
+            int err = AstralNative.astral_memory_stats(m_handle, ref stats);
+            ThrowIfError(err, "astral_memory_stats");
+            return stats;
+        }
+
         public void Clear()
         {
             ThrowIfInvalid();

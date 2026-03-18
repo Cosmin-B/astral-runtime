@@ -267,6 +267,8 @@ TEST(abi_invalid_args_model_surface) {
     memory_search.top_k = kMemoryTopK;
     memory_search.group_id = ASTRAL_MEMORY_GROUP_ANY;
     AstralMemorySearchResult memory_result{};
+    AstralMemoryStats memory_stats{};
+    memory_stats.size = sizeof(AstralMemoryStats);
     AstralAgentDesc agent_desc{};
     agent_desc.size = sizeof(AstralAgentDesc);
     AstralAgentMessage agent_message{};
@@ -348,6 +350,11 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_memory_create(&memory_desc, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_count(0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_count(1, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_stats(0, &memory_stats), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_stats(1, nullptr), ASTRAL_E_INVALID);
+    memory_stats.size = 0;
+    ASSERT_EQ(astral_memory_stats(0, &memory_stats), ASTRAL_E_INVALID);
+    memory_stats.size = sizeof(AstralMemoryStats);
     ASSERT_EQ(astral_memory_clear(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_add_batch(0, &memory_record, nullptr, kMemoryTopK), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_remove(0, kMemoryKey), ASTRAL_E_INVALID);

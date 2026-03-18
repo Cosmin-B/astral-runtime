@@ -375,6 +375,15 @@ struct MemorySearchCursor {
   AstralMemorySearchResult* results;
 };
 
+namespace {
+
+inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
+  return sizeof(SaveHeader) + static_cast<uint64_t>(index->count) * sizeof(AstralMemoryRecord) +
+         static_cast<uint64_t>(index->count) * index->dim * sizeof(float);
+}
+
+} // namespace
+
 AstralHandle memory_handle(MemoryIndex* index) {
   return index != nullptr ? index->handle : 0;
 }
@@ -1568,6 +1577,48 @@ AstralErr memory_count(MemoryIndex* index, uint32_t* out_count) {
   return ASTRAL_OK;
 }
 
+AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
+  if (index == nullptr || out_stats == nullptr || out_stats->size != sizeof(AstralMemoryStats)) {
+    return ASTRAL_E_INVALID;
+  }
+
+  const uint64_t vector_bytes =
+      static_cast<uint64_t>(index->capacity) * index->dim * sizeof(float);
+  const uint64_t metadata_bytes =
+      sizeof(MemoryIndex) + static_cast<uint64_t>(index->capacity) * sizeof(MemorySlot) +
+      static_cast<uint64_t>(index->capacity) * sizeof(uint32_t) +
+      static_cast<uint64_t>(index->key_table_capacity) * sizeof(uint32_t);
+  uint64_t graph_bytes = 0;
+  if (graph_enabled(index)) {
+    graph_bytes += static_cast<uint64_t>(index->capacity) * index->graph_level_capacity *
+                   index->graph_neighbor_capacity * sizeof(uint32_t);
+    graph_bytes += static_cast<uint64_t>(index->capacity) * index->graph_level_capacity *
+                   sizeof(uint32_t);
+    graph_bytes += static_cast<uint64_t>(index->capacity) * sizeof(uint8_t);
+    graph_bytes += static_cast<uint64_t>(index->graph_search_capacity) * sizeof(uint32_t);
+    graph_bytes += static_cast<uint64_t>(index->graph_search_capacity) * sizeof(float);
+    graph_bytes += static_cast<uint64_t>(index->graph_scratch_capacity) * sizeof(uint32_t);
+    graph_bytes += static_cast<uint64_t>(index->graph_scratch_capacity) * sizeof(float);
+    graph_bytes += static_cast<uint64_t>(index->capacity) * sizeof(uint32_t);
+  }
+
+  out_stats->dim = index->dim;
+  out_stats->capacity = index->capacity;
+  out_stats->count = index->count;
+  out_stats->metric = index->metric;
+  out_stats->index_kind = index->index_kind;
+  out_stats->graph_neighbors = index->graph_neighbor_capacity;
+  out_stats->graph_search = index->graph_search_capacity;
+  out_stats->graph_levels = index->graph_level_capacity;
+  out_stats->_reserved0 = 0;
+  out_stats->vector_bytes = vector_bytes;
+  out_stats->metadata_bytes = metadata_bytes;
+  out_stats->graph_bytes = graph_bytes;
+  out_stats->total_bytes = vector_bytes + metadata_bytes + graph_bytes;
+  out_stats->save_bytes = memory_save_byte_count(index);
+  return ASTRAL_OK;
+}
+
 AstralErr memory_clear(MemoryIndex* index) {
   if (index == nullptr) {
     return ASTRAL_E_INVALID;
@@ -1808,9 +1859,7 @@ AstralErr memory_save_size(MemoryIndex* index, uint64_t* out_bytes) {
   if (index == nullptr || out_bytes == nullptr) {
     return ASTRAL_E_INVALID;
   }
-  *out_bytes = sizeof(SaveHeader) +
-               static_cast<uint64_t>(index->count) * sizeof(AstralMemoryRecord) +
-               static_cast<uint64_t>(index->count) * index->dim * sizeof(float);
+  *out_bytes = memory_save_byte_count(index);
   return ASTRAL_OK;
 }
 
