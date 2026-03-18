@@ -757,6 +757,21 @@ def cmd_status_summary(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_download_plan(args: argparse.Namespace) -> int:
+    output_dir = _repo_root_path(args.dir)
+    presets = _select_presets(args, _load_presets(Path(args.manifest)))
+    records = [_status_record(preset, output_dir) for preset in presets]
+    records = [record for record in records if record["status"] != MODEL_STATUS_READY]
+    if args.format == "json":
+        json.dump(records, sys.stdout, indent=2, sort_keys=True)
+        print()
+        return EXIT_OK
+
+    for record in records:
+        print(record["download_command"])
+    return EXIT_OK
+
+
 def cmd_validate_file(args: argparse.Namespace) -> int:
     preset = _find_preset(_load_presets(Path(args.manifest)), args.preset)
     output_path = Path(args.path).expanduser() if args.path else _resolved_output_path(args, preset)
@@ -888,6 +903,16 @@ def main(argv: List[str]) -> int:
     status_summary_parser.add_argument("--dir", default="tests/models")
     status_summary_parser.add_argument("--format", choices=("json", "text"), default="json")
     status_summary_parser.set_defaults(func=cmd_status_summary)
+
+    download_plan_parser = sub.add_parser("download-plan")
+    download_plan_parser.add_argument("--unreal-matrix", action="store_true")
+    download_plan_parser.add_argument("--package", action="store_true")
+    download_plan_parser.add_argument(
+        "--type", choices=(MODEL_TYPE_ALL, MODEL_TYPE_TEXT, MODEL_TYPE_EMBEDDING), default=MODEL_TYPE_ALL
+    )
+    download_plan_parser.add_argument("--dir", default="tests/models")
+    download_plan_parser.add_argument("--format", choices=("json", "text"), default="json")
+    download_plan_parser.set_defaults(func=cmd_download_plan)
 
     preset_for_file_parser = sub.add_parser("preset-for-file")
     preset_for_file_parser.add_argument("filename")
