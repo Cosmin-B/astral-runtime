@@ -694,6 +694,52 @@ struct ASTRALRT_API FAstralMemorySearchResult
     int32 Flags = 0;
 };
 
+/** Runtime footprint and snapshot size for a native memory index. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralMemoryStats
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 Dimension = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 Capacity = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 Count = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    EAstralMemoryMetric Metric = EAstralMemoryMetric::Cosine;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    EAstralMemoryIndexKind IndexKind = EAstralMemoryIndexKind::Flat;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 GraphNeighbors = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 GraphSearch = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 GraphLevels = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int64 VectorBytes = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int64 MetadataBytes = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int64 GraphBytes = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int64 TotalBytes = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int64 SaveBytes = 0;
+};
+
 /** Native prompt cache capacity and telemetry settings. */
 USTRUCT(BlueprintType)
 struct ASTRALRT_API FAstralPromptCacheDesc

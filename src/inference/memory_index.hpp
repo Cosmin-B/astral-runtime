@@ -12,6 +12,7 @@ AstralHandle memory_search_cursor_handle(MemorySearchCursor* cursor);
 AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_index);
 void memory_destroy(MemoryIndex* index);
 AstralErr memory_count(MemoryIndex* index, uint32_t* out_count);
+AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats);
 AstralErr memory_clear(MemoryIndex* index);
 AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records,
                            const float* vectors, uint32_t count);

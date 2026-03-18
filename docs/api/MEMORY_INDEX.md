@@ -12,8 +12,11 @@ and keep the flat index as the recall oracle.
 - `AstralMemoryRecord`
 - `AstralMemorySearchDesc`
 - `AstralMemorySearchResult`
+- `AstralMemoryStats`
 - `astral_memory_create()`
 - `astral_memory_destroy()`
+- `astral_memory_count()`
+- `astral_memory_stats()`
 - `astral_memory_add_batch()`
 - `astral_memory_remove()`
 - `astral_memory_clear()`
@@ -66,6 +69,14 @@ owns its compact native result buffer and must be released with
 engine queue needs to track a cursor through the unified request status API.
 Canceling a memory-search request marks the cursor canceled and clears its
 remaining result depth; it does not release the cursor handle.
+
+`astral_memory_stats()` reports the current index shape and byte footprint for
+capacity sizing. `vector_bytes` covers row-major vector storage,
+`metadata_bytes` covers native index metadata, slots, active-slot storage, and
+the key table, and `graph_bytes` covers graph-only adjacency, frontier,
+scratch, level, and visited buffers. `total_bytes` is the runtime footprint
+sum, while `save_bytes` matches the current serialized snapshot size returned
+by `astral_memory_save_size()`.
 
 ## Metrics
 
@@ -134,7 +145,8 @@ Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
 storage and search ordering. Unreal's `FAstralMemoryIndexDesc` exposes flat and
 graph index modes plus graph neighbor/search budgets; `0` keeps the native
-defaults.
+defaults. `FAstralMemoryStats` and Unity `AstralMemoryIndex.GetStats()` expose
+the same native footprint counters for engine-side budgeting and telemetry.
 
 ## Unity
 
@@ -167,6 +179,10 @@ desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
 
 AstralHandle index = 0;
 AstralErr err = astral_memory_create(&desc, &index);
+
+AstralMemoryStats stats = {0};
+stats.size = sizeof(AstralMemoryStats);
+err = astral_memory_stats(index, &stats);
 
 AstralMemorySearchDesc search = {0};
 search.size = sizeof(AstralMemorySearchDesc);

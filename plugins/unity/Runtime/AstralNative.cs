@@ -1019,6 +1019,26 @@ namespace Astral.Runtime
             public uint flags;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemoryStats
+        {
+            public uint size;
+            public uint dim;
+            public uint capacity;
+            public uint count;
+            public AstralMemoryMetric metric;
+            public AstralMemoryIndexKind index_kind;
+            public uint graph_neighbors;
+            public uint graph_search;
+            public uint graph_levels;
+            public uint _reserved0;
+            public ulong vector_bytes;
+            public ulong metadata_bytes;
+            public ulong graph_bytes;
+            public ulong total_bytes;
+            public ulong save_bytes;
+        }
+
         public enum AstralAgentRole : uint
         {
             System = 1,
@@ -1365,6 +1385,9 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_memory_count(AstralHandle index, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_stats(AstralHandle index, ref AstralMemoryStats out_stats);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_memory_clear(AstralHandle index);

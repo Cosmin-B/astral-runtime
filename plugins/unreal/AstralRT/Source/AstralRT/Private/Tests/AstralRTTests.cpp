@@ -713,6 +713,19 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("memory count result"), MemoryCountResult.Count, Records.Num());
     TestEqual(TEXT("memory count out"), MemoryRecordCount, Records.Num());
 
+    FAstralMemoryStats MemoryStats;
+    const FAstralOperationResult MemoryStatsResult =
+        UAstralBlueprintLibrary::GetMemoryStatsResult(MemoryCreate.Handle, MemoryStats);
+    TestTrue(TEXT("memory stats succeeds"), MemoryStatsResult.bSuccess);
+    TestEqual(TEXT("memory stats count"), MemoryStats.Count, Records.Num());
+    TestEqual(TEXT("memory stats dimension"), MemoryStats.Dimension, MemoryDesc.Dimension);
+    TestEqual(TEXT("memory stats capacity"), MemoryStats.Capacity, MemoryDesc.Capacity);
+    TestEqual(TEXT("memory stats index kind"), MemoryStats.IndexKind, EAstralMemoryIndexKind::Flat);
+    TestTrue(TEXT("memory stats vector bytes"), MemoryStats.VectorBytes > EmptyByteCount);
+    TestTrue(TEXT("memory stats metadata bytes"), MemoryStats.MetadataBytes > EmptyByteCount);
+    TestEqual(TEXT("memory stats graph bytes"), MemoryStats.GraphBytes, EmptyByteCount);
+    TestTrue(TEXT("memory stats total bytes"), MemoryStats.TotalBytes >= MemoryStats.VectorBytes);
+
     TArray<float> Query;
     Query.Add(VectorOne);
     Query.Add(VectorZero);
@@ -835,6 +848,14 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     const FAstralOperationResult GraphAddMemory =
         UAstralBlueprintLibrary::AddMemoryBatchResult(GraphMemoryCreate.Handle, Records, Vectors, GraphMemoryDesc.Dimension);
     TestTrue(TEXT("graph memory add result succeeds"), GraphAddMemory.bSuccess);
+    FAstralMemoryStats GraphMemoryStats;
+    const FAstralOperationResult GraphMemoryStatsResult =
+        UAstralBlueprintLibrary::GetMemoryStatsResult(GraphMemoryCreate.Handle, GraphMemoryStats);
+    TestTrue(TEXT("graph memory stats succeeds"), GraphMemoryStatsResult.bSuccess);
+    TestEqual(TEXT("graph memory stats index kind"), GraphMemoryStats.IndexKind, EAstralMemoryIndexKind::Graph);
+    TestEqual(TEXT("graph memory stats neighbors"), GraphMemoryStats.GraphNeighbors, GraphMemoryDesc.GraphNeighbors);
+    TestEqual(TEXT("graph memory stats search"), GraphMemoryStats.GraphSearch, GraphMemoryDesc.GraphSearch);
+    TestTrue(TEXT("graph memory stats graph bytes"), GraphMemoryStats.GraphBytes > EmptyByteCount);
     TArray<FAstralMemorySearchResult> GraphMemoryResults;
     const FAstralOperationResult GraphSearchMemory =
         UAstralBlueprintLibrary::SearchMemoryIndexResult(GraphMemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup, GraphMemoryResults);
