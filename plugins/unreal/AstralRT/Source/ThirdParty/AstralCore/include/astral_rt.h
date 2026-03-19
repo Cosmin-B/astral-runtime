@@ -252,6 +252,12 @@ enum {
     ASTRAL_MEMORY_INDEX_GRAPH = 1,
 };
 
+typedef uint32_t AstralMemoryStorageKind;
+enum {
+    ASTRAL_MEMORY_STORAGE_F32 = 0,
+    ASTRAL_MEMORY_STORAGE_Q8 = 1,
+};
+
 enum {
     ASTRAL_MEMORY_GROUP_ANY = 0xFFFFFFFFu,
 };
@@ -264,7 +270,7 @@ typedef struct AstralMemoryIndexDesc {
     AstralMemoryIndexKind index_kind;
     uint32_t graph_neighbors;
     uint32_t graph_search;
-    uint32_t _reserved0;
+    AstralMemoryStorageKind storage_kind;
 } AstralMemoryIndexDesc;
 
 typedef struct AstralMemoryRecord {
@@ -304,7 +310,7 @@ typedef struct AstralMemoryStats {
     uint32_t graph_neighbors;
     uint32_t graph_search;
     uint32_t graph_levels;
-    uint32_t _reserved0;
+    AstralMemoryStorageKind storage_kind;
     uint64_t vector_bytes;
     uint64_t metadata_bytes;
     uint64_t graph_bytes;

@@ -13,6 +13,7 @@ and keep the flat index as the recall oracle.
 - `AstralMemorySearchDesc`
 - `AstralMemorySearchResult`
 - `AstralMemoryStats`
+- `AstralMemoryStorageKind`
 - `astral_memory_create()`
 - `astral_memory_destroy()`
 - `astral_memory_count()`
@@ -49,6 +50,15 @@ engine objects for the selected keys.
   record key, descends those levels before base-layer expansion, and keeps a few
   deterministic spread links at the base layer to avoid purely local
   neighborhoods.
+
+`AstralMemoryIndexDesc::storage_kind` selects flat-index vector storage:
+
+- `ASTRAL_MEMORY_STORAGE_F32` is the default exact float32 storage.
+- `ASTRAL_MEMORY_STORAGE_Q8` stores each vector as signed 8-bit values plus one
+  per-vector scale. Add/load still accept float32 vectors, and save emits the
+  existing float32 snapshot format. Q8 search is approximate and is intended for
+  memory-footprint-sensitive flat retrieval; graph indexes currently require
+  float32 storage.
 
 Choose the flat index when exact ranking, filtered search, or small-to-medium
 corpora matter more than avoiding a full scan. Choose the graph index only after
@@ -120,8 +130,9 @@ otherwise dominate the profile.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
-`l2`), `ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS` up to the native graph-neighbor
-limit, and `ASTRAL_BENCH_MEMORY_GRAPH_SEARCH`. Set
+`l2`), `ASTRAL_BENCH_MEMORY_STORAGE` (`f32` or `q8`),
+`ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS` up to the native graph-neighbor limit,
+and `ASTRAL_BENCH_MEMORY_GRAPH_SEARCH`. Set
 `ASTRAL_BENCH_MEMORY_RECALL_QUERIES` to choose how many deterministic query
 vectors are rotated through the graph recall benchmark. These controls let local
 runs cover vector scans and graph recall/latency tuning without changing source.
@@ -176,6 +187,7 @@ desc.dim = kDim;
 desc.capacity = kCapacity;
 desc.metric = ASTRAL_MEMORY_METRIC_COSINE;
 desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+desc.storage_kind = ASTRAL_MEMORY_STORAGE_F32;
 
 AstralHandle index = 0;
 AstralErr err = astral_memory_create(&desc, &index);
@@ -196,6 +208,14 @@ Graph index:
 desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
 desc.graph_neighbors = 16;
 desc.graph_search = 64;
+err = astral_memory_create(&desc, &index);
+```
+
+Reduced flat storage:
+
+```c
+desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
 err = astral_memory_create(&desc, &index);
 ```
 
@@ -229,6 +249,7 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_ME
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
 perf stat -e cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses,dTLB-loads,dTLB-load-misses -- env ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_SWEEP=1 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
 ```
 
