@@ -98,6 +98,30 @@ by `astral_memory_save_size()`.
 Use `ASTRAL_MEMORY_GROUP_ANY` to search all groups, or set
 `AstralMemorySearchDesc::group_id` to restrict results.
 
+## Search Selection
+
+Start with the flat index. It is the recall oracle, supports every metric and
+group filter, and has the simplest operating model. Move away from it only when
+the target corpus and latency budget justify the extra tuning work.
+
+| Mode | Use when | Measure before shipping |
+| --- | --- | --- |
+| Flat f32 | Exact ranking matters, filtered search is common, or the corpus is small enough for full scans. | `flat_search_top1`, `flat_search`, memory bandwidth counters, and `astral_memory_stats()`. |
+| Flat q8 | The corpus is memory-bandwidth-bound and approximate scores are acceptable. | Recall versus flat f32 on the target vectors, q8 ingest cost, `flat_search_top1`, and `vector_bytes`. |
+| Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, and the chosen `graph_neighbors`/`graph_search` pair. |
+
+Do not use the graph index for group-filtered retrieval unless the group is
+large enough to justify all-group search followed by application filtering.
+Native group-filtered graph searches use the exact scanner because sparse group
+filters usually destroy graph locality.
+
+For release candidates, capture one exact flat run and one candidate run with
+the same dimension, metric, capacity, query set, and corpus. A graph or q8
+configuration is ready only when it meets the product recall target and beats
+the exact baseline on the deployment hardware. Keep the exact flat path
+available in tooling and tests so recall can be rechecked when the embedding
+model or document distribution changes.
+
 ## Performance
 
 The flat index stores vectors row-major and uses AVX2 or NEON dot and L2 kernels
