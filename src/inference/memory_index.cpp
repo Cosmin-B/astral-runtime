@@ -42,6 +42,9 @@ constexpr uint32_t kGraphDefaultSearch = 64;
 constexpr uint32_t kGraphMinSearch = 4;
 constexpr uint32_t kGraphLongLinkCount = 4;
 constexpr uint32_t kGraphMaxLevels = 16;
+constexpr int32_t kQ8MinValue = -127;
+constexpr int32_t kQ8MaxValue = 127;
+constexpr float kQ8MaxFloat = 127.0f;
 constexpr float kWorstScore = -3.4028234663852886e38f;
 #if defined(__AVX2__)
 constexpr uint32_t kAvx2F32Lanes = 8;
@@ -92,10 +95,16 @@ inline bool index_kind_valid(AstralMemoryIndexKind kind) {
   return kind == ASTRAL_MEMORY_INDEX_FLAT || kind == ASTRAL_MEMORY_INDEX_GRAPH;
 }
 
+inline bool storage_kind_valid(AstralMemoryStorageKind kind) {
+  return kind == ASTRAL_MEMORY_STORAGE_F32 || kind == ASTRAL_MEMORY_STORAGE_Q8;
+}
+
 inline bool desc_valid(const AstralMemoryIndexDesc* desc) {
   return desc != nullptr && desc->size == sizeof(AstralMemoryIndexDesc) && desc->dim != 0 &&
-         desc->dim <= kMaxDim && desc->capacity != 0 && desc->_reserved0 == 0 &&
-         index_kind_valid(desc->index_kind) && metric_valid(desc->metric);
+         desc->dim <= kMaxDim && desc->capacity != 0 && index_kind_valid(desc->index_kind) &&
+         metric_valid(desc->metric) && storage_kind_valid(desc->storage_kind) &&
+         (desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32 ||
+          desc->index_kind == ASTRAL_MEMORY_INDEX_FLAT);
 }
 
 inline uint32_t graph_neighbors_from_desc(const AstralMemoryIndexDesc* desc) {
@@ -133,8 +142,18 @@ inline float* alloc_vector_storage(uint32_t capacity, uint32_t dim) {
   return static_cast<float*>(core::runtime_alloc(count * sizeof(float), kVectorStorageAlign));
 }
 
+inline int8_t* alloc_q8_vector_storage(uint32_t capacity, uint32_t dim) {
+  const size_t count = static_cast<size_t>(capacity) * dim;
+  return static_cast<int8_t*>(core::runtime_alloc(count * sizeof(int8_t), kVectorStorageAlign));
+}
+
 inline void free_vector_storage(float* ptr, uint32_t capacity, uint32_t dim) {
   core::runtime_free(ptr, static_cast<size_t>(capacity) * dim * sizeof(float), kVectorStorageAlign);
+}
+
+inline void free_q8_vector_storage(int8_t* ptr, uint32_t capacity, uint32_t dim) {
+  core::runtime_free(ptr, static_cast<size_t>(capacity) * dim * sizeof(int8_t),
+                     kVectorStorageAlign);
 }
 
 #if defined(__AVX2__)
@@ -322,6 +341,88 @@ float l2_score_f32(const float* a, const float* b, uint32_t dim) {
 #endif
 }
 
+float dot_q8_f32(const int8_t* a, const float* b, uint32_t dim) {
+#if defined(__AVX2__)
+  __m256 acc = _mm256_setzero_ps();
+  uint32_t i = 0;
+  for (; i + kAvx2F32Lanes <= dim; i += kAvx2F32Lanes) {
+    const __m128i bytes = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(a + i));
+    const __m256 av = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(bytes));
+    const __m256 bv = _mm256_loadu_ps(b + i);
+    acc = _mm256_add_ps(acc, _mm256_mul_ps(av, bv));
+  }
+  float sum = reduce_avx2_f32(acc);
+  for (; i < dim; ++i) {
+    sum += static_cast<float>(a[i]) * b[i];
+  }
+  return sum;
+#else
+  float sum0 = 0.0f;
+  float sum1 = 0.0f;
+  float sum2 = 0.0f;
+  float sum3 = 0.0f;
+  uint32_t i = 0;
+  for (; i + 4u <= dim; i += 4u) {
+    sum0 += static_cast<float>(a[i]) * b[i];
+    sum1 += static_cast<float>(a[i + 1u]) * b[i + 1u];
+    sum2 += static_cast<float>(a[i + 2u]) * b[i + 2u];
+    sum3 += static_cast<float>(a[i + 3u]) * b[i + 3u];
+  }
+  float sum = (sum0 + sum1) + (sum2 + sum3);
+  for (; i < dim; ++i) {
+    sum += static_cast<float>(a[i]) * b[i];
+  }
+  return sum;
+#endif
+}
+
+float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim) {
+  float sum0 = 0.0f;
+  float sum1 = 0.0f;
+  float sum2 = 0.0f;
+  float sum3 = 0.0f;
+  uint32_t i = 0;
+  for (; i + 4u <= dim; i += 4u) {
+    const float d0 = static_cast<float>(a[i]) * scale - b[i];
+    const float d1 = static_cast<float>(a[i + 1u]) * scale - b[i + 1u];
+    const float d2 = static_cast<float>(a[i + 2u]) * scale - b[i + 2u];
+    const float d3 = static_cast<float>(a[i + 3u]) * scale - b[i + 3u];
+    sum0 += d0 * d0;
+    sum1 += d1 * d1;
+    sum2 += d2 * d2;
+    sum3 += d3 * d3;
+  }
+  float sum = (sum0 + sum1) + (sum2 + sum3);
+  for (; i < dim; ++i) {
+    const float d = static_cast<float>(a[i]) * scale - b[i];
+    sum += d * d;
+  }
+  return -sum;
+}
+
+void quantize_q8_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
+  float max_abs = 0.0f;
+  for (uint32_t i = 0; i < dim; ++i) {
+    const float abs_value = std::fabs(src[i]);
+    if (abs_value > max_abs) {
+      max_abs = abs_value;
+    }
+  }
+  const float scale = max_abs > 0.0f ? max_abs / kQ8MaxFloat : 1.0f;
+  const float inv_scale = 1.0f / scale;
+  for (uint32_t i = 0; i < dim; ++i) {
+    const float q = std::round(src[i] * inv_scale);
+    int32_t v = static_cast<int32_t>(q);
+    if (v < kQ8MinValue) {
+      v = kQ8MinValue;
+    } else if (v > kQ8MaxValue) {
+      v = kQ8MaxValue;
+    }
+    dst[i] = static_cast<int8_t>(v);
+  }
+  *out_scale = scale;
+}
+
 inline float vector_norm(const float* v, uint32_t dim) {
   const float sq = dot_f32(v, v, dim);
   return sq > 0.0f ? std::sqrt(sq) : 0.0f;
@@ -341,8 +442,11 @@ struct MemoryIndex {
   uint32_t count;
   AstralMemoryMetric metric;
   AstralMemoryIndexKind index_kind;
+  AstralMemoryStorageKind storage_kind;
   MemorySlot* slots;
   float* vectors;
+  int8_t* q8_vectors;
+  float* q8_scales;
   uint32_t* active_slots;
   uint32_t* key_table;
   uint32_t* graph_neighbors;
@@ -396,6 +500,22 @@ namespace {
 
 inline float* vector_at(MemoryIndex* index, uint32_t slot) {
   return index->vectors + static_cast<size_t>(slot) * index->dim;
+}
+
+inline const float* vector_at(const MemoryIndex* index, uint32_t slot) {
+  return index->vectors + static_cast<size_t>(slot) * index->dim;
+}
+
+inline int8_t* q8_vector_at(MemoryIndex* index, uint32_t slot) {
+  return index->q8_vectors + static_cast<size_t>(slot) * index->dim;
+}
+
+inline const int8_t* q8_vector_at(const MemoryIndex* index, uint32_t slot) {
+  return index->q8_vectors + static_cast<size_t>(slot) * index->dim;
+}
+
+inline bool q8_storage(const MemoryIndex* index) {
+  return index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8;
 }
 
 inline uint32_t active_slot_at(const MemoryIndex* index, uint32_t active_pos) {
@@ -569,6 +689,18 @@ inline void fill_result(AstralMemorySearchResult* out_result, const MemorySlot& 
 }
 
 inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, float query_scale) {
+  if (q8_storage(index)) {
+    const int8_t* q8 = q8_vector_at(index, slot);
+    const float scale = index->q8_scales[slot];
+    if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
+      return dot_q8_f32(q8, query, index->dim) * scale;
+    }
+    if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      return dot_q8_f32(q8, query, index->dim) * scale * query_scale *
+             index->slots[slot].score_scale;
+    }
+    return l2_score_q8_f32(q8, scale, query, index->dim);
+  }
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
     return dot_f32(query, vector_at(index, slot), index->dim);
   }
@@ -1076,6 +1208,57 @@ void memory_search_dot(MemoryIndex* index, const AstralMemorySearchDesc* desc, c
   *out_count = filled;
 }
 
+void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
+                      AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  const float query_scale =
+      index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 0.0f;
+  uint32_t filled = 0;
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = active_slot_at(index, active_pos);
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    AstralMemorySearchResult candidate{};
+    fill_result(&candidate, s, score_slot(index, query, slot, query_scale));
+    insert_result(out_results, desc->top_k, &filled, candidate);
+  }
+  *out_count = filled;
+}
+
+void memory_search_q8_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
+                           AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  const float query_scale =
+      index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 0.0f;
+  const MemorySlot* best_slot = nullptr;
+  float best_score = 0.0f;
+  uint64_t best_key = 0;
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = active_slot_at(index, active_pos);
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    const float score = score_slot(index, query, slot, query_scale);
+    if (best_slot == nullptr || score > best_score ||
+        (score == best_score && s.record.key < best_key)) {
+      best_slot = &s;
+      best_score = score;
+      best_key = s.record.key;
+    }
+  }
+
+  if (best_slot == nullptr) {
+    *out_count = kNoResults;
+    return;
+  }
+
+  fill_result(out_results, *best_slot, best_score);
+  *out_count = kTopOne;
+}
+
 void memory_search_cosine(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                           const float* query, AstralMemorySearchResult* out_results,
                           uint32_t* out_count) {
@@ -1369,6 +1552,14 @@ void memory_search_l2_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
 
 void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                         AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  if (q8_storage(index)) {
+    if (desc->top_k == kTopOne) {
+      memory_search_q8_top1(index, desc, query, out_results, out_count);
+    } else {
+      memory_search_q8(index, desc, query, out_results, out_count);
+    }
+    return;
+  }
   if (desc->top_k == kTopOne) {
     if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
       memory_search_dot_top1(index, desc, query, out_results, out_count);
@@ -1394,6 +1585,14 @@ void destroy_allocations(MemoryIndex* index) {
   if (index->vectors != nullptr) {
     free_vector_storage(index->vectors, index->capacity, index->dim);
     index->vectors = nullptr;
+  }
+  if (index->q8_vectors != nullptr) {
+    free_q8_vector_storage(index->q8_vectors, index->capacity, index->dim);
+    index->q8_vectors = nullptr;
+  }
+  if (index->q8_scales != nullptr) {
+    core::runtime_free_array(index->q8_scales, index->capacity);
+    index->q8_scales = nullptr;
   }
   if (index->active_slots != nullptr) {
     core::runtime_free_array(index->active_slots, index->capacity);
@@ -1480,8 +1679,14 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->count = 0;
   index->metric = desc->metric;
   index->index_kind = desc->index_kind;
+  index->storage_kind = desc->storage_kind;
   index->slots = core::runtime_alloc_array<MemorySlot>(desc->capacity);
-  index->vectors = alloc_vector_storage(desc->capacity, desc->dim);
+  index->vectors =
+      desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32 ? alloc_vector_storage(desc->capacity, desc->dim) : nullptr;
+  index->q8_vectors =
+      desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8 ? alloc_q8_vector_storage(desc->capacity, desc->dim) : nullptr;
+  index->q8_scales =
+      desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8 ? core::runtime_alloc_array<float>(desc->capacity) : nullptr;
   index->active_slots = core::runtime_alloc_array<uint32_t>(desc->capacity);
   index->key_table = core::runtime_alloc_array<uint32_t>(key_table_capacity);
   index->graph_neighbors = nullptr;
@@ -1521,8 +1726,10 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     index->graph_scratch_scores = core::runtime_alloc_array<float>(graph_scratch_capacity);
     index->graph_visited = core::runtime_alloc_array<uint32_t>(desc->capacity);
   }
-  if (index->slots == nullptr || index->vectors == nullptr || index->active_slots == nullptr ||
-      index->key_table == nullptr ||
+  if (index->slots == nullptr || index->active_slots == nullptr || index->key_table == nullptr ||
+      (desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32 && index->vectors == nullptr) ||
+      (desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8 &&
+       (index->q8_vectors == nullptr || index->q8_scales == nullptr)) ||
       (graph_neighbor_capacity != 0 &&
        (index->graph_neighbors == nullptr || index->graph_neighbor_counts == nullptr ||
         index->graph_levels == nullptr || index->graph_candidates == nullptr ||
@@ -1536,6 +1743,10 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   std::memset(index->slots, 0, sizeof(MemorySlot) * desc->capacity);
   std::memset(index->active_slots, 0, sizeof(uint32_t) * desc->capacity);
   std::memset(index->key_table, 0, sizeof(uint32_t) * key_table_capacity);
+  if (desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8) {
+    std::memset(index->q8_vectors, 0, static_cast<size_t>(desc->capacity) * desc->dim * sizeof(int8_t));
+    std::memset(index->q8_scales, 0, sizeof(float) * desc->capacity);
+  }
   if (graph_neighbor_capacity != 0) {
     std::memset(index->graph_neighbors, 0,
                 sizeof(uint32_t) * desc->capacity * graph_level_capacity * graph_neighbor_capacity);
@@ -1583,7 +1794,10 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
   }
 
   const uint64_t vector_bytes =
-      static_cast<uint64_t>(index->capacity) * index->dim * sizeof(float);
+      q8_storage(index)
+          ? static_cast<uint64_t>(index->capacity) * index->dim * sizeof(int8_t) +
+                static_cast<uint64_t>(index->capacity) * sizeof(float)
+          : static_cast<uint64_t>(index->capacity) * index->dim * sizeof(float);
   const uint64_t metadata_bytes =
       sizeof(MemoryIndex) + static_cast<uint64_t>(index->capacity) * sizeof(MemorySlot) +
       static_cast<uint64_t>(index->capacity) * sizeof(uint32_t) +
@@ -1610,7 +1824,7 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
   out_stats->graph_neighbors = index->graph_neighbor_capacity;
   out_stats->graph_search = index->graph_search_capacity;
   out_stats->graph_levels = index->graph_level_capacity;
-  out_stats->_reserved0 = 0;
+  out_stats->storage_kind = index->storage_kind;
   out_stats->vector_bytes = vector_bytes;
   out_stats->metadata_bytes = metadata_bytes;
   out_stats->graph_bytes = graph_bytes;
@@ -1684,11 +1898,15 @@ AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records
       }
     }
     index->slots[slot].record = records[i];
-    float* dst = vector_at(index, slot);
     const float* src = vectors + static_cast<size_t>(i) * index->dim;
-    std::memcpy(dst, src, sizeof(float) * index->dim);
+    if (q8_storage(index)) {
+      quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
+    } else {
+      float* dst = vector_at(index, slot);
+      std::memcpy(dst, src, sizeof(float) * index->dim);
+    }
     index->slots[slot].score_scale =
-        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(dst, index->dim) : 0.0f;
+        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(src, index->dim) : 0.0f;
     if (graph_enabled(index)) {
       if (is_update) {
         graph_rebuild_needed = true;
@@ -1894,7 +2112,16 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
     const uint32_t slot = active_slot_at(index, active_pos);
     std::memcpy(cursor, &index->slots[slot].record, sizeof(AstralMemoryRecord));
     cursor += sizeof(AstralMemoryRecord);
-    std::memcpy(cursor, vector_at(index, slot), sizeof(float) * index->dim);
+    if (q8_storage(index)) {
+      float* dst = reinterpret_cast<float*>(cursor);
+      const int8_t* src = q8_vector_at(index, slot);
+      const float scale = index->q8_scales[slot];
+      for (uint32_t i = 0; i < index->dim; ++i) {
+        dst[i] = static_cast<float>(src[i]) * scale;
+      }
+    } else {
+      std::memcpy(cursor, vector_at(index, slot), sizeof(float) * index->dim);
+    }
     cursor += sizeof(float) * index->dim;
   }
   return ASTRAL_OK;

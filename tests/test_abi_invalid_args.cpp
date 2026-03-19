@@ -252,6 +252,7 @@ TEST(abi_invalid_args_model_surface) {
     constexpr uint64_t kMemoryKey = 1;
     constexpr uint32_t kMemoryTopK = 1;
     constexpr uint32_t kMemoryFetchCapacity = 1;
+    constexpr AstralMemoryStorageKind kInvalidMemoryStorage = UINT32_MAX;
     constexpr AstralHandle kPromptModelHandle = 0x0100000100000001ull;
     AstralMemoryIndexDesc memory_desc{};
     memory_desc.size = sizeof(AstralMemoryIndexDesc);
@@ -348,6 +349,9 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_token_chunk_ranges(&chunker, kInvalidTokenCount, nullptr, kRangeCapacity, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_create(nullptr, &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_create(&memory_desc, nullptr), ASTRAL_E_INVALID);
+    AstralMemoryIndexDesc invalid_memory_desc = memory_desc;
+    invalid_memory_desc.storage_kind = kInvalidMemoryStorage;
+    ASSERT_EQ(astral_memory_create(&invalid_memory_desc, &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_count(0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_count(1, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_stats(0, &memory_stats), ASTRAL_E_INVALID);

@@ -271,6 +271,14 @@ enum class EAstralMemoryIndexKind : uint8
     Graph = 1
 };
 
+/** Native memory index vector storage format. */
+UENUM(BlueprintType)
+enum class EAstralMemoryStorageKind : uint8
+{
+    F32 = 0,
+    Q8 = 1
+};
+
 /** Root used to resolve relative filesystem paths before they cross the C ABI. */
 UENUM(BlueprintType)
 enum class EAstralUnrealPathRoot : uint8
@@ -645,6 +653,9 @@ struct ASTRALRT_API FAstralMemoryIndexDesc
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
     int32 GraphSearch = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    EAstralMemoryStorageKind StorageKind = EAstralMemoryStorageKind::F32;
 };
 
 /** Metadata associated with one vector in a native memory index. */
@@ -723,6 +734,9 @@ struct ASTRALRT_API FAstralMemoryStats
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
     int32 GraphLevels = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    EAstralMemoryStorageKind StorageKind = EAstralMemoryStorageKind::F32;
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
     int64 VectorBytes = 0;

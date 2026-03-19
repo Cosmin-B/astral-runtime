@@ -971,6 +971,12 @@ namespace Astral.Runtime
             Graph = 1
         }
 
+        public enum AstralMemoryStorageKind : uint
+        {
+            F32 = 0,
+            Q8 = 1
+        }
+
         public const uint ASTRAL_MEMORY_GROUP_ANY = 0xFFFFFFFFu;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -983,7 +989,7 @@ namespace Astral.Runtime
             public AstralMemoryIndexKind index_kind;
             public uint graph_neighbors;
             public uint graph_search;
-            public uint _reserved0;
+            public AstralMemoryStorageKind storage_kind;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -1031,7 +1037,7 @@ namespace Astral.Runtime
             public uint graph_neighbors;
             public uint graph_search;
             public uint graph_levels;
-            public uint _reserved0;
+            public AstralMemoryStorageKind storage_kind;
             public ulong vector_bytes;
             public ulong metadata_bytes;
             public ulong graph_bytes;

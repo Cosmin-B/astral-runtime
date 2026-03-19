@@ -2375,6 +2375,7 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(stats.graph_neighbors, 0u);
     ASSERT_EQ(stats.graph_search, 0u);
     ASSERT_EQ(stats.graph_levels, 0u);
+    ASSERT_EQ(stats.storage_kind, ASTRAL_MEMORY_STORAGE_F32);
     ASSERT_EQ(stats.vector_bytes, static_cast<uint64_t>(kCapacity) * kDim * sizeof(float));
     ASSERT_GT(stats.metadata_bytes, 0ull);
     ASSERT_EQ(stats.graph_bytes, 0ull);
@@ -2536,6 +2537,7 @@ TEST(inference_memory_index_graph_mock) {
     ASSERT_EQ(stats.graph_neighbors, kGraphNeighbors);
     ASSERT_EQ(stats.graph_search, kGraphSearch);
     ASSERT_GT(stats.graph_levels, 0u);
+    ASSERT_EQ(stats.storage_kind, ASTRAL_MEMORY_STORAGE_F32);
     ASSERT_EQ(stats.vector_bytes, static_cast<uint64_t>(kCapacity) * kDim * sizeof(float));
     ASSERT_GT(stats.metadata_bytes, 0ull);
     ASSERT_GT(stats.graph_bytes, 0ull);
@@ -2570,6 +2572,98 @@ TEST(inference_memory_index_graph_mock) {
     err = astral_memory_search(loaded, &search, query, results, kTopK, &count);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(results[0].key, kKeyB);
+
+    astral_memory_destroy(loaded);
+    astral_memory_destroy(index);
+}
+
+TEST(inference_memory_index_q8_storage_mock) {
+    constexpr uint32_t kDim = 4;
+    constexpr uint32_t kCapacity = 4;
+    constexpr uint32_t kRecordCount = 3;
+    constexpr uint32_t kTopK = 2;
+    constexpr uint64_t kKeyA = 701;
+    constexpr uint64_t kKeyB = 702;
+    constexpr uint64_t kKeyC = 703;
+
+    AstralMemoryIndexDesc desc{};
+    desc.size = sizeof(AstralMemoryIndexDesc);
+    desc.dim = kDim;
+    desc.capacity = kCapacity;
+    desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+    desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
+
+    AstralHandle index = 0;
+    AstralErr err = astral_memory_create(&desc, &index);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(index));
+
+    AstralMemoryRecord records[kRecordCount]{};
+    records[0].size = sizeof(AstralMemoryRecord);
+    records[0].key = kKeyA;
+    records[1].size = sizeof(AstralMemoryRecord);
+    records[1].key = kKeyB;
+    records[2].size = sizeof(AstralMemoryRecord);
+    records[2].key = kKeyC;
+    const float vectors[kRecordCount * kDim] = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.5f, 0.5f, 0.0f, 0.0f,
+    };
+    err = astral_memory_add_batch(index, records, vectors, kRecordCount);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralMemoryStats stats{};
+    stats.size = sizeof(AstralMemoryStats);
+    err = astral_memory_stats(index, &stats);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(stats.storage_kind, ASTRAL_MEMORY_STORAGE_Q8);
+    const uint64_t expected_q8_vector_bytes =
+        static_cast<uint64_t>(kCapacity) * kDim * sizeof(int8_t) +
+        static_cast<uint64_t>(kCapacity) * sizeof(float);
+    ASSERT_EQ(stats.vector_bytes, expected_q8_vector_bytes);
+    ASSERT_LT(stats.vector_bytes, static_cast<uint64_t>(kCapacity) * kDim * sizeof(float));
+
+    AstralMemorySearchDesc search{};
+    search.size = sizeof(AstralMemorySearchDesc);
+    search.top_k = kTopK;
+    search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    const float query[kDim] = {1.0f, 0.0f, 0.0f, 0.0f};
+    AstralMemorySearchResult results[kTopK]{};
+    uint32_t count = 0;
+    err = astral_memory_search(index, &search, query, results, kTopK, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopK);
+    ASSERT_EQ(results[0].key, kKeyA);
+
+    uint64_t save_bytes = 0;
+    err = astral_memory_save_size(index, &save_bytes);
+    ASSERT_EQ(err, ASTRAL_OK);
+    std::string blob;
+    blob.resize(static_cast<size_t>(save_bytes));
+    AstralMutSpanU8 out_blob{};
+    out_blob.data = reinterpret_cast<uint8_t*>(&blob[0]);
+    out_blob.len = static_cast<uint32_t>(blob.size());
+    uint64_t written = 0;
+    err = astral_memory_save(index, out_blob, &written);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(written, save_bytes);
+
+    AstralSpanU8 blob_span{};
+    blob_span.data = reinterpret_cast<const uint8_t*>(blob.data());
+    blob_span.len = static_cast<uint32_t>(blob.size());
+    AstralHandle loaded = 0;
+    err = astral_memory_load(&desc, blob_span, &loaded);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_search(loaded, &search, query, results, kTopK, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(results[0].key, kKeyA);
+
+    AstralMemoryIndexDesc invalid_graph_desc = desc;
+    invalid_graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+    AstralHandle invalid = 0;
+    ASSERT_EQ(astral_memory_create(&invalid_graph_desc, &invalid), ASTRAL_E_INVALID);
 
     astral_memory_destroy(loaded);
     astral_memory_destroy(index);

@@ -91,6 +91,7 @@ static constexpr char kBenchMemoryDimEnv[] = "ASTRAL_BENCH_MEMORY_DIM";
 static constexpr char kBenchMemoryMetricEnv[] = "ASTRAL_BENCH_MEMORY_METRIC";
 static constexpr char kBenchMemoryOnlyEnv[] = "ASTRAL_BENCH_MEMORY_ONLY";
 static constexpr char kBenchMemorySweepEnv[] = "ASTRAL_BENCH_MEMORY_SWEEP";
+static constexpr char kBenchMemoryStorageEnv[] = "ASTRAL_BENCH_MEMORY_STORAGE";
 static constexpr char kBenchMemoryGraphNeighborsEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS";
 static constexpr char kBenchMemoryGraphSearchEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_SEARCH";
 static constexpr char kBenchMemoryRecallQueriesEnv[] = "ASTRAL_BENCH_MEMORY_RECALL_QUERIES";
@@ -98,6 +99,8 @@ static constexpr char kBenchTokenizeOnlyEnv[] = "ASTRAL_BENCH_TOKENIZE_ONLY";
 static constexpr char kBenchMemoryMetricDot[] = "dot";
 static constexpr char kBenchMemoryMetricL2[] = "l2";
 static constexpr char kBenchMemoryMetricCosine[] = "cosine";
+static constexpr char kBenchMemoryStorageF32[] = "f32";
+static constexpr char kBenchMemoryStorageQ8[] = "q8";
 static constexpr const char* kBenchMemorySweepAddNames[] = {
     "features.memory add_batch_100",
     "features.memory add_batch_1k",
@@ -200,6 +203,14 @@ static AstralMemoryMetric parse_memory_metric_env() {
         return ASTRAL_MEMORY_METRIC_L2;
     }
     return ASTRAL_MEMORY_METRIC_COSINE;
+}
+
+static AstralMemoryStorageKind parse_memory_storage_env() {
+    const char* value = std::getenv(kBenchMemoryStorageEnv);
+    if (value != nullptr && std::strcmp(value, kBenchMemoryStorageQ8) == 0) {
+        return ASTRAL_MEMORY_STORAGE_Q8;
+    }
+    return ASTRAL_MEMORY_STORAGE_F32;
 }
 
 static uint32_t memory_graph_neighbors() {
@@ -1164,6 +1175,7 @@ static BenchResult bench_memory_add_batch_impl(uint32_t capacity, const char* na
     desc.capacity = capacity;
     desc.metric = metric;
     desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle index = 0;
     AstralErr err = astral_memory_create(&desc, &index);
@@ -1258,6 +1270,7 @@ static BenchResult bench_memory_flat_search_impl(uint64_t iters, uint32_t capaci
     desc.capacity = capacity;
     desc.metric = metric;
     desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle index = 0;
     AstralErr err = astral_memory_create(&desc, &index);
@@ -1661,6 +1674,7 @@ static BenchResult bench_memory_flat_search_top1_impl(uint64_t iters, uint32_t c
     desc.capacity = capacity;
     desc.metric = metric;
     desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle index = 0;
     AstralErr err = astral_memory_create(&desc, &index);
@@ -1728,6 +1742,7 @@ static BenchResult bench_memory_cursor_fetch_impl(uint64_t iters, uint32_t capac
     desc.capacity = capacity;
     desc.metric = metric;
     desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle index = 0;
     AstralErr err = astral_memory_create(&desc, &index);
@@ -1803,6 +1818,7 @@ static BenchResult bench_memory_request_status(uint64_t iters) {
     desc.capacity = capacity;
     desc.metric = metric;
     desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle index = 0;
     AstralErr err = astral_memory_create(&desc, &index);
@@ -2573,6 +2589,8 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
                 bounded_env_u32(kBenchMemoryDimEnv, kBenchMemoryDim, kBenchMemoryMinDim, kBenchMemoryMaxDim));
     std::printf("  ASTRAL_BENCH_MEMORY_METRIC=%s\n",
                 std::getenv(kBenchMemoryMetricEnv) ? std::getenv(kBenchMemoryMetricEnv) : kBenchMemoryMetricCosine);
+    std::printf("  ASTRAL_BENCH_MEMORY_STORAGE=%s\n",
+                std::getenv(kBenchMemoryStorageEnv) ? std::getenv(kBenchMemoryStorageEnv) : kBenchMemoryStorageF32);
     std::printf("  ASTRAL_BENCH_MEMORY_SWEEP=%s\n",
                 std::getenv(kBenchMemorySweepEnv) ? std::getenv(kBenchMemorySweepEnv) : "");
     std::printf("  ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=%u\n", memory_graph_neighbors());
