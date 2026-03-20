@@ -44,12 +44,12 @@ engine objects for the selected keys.
   uses fixed-size frontier and top-candidate pools for all-group top-1 and top-k
   search.
   Set `graph_neighbors` and `graph_search` to tune recall/latency, or leave
-  them zero for native defaults. Group-filtered searches use the exact flat
-  scanner. Use the graph recall benchmark before choosing this path for
-  retrieval. Graph construction assigns deterministic upper levels from each
-  record key, descends those levels before base-layer expansion, and keeps a few
-  deterministic spread links at the base layer to avoid purely local
-  neighborhoods.
+  them zero for the native 32-neighbor, 64-candidate default. Group-filtered
+  searches use the exact flat scanner. Use the graph recall benchmark before
+  choosing this path for retrieval. Graph construction assigns deterministic
+  upper levels from each record key, descends those levels before base-layer
+  expansion, and keeps a few deterministic spread links at the base layer to
+  avoid purely local neighborhoods.
 
 `AstralMemoryIndexDesc::storage_kind` selects flat-index vector storage:
 
@@ -230,7 +230,7 @@ Graph index:
 
 ```c
 desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
-desc.graph_neighbors = 16;
+desc.graph_neighbors = 32;
 desc.graph_search = 64;
 err = astral_memory_create(&desc, &index);
 ```
