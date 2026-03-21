@@ -90,6 +90,7 @@ static constexpr char kBenchMemoryCapacityEnv[] = "ASTRAL_BENCH_MEMORY_CAPACITY"
 static constexpr char kBenchMemoryDimEnv[] = "ASTRAL_BENCH_MEMORY_DIM";
 static constexpr char kBenchMemoryMetricEnv[] = "ASTRAL_BENCH_MEMORY_METRIC";
 static constexpr char kBenchMemoryOnlyEnv[] = "ASTRAL_BENCH_MEMORY_ONLY";
+static constexpr char kBenchMemoryCaseEnv[] = "ASTRAL_BENCH_MEMORY_CASE";
 static constexpr char kBenchMemorySweepEnv[] = "ASTRAL_BENCH_MEMORY_SWEEP";
 static constexpr char kBenchMemoryStorageEnv[] = "ASTRAL_BENCH_MEMORY_STORAGE";
 static constexpr char kBenchMemoryGraphNeighborsEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS";
@@ -101,6 +102,16 @@ static constexpr char kBenchMemoryMetricL2[] = "l2";
 static constexpr char kBenchMemoryMetricCosine[] = "cosine";
 static constexpr char kBenchMemoryStorageF32[] = "f32";
 static constexpr char kBenchMemoryStorageQ8[] = "q8";
+static constexpr char kBenchMemoryCaseAddBatch[] = "add_batch";
+static constexpr char kBenchMemoryCaseGraphAddBatch[] = "graph_add_batch";
+static constexpr char kBenchMemoryCaseFlatSearchTop1[] = "flat_search_top1";
+static constexpr char kBenchMemoryCaseFlatSearch[] = "flat_search";
+static constexpr char kBenchMemoryCaseGraphTop1[] = "graph_top1";
+static constexpr char kBenchMemoryCaseGraphSearch[] = "graph_search";
+static constexpr char kBenchMemoryCaseGraphRecall[] = "graph_recall";
+static constexpr char kBenchMemoryCaseGraphRecallSearch[] = "graph_recall_search";
+static constexpr char kBenchMemoryCaseCursorBeginFetch[] = "cursor_begin_fetch";
+static constexpr char kBenchMemoryCaseMemoryStatus[] = "memory_status";
 static constexpr const char* kBenchMemorySweepAddNames[] = {
     "features.memory add_batch_100",
     "features.memory add_batch_1k",
@@ -178,6 +189,11 @@ static bool file_is_large_enough(const char* path, uint64_t min_bytes) {
 static bool env_enabled(const char* key) {
     const char* value = std::getenv(key);
     return value != nullptr && value[0] != '\0' && std::strcmp(value, kDisabledEnvValue) != 0;
+}
+
+static bool memory_case_enabled(const char* name) {
+    const char* value = std::getenv(kBenchMemoryCaseEnv);
+    return value == nullptr || value[0] == '\0' || std::strcmp(value, name) == 0;
 }
 
 static uint32_t bounded_env_u32(const char* key, uint32_t fallback, uint32_t min_value, uint32_t max_value) {
@@ -1885,16 +1901,36 @@ static BenchResult bench_memory_request_status(uint64_t iters) {
 
 static void print_memory_benchmarks(uint64_t iters) {
     if (!env_enabled(kBenchMemorySweepEnv)) {
-        print_result(bench_memory_add_batch(iters), clock_info().name);
-        print_result(bench_memory_graph_add_batch(iters), clock_info().name);
-        print_result(bench_memory_flat_search_top1(iters), clock_info().name);
-        print_result(bench_memory_flat_search(iters), clock_info().name);
-        print_result(bench_memory_graph_top1(iters), clock_info().name);
-        print_result(bench_memory_graph_search(iters), clock_info().name);
-        print_result(bench_memory_graph_recall(iters), clock_info().name);
-        print_result(bench_memory_graph_recall_search(iters), clock_info().name);
-        print_result(bench_memory_cursor_fetch(iters), clock_info().name);
-        print_result(bench_memory_request_status(iters), clock_info().name);
+        if (memory_case_enabled(kBenchMemoryCaseAddBatch)) {
+            print_result(bench_memory_add_batch(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphAddBatch)) {
+            print_result(bench_memory_graph_add_batch(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseFlatSearchTop1)) {
+            print_result(bench_memory_flat_search_top1(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseFlatSearch)) {
+            print_result(bench_memory_flat_search(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphTop1)) {
+            print_result(bench_memory_graph_top1(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphSearch)) {
+            print_result(bench_memory_graph_search(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphRecall)) {
+            print_result(bench_memory_graph_recall(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphRecallSearch)) {
+            print_result(bench_memory_graph_recall_search(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseCursorBeginFetch)) {
+            print_result(bench_memory_cursor_fetch(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseMemoryStatus)) {
+            print_result(bench_memory_request_status(iters), clock_info().name);
+        }
         return;
     }
 
@@ -2591,6 +2627,8 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
                 std::getenv(kBenchMemoryMetricEnv) ? std::getenv(kBenchMemoryMetricEnv) : kBenchMemoryMetricCosine);
     std::printf("  ASTRAL_BENCH_MEMORY_STORAGE=%s\n",
                 std::getenv(kBenchMemoryStorageEnv) ? std::getenv(kBenchMemoryStorageEnv) : kBenchMemoryStorageF32);
+    std::printf("  ASTRAL_BENCH_MEMORY_CASE=%s\n",
+                std::getenv(kBenchMemoryCaseEnv) ? std::getenv(kBenchMemoryCaseEnv) : "");
     std::printf("  ASTRAL_BENCH_MEMORY_SWEEP=%s\n",
                 std::getenv(kBenchMemorySweepEnv) ? std::getenv(kBenchMemorySweepEnv) : "");
     std::printf("  ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=%u\n", memory_graph_neighbors());
