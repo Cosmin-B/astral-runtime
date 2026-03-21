@@ -18,8 +18,9 @@ Options:
   --dims <list>         Comma-separated dimensions (default: 128,384,768)
   --capacities <list>   Comma-separated capacities (default: 10000)
   --metrics <list>      Comma-separated metrics: cosine,dot,l2 (default: cosine,dot,l2)
+  --case <name>         One ASTRAL_BENCH_MEMORY_CASE value, such as graph_recall_search
   --graph-search <N>    Graph search budget (default: 64)
-  --graph-neighbors <N> Graph neighbor budget (default: 16)
+  --graph-neighbors <N> Graph neighbor budget (default: 32)
   --recall-queries <N>  Graph recall queries (default: 32)
   --help                Show help
 
@@ -35,8 +36,9 @@ iters="10"
 dims="128,384,768"
 capacities="10000"
 metrics="cosine,dot,l2"
+memory_case=""
 graph_search="64"
-graph_neighbors="16"
+graph_neighbors="32"
 recall_queries="32"
 
 while [[ $# -gt 0 ]]; do
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --dims) dims="${2:-}"; shift 2 ;;
     --capacities) capacities="${2:-}"; shift 2 ;;
     --metrics) metrics="${2:-}"; shift 2 ;;
+    --case) memory_case="${2:-}"; shift 2 ;;
     --graph-search) graph_search="${2:-}"; shift 2 ;;
     --graph-neighbors) graph_neighbors="${2:-}"; shift 2 ;;
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
@@ -92,6 +95,7 @@ mkdir -p "$(dirname "${out_file}")"
   echo "# dims: ${dims}"
   echo "# capacities: ${capacities}"
   echo "# metrics: ${metrics}"
+  echo "# case: ${memory_case}"
   echo "# graph_search: ${graph_search}"
   echo "# graph_neighbors: ${graph_neighbors}"
   echo "# recall_queries: ${recall_queries}"
@@ -111,6 +115,7 @@ for metric in "${metric_values[@]}"; do
       ASTRAL_BENCH_MEMORY_ONLY=1 \
       ASTRAL_BENCH_FEATURE_ITERS="${iters}" \
       ASTRAL_BENCH_MEMORY_METRIC="${metric}" \
+      ASTRAL_BENCH_MEMORY_CASE="${memory_case}" \
       ASTRAL_BENCH_MEMORY_DIM="${dim}" \
       ASTRAL_BENCH_MEMORY_CAPACITY="${capacity}" \
       ASTRAL_BENCH_MEMORY_GRAPH_SEARCH="${graph_search}" \
