@@ -181,6 +181,41 @@ namespace Astral.Runtime.Tests
             return root + "/" + relativePath;
         }
 
+        private static AstralNative.AstralRequestStatus NewRequestStatus(
+            AstralNative.AstralRequestState state)
+        {
+            return new AstralNative.AstralRequestStatus
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralRequestStatus>(),
+                kind = AstralNative.AstralRequestKind.Session,
+                state = state,
+                flags = AstralNative.AstralRequestFlags.None,
+                result = AstralNative.ASTRAL_OK
+            };
+        }
+
+        private static void AssertRequestState(
+            AstralNative.AstralRequestState state,
+            bool queued,
+            bool running,
+            bool completed,
+            bool canceled,
+            bool failed,
+            bool active,
+            bool terminal)
+        {
+            var status = NewRequestStatus(state);
+            Assert.AreEqual(queued, AstralRequest.IsQueued(status));
+            Assert.AreEqual(running, AstralRequest.IsRunning(status));
+            Assert.AreEqual(completed, AstralRequest.IsCompleted(status));
+            Assert.AreEqual(canceled, AstralRequest.IsCanceled(status));
+            Assert.AreEqual(failed, AstralRequest.IsFailed(status));
+            Assert.AreEqual(active, AstralRequest.IsActive(status));
+            Assert.AreEqual(terminal, AstralRequest.IsTerminal(status));
+            Assert.False(AstralRequest.HasTicket(status));
+            Assert.False(AstralRequest.IsStream(status));
+        }
+
         [Test]
         public void Abi_Handle_ZeroIsInvalid()
         {
@@ -262,6 +297,72 @@ namespace Astral.Runtime.Tests
             status.result = AstralNative.ASTRAL_E_CANCELED;
             Assert.True(AstralRequest.IsCanceled(status));
             Assert.True(AstralRequest.IsTerminal(status));
+        }
+
+        [Test]
+        public void RequestLifecycle_StatusHelpers_CoverAllNativeStates()
+        {
+            AssertRequestState(
+                AstralNative.AstralRequestState.Invalid,
+                queued: false,
+                running: false,
+                completed: false,
+                canceled: false,
+                failed: false,
+                active: false,
+                terminal: false);
+            AssertRequestState(
+                AstralNative.AstralRequestState.Queued,
+                queued: true,
+                running: false,
+                completed: false,
+                canceled: false,
+                failed: false,
+                active: true,
+                terminal: false);
+            AssertRequestState(
+                AstralNative.AstralRequestState.Running,
+                queued: false,
+                running: true,
+                completed: false,
+                canceled: false,
+                failed: false,
+                active: true,
+                terminal: false);
+            AssertRequestState(
+                AstralNative.AstralRequestState.Completed,
+                queued: false,
+                running: false,
+                completed: true,
+                canceled: false,
+                failed: false,
+                active: false,
+                terminal: true);
+            AssertRequestState(
+                AstralNative.AstralRequestState.Canceled,
+                queued: false,
+                running: false,
+                completed: false,
+                canceled: true,
+                failed: false,
+                active: false,
+                terminal: true);
+            AssertRequestState(
+                AstralNative.AstralRequestState.Failed,
+                queued: false,
+                running: false,
+                completed: false,
+                canceled: false,
+                failed: true,
+                active: false,
+                terminal: true);
+
+            var status = NewRequestStatus(AstralNative.AstralRequestState.Completed);
+            status.flags = AstralNative.AstralRequestFlags.Ticket | AstralNative.AstralRequestFlags.Stream;
+            status.result = AstralNative.ASTRAL_E_TIMEOUT;
+            Assert.True(AstralRequest.HasTicket(status));
+            Assert.True(AstralRequest.IsStream(status));
+            Assert.False(AstralRequest.IsSuccessful(status));
         }
 
         [Test]
