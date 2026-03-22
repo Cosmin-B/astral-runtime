@@ -2,8 +2,9 @@
 
 This page describes the Unreal plugin that lives in
 `plugins/unreal/AstralRT`. It is a current integration guide, not a release
-sign-off. Real UE 5.7 container runs and UE 5.4+ compatibility editor runs are
-still required before the plugin can be called production-ready.
+sign-off. UE 5.7 Linux container and packaged-sample runs have current local
+evidence; UE 5.4, 5.5, and 5.6 compatibility editor runs still need dedicated
+validation before claiming that older-engine range.
 
 For the UE 5.7 container path, use
 [`UNREAL_57_QUICKSTART.md`](UNREAL_57_QUICKSTART.md).
