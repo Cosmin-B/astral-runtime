@@ -5,9 +5,10 @@ the production target. It builds the native Astral runtime, stages the
 ThirdParty files into the plugin, and runs the same Automation entrypoint used
 by CI.
 
-Real release sign-off still requires access to Epic's UE images or installed
-editors. The local native build proves the plugin package is current; it does
-not replace a real UnrealEditor run.
+Real UE 5.7 validation requires access to Epic's UE image or an installed
+editor. The local native build proves the plugin package is current; use the
+container or editor lane below when you need UnrealEditor evidence. UE 5.4,
+5.5, and 5.6 compatibility still require their own editor runs.
 
 ## Prerequisites
 
@@ -239,8 +240,8 @@ UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
   ./scripts/run_unreal_compatibility_matrix.sh
 ```
 
-The matrix is required release evidence for UE 5.4+ support. Do not mark Unreal
-support production-ready from the native package build alone.
+The matrix is required evidence for UE 5.4+ support. Do not claim that older
+engine range from the native package build alone.
 
 ## Evidence To Keep
 
