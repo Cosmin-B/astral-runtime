@@ -4,9 +4,9 @@ Unity bindings and package layout for Astral Runtime. The package exposes native
 runtime initialization, model/session handles, streaming reads, embeddings, and
 mock media tests through the public C ABI.
 
-Current status: the package has native packaging and EditMode test tooling, but
-real Unity Editor runs with platform binaries are still required before release
-sign-off.
+Current status: the package has native packaging, EditMode test tooling, GameCI
+import/compile evidence, and Linux native plugin preload evidence. Licensed
+EditMode execution and player builds still need dedicated Unity runner evidence.
 
 ## Features
 
