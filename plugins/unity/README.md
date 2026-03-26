@@ -422,22 +422,23 @@ var session = AstralSession.Create(model, config);
 
 | Platform | Arch | Status | Notes |
 |----------|------|--------|-------|
-| Windows | x86_64 | Tested | Visual Studio 2022 |
-| Linux | x86_64 | Tested | GCC 11+ |
-| macOS | ARM64 | Tested | Apple Silicon (M1/M2) |
-| Android | ARM64 | Planned (v0.1.1) | API Level 21+ |
-| iOS | ARM64 | Tested | iOS 12.0+ |
+| Windows | x86_64 | Package layout | Player evidence pending |
+| Linux | x86_64 | Native preload evidence | Licensed EditMode execution pending |
+| macOS | ARM64 | Package layout | Editor/player evidence pending |
+| Android | ARM64 | Package layout | Device/player evidence pending |
+| iOS | ARM64 | Static-link binding | Device/player evidence pending |
 | WebGL | WASM | Planned | v0.3 |
 
 ## Performance
 
-Measured on Ryzen 7 5800X (desktop) and iPhone 13 Pro (mobile):
+Representative local CPU measurements should be captured with the native
+benchmark suite for the target model and platform. Unity player numbers are not
+release evidence until the corresponding Unity runner and native plugin artifact
+have been validated.
 
 | Model | Platform | Tokens/sec | First Token (ms) | Memory (MB) |
 |-------|----------|------------|------------------|-------------|
-| TinyLlama-1.1B-Q4_0 | Desktop | 45-60 | 150-200 | 800 |
-| TinyLlama-1.1B-Q4_0 | Mobile | 12-18 | 400-600 | 600 |
-| LLaMA-2-7B-Q4_K_M | Desktop | 18-25 | 300-400 | 4500 |
+| Target GGUF | Target runner | Measure locally | Measure locally | Measure locally |
 
 **Note**: Performance varies based on model size, quantization, and hardware.
 
