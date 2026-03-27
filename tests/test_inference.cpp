@@ -2509,6 +2509,13 @@ TEST(inference_memory_index_graph_mock) {
     ASSERT_EQ(results[0].key, kKeyA);
     ASSERT_EQ(results[1].key, kKeyB);
 
+    search.graph_search = 4;
+    err = astral_memory_search(index, &search, query, results, kTopK, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_GT(count, 0u);
+    ASSERT_EQ(results[0].key, kKeyA);
+    search.graph_search = 0;
+
     search.top_k = 1;
     err = astral_memory_search(index, &search, query, results, 1, &count);
     ASSERT_EQ(err, ASTRAL_OK);

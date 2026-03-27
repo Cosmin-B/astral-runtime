@@ -204,14 +204,16 @@ namespace Astral.Runtime
         public static AstralNative.AstralMemorySearchDesc SearchDesc(
             uint topK = DefaultTopK,
             uint groupId = DefaultSearchGroupId,
-            uint flags = DefaultSearchFlags)
+            uint flags = DefaultSearchFlags,
+            uint graphSearch = 0)
         {
             return new AstralNative.AstralMemorySearchDesc
             {
                 size = (uint)Marshal.SizeOf<AstralNative.AstralMemorySearchDesc>(),
                 top_k = topK,
                 group_id = groupId,
-                flags = flags
+                flags = flags,
+                graph_search = graphSearch
             };
         }
 
