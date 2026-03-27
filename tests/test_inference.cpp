@@ -2660,11 +2660,47 @@ TEST(inference_memory_index_q8_storage_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(results[0].key, kKeyA);
 
-    AstralMemoryIndexDesc invalid_graph_desc = desc;
-    invalid_graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
-    AstralHandle invalid = 0;
-    ASSERT_EQ(astral_memory_create(&invalid_graph_desc, &invalid), ASTRAL_E_INVALID);
+    AstralMemoryIndexDesc graph_desc = desc;
+    graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+    graph_desc.graph_neighbors = 3;
+    graph_desc.graph_search = 6;
+    AstralHandle graph = 0;
+    err = astral_memory_create(&graph_desc, &graph);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_add_batch(graph, records, vectors, kRecordCount);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_search(graph, &search, query, results, kTopK, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopK);
+    ASSERT_EQ(results[0].key, kKeyA);
 
+    stats = {};
+    stats.size = sizeof(AstralMemoryStats);
+    err = astral_memory_stats(graph, &stats);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(stats.index_kind, ASTRAL_MEMORY_INDEX_GRAPH);
+    ASSERT_EQ(stats.storage_kind, ASTRAL_MEMORY_STORAGE_Q8);
+    ASSERT_GT(stats.graph_bytes, 0ull);
+
+    err = astral_memory_save_size(graph, &save_bytes);
+    ASSERT_EQ(err, ASTRAL_OK);
+    blob.resize(static_cast<size_t>(save_bytes));
+    out_blob.data = reinterpret_cast<uint8_t*>(&blob[0]);
+    out_blob.len = static_cast<uint32_t>(blob.size());
+    err = astral_memory_save(graph, out_blob, &written);
+    ASSERT_EQ(err, ASTRAL_OK);
+    AstralSpanU8 graph_blob_span{};
+    graph_blob_span.data = reinterpret_cast<const uint8_t*>(blob.data());
+    graph_blob_span.len = static_cast<uint32_t>(blob.size());
+    AstralHandle loaded_graph = 0;
+    err = astral_memory_load(&graph_desc, graph_blob_span, &loaded_graph);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_search(loaded_graph, &search, query, results, kTopK, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(results[0].key, kKeyA);
+
+    astral_memory_destroy(loaded_graph);
+    astral_memory_destroy(graph);
     astral_memory_destroy(loaded);
     astral_memory_destroy(index);
 }
