@@ -12,12 +12,12 @@ Parity is not just “it runs”. For a given model + prompt + sampler config:
 - Feature coverage: every API surface works (streaming, logprobs, grammar, KV save/load, embeddings, slots).
 - Performance: stable throughput and latency without regressions vs CPU-only for CPU workloads.
 
-## Phase 1 — Parity Checklist (Must Work)
+## Correctness Checklist
 
 **Kernel modes / backend variants**
-- [ ] Default CUDA kernels (mmq auto / cuBLAS auto) pass all Phase 1 tests.
-- [ ] Forced cuBLAS (`GGML_CUDA_FORCE_CUBLAS=ON`) passes all Phase 1 tests.
-- [ ] Forced MMQ (`GGML_CUDA_FORCE_MMQ=ON`) passes all Phase 1 tests.
+- [ ] Default CUDA kernels (mmq auto / cuBLAS auto) pass the CUDA parity suite.
+- [ ] Forced cuBLAS (`GGML_CUDA_FORCE_CUBLAS=ON`) passes the CUDA parity suite.
+- [ ] Forced MMQ (`GGML_CUDA_FORCE_MMQ=ON`) passes the CUDA parity suite.
   - Rationale: ggml-cuda selects between custom MMQ kernels and cuBLAS depending on GPU/quant; we treat both as first-class supported modes and test them separately.
   - Strategy: see `docs/CUDA_KERNEL_STRATEGY.md`.
 
@@ -69,7 +69,7 @@ ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity_m
 **Slots / executor**
 - [ ] Slot selection works; multi-slot scheduling does not deadlock and is callback-safe.
 
-## Phase 2 — Performance Checklist (Must Be Fast)
+## Performance Checklist
 
 - [ ] TTFT and tok/s benchmarks for representative model tiers (small, medium).
 - [ ] No pathological GPU/CPU synchronization in the decode loop.
