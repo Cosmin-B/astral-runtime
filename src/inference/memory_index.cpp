@@ -102,9 +102,7 @@ inline bool storage_kind_valid(AstralMemoryStorageKind kind) {
 inline bool desc_valid(const AstralMemoryIndexDesc* desc) {
   return desc != nullptr && desc->size == sizeof(AstralMemoryIndexDesc) && desc->dim != 0 &&
          desc->dim <= kMaxDim && desc->capacity != 0 && index_kind_valid(desc->index_kind) &&
-         metric_valid(desc->metric) && storage_kind_valid(desc->storage_kind) &&
-         (desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32 ||
-          desc->index_kind == ASTRAL_MEMORY_INDEX_FLAT);
+         metric_valid(desc->metric) && storage_kind_valid(desc->storage_kind);
 }
 
 inline uint32_t graph_neighbors_from_desc(const AstralMemoryIndexDesc* desc) {
@@ -376,6 +374,25 @@ float dot_q8_f32(const int8_t* a, const float* b, uint32_t dim) {
 #endif
 }
 
+float dot_q8_q8(const int8_t* a, const int8_t* b, uint32_t dim) {
+  int32_t sum0 = 0;
+  int32_t sum1 = 0;
+  int32_t sum2 = 0;
+  int32_t sum3 = 0;
+  uint32_t i = 0;
+  for (; i + 4u <= dim; i += 4u) {
+    sum0 += static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
+    sum1 += static_cast<int32_t>(a[i + 1u]) * static_cast<int32_t>(b[i + 1u]);
+    sum2 += static_cast<int32_t>(a[i + 2u]) * static_cast<int32_t>(b[i + 2u]);
+    sum3 += static_cast<int32_t>(a[i + 3u]) * static_cast<int32_t>(b[i + 3u]);
+  }
+  int32_t sum = (sum0 + sum1) + (sum2 + sum3);
+  for (; i < dim; ++i) {
+    sum += static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
+  }
+  return static_cast<float>(sum);
+}
+
 float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim) {
   float sum0 = 0.0f;
   float sum1 = 0.0f;
@@ -395,6 +412,34 @@ float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim
   float sum = (sum0 + sum1) + (sum2 + sum3);
   for (; i < dim; ++i) {
     const float d = static_cast<float>(a[i]) * scale - b[i];
+    sum += d * d;
+  }
+  return -sum;
+}
+
+float l2_score_q8_q8(const int8_t* a, float a_scale, const int8_t* b, float b_scale,
+                     uint32_t dim) {
+  float sum0 = 0.0f;
+  float sum1 = 0.0f;
+  float sum2 = 0.0f;
+  float sum3 = 0.0f;
+  uint32_t i = 0;
+  for (; i + 4u <= dim; i += 4u) {
+    const float d0 = static_cast<float>(a[i]) * a_scale - static_cast<float>(b[i]) * b_scale;
+    const float d1 =
+        static_cast<float>(a[i + 1u]) * a_scale - static_cast<float>(b[i + 1u]) * b_scale;
+    const float d2 =
+        static_cast<float>(a[i + 2u]) * a_scale - static_cast<float>(b[i + 2u]) * b_scale;
+    const float d3 =
+        static_cast<float>(a[i + 3u]) * a_scale - static_cast<float>(b[i + 3u]) * b_scale;
+    sum0 += d0 * d0;
+    sum1 += d1 * d1;
+    sum2 += d2 * d2;
+    sum3 += d3 * d3;
+  }
+  float sum = (sum0 + sum1) + (sum2 + sum3);
+  for (; i < dim; ++i) {
+    const float d = static_cast<float>(a[i]) * a_scale - static_cast<float>(b[i]) * b_scale;
     sum += d * d;
   }
   return -sum;
@@ -712,6 +757,20 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
 }
 
 inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
+  if (q8_storage(index)) {
+    const int8_t* va = q8_vector_at(index, a);
+    const int8_t* vb = q8_vector_at(index, b);
+    const float scale_a = index->q8_scales[a];
+    const float scale_b = index->q8_scales[b];
+    if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b * index->slots[a].score_scale *
+             index->slots[b].score_scale;
+    }
+    if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
+      return l2_score_q8_q8(va, scale_a, vb, scale_b, index->dim);
+    }
+    return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b;
+  }
   const float* va = vector_at(index, a);
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
     return dot_f32(va, vector_at(index, b), index->dim) * index->slots[a].score_scale *

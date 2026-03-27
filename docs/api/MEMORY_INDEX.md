@@ -51,14 +51,15 @@ engine objects for the selected keys.
   expansion, and keeps a few deterministic spread links at the base layer to
   avoid purely local neighborhoods.
 
-`AstralMemoryIndexDesc::storage_kind` selects flat-index vector storage:
+`AstralMemoryIndexDesc::storage_kind` selects vector storage:
 
 - `ASTRAL_MEMORY_STORAGE_F32` is the default exact float32 storage.
 - `ASTRAL_MEMORY_STORAGE_Q8` stores each vector as signed 8-bit values plus one
   per-vector scale. Add/load still accept float32 vectors, and save emits the
   existing float32 snapshot format. Q8 search is approximate and is intended for
-  memory-footprint-sensitive flat retrieval; graph indexes currently require
-  float32 storage.
+  memory-footprint-sensitive retrieval. Graph q8 uses q8 pair scoring during
+  construction and q8-vs-f32 scoring for queries, so measure recall against the
+  flat f32 oracle before using it for retrieval.
 
 Choose the flat index when exact ranking, filtered search, or small-to-medium
 corpora matter more than avoiding a full scan. Choose the graph index only after
@@ -109,6 +110,7 @@ the target corpus and latency budget justify the extra tuning work.
 | Flat f32 | Exact ranking matters, filtered search is common, or the corpus is small enough for full scans. | `flat_search_top1`, `flat_search`, memory bandwidth counters, and `astral_memory_stats()`. |
 | Flat q8 | The corpus is memory-bandwidth-bound and approximate scores are acceptable. | Recall versus flat f32 on the target vectors, q8 ingest cost, `flat_search_top1`, and `vector_bytes`. |
 | Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, and the chosen `graph_neighbors`/`graph_search` pair. |
+| Graph q8 | Approximate graph search also needs lower vector footprint. | The graph f32 measurements above, plus q8 recall drop, graph build cost, and `graph_bytes`/`vector_bytes`. |
 
 Do not use the graph index for group-filtered retrieval unless the group is
 large enough to justify all-group search followed by application filtering.
@@ -233,6 +235,7 @@ Graph index:
 
 ```c
 desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+desc.storage_kind = ASTRAL_MEMORY_STORAGE_F32;
 desc.graph_neighbors = 32;
 desc.graph_search = 64;
 err = astral_memory_create(&desc, &index);
@@ -243,6 +246,16 @@ Reduced flat storage:
 ```c
 desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
 desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
+err = astral_memory_create(&desc, &index);
+```
+
+Reduced graph storage:
+
+```c
+desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
+desc.graph_neighbors = 32;
+desc.graph_search = 64;
 err = astral_memory_create(&desc, &index);
 ```
 
@@ -279,7 +292,7 @@ ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_B
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
-scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --out /tmp/astral-memory-graph.txt
+scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage q8 --out /tmp/astral-memory-graph-q8.txt
 ```
 
 Native tests include `inference_memory_index_graph_mock` for graph search,
