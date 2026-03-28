@@ -174,7 +174,8 @@ public:
         int32 TopK,
         int32 GroupId,
         TArray<FAstralMemorySearchResult>& OutResults,
-        int32& OutErrorCode
+        int32& OutErrorCode,
+        int32 GraphSearch = 0
     );
 
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
@@ -183,7 +184,8 @@ public:
         const TArray<float>& Query,
         int32 TopK,
         int32 GroupId,
-        TArray<FAstralMemorySearchResult>& OutResults
+        TArray<FAstralMemorySearchResult>& OutResults,
+        int32 GraphSearch = 0
     );
 
     /** Start an incremental memory search. Release it with EndMemorySearch. */
@@ -194,7 +196,8 @@ public:
         int32 TopK,
         int32 GroupId,
         int64& OutCursorHandle,
-        int32& OutErrorCode
+        int32& OutErrorCode,
+        int32 GraphSearch = 0
     );
 
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
@@ -202,7 +205,8 @@ public:
         int64 MemoryHandle,
         const TArray<float>& Query,
         int32 TopK,
-        int32 GroupId
+        int32 GroupId,
+        int32 GraphSearch = 0
     );
 
     /** Fetch the next batch from an incremental memory search. */
