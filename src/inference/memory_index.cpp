@@ -563,6 +563,14 @@ inline bool q8_storage(const MemoryIndex* index) {
   return index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8;
 }
 
+inline uint32_t graph_search_for_query(const MemoryIndex* index, const AstralMemorySearchDesc* desc) {
+  uint32_t requested = desc->graph_search != 0 ? desc->graph_search : index->graph_search_capacity;
+  if (requested < kGraphMinSearch) {
+    requested = kGraphMinSearch;
+  }
+  return requested < index->graph_search_capacity ? requested : index->graph_search_capacity;
+}
+
 inline uint32_t active_slot_at(const MemoryIndex* index, uint32_t active_pos) {
   return index->dense_active != 0 ? active_pos : index->active_slots[active_pos];
 }
@@ -785,7 +793,8 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
 void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                         AstralMemorySearchResult* out_results, uint32_t* out_count);
 void graph_begin_visit(MemoryIndex* index);
-void graph_add_candidate(MemoryIndex* index, uint32_t slot, float score, uint32_t* candidate_count);
+void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, float score,
+                         uint32_t* candidate_count);
 bool graph_pop_candidate(MemoryIndex* index, uint32_t* candidate_count, uint32_t* out_slot,
                          float* out_score);
 inline void graph_mark_visited(MemoryIndex* index, uint32_t slot);
@@ -885,14 +894,15 @@ void insert_graph_build_candidate(MemoryIndex* index, uint32_t* filled, uint32_t
   index->graph_scratch_slots[pos] = slot;
 }
 
-bool insert_graph_top_candidate(MemoryIndex* index, uint32_t* filled, uint32_t slot, float score) {
+bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t* filled,
+                                uint32_t slot, float score) {
   uint32_t pos = *filled;
-  if (pos < index->graph_search_capacity) {
+  if (pos < capacity) {
     ++(*filled);
-  } else if (score <= index->graph_scratch_scores[index->graph_search_capacity - 1u]) {
+  } else if (score <= index->graph_scratch_scores[capacity - 1u]) {
     return false;
   } else {
-    pos = index->graph_search_capacity - 1u;
+    pos = capacity - 1u;
   }
 
   while (pos > 0 && score > index->graph_scratch_scores[pos - 1u]) {
@@ -927,7 +937,8 @@ void graph_collect_neighbors_bounded(MemoryIndex* index, uint32_t slot, uint32_t
   uint32_t candidate_count = 0;
   uint32_t expanded_count = 0;
   graph_mark_visited(index, entry);
-  graph_add_candidate(index, entry, score_pair(index, slot, entry), &candidate_count);
+  graph_add_candidate(index, index->graph_search_capacity, entry, score_pair(index, slot, entry),
+                      &candidate_count);
 
   while (candidate_count != 0 && expanded_count < index->graph_search_capacity) {
     uint32_t current = kU32Max;
@@ -948,7 +959,8 @@ void graph_collect_neighbors_bounded(MemoryIndex* index, uint32_t slot, uint32_t
         continue;
       }
       graph_mark_visited(index, neighbor);
-      graph_add_candidate(index, neighbor, score_pair(index, slot, neighbor), &candidate_count);
+      graph_add_candidate(index, index->graph_search_capacity, neighbor,
+                          score_pair(index, slot, neighbor), &candidate_count);
     }
   }
 }
@@ -1094,10 +1106,10 @@ void graph_begin_visit(MemoryIndex* index) {
   }
 }
 
-void graph_add_candidate(MemoryIndex* index, uint32_t slot, float score,
+void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, float score,
                          uint32_t* candidate_count) {
   uint32_t count = *candidate_count;
-  if (count < index->graph_search_capacity) {
+  if (count < capacity) {
     uint32_t pos = count;
     while (pos > 0) {
       const uint32_t parent = (pos - 1u) >> 1u;
@@ -1188,6 +1200,7 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
   const float query_scale =
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 1.0f;
   graph_begin_visit(index);
+  const uint32_t search_capacity = graph_search_for_query(index, desc);
 
   uint32_t filled = 0;
   uint32_t candidate_count = 0;
@@ -1200,20 +1213,19 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
           : index->graph_entry_slot;
   graph_mark_visited(index, entry);
   const float entry_score = score_slot(index, query, entry, query_scale);
-  insert_graph_top_candidate(index, &top_count, entry, entry_score);
-  graph_add_candidate(index, entry, entry_score, &candidate_count);
+  insert_graph_top_candidate(index, search_capacity, &top_count, entry, entry_score);
+  graph_add_candidate(index, search_capacity, entry, entry_score, &candidate_count);
   AstralMemorySearchResult entry_result{};
   fill_result(&entry_result, index->slots[entry], entry_score);
   insert_result(out_results, desc->top_k, &filled, entry_result);
 
-  while (candidate_count != 0 && expanded_count < index->graph_search_capacity) {
+  while (candidate_count != 0 && expanded_count < search_capacity) {
     uint32_t slot = kU32Max;
     float slot_score = kWorstScore;
     if (!graph_pop_candidate(index, &candidate_count, &slot, &slot_score)) {
       break;
     }
-    if (top_count == index->graph_search_capacity &&
-        slot_score < index->graph_scratch_scores[index->graph_search_capacity - 1u]) {
+    if (top_count == search_capacity && slot_score < index->graph_scratch_scores[search_capacity - 1u]) {
       break;
     }
 
@@ -1228,8 +1240,8 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
       graph_mark_visited(index, neighbor);
       const MemorySlot& s = index->slots[neighbor];
       const float score = score_slot(index, query, neighbor, query_scale);
-      if (insert_graph_top_candidate(index, &top_count, neighbor, score)) {
-        graph_add_candidate(index, neighbor, score, &candidate_count);
+      if (insert_graph_top_candidate(index, search_capacity, &top_count, neighbor, score)) {
+        graph_add_candidate(index, search_capacity, neighbor, score, &candidate_count);
       }
       if (filled == desc->top_k &&
           !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {

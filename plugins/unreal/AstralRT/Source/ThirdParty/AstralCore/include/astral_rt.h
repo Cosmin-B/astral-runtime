@@ -288,6 +288,7 @@ typedef struct AstralMemorySearchDesc {
     uint32_t top_k;
     uint32_t group_id;
     uint32_t flags;
+    uint32_t graph_search;
 } AstralMemorySearchDesc;
 
 typedef struct AstralMemorySearchResult {
@@ -338,7 +339,7 @@ typedef struct AstralMemoryStats {
   ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 32, "AstralMemoryIndexDesc must be 32 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryRecord) == 32, "AstralMemoryRecord must be 32 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 16, "AstralMemorySearchDesc must be 16 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 20, "AstralMemorySearchDesc must be 20 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32, "AstralMemorySearchResult must be 32 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 80, "AstralMemoryStats must be 80 bytes on 64-bit");
 #else
@@ -353,7 +354,7 @@ typedef struct AstralMemoryStats {
   ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 32, "AstralMemoryIndexDesc must be 32 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryRecord) == 32, "AstralMemoryRecord must be 32 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 16, "AstralMemorySearchDesc must be 16 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 20, "AstralMemorySearchDesc must be 20 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32, "AstralMemorySearchResult must be 32 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 80, "AstralMemoryStats must be 80 bytes on 32-bit");
 #endif

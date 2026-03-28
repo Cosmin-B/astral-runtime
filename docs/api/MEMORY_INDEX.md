@@ -98,6 +98,10 @@ by `astral_memory_save_size()`.
 
 Use `ASTRAL_MEMORY_GROUP_ANY` to search all groups, or set
 `AstralMemorySearchDesc::group_id` to restrict results.
+For graph indexes, `AstralMemorySearchDesc::graph_search` can lower the search
+budget for one query without rebuilding the index. Leave it zero to use the
+index default. The value is clamped to the index allocation, so build the graph
+with the largest budget you plan to test.
 
 ## Search Selection
 
@@ -289,6 +293,7 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_ME
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
 perf stat -e cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses,dTLB-loads,dTLB-load-misses -- env ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_SWEEP=1 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search_sweep ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=512 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
@@ -303,7 +308,8 @@ Expected markers include `features.memory add_batch`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
 `features.memory graph_top1`, `features.memory graph_search`,
 `features.memory graph_recall`, `features.memory graph_recall_search`, and
-`features.memory cursor_begin_fetch`.
+`features.memory cursor_begin_fetch`. The focused graph recall sweep case emits
+`features.memory graph_recall_s<N>` markers for each per-search budget.
 Sweep runs also include
 `features.memory top1_100`, `features.memory top1_1k`,
 `features.memory top1_10k`, and `features.memory top1_100k`.

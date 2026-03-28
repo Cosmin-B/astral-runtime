@@ -1011,6 +1011,7 @@ namespace Astral.Runtime
             public uint top_k;
             public uint group_id;
             public uint flags;
+            public uint graph_search;
         }
 
         [StructLayout(LayoutKind.Sequential)]
