@@ -1221,10 +1221,11 @@ bool UAstralBlueprintLibrary::SearchMemoryIndex(
     int32 TopK,
     int32 GroupId,
     TArray<FAstralMemorySearchResult>& OutResults,
-    int32& OutErrorCode
+    int32& OutErrorCode,
+    int32 GraphSearch
 )
 {
-    const FAstralOperationResult Result = SearchMemoryIndexResult(MemoryHandle, Query, TopK, GroupId, OutResults);
+    const FAstralOperationResult Result = SearchMemoryIndexResult(MemoryHandle, Query, TopK, GroupId, OutResults, GraphSearch);
     OutErrorCode = Result.ErrorCode;
     return Result.bSuccess;
 }
@@ -1234,7 +1235,8 @@ FAstralOperationResult UAstralBlueprintLibrary::SearchMemoryIndexResult(
     const TArray<float>& Query,
     int32 TopK,
     int32 GroupId,
-    TArray<FAstralMemorySearchResult>& OutResults
+    TArray<FAstralMemorySearchResult>& OutResults,
+    int32 GraphSearch
 )
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SearchMemoryIndex);
@@ -1249,6 +1251,7 @@ FAstralOperationResult UAstralBlueprintLibrary::SearchMemoryIndexResult(
     NativeSearch.size = sizeof(AstralMemorySearchDesc);
     NativeSearch.top_k = static_cast<uint32_t>(TopK);
     NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
+    NativeSearch.graph_search = GraphSearch > 0 ? static_cast<uint32_t>(GraphSearch) : 0u;
 
     TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
     NativeResults.SetNumZeroed(TopK);
@@ -1280,10 +1283,11 @@ bool UAstralBlueprintLibrary::BeginMemorySearch(
     int32 TopK,
     int32 GroupId,
     int64& OutCursorHandle,
-    int32& OutErrorCode
+    int32& OutErrorCode,
+    int32 GraphSearch
 )
 {
-    const FAstralOperationResult Result = BeginMemorySearchResult(MemoryHandle, Query, TopK, GroupId);
+    const FAstralOperationResult Result = BeginMemorySearchResult(MemoryHandle, Query, TopK, GroupId, GraphSearch);
     OutCursorHandle = Result.Handle;
     OutErrorCode = Result.ErrorCode;
     return Result.bSuccess;
@@ -1293,7 +1297,8 @@ FAstralOperationResult UAstralBlueprintLibrary::BeginMemorySearchResult(
     int64 MemoryHandle,
     const TArray<float>& Query,
     int32 TopK,
-    int32 GroupId
+    int32 GroupId,
+    int32 GraphSearch
 )
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_BeginMemorySearch);
@@ -1307,6 +1312,7 @@ FAstralOperationResult UAstralBlueprintLibrary::BeginMemorySearchResult(
     NativeSearch.size = sizeof(AstralMemorySearchDesc);
     NativeSearch.top_k = static_cast<uint32_t>(TopK);
     NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
+    NativeSearch.graph_search = GraphSearch > 0 ? static_cast<uint32_t>(GraphSearch) : 0u;
 
     AstralHandle Cursor = 0;
     const AstralErr Err = astral_memory_search_begin(
