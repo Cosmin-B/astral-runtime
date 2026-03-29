@@ -764,6 +764,20 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
   return l2_score_f32(query, vector_at(index, slot), index->dim);
 }
 
+inline float score_slot_q8_query(MemoryIndex* index, const int8_t* query, float query_q8_scale,
+                                 float query_scale, uint32_t slot) {
+  const int8_t* q8 = q8_vector_at(index, slot);
+  const float scale = index->q8_scales[slot];
+  if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
+    return dot_q8_q8(q8, query, index->dim) * scale * query_q8_scale;
+  }
+  if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+    return dot_q8_q8(q8, query, index->dim) * scale * query_q8_scale * query_scale *
+           index->slots[slot].score_scale;
+  }
+  return l2_score_q8_q8(q8, scale, query, query_q8_scale, index->dim);
+}
+
 inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
   if (q8_storage(index)) {
     const int8_t* va = q8_vector_at(index, a);
@@ -1019,6 +1033,35 @@ uint32_t graph_greedy_closest_query(MemoryIndex* index, const float* query, floa
   return closest;
 }
 
+uint32_t graph_greedy_closest_q8_query(MemoryIndex* index, const int8_t* query,
+                                       float query_q8_scale, float query_scale, uint32_t entry,
+                                       uint32_t begin_level, uint32_t end_level) {
+  uint32_t closest = entry;
+  float closest_score = score_slot_q8_query(index, query, query_q8_scale, query_scale, closest);
+  for (uint32_t level = begin_level; level > end_level; --level) {
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      const uint32_t* neighbors = graph_neighbors_at_level(index, closest, level);
+      const uint32_t neighbor_count = graph_neighbor_count_at_level(index, closest, level);
+      for (uint32_t i = 0; i < neighbor_count; ++i) {
+        const uint32_t candidate = neighbors[i];
+        if (index->slots[candidate].occupied == 0 || index->graph_levels[candidate] < level) {
+          continue;
+        }
+        const float score =
+            score_slot_q8_query(index, query, query_q8_scale, query_scale, candidate);
+        if (score > closest_score) {
+          closest = candidate;
+          closest_score = score;
+          changed = true;
+        }
+      }
+    }
+  }
+  return closest;
+}
+
 void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
   if (!graph_enabled(index) || index->count <= 1u) {
     index->graph_entry_slot = slot;
@@ -1199,6 +1242,12 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
 
   const float query_scale =
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 1.0f;
+  int8_t q8_query[kMaxDim];
+  float q8_query_scale = 1.0f;
+  const bool use_q8_query = q8_storage(index) && desc->top_k == kTopOne;
+  if (use_q8_query) {
+    quantize_q8_vector(q8_query, &q8_query_scale, query, index->dim);
+  }
   graph_begin_visit(index);
   const uint32_t search_capacity = graph_search_for_query(index, desc);
 
@@ -1208,11 +1257,18 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
   uint32_t expanded_count = 0;
   const uint32_t entry =
       index->graph_max_level != 0
-          ? graph_greedy_closest_query(index, query, query_scale, index->graph_entry_slot,
-                                       index->graph_max_level, 0)
+          ? (use_q8_query ? graph_greedy_closest_q8_query(index, q8_query, q8_query_scale,
+                                                          query_scale, index->graph_entry_slot,
+                                                          index->graph_max_level, 0)
+                          : graph_greedy_closest_query(index, query, query_scale,
+                                                       index->graph_entry_slot,
+                                                       index->graph_max_level, 0))
           : index->graph_entry_slot;
   graph_mark_visited(index, entry);
-  const float entry_score = score_slot(index, query, entry, query_scale);
+  const float entry_score = use_q8_query
+                                ? score_slot_q8_query(index, q8_query, q8_query_scale, query_scale,
+                                                      entry)
+                                : score_slot(index, query, entry, query_scale);
   insert_graph_top_candidate(index, search_capacity, &top_count, entry, entry_score);
   graph_add_candidate(index, search_capacity, entry, entry_score, &candidate_count);
   AstralMemorySearchResult entry_result{};
@@ -1239,7 +1295,10 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
       }
       graph_mark_visited(index, neighbor);
       const MemorySlot& s = index->slots[neighbor];
-      const float score = score_slot(index, query, neighbor, query_scale);
+      const float score = use_q8_query
+                              ? score_slot_q8_query(index, q8_query, q8_query_scale, query_scale,
+                                                    neighbor)
+                              : score_slot(index, query, neighbor, query_scale);
       if (insert_graph_top_candidate(index, search_capacity, &top_count, neighbor, score)) {
         graph_add_candidate(index, search_capacity, neighbor, score, &candidate_count);
       }
