@@ -163,6 +163,15 @@ inline float reduce_avx2_f32(__m256 acc) {
   sum = _mm_hadd_ps(sum, sum);
   return _mm_cvtss_f32(sum);
 }
+
+inline int32_t reduce_avx2_i32(__m256i acc) {
+  const __m128i lo = _mm256_castsi256_si128(acc);
+  const __m128i hi = _mm256_extracti128_si256(acc, 1);
+  __m128i sum = _mm_add_epi32(lo, hi);
+  sum = _mm_add_epi32(sum, _mm_srli_si128(sum, 8));
+  sum = _mm_add_epi32(sum, _mm_srli_si128(sum, 4));
+  return _mm_cvtsi128_si32(sum);
+}
 #endif
 
 float dot_f32(const float* a, const float* b, uint32_t dim) {
@@ -375,6 +384,24 @@ float dot_q8_f32(const int8_t* a, const float* b, uint32_t dim) {
 }
 
 float dot_q8_q8(const int8_t* a, const int8_t* b, uint32_t dim) {
+#if defined(__AVX2__)
+  __m256i acc = _mm256_setzero_si256();
+  const __m256i ones = _mm256_set1_epi16(1);
+  uint32_t i = 0;
+  for (; i + 16u <= dim; i += 16u) {
+    const __m128i av = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a + i));
+    const __m128i bv = _mm_loadu_si128(reinterpret_cast<const __m128i*>(b + i));
+    const __m256i a16 = _mm256_cvtepi8_epi16(av);
+    const __m256i b16 = _mm256_cvtepi8_epi16(bv);
+    const __m256i products = _mm256_mullo_epi16(a16, b16);
+    acc = _mm256_add_epi32(acc, _mm256_madd_epi16(products, ones));
+  }
+  int32_t sum = reduce_avx2_i32(acc);
+  for (; i < dim; ++i) {
+    sum += static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
+  }
+  return static_cast<float>(sum);
+#else
   int32_t sum0 = 0;
   int32_t sum1 = 0;
   int32_t sum2 = 0;
@@ -391,6 +418,7 @@ float dot_q8_q8(const int8_t* a, const int8_t* b, uint32_t dim) {
     sum += static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
   }
   return static_cast<float>(sum);
+#endif
 }
 
 float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim) {
