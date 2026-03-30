@@ -350,15 +350,26 @@ float l2_score_f32(const float* a, const float* b, uint32_t dim) {
 
 float dot_q8_f32(const int8_t* a, const float* b, uint32_t dim) {
 #if defined(__AVX2__)
-  __m256 acc = _mm256_setzero_ps();
+  __m256 acc0 = _mm256_setzero_ps();
+  __m256 acc1 = _mm256_setzero_ps();
   uint32_t i = 0;
-  for (; i + kAvx2F32Lanes <= dim; i += kAvx2F32Lanes) {
-    const __m128i bytes = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(a + i));
-    const __m256 av = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(bytes));
-    const __m256 bv = _mm256_loadu_ps(b + i);
-    acc = _mm256_add_ps(acc, _mm256_mul_ps(av, bv));
+  for (; i + 16u <= dim; i += 16u) {
+    const __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a + i));
+    const __m256 av0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(bytes));
+    const __m128i bytes_hi = _mm_srli_si128(bytes, 8);
+    const __m256 av1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(bytes_hi));
+    const __m256 bv0 = _mm256_loadu_ps(b + i);
+    const __m256 bv1 = _mm256_loadu_ps(b + i + kAvx2F32Lanes);
+#if defined(__FMA__)
+    acc0 = _mm256_fmadd_ps(av0, bv0, acc0);
+    acc1 = _mm256_fmadd_ps(av1, bv1, acc1);
+#else
+    acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(av0, bv0));
+    acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(av1, bv1));
+#endif
   }
-  float sum = reduce_avx2_f32(acc);
+  acc0 = _mm256_add_ps(acc0, acc1);
+  float sum = reduce_avx2_f32(acc0);
   for (; i < dim; ++i) {
     sum += static_cast<float>(a[i]) * b[i];
   }
