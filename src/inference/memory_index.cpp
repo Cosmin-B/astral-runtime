@@ -433,6 +433,34 @@ float dot_q8_q8(const int8_t* a, const int8_t* b, uint32_t dim) {
 }
 
 float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim) {
+#if defined(__AVX2__)
+  const __m256 scale_v = _mm256_set1_ps(scale);
+  __m256 acc0 = _mm256_setzero_ps();
+  __m256 acc1 = _mm256_setzero_ps();
+  uint32_t i = 0;
+  for (; i + 16u <= dim; i += 16u) {
+    const __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a + i));
+    const __m256 av0 = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(bytes)), scale_v);
+    const __m128i bytes_hi = _mm_srli_si128(bytes, 8);
+    const __m256 av1 = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(bytes_hi)), scale_v);
+    const __m256 d0 = _mm256_sub_ps(av0, _mm256_loadu_ps(b + i));
+    const __m256 d1 = _mm256_sub_ps(av1, _mm256_loadu_ps(b + i + kAvx2F32Lanes));
+#if defined(__FMA__)
+    acc0 = _mm256_fmadd_ps(d0, d0, acc0);
+    acc1 = _mm256_fmadd_ps(d1, d1, acc1);
+#else
+    acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
+    acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1, d1));
+#endif
+  }
+  acc0 = _mm256_add_ps(acc0, acc1);
+  float sum = reduce_avx2_f32(acc0);
+  for (; i < dim; ++i) {
+    const float d = static_cast<float>(a[i]) * scale - b[i];
+    sum += d * d;
+  }
+  return -sum;
+#else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
   float sum2 = 0.0f;
@@ -454,10 +482,10 @@ float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim
     sum += d * d;
   }
   return -sum;
+#endif
 }
 
-float l2_score_q8_q8(const int8_t* a, float a_scale, const int8_t* b, float b_scale,
-                     uint32_t dim) {
+float l2_score_q8_q8(const int8_t* a, float a_scale, const int8_t* b, float b_scale, uint32_t dim) {
   float sum0 = 0.0f;
   float sum1 = 0.0f;
   float sum2 = 0.0f;
@@ -602,7 +630,8 @@ inline bool q8_storage(const MemoryIndex* index) {
   return index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8;
 }
 
-inline uint32_t graph_search_for_query(const MemoryIndex* index, const AstralMemorySearchDesc* desc) {
+inline uint32_t graph_search_for_query(const MemoryIndex* index,
+                                       const AstralMemorySearchDesc* desc) {
   uint32_t requested = desc->graph_search != 0 ? desc->graph_search : index->graph_search_capacity;
   if (requested < kGraphMinSearch) {
     requested = kGraphMinSearch;
@@ -1296,18 +1325,16 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
   uint32_t expanded_count = 0;
   const uint32_t entry =
       index->graph_max_level != 0
-          ? (use_q8_query ? graph_greedy_closest_q8_query(index, q8_query, q8_query_scale,
-                                                          query_scale, index->graph_entry_slot,
-                                                          index->graph_max_level, 0)
-                          : graph_greedy_closest_query(index, query, query_scale,
-                                                       index->graph_entry_slot,
-                                                       index->graph_max_level, 0))
+          ? (use_q8_query
+                 ? graph_greedy_closest_q8_query(index, q8_query, q8_query_scale, query_scale,
+                                                 index->graph_entry_slot, index->graph_max_level, 0)
+                 : graph_greedy_closest_query(index, query, query_scale, index->graph_entry_slot,
+                                              index->graph_max_level, 0))
           : index->graph_entry_slot;
   graph_mark_visited(index, entry);
-  const float entry_score = use_q8_query
-                                ? score_slot_q8_query(index, q8_query, q8_query_scale, query_scale,
-                                                      entry)
-                                : score_slot(index, query, entry, query_scale);
+  const float entry_score =
+      use_q8_query ? score_slot_q8_query(index, q8_query, q8_query_scale, query_scale, entry)
+                   : score_slot(index, query, entry, query_scale);
   insert_graph_top_candidate(index, search_capacity, &top_count, entry, entry_score);
   graph_add_candidate(index, search_capacity, entry, entry_score, &candidate_count);
   AstralMemorySearchResult entry_result{};
@@ -1320,7 +1347,8 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
     if (!graph_pop_candidate(index, &candidate_count, &slot, &slot_score)) {
       break;
     }
-    if (top_count == search_capacity && slot_score < index->graph_scratch_scores[search_capacity - 1u]) {
+    if (top_count == search_capacity &&
+        slot_score < index->graph_scratch_scores[search_capacity - 1u]) {
       break;
     }
 
@@ -1334,10 +1362,9 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
       }
       graph_mark_visited(index, neighbor);
       const MemorySlot& s = index->slots[neighbor];
-      const float score = use_q8_query
-                              ? score_slot_q8_query(index, q8_query, q8_query_scale, query_scale,
-                                                    neighbor)
-                              : score_slot(index, query, neighbor, query_scale);
+      const float score =
+          use_q8_query ? score_slot_q8_query(index, q8_query, q8_query_scale, query_scale, neighbor)
+                       : score_slot(index, query, neighbor, query_scale);
       if (insert_graph_top_candidate(index, search_capacity, &top_count, neighbor, score)) {
         graph_add_candidate(index, search_capacity, neighbor, score, &candidate_count);
       }
@@ -1396,8 +1423,9 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
   *out_count = filled;
 }
 
-void memory_search_q8_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
-                           AstralMemorySearchResult* out_results, uint32_t* out_count) {
+void memory_search_q8_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                           const float* query, AstralMemorySearchResult* out_results,
+                           uint32_t* out_count) {
   const float query_scale =
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 0.0f;
   const MemorySlot* best_slot = nullptr;
@@ -1850,12 +1878,15 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->index_kind = desc->index_kind;
   index->storage_kind = desc->storage_kind;
   index->slots = core::runtime_alloc_array<MemorySlot>(desc->capacity);
-  index->vectors =
-      desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32 ? alloc_vector_storage(desc->capacity, desc->dim) : nullptr;
-  index->q8_vectors =
-      desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8 ? alloc_q8_vector_storage(desc->capacity, desc->dim) : nullptr;
-  index->q8_scales =
-      desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8 ? core::runtime_alloc_array<float>(desc->capacity) : nullptr;
+  index->vectors = desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32
+                       ? alloc_vector_storage(desc->capacity, desc->dim)
+                       : nullptr;
+  index->q8_vectors = desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8
+                          ? alloc_q8_vector_storage(desc->capacity, desc->dim)
+                          : nullptr;
+  index->q8_scales = desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8
+                         ? core::runtime_alloc_array<float>(desc->capacity)
+                         : nullptr;
   index->active_slots = core::runtime_alloc_array<uint32_t>(desc->capacity);
   index->key_table = core::runtime_alloc_array<uint32_t>(key_table_capacity);
   index->graph_neighbors = nullptr;
@@ -1913,7 +1944,8 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   std::memset(index->active_slots, 0, sizeof(uint32_t) * desc->capacity);
   std::memset(index->key_table, 0, sizeof(uint32_t) * key_table_capacity);
   if (desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8) {
-    std::memset(index->q8_vectors, 0, static_cast<size_t>(desc->capacity) * desc->dim * sizeof(int8_t));
+    std::memset(index->q8_vectors, 0,
+                static_cast<size_t>(desc->capacity) * desc->dim * sizeof(int8_t));
     std::memset(index->q8_scales, 0, sizeof(float) * desc->capacity);
   }
   if (graph_neighbor_capacity != 0) {
@@ -1963,10 +1995,9 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
   }
 
   const uint64_t vector_bytes =
-      q8_storage(index)
-          ? static_cast<uint64_t>(index->capacity) * index->dim * sizeof(int8_t) +
-                static_cast<uint64_t>(index->capacity) * sizeof(float)
-          : static_cast<uint64_t>(index->capacity) * index->dim * sizeof(float);
+      q8_storage(index) ? static_cast<uint64_t>(index->capacity) * index->dim * sizeof(int8_t) +
+                              static_cast<uint64_t>(index->capacity) * sizeof(float)
+                        : static_cast<uint64_t>(index->capacity) * index->dim * sizeof(float);
   const uint64_t metadata_bytes =
       sizeof(MemoryIndex) + static_cast<uint64_t>(index->capacity) * sizeof(MemorySlot) +
       static_cast<uint64_t>(index->capacity) * sizeof(uint32_t) +
@@ -1975,8 +2006,8 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
   if (graph_enabled(index)) {
     graph_bytes += static_cast<uint64_t>(index->capacity) * index->graph_level_capacity *
                    index->graph_neighbor_capacity * sizeof(uint32_t);
-    graph_bytes += static_cast<uint64_t>(index->capacity) * index->graph_level_capacity *
-                   sizeof(uint32_t);
+    graph_bytes +=
+        static_cast<uint64_t>(index->capacity) * index->graph_level_capacity * sizeof(uint32_t);
     graph_bytes += static_cast<uint64_t>(index->capacity) * sizeof(uint8_t);
     graph_bytes += static_cast<uint64_t>(index->graph_search_capacity) * sizeof(uint32_t);
     graph_bytes += static_cast<uint64_t>(index->graph_search_capacity) * sizeof(float);
