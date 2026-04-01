@@ -14,6 +14,7 @@ void memory_destroy(MemoryIndex* index);
 AstralErr memory_count(MemoryIndex* index, uint32_t* out_count);
 AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats);
 AstralErr memory_clear(MemoryIndex* index);
+AstralErr memory_get_record(MemoryIndex* index, uint64_t key, AstralMemoryRecord* out_record);
 AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records,
                            const float* vectors, uint32_t count);
 AstralErr memory_remove(MemoryIndex* index, uint64_t key);

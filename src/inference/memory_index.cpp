@@ -2090,6 +2090,21 @@ AstralErr memory_clear(MemoryIndex* index) {
   return ASTRAL_OK;
 }
 
+AstralErr memory_get_record(MemoryIndex* index, uint64_t key, AstralMemoryRecord* out_record) {
+  if (index == nullptr || key == 0 || out_record == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
+
+  const uint32_t slot = find_slot_by_key(index, key);
+  if (slot == kU32Max) {
+    return ASTRAL_E_NOT_FOUND;
+  }
+
+  *out_record = index->slots[slot].record;
+  out_record->size = sizeof(AstralMemoryRecord);
+  return ASTRAL_OK;
+}
+
 AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records,
                            const float* vectors, uint32_t count) {
   if (index == nullptr || records == nullptr || vectors == nullptr || count == 0) {
