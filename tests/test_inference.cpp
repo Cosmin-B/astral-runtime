@@ -2896,6 +2896,33 @@ TEST(inference_memory_index_dot_l2_tail_mock) {
     ASSERT_EQ(count, kTopOne);
     ASSERT_EQ(results[0].key, kKeyA);
     astral_memory_destroy(index);
+
+    desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
+    desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    index = 0;
+    err = astral_memory_create(&desc, &index);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_add_batch(index, records, vectors, kRecordCount);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_search(index, &search, query, results, kTopOne, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopOne);
+    ASSERT_EQ(results[0].key, kKeyA);
+    astral_memory_destroy(index);
+
+    desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+    desc.graph_neighbors = 3;
+    desc.graph_search = 4;
+    index = 0;
+    err = astral_memory_create(&desc, &index);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_add_batch(index, records, vectors, kRecordCount);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_memory_search(index, &search, query, results, kTopOne, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopOne);
+    ASSERT_EQ(results[0].key, kKeyA);
+    astral_memory_destroy(index);
 }
 
 TEST(inference_adapters_mock) {

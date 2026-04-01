@@ -45,9 +45,11 @@ constexpr uint32_t kGraphMaxLevels = 16;
 constexpr int32_t kQ8MinValue = -127;
 constexpr int32_t kQ8MaxValue = 127;
 constexpr float kQ8MaxFloat = 127.0f;
+constexpr float kL2CrossTermScale = 2.0f;
 constexpr float kWorstScore = -3.4028234663852886e38f;
 #if defined(__AVX2__)
 constexpr uint32_t kAvx2F32Lanes = 8;
+constexpr uint32_t kAvx2I8Lanes = 16;
 constexpr size_t kVectorStorageAlign = 32;
 constexpr uint32_t kAvx2UnrollVectors = 4;
 constexpr uint32_t kAvx2UnrollF32 = kAvx2F32Lanes * kAvx2UnrollVectors;
@@ -399,7 +401,7 @@ float dot_q8_q8(const int8_t* a, const int8_t* b, uint32_t dim) {
   __m256i acc = _mm256_setzero_si256();
   const __m256i ones = _mm256_set1_epi16(1);
   uint32_t i = 0;
-  for (; i + 16u <= dim; i += 16u) {
+  for (; i + kAvx2I8Lanes <= dim; i += kAvx2I8Lanes) {
     const __m128i av = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a + i));
     const __m128i bv = _mm_loadu_si128(reinterpret_cast<const __m128i*>(b + i));
     const __m256i a16 = _mm256_cvtepi8_epi16(av);
@@ -438,7 +440,7 @@ float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim
   __m256 acc0 = _mm256_setzero_ps();
   __m256 acc1 = _mm256_setzero_ps();
   uint32_t i = 0;
-  for (; i + 16u <= dim; i += 16u) {
+  for (; i + kAvx2I8Lanes <= dim; i += kAvx2I8Lanes) {
     const __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a + i));
     const __m256 av0 = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(bytes)), scale_v);
     const __m128i bytes_hi = _mm_srli_si128(bytes, 8);
@@ -486,6 +488,38 @@ float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim
 }
 
 float l2_score_q8_q8(const int8_t* a, float a_scale, const int8_t* b, float b_scale, uint32_t dim) {
+#if defined(__AVX2__)
+  __m256i acc_a = _mm256_setzero_si256();
+  __m256i acc_b = _mm256_setzero_si256();
+  __m256i acc_ab = _mm256_setzero_si256();
+  const __m256i ones = _mm256_set1_epi16(1);
+  uint32_t i = 0;
+  for (; i + kAvx2I8Lanes <= dim; i += kAvx2I8Lanes) {
+    const __m128i av = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a + i));
+    const __m128i bv = _mm_loadu_si128(reinterpret_cast<const __m128i*>(b + i));
+    const __m256i a16 = _mm256_cvtepi8_epi16(av);
+    const __m256i b16 = _mm256_cvtepi8_epi16(bv);
+    acc_a = _mm256_add_epi32(acc_a, _mm256_madd_epi16(_mm256_mullo_epi16(a16, a16), ones));
+    acc_b = _mm256_add_epi32(acc_b, _mm256_madd_epi16(_mm256_mullo_epi16(b16, b16), ones));
+    acc_ab = _mm256_add_epi32(acc_ab, _mm256_madd_epi16(_mm256_mullo_epi16(a16, b16), ones));
+  }
+
+  int32_t sum_a = reduce_avx2_i32(acc_a);
+  int32_t sum_b = reduce_avx2_i32(acc_b);
+  int32_t sum_ab = reduce_avx2_i32(acc_ab);
+  for (; i < dim; ++i) {
+    const int32_t ai = static_cast<int32_t>(a[i]);
+    const int32_t bi = static_cast<int32_t>(b[i]);
+    sum_a += ai * ai;
+    sum_b += bi * bi;
+    sum_ab += ai * bi;
+  }
+
+  const float scaled_a = a_scale * a_scale * static_cast<float>(sum_a);
+  const float scaled_b = b_scale * b_scale * static_cast<float>(sum_b);
+  const float scaled_cross = kL2CrossTermScale * a_scale * b_scale * static_cast<float>(sum_ab);
+  return -(scaled_a + scaled_b - scaled_cross);
+#else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
   float sum2 = 0.0f;
@@ -510,6 +544,7 @@ float l2_score_q8_q8(const int8_t* a, float a_scale, const int8_t* b, float b_sc
     sum += d * d;
   }
   return -sum;
+#endif
 }
 
 void quantize_q8_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
