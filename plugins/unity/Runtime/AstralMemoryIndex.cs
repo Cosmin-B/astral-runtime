@@ -114,6 +114,14 @@ namespace Astral.Runtime
             return record;
         }
 
+        public void UpdateRecord(ulong key, AstralNative.AstralMemoryRecord record)
+        {
+            ThrowIfInvalid();
+            record.size = (uint)Marshal.SizeOf<AstralNative.AstralMemoryRecord>();
+            int err = AstralNative.astral_memory_update_record(m_handle, key, ref record);
+            ThrowIfError(err, "astral_memory_update_record");
+        }
+
         public unsafe void AddBatch(NativeArray<AstralNative.AstralMemoryRecord> records, NativeArray<float> vectors)
         {
             ThrowIfInvalid();

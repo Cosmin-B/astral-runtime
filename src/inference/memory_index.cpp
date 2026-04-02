@@ -2105,6 +2105,42 @@ AstralErr memory_get_record(MemoryIndex* index, uint64_t key, AstralMemoryRecord
   return ASTRAL_OK;
 }
 
+AstralErr memory_update_record(MemoryIndex* index, uint64_t key, const AstralMemoryRecord* record) {
+  if (index == nullptr || key == 0 || record == nullptr ||
+      record->size != sizeof(AstralMemoryRecord) || record->key == 0) {
+    return ASTRAL_E_INVALID;
+  }
+
+  const uint32_t slot = find_slot_by_key(index, key);
+  if (slot == kU32Max) {
+    return ASTRAL_E_NOT_FOUND;
+  }
+
+  const bool key_changed = record->key != key;
+  if (key_changed) {
+    const uint64_t new_hash = key_hash_mix(record->key);
+    if (find_slot_by_key_hashed(index, record->key, new_hash) != kU32Max) {
+      return ASTRAL_E_STATE;
+    }
+    key_table_remove(index, key);
+    const AstralErr err = key_table_insert_new_hashed(index, new_hash, slot);
+    if (err != ASTRAL_OK) {
+      const AstralErr restore_err = key_table_insert_new_hashed(index, key_hash_mix(key), slot);
+      (void)restore_err;
+      return err;
+    }
+    if (graph_enabled(index)) {
+      index->graph_levels[slot] = static_cast<uint8_t>(graph_level_for_key(index, record->key));
+    }
+  }
+
+  index->slots[slot].record = *record;
+  if (key_changed && graph_enabled(index)) {
+    graph_rebuild(index);
+  }
+  return ASTRAL_OK;
+}
+
 AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records,
                            const float* vectors, uint32_t count) {
   if (index == nullptr || records == nullptr || vectors == nullptr || count == 0) {

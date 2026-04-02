@@ -2217,6 +2217,7 @@ TEST(inference_memory_index_flat_mock) {
     constexpr uint64_t kKeyC = 33;
     constexpr uint64_t kKeyD = 44;
     constexpr uint64_t kKeyE = 55;
+    constexpr uint64_t kRenamedKey = 66;
     constexpr uint64_t kMissingKey = 99;
     constexpr uint32_t kGroupA = 7;
     constexpr uint32_t kGroupB = 9;
@@ -2290,6 +2291,21 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(astral_memory_get_record(index, 0, &found_record), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_get_record(index, kMissingKey, &found_record), ASTRAL_E_NOT_FOUND);
 
+    AstralMemoryRecord updated_record = records[4];
+    updated_record.key = kRenamedKey;
+    updated_record.document_id = kDocA + 1u;
+    updated_record.chunk_id = kChunkA + 1u;
+    err = astral_memory_update_record(index, kKeyE, &updated_record);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(astral_memory_get_record(index, kKeyE, &found_record), ASTRAL_E_NOT_FOUND);
+    err = astral_memory_get_record(index, kRenamedKey, &found_record);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(found_record.key, kRenamedKey);
+    ASSERT_EQ(found_record.document_id, kDocA + 1u);
+    ASSERT_EQ(found_record.chunk_id, kChunkA + 1u);
+    updated_record.key = kKeyB;
+    ASSERT_EQ(astral_memory_update_record(index, kRenamedKey, &updated_record), ASTRAL_E_STATE);
+
     AstralMemorySearchDesc search{};
     search.size = sizeof(AstralMemorySearchDesc);
     search.top_k = kTopK;
@@ -2303,7 +2319,7 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(results[0].document_id, kDocA);
     ASSERT_EQ(results[0].chunk_id, kChunkA);
     ASSERT_EQ(results[1].key, kKeyD);
-    ASSERT_EQ(results[2].key, kKeyE);
+    ASSERT_EQ(results[2].key, kRenamedKey);
 
     search.top_k = kTopOne;
     err = astral_memory_search(index, &search, query, results, kResultCapacity, &count);

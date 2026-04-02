@@ -2280,6 +2280,22 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_get_record(AstralHandle index, ui
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_update_record(AstralHandle index, uint64_t key, const AstralMemoryRecord* record) {
+    ASTRAL_ABI_TRY_BEGIN
+    ASTRAL_ZONE_N("astral.abi.memory_update_record");
+    auto* mem = lookup_memory_index(index);
+    if (mem == nullptr || record == nullptr) {
+        set_err_invalid("index/record");
+        return ASTRAL_E_INVALID;
+    }
+    const AstralErr err = astral::inference::memory_update_record(mem, key, record);
+    if (err != ASTRAL_OK) {
+        set_err_code(err);
+    }
+    return err;
+    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_add_batch(
     AstralHandle index,
     const AstralMemoryRecord* records,
