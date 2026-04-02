@@ -713,6 +713,14 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("memory count result"), MemoryCountResult.Count, Records.Num());
     TestEqual(TEXT("memory count out"), MemoryRecordCount, Records.Num());
 
+    FAstralMemoryRecord FoundRecord;
+    const FAstralOperationResult FoundRecordResult =
+        UAstralBlueprintLibrary::GetMemoryRecordResult(MemoryCreate.Handle, MemoryKeyA, FoundRecord);
+    TestTrue(TEXT("memory record lookup succeeds"), FoundRecordResult.bSuccess);
+    TestEqual(TEXT("memory record lookup key"), FoundRecord.Key, MemoryKeyA);
+    TestEqual(TEXT("memory record lookup document"), FoundRecord.DocumentId, MemoryDocumentA);
+    TestEqual(TEXT("memory record lookup chunk"), FoundRecord.ChunkId, MemoryChunkA);
+
     FAstralMemoryStats MemoryStats;
     const FAstralOperationResult MemoryStatsResult =
         UAstralBlueprintLibrary::GetMemoryStatsResult(MemoryCreate.Handle, MemoryStats);

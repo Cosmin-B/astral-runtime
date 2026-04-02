@@ -18,6 +18,7 @@ and keep the flat index as the recall oracle.
 - `astral_memory_destroy()`
 - `astral_memory_count()`
 - `astral_memory_stats()`
+- `astral_memory_get_record()`
 - `astral_memory_add_batch()`
 - `astral_memory_remove()`
 - `astral_memory_clear()`
@@ -72,6 +73,8 @@ slower than exact flat search on smaller collections.
 `AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
 chunk, and group metadata consistent with the native chunker while the caller
 supplies the stable record key and any application flags.
+`astral_memory_get_record()` fetches stored metadata by key without running a
+vector search. Missing keys return `ASTRAL_E_NOT_FOUND`.
 
 Incremental search cursors snapshot the top-k result set at begin time and let
 callers fetch fixed-size batches without re-running the vector scan. The cursor

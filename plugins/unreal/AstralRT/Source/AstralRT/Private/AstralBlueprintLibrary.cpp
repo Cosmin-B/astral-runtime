@@ -1096,6 +1096,34 @@ FAstralOperationResult UAstralBlueprintLibrary::GetMemoryStatsResult(int64 Memor
     return make_operation_result(ASTRAL_OK, MemoryHandle, OutStats.Count);
 }
 
+bool UAstralBlueprintLibrary::GetMemoryRecord(int64 MemoryHandle, int64 Key, FAstralMemoryRecord& OutRecord, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetMemoryRecordResult(MemoryHandle, Key, OutRecord);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetMemoryRecordResult(int64 MemoryHandle, int64 Key, FAstralMemoryRecord& OutRecord)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetMemoryRecord);
+
+    OutRecord = FAstralMemoryRecord{};
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralMemoryRecord Native{};
+    const AstralErr Err = astral_memory_get_record(static_cast<AstralHandle>(MemoryHandle), static_cast<uint64_t>(Key), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRecord = from_native_memory_record(Native);
+    return make_operation_result(ASTRAL_OK, MemoryHandle);
+}
+
 bool UAstralBlueprintLibrary::RemoveMemoryRecord(int64 MemoryHandle, int64 Key, int32& OutErrorCode)
 {
     const FAstralOperationResult Result = RemoveMemoryRecordResult(MemoryHandle, Key);

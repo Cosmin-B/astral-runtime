@@ -2217,6 +2217,7 @@ TEST(inference_memory_index_flat_mock) {
     constexpr uint64_t kKeyC = 33;
     constexpr uint64_t kKeyD = 44;
     constexpr uint64_t kKeyE = 55;
+    constexpr uint64_t kMissingKey = 99;
     constexpr uint32_t kGroupA = 7;
     constexpr uint32_t kGroupB = 9;
     constexpr uint32_t kDocA = 101;
@@ -2277,6 +2278,17 @@ TEST(inference_memory_index_flat_mock) {
     err = astral_memory_count(index, &count);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(count, kRecordCount);
+
+    AstralMemoryRecord found_record{};
+    err = astral_memory_get_record(index, kKeyA, &found_record);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(found_record.size, sizeof(AstralMemoryRecord));
+    ASSERT_EQ(found_record.key, kKeyA);
+    ASSERT_EQ(found_record.group_id, kGroupA);
+    ASSERT_EQ(found_record.document_id, kDocA);
+    ASSERT_EQ(found_record.chunk_id, kChunkA);
+    ASSERT_EQ(astral_memory_get_record(index, 0, &found_record), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_get_record(index, kMissingKey, &found_record), ASTRAL_E_NOT_FOUND);
 
     AstralMemorySearchDesc search{};
     search.size = sizeof(AstralMemorySearchDesc);
@@ -2408,6 +2420,7 @@ TEST(inference_memory_index_flat_mock) {
 
     err = astral_memory_remove(index, kKeyA);
     ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(astral_memory_get_record(index, kKeyA, &found_record), ASTRAL_E_NOT_FOUND);
     err = astral_memory_count(index, &count);
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(count, kPostRemoveResultCount);

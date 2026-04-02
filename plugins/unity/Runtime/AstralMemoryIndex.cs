@@ -105,6 +105,15 @@ namespace Astral.Runtime
             ThrowIfError(err, "astral_memory_clear");
         }
 
+        public AstralNative.AstralMemoryRecord GetRecord(ulong key)
+        {
+            ThrowIfInvalid();
+            var record = new AstralNative.AstralMemoryRecord();
+            int err = AstralNative.astral_memory_get_record(m_handle, key, ref record);
+            ThrowIfError(err, "astral_memory_get_record");
+            return record;
+        }
+
         public unsafe void AddBatch(NativeArray<AstralNative.AstralMemoryRecord> records, NativeArray<float> vectors)
         {
             ThrowIfInvalid();

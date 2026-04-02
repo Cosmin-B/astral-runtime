@@ -134,6 +134,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static FAstralOperationResult GetMemoryStatsResult(int64 MemoryHandle, FAstralMemoryStats& OutStats);
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool GetMemoryRecord(int64 MemoryHandle, int64 Key, FAstralMemoryRecord& OutRecord, int32& OutErrorCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult GetMemoryRecordResult(int64 MemoryHandle, int64 Key, FAstralMemoryRecord& OutRecord);
+
     /** Remove one record from a native memory index by key. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static bool RemoveMemoryRecord(int64 MemoryHandle, int64 Key, int32& OutErrorCode);

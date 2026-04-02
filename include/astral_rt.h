@@ -1080,6 +1080,7 @@ ASTRAL_API void ASTRAL_CALL astral_memory_destroy(AstralHandle index);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_count(AstralHandle index, uint32_t* out_count);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_stats(AstralHandle index, AstralMemoryStats* out_stats);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_clear(AstralHandle index);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_get_record(AstralHandle index, uint64_t key, AstralMemoryRecord* out_record);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_add_batch(
     AstralHandle index,
     const AstralMemoryRecord* records,
