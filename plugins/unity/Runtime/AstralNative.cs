@@ -1403,6 +1403,9 @@ namespace Astral.Runtime
         public static extern int astral_memory_get_record(AstralHandle index, ulong key, ref AstralMemoryRecord out_record);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_update_record(AstralHandle index, ulong key, ref AstralMemoryRecord record);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern unsafe int astral_memory_add_batch(AstralHandle index, AstralMemoryRecord* records, float* vectors, uint count);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]

@@ -662,6 +662,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     constexpr int32 MemoryCapacity = 3;
     constexpr int64 MemoryKeyA = 10;
     constexpr int64 MemoryKeyB = 20;
+    constexpr int64 MemoryKeyRenamed = 21;
     constexpr int32 MemoryGroupA = 1;
     constexpr int32 MemoryGroupB = 2;
     constexpr int32 MemoryDocumentA = 100;
@@ -720,6 +721,19 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("memory record lookup key"), FoundRecord.Key, MemoryKeyA);
     TestEqual(TEXT("memory record lookup document"), FoundRecord.DocumentId, MemoryDocumentA);
     TestEqual(TEXT("memory record lookup chunk"), FoundRecord.ChunkId, MemoryChunkA);
+
+    FAstralMemoryRecord UpdatedRecord = RecordB;
+    UpdatedRecord.Key = MemoryKeyRenamed;
+    UpdatedRecord.DocumentId = MemoryDocumentA;
+    const FAstralOperationResult UpdatedRecordResult =
+        UAstralBlueprintLibrary::UpdateMemoryRecordResult(MemoryCreate.Handle, MemoryKeyB, UpdatedRecord);
+    TestTrue(TEXT("memory record update succeeds"), UpdatedRecordResult.bSuccess);
+    FAstralMemoryRecord RenamedRecord;
+    const FAstralOperationResult RenamedRecordResult =
+        UAstralBlueprintLibrary::GetMemoryRecordResult(MemoryCreate.Handle, MemoryKeyRenamed, RenamedRecord);
+    TestTrue(TEXT("memory record renamed lookup succeeds"), RenamedRecordResult.bSuccess);
+    TestEqual(TEXT("memory record renamed key"), RenamedRecord.Key, MemoryKeyRenamed);
+    TestEqual(TEXT("memory record renamed document"), RenamedRecord.DocumentId, MemoryDocumentA);
 
     FAstralMemoryStats MemoryStats;
     const FAstralOperationResult MemoryStatsResult =

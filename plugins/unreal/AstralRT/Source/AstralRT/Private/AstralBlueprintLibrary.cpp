@@ -418,6 +418,18 @@ static FAstralMemoryRecord from_native_memory_record(const AstralMemoryRecord& N
     return Record;
 }
 
+static AstralMemoryRecord to_native_memory_record(const FAstralMemoryRecord& Source)
+{
+    AstralMemoryRecord Native{};
+    Native.size = sizeof(AstralMemoryRecord);
+    Native.key = static_cast<uint64_t>(Source.Key);
+    Native.group_id = static_cast<uint32_t>(Source.GroupId);
+    Native.document_id = static_cast<uint32_t>(Source.DocumentId);
+    Native.chunk_id = static_cast<uint32_t>(Source.ChunkId);
+    Native.flags = static_cast<uint32_t>(Source.Flags);
+    return Native;
+}
+
 static FAstralAdapterInfo from_native_adapter_info(const AstralAdapterInfo& Native)
 {
     FAstralAdapterInfo Info;
@@ -1122,6 +1134,27 @@ FAstralOperationResult UAstralBlueprintLibrary::GetMemoryRecordResult(int64 Memo
 
     OutRecord = from_native_memory_record(Native);
     return make_operation_result(ASTRAL_OK, MemoryHandle);
+}
+
+bool UAstralBlueprintLibrary::UpdateMemoryRecord(int64 MemoryHandle, int64 Key, const FAstralMemoryRecord& Record, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = UpdateMemoryRecordResult(MemoryHandle, Key, Record);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::UpdateMemoryRecordResult(int64 MemoryHandle, int64 Key, const FAstralMemoryRecord& Record)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_UpdateMemoryRecord);
+
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    const AstralMemoryRecord Native = to_native_memory_record(Record);
+    const AstralErr Err = astral_memory_update_record(static_cast<AstralHandle>(MemoryHandle), static_cast<uint64_t>(Key), &Native);
+    return make_operation_result(Err, MemoryHandle);
 }
 
 bool UAstralBlueprintLibrary::RemoveMemoryRecord(int64 MemoryHandle, int64 Key, int32& OutErrorCode)
