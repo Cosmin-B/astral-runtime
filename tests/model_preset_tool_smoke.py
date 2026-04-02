@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import hashlib
+import http.server
 import json
 import subprocess
 import struct
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 
@@ -52,6 +54,68 @@ GGUF_VERSION = 3
 GGUF_TENSOR_COUNT = 0
 GGUF_TYPE_UINT32 = 4
 GGUF_TYPE_STRING = 8
+HTTP_PARTIAL_CONTENT = 206
+HTTP_OK = 200
+HTTP_RANGE_PREFIX = "bytes="
+HTTP_RANGE_UNIT = "bytes"
+HTTP_HEADER_RANGE = "Range"
+HTTP_HEADER_CONTENT_LENGTH = "Content-Length"
+HTTP_HEADER_CONTENT_RANGE = "Content-Range"
+LOCALHOST = "127.0.0.1"
+RESUME_PREFIX_BYTES = 11
+
+
+class RangeDownloadHandler(http.server.BaseHTTPRequestHandler):
+    payload = b""
+    observed_ranges: list[str] = []
+
+    def do_GET(self) -> None:
+        range_header = self.headers.get(HTTP_HEADER_RANGE, "")
+        RangeDownloadHandler.observed_ranges.append(range_header)
+        begin = 0
+        if range_header.startswith(HTTP_RANGE_PREFIX) and range_header.endswith("-"):
+            begin = int(range_header[len(HTTP_RANGE_PREFIX) : -1])
+            self.send_response(HTTP_PARTIAL_CONTENT)
+            self.send_header(
+                HTTP_HEADER_CONTENT_RANGE,
+                f"{HTTP_RANGE_UNIT} {begin}-{len(self.payload) - 1}/{len(self.payload)}",
+            )
+        else:
+            self.send_response(HTTP_OK)
+        data = self.payload[begin:]
+        self.send_header(HTTP_HEADER_CONTENT_LENGTH, str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, format: str, *args: object) -> None:
+        return
+
+
+class LocalModelServer:
+    def __init__(self, payload: bytes) -> None:
+        RangeDownloadHandler.payload = payload
+        RangeDownloadHandler.observed_ranges = []
+        self._server = http.server.ThreadingHTTPServer((LOCALHOST, 0), RangeDownloadHandler)
+        self._thread = threading.Thread(target=self._server.serve_forever)
+        self._thread.daemon = True
+
+    def __enter__(self) -> "LocalModelServer":
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        self._server.shutdown()
+        self._thread.join()
+        self._server.server_close()
+
+    @property
+    def url(self) -> str:
+        host, port = self._server.server_address
+        return f"http://{host}:{port}/{TINY_FILE}"
+
+    @property
+    def observed_ranges(self) -> list[str]:
+        return RangeDownloadHandler.observed_ranges
 
 
 def gguf_string(value: str) -> bytes:
@@ -341,6 +405,38 @@ def main(argv: list[str]) -> int:
             temp_dir,
         ).stdout
         require("not_ready:" in wrapper_summary, "wrapper summary text missed not-ready count")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        payload_path = temp_path / "source.gguf"
+        size_bytes, sha256 = write_tiny_gguf(payload_path)
+        payload = payload_path.read_bytes()
+        model_path = temp_path / TINY_FILE
+        part_path = temp_path / f"{TINY_FILE}.part"
+        part_path.write_bytes(payload[:RESUME_PREFIX_BYTES])
+
+        with LocalModelServer(payload) as server:
+            resumed = run_tool(
+                root,
+                "download",
+                "--url",
+                server.url,
+                "--file",
+                TINY_FILE,
+                "--dir",
+                temp_dir,
+                "--min-bytes",
+                str(size_bytes),
+                "--sha256",
+                sha256,
+            )
+        require(model_path.read_bytes() == payload, "resumed download did not match source payload")
+        require(not part_path.exists(), "partial file should be renamed after a valid download")
+        require(
+            f"{HTTP_RANGE_PREFIX}{RESUME_PREFIX_BYTES}-" in server.observed_ranges,
+            "resumed download did not request the partial byte range",
+        )
+        require(TINY_FILE in resumed.stderr and "100%" in resumed.stderr, "download progress missed final marker")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)

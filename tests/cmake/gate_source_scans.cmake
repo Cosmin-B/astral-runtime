@@ -709,6 +709,8 @@ foreach(required_model_tool_text
     "model_preset_tool.py"
     "download"
     "list"
+    ".part"
+    "Progress"
     "validate-only"
     "print-path"
     "list-unreal-matrix")

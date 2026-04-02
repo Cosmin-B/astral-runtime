@@ -40,6 +40,9 @@ Options:
   --hf-file <file>      Custom Hugging Face file
   --hf-rev <revision>   Custom Hugging Face revision
   -h, --help            Show help
+
+Downloads resume incomplete .part files when the server supports ranges.
+Progress is printed to stderr during downloads.
 EOF
 }
 
