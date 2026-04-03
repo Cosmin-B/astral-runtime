@@ -85,7 +85,8 @@ the network.
 The preset manifest is source-controlled. GGUF files, partial downloads, and
 download logs stay outside commits. The downloader writes to `tests/models` by
 default and resumes through a `.part` file before replacing the final path after
-checksum validation.
+checksum validation. Download progress is written to stderr so setup tools can
+keep stdout reserved for JSON, paths, or repeatable commands.
 
 ## Engine Use
 
