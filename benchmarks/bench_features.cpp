@@ -96,6 +96,7 @@ static constexpr char kBenchMemorySweepEnv[] = "ASTRAL_BENCH_MEMORY_SWEEP";
 static constexpr char kBenchMemoryStorageEnv[] = "ASTRAL_BENCH_MEMORY_STORAGE";
 static constexpr char kBenchMemoryGraphNeighborsEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS";
 static constexpr char kBenchMemoryGraphSearchEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_SEARCH";
+static constexpr char kBenchMemoryGraphQuerySearchEnv[] = "ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH";
 static constexpr char kBenchMemoryRecallQueriesEnv[] = "ASTRAL_BENCH_MEMORY_RECALL_QUERIES";
 static constexpr char kBenchTokenizeOnlyEnv[] = "ASTRAL_BENCH_TOKENIZE_ONLY";
 static constexpr char kBenchMemoryMetricDot[] = "dot";
@@ -241,6 +242,14 @@ static uint32_t memory_graph_neighbors() {
 
 static uint32_t memory_graph_search() {
     return bounded_env_u32(kBenchMemoryGraphSearchEnv, kBenchMemoryGraphSearch, 4u, UINT32_MAX);
+}
+
+static uint32_t memory_graph_query_search() {
+    const char* value = std::getenv(kBenchMemoryGraphQuerySearchEnv);
+    if (value == nullptr || value[0] == '\0') {
+        return 0;
+    }
+    return bounded_env_u32(kBenchMemoryGraphQuerySearchEnv, kBenchMemoryGraphMinSearch, kBenchMemoryGraphMinSearch, UINT32_MAX);
 }
 
 static uint32_t memory_recall_queries() {
@@ -1314,6 +1323,7 @@ static BenchResult bench_memory_flat_search_impl(uint64_t iters, uint32_t capaci
     search.size = sizeof(AstralMemorySearchDesc);
     search.top_k = kBenchMemoryTopK;
     search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    search.graph_search = memory_graph_query_search();
     AstralMemorySearchResult results[kBenchMemoryTopK]{};
     uint32_t result_count = 0;
 
@@ -1443,6 +1453,7 @@ static BenchResult bench_memory_graph_top1(uint64_t iters) {
     search.size = sizeof(AstralMemorySearchDesc);
     search.top_k = kBenchMemoryTopOne;
     search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    search.graph_search = memory_graph_query_search();
     AstralMemorySearchResult result{};
     uint32_t result_count = 0;
 
@@ -1519,6 +1530,7 @@ static BenchResult bench_memory_graph_recall(uint64_t iters) {
     search.size = sizeof(AstralMemorySearchDesc);
     search.top_k = kBenchMemoryTopK;
     search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    search.graph_search = memory_graph_query_search();
     AstralMemorySearchResult flat_results[kBenchMemoryTopK]{};
     AstralMemorySearchResult graph_results[kBenchMemoryTopK]{};
     uint32_t flat_count = 0;
@@ -1622,6 +1634,7 @@ static BenchResult bench_memory_graph_recall_search(uint64_t iters) {
     search.size = sizeof(AstralMemorySearchDesc);
     search.top_k = kBenchMemoryTopK;
     search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    search.graph_search = memory_graph_query_search();
     AstralMemorySearchResult flat_results[kBenchMemoryTopK]{};
     AstralMemorySearchResult graph_results[kBenchMemoryTopK]{};
     uint32_t flat_count = 0;
@@ -2767,6 +2780,7 @@ static void print_features_header(const char* backend, uint32_t gpu_layers, cons
                 std::getenv(kBenchMemorySweepEnv) ? std::getenv(kBenchMemorySweepEnv) : "");
     std::printf("  ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=%u\n", memory_graph_neighbors());
     std::printf("  ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=%u\n", memory_graph_search());
+    std::printf("  ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=%u\n", memory_graph_query_search());
     std::printf("  ASTRAL_BENCH_MEMORY_RECALL_QUERIES=%u\n", memory_recall_queries());
     std::printf("  ASTRAL_BENCH_EMBED_MODEL=%s\n", std::getenv("ASTRAL_BENCH_EMBED_MODEL") ? std::getenv("ASTRAL_BENCH_EMBED_MODEL") : "");
     std::printf("  ASTRAL_BENCH_VISION_MODEL=%s\n", std::getenv("ASTRAL_BENCH_VISION_MODEL") ? std::getenv("ASTRAL_BENCH_VISION_MODEL") : "");

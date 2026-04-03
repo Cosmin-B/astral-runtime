@@ -21,6 +21,7 @@ Options:
   --storage <kind>      Vector storage: f32 or q8 (default: f32)
   --case <name>         One ASTRAL_BENCH_MEMORY_CASE value, such as graph_recall_search
   --graph-search <N>    Graph search budget (default: 64)
+  --query-search <N>    Per-query graph search budget (default: index budget)
   --graph-neighbors <N> Graph neighbor budget (default: 32)
   --recall-queries <N>  Graph recall queries (default: 32)
   --help                Show help
@@ -40,6 +41,7 @@ metrics="cosine,dot,l2"
 storage="f32"
 memory_case=""
 graph_search="64"
+query_search=""
 graph_neighbors="32"
 recall_queries="32"
 
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --storage) storage="${2:-}"; shift 2 ;;
     --case) memory_case="${2:-}"; shift 2 ;;
     --graph-search) graph_search="${2:-}"; shift 2 ;;
+    --query-search) query_search="${2:-}"; shift 2 ;;
     --graph-neighbors) graph_neighbors="${2:-}"; shift 2 ;;
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
@@ -101,6 +104,7 @@ mkdir -p "$(dirname "${out_file}")"
   echo "# storage: ${storage}"
   echo "# case: ${memory_case}"
   echo "# graph_search: ${graph_search}"
+  echo "# query_search: ${query_search}"
   echo "# graph_neighbors: ${graph_neighbors}"
   echo "# recall_queries: ${recall_queries}"
   echo
@@ -124,6 +128,7 @@ for metric in "${metric_values[@]}"; do
       ASTRAL_BENCH_MEMORY_DIM="${dim}" \
       ASTRAL_BENCH_MEMORY_CAPACITY="${capacity}" \
       ASTRAL_BENCH_MEMORY_GRAPH_SEARCH="${graph_search}" \
+      ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH="${query_search}" \
       ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS="${graph_neighbors}" \
       ASTRAL_BENCH_MEMORY_RECALL_QUERIES="${recall_queries}" \
       "${bench_bin}" --only features >> "${out_file}" 2>&1
