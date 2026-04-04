@@ -19,7 +19,7 @@ Options:
   --capacities <list>   Comma-separated capacities (default: 10000)
   --metrics <list>      Comma-separated metrics: cosine,dot,l2 (default: cosine,dot,l2)
   --storage <kind>      Vector storage: f32 or q8 (default: f32)
-  --case <name>         One ASTRAL_BENCH_MEMORY_CASE value, such as graph_recall_search
+  --case <name>         One ASTRAL_BENCH_MEMORY_CASE value, such as flat_q8_recall_search
   --graph-search <N>    Graph search budget (default: 64)
   --query-search <N>    Per-query graph search budget (default: index budget)
   --graph-neighbors <N> Graph neighbor budget (default: 32)

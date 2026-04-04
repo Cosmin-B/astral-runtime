@@ -108,6 +108,7 @@ static constexpr char kBenchMemoryCaseAddBatch[] = "add_batch";
 static constexpr char kBenchMemoryCaseGraphAddBatch[] = "graph_add_batch";
 static constexpr char kBenchMemoryCaseFlatSearchTop1[] = "flat_search_top1";
 static constexpr char kBenchMemoryCaseFlatSearch[] = "flat_search";
+static constexpr char kBenchMemoryCaseFlatQ8RecallSearch[] = "flat_q8_recall_search";
 static constexpr char kBenchMemoryCaseGraphTop1[] = "graph_top1";
 static constexpr char kBenchMemoryCaseGraphSearch[] = "graph_search";
 static constexpr char kBenchMemoryCaseGraphRecall[] = "graph_recall";
@@ -1578,6 +1579,123 @@ static BenchResult bench_memory_graph_recall(uint64_t iters) {
     return r;
 }
 
+static BenchResult bench_memory_flat_q8_recall_search(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.memory flat_q8_recall_search";
+    r.ops = iters;
+    const uint32_t dim = memory_bench_dim();
+    const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+    const uint32_t recall_queries = memory_recall_queries();
+    const AstralMemoryMetric metric = parse_memory_metric_env();
+
+    AstralMemoryIndexDesc flat_desc{};
+    flat_desc.size = sizeof(AstralMemoryIndexDesc);
+    flat_desc.dim = dim;
+    flat_desc.capacity = capacity;
+    flat_desc.metric = metric;
+    flat_desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    flat_desc.storage_kind = ASTRAL_MEMORY_STORAGE_F32;
+
+    AstralMemoryIndexDesc q8_desc = flat_desc;
+    q8_desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
+
+    AstralHandle flat_index = 0;
+    AstralHandle q8_index = 0;
+    AstralErr err = astral_memory_create(&flat_desc, &flat_index);
+    if (err != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+    err = astral_memory_create(&q8_desc, &q8_index);
+    if (err != ASTRAL_OK) {
+        astral_memory_destroy(flat_index);
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<AstralMemoryRecord> records(capacity);
+    std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+    fill_memory_fixture(records, vectors, capacity, dim);
+    err = astral_memory_add_batch(flat_index, records.data(), vectors.data(), capacity);
+    if (err == ASTRAL_OK) {
+        err = astral_memory_add_batch(q8_index, records.data(), vectors.data(), capacity);
+    }
+    if (err != ASTRAL_OK) {
+        astral_memory_destroy(q8_index);
+        astral_memory_destroy(flat_index);
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<float> queries(static_cast<size_t>(recall_queries) * dim);
+    std::vector<uint64_t> oracle_keys(static_cast<size_t>(recall_queries) * kBenchMemoryTopK);
+    std::vector<uint32_t> oracle_counts(recall_queries);
+    AstralMemorySearchDesc search{};
+    search.size = sizeof(AstralMemorySearchDesc);
+    search.top_k = kBenchMemoryTopK;
+    search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    AstralMemorySearchResult flat_results[kBenchMemoryTopK]{};
+    AstralMemorySearchResult q8_results[kBenchMemoryTopK]{};
+    uint32_t flat_count = 0;
+    uint32_t q8_count = 0;
+
+    for (uint32_t qi = 0; qi < recall_queries; ++qi) {
+        const uint32_t query_row =
+            static_cast<uint32_t>((static_cast<uint64_t>(qi) * capacity) /
+                                  static_cast<uint64_t>(recall_queries));
+        float* query = queries.data() + static_cast<size_t>(qi) * dim;
+        fill_memory_query(query, dim, query_row);
+        err = astral_memory_search(flat_index, &search, query, flat_results, kBenchMemoryTopK, &flat_count);
+        if (err != ASTRAL_OK || flat_count == 0) {
+            astral_memory_destroy(q8_index);
+            astral_memory_destroy(flat_index);
+            r.ops = 0;
+            return r;
+        }
+        oracle_counts[qi] = flat_count;
+        for (uint32_t fi = 0; fi < flat_count; ++fi) {
+            oracle_keys[static_cast<size_t>(qi) * kBenchMemoryTopK + fi] = flat_results[fi].key;
+        }
+    }
+
+    uint64_t matched = 0;
+    uint64_t expected = 0;
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        const uint32_t qi = static_cast<uint32_t>(i % recall_queries);
+        const float* query = queries.data() + static_cast<size_t>(qi) * dim;
+        err = astral_memory_search(q8_index, &search, query, q8_results, kBenchMemoryTopK, &q8_count);
+        if (err != ASTRAL_OK || q8_count == 0) {
+            r.ops = i;
+            break;
+        }
+        const uint32_t expected_count = oracle_counts[qi];
+        expected += expected_count;
+        for (uint32_t fi = 0; fi < expected_count; ++fi) {
+            const uint64_t key = oracle_keys[static_cast<size_t>(qi) * kBenchMemoryTopK + fi];
+            for (uint32_t qi8 = 0; qi8 < q8_count; ++qi8) {
+                if (key == q8_results[qi8].key) {
+                    ++matched;
+                    break;
+                }
+            }
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    r.extra_label = "recall_pct";
+    r.extra_value = expected != 0 ? (static_cast<double>(matched) * kBenchMemoryPercentScale) /
+                                        static_cast<double>(expected)
+                                  : 0.0;
+    astral_memory_destroy(q8_index);
+    astral_memory_destroy(flat_index);
+    return r;
+}
+
 static BenchResult bench_memory_graph_recall_search(uint64_t iters) {
     BenchResult r{};
     r.name = "features.memory graph_recall_search";
@@ -2166,6 +2284,9 @@ static void print_memory_benchmarks(uint64_t iters) {
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatSearch)) {
             print_result(bench_memory_flat_search(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseFlatQ8RecallSearch)) {
+            print_result(bench_memory_flat_q8_recall_search(iters), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseGraphTop1)) {
             print_result(bench_memory_graph_top1(iters), clock_info().name);

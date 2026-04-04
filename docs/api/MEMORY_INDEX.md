@@ -119,7 +119,7 @@ the target corpus and latency budget justify the extra tuning work.
 | Mode | Use when | Measure before shipping |
 | --- | --- | --- |
 | Flat f32 | Exact ranking matters, filtered search is common, or the corpus is small enough for full scans. | `flat_search_top1`, `flat_search`, memory bandwidth counters, and `astral_memory_stats()`. |
-| Flat q8 | The corpus is memory-bandwidth-bound and approximate scores are acceptable. | Recall versus flat f32 on the target vectors, q8 ingest cost, `flat_search_top1`, and `vector_bytes`. |
+| Flat q8 | The corpus is memory-bandwidth-bound and approximate scores are acceptable. | `flat_q8_recall_search` versus flat f32 on the target vectors, q8 ingest cost, `flat_search_top1`, and `vector_bytes`. |
 | Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, and the chosen `graph_neighbors`/`graph_search` pair. |
 | Graph q8 | Approximate graph search also needs lower vector footprint. | The graph f32 measurements above, plus q8 recall drop, graph build cost, and `graph_bytes`/`vector_bytes`. |
 
@@ -178,8 +178,8 @@ against an index built with a larger graph search capacity. Set
 vectors are rotated through the graph recall benchmark. These controls let local
 runs cover vector scans and graph recall/latency tuning without changing source.
 Set `ASTRAL_BENCH_MEMORY_CASE` to one case name, such as
-`graph_recall_search`, when collecting a narrow profile and avoiding unrelated
-index rebuilds.
+`flat_q8_recall_search` or `graph_recall_search`, when collecting a narrow
+profile and avoiding unrelated index rebuilds.
 Set
 `ASTRAL_BENCH_MEMORY_SWEEP=1` to run the built-in 100/1k/10k/100k flat-index
 sweep in one invocation. Set
@@ -189,12 +189,13 @@ counter profile. Use `scripts/run_memory_bench_matrix.sh` to run the
 memory-only benchmark across multiple metrics, dimensions, and capacities in one
 log.
 
-For release tuning, capture both `features.memory flat_search_top1` and
-`features.memory graph_recall` for the same dimension, metric, capacity,
-neighbor count, and search budget. A graph run is useful only when its recall
-meets the product target and its latency beats the exact flat baseline for that
-dataset. Keep the flat index available as the correctness oracle while tuning
-new embedding models or document distributions.
+For release tuning, capture `features.memory flat_search_top1`,
+`features.memory flat_q8_recall_search`, and `features.memory graph_recall` for
+the same dimension, metric, capacity, neighbor count, and search budget. A graph
+run is useful only when its recall meets the product target and its latency
+beats the exact flat baseline for that dataset. Keep the flat index available as
+the correctness oracle while tuning new embedding models or document
+distributions.
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
@@ -304,6 +305,7 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_ME
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
 perf stat -e cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses,dTLB-loads,dTLB-load-misses -- env ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_SWEEP=1 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=flat_q8_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search_sweep ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=512 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=64 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
@@ -318,6 +320,7 @@ filtered exact fallback, save/load, and remove/rebuild behavior.
 Expected markers include `features.memory add_batch`,
 `features.memory graph_add_batch`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
+`features.memory flat_q8_recall_search`,
 `features.memory graph_top1`, `features.memory graph_search`,
 `features.memory graph_recall`, `features.memory graph_recall_top1`,
 `features.memory graph_recall_search`, and `features.memory cursor_begin_fetch`.
