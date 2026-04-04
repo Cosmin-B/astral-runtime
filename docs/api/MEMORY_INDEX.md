@@ -160,6 +160,8 @@ recall queries spread across the indexed capacity, so graph improvements can be
 judged by both latency and recall. Do not select a graph configuration solely
 because it is faster than flat search; use the recall target for the dataset
 and embedding model as the acceptance check.
+`features.memory graph_recall_top1` reports exact top-1 matches against the
+flat oracle, which is useful when tuning search that only needs the best hit.
 `features.memory graph_recall_search` precomputes the exact flat oracle outside
 the timed region, then reports graph-only query latency with the same recall
 percentage. Use that marker for ANN perf counters when exact-search work would
@@ -317,8 +319,9 @@ Expected markers include `features.memory add_batch`,
 `features.memory graph_add_batch`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
 `features.memory graph_top1`, `features.memory graph_search`,
-`features.memory graph_recall`, `features.memory graph_recall_search`, and
-`features.memory cursor_begin_fetch`. The focused graph recall sweep case emits
+`features.memory graph_recall`, `features.memory graph_recall_top1`,
+`features.memory graph_recall_search`, and `features.memory cursor_begin_fetch`.
+The focused graph recall sweep case emits
 `features.memory graph_recall_s<N>` markers for each per-search budget.
 Sweep runs also include
 `features.memory top1_100`, `features.memory top1_1k`,
