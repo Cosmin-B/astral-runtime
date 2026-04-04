@@ -1451,8 +1451,14 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
       continue;
     }
 
+    const float score = score_slot(index, query, slot, query_scale);
+    if (filled == desc->top_k &&
+        !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+      continue;
+    }
+
     AstralMemorySearchResult candidate{};
-    fill_result(&candidate, s, score_slot(index, query, slot, query_scale));
+    fill_result(&candidate, s, score);
     insert_result(out_results, desc->top_k, &filled, candidate);
   }
   *out_count = filled;
