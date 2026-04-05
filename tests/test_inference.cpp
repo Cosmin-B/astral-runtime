@@ -2321,6 +2321,36 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(results[1].key, kKeyD);
     ASSERT_EQ(results[2].key, kRenamedKey);
 
+    constexpr uint32_t kBatchQueryCount = 2;
+    const float batch_queries[kBatchQueryCount * kDim] = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+    };
+    AstralMemorySearchResult batch_results[kBatchQueryCount * kTopK]{};
+    uint32_t batch_counts[kBatchQueryCount]{};
+    err = astral_memory_search_batch(
+        index,
+        &search,
+        batch_queries,
+        kBatchQueryCount,
+        batch_results,
+        kBatchQueryCount * kTopK,
+        batch_counts);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(batch_counts[0], kTopK);
+    ASSERT_EQ(batch_counts[1], kTopK);
+    ASSERT_EQ(batch_results[0].key, kKeyA);
+    ASSERT_EQ(batch_results[kTopK].key, kKeyB);
+    const AstralErr batch_small_result_err = astral_memory_search_batch(
+        index,
+        &search,
+        batch_queries,
+        kBatchQueryCount,
+        batch_results,
+        kTopK,
+        batch_counts);
+    ASSERT_EQ(batch_small_result_err, ASTRAL_E_NOMEM);
+
     search.top_k = kTopOne;
     err = astral_memory_search(index, &search, query, results, kResultCapacity, &count);
     ASSERT_EQ(err, ASTRAL_OK);

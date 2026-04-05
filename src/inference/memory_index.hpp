@@ -22,6 +22,10 @@ AstralErr memory_remove(MemoryIndex* index, uint64_t key);
 AstralErr memory_search(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                         AstralMemorySearchResult* out_results, uint32_t max_results,
                         uint32_t* out_count);
+AstralErr memory_search_batch(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                              const float* queries, uint32_t query_count,
+                              AstralMemorySearchResult* out_results, uint32_t max_results,
+                              uint32_t* out_counts);
 AstralErr memory_search_begin(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                               const float* query, MemorySearchCursor** out_cursor);
 AstralErr memory_search_fetch(MemorySearchCursor* cursor, AstralMemorySearchResult* out_results,

@@ -1097,6 +1097,15 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search(
     uint32_t max_results,
     uint32_t* out_count
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_batch(
+    AstralHandle index,
+    const AstralMemorySearchDesc* desc,
+    const float* queries,
+    uint32_t query_count,
+    AstralMemorySearchResult* out_results,
+    uint32_t max_results,
+    uint32_t* out_counts
+);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_begin(
     AstralHandle index,
     const AstralMemorySearchDesc* desc,

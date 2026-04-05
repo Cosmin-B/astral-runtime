@@ -38,6 +38,7 @@ static constexpr uint32_t kBenchMemoryCapacity = 1024;
 static constexpr uint32_t kBenchMemoryTopOne = 1;
 static constexpr uint32_t kBenchMemoryTopK = 8;
 static constexpr uint32_t kBenchMemoryFetchK = 4;
+static constexpr uint32_t kBenchMemoryBatchQueries = 8;
 static constexpr uint32_t kBenchMemoryMinDim = 1;
 static constexpr uint32_t kBenchMemoryMaxDim = 8192;
 static constexpr uint32_t kBenchMemoryMinCapacity = 1;
@@ -108,6 +109,7 @@ static constexpr char kBenchMemoryCaseAddBatch[] = "add_batch";
 static constexpr char kBenchMemoryCaseGraphAddBatch[] = "graph_add_batch";
 static constexpr char kBenchMemoryCaseFlatSearchTop1[] = "flat_search_top1";
 static constexpr char kBenchMemoryCaseFlatSearch[] = "flat_search";
+static constexpr char kBenchMemoryCaseFlatSearchBatch[] = "flat_search_batch";
 static constexpr char kBenchMemoryCaseFlatQ8RecallSearch[] = "flat_q8_recall_search";
 static constexpr char kBenchMemoryCaseGraphTop1[] = "graph_top1";
 static constexpr char kBenchMemoryCaseGraphSearch[] = "graph_search";
@@ -1352,6 +1354,76 @@ static BenchResult bench_memory_flat_search(uint64_t iters) {
     return bench_memory_flat_search_impl(iters, memory_bench_capacity(kBenchMemoryCapacity, dim), "features.memory flat_search");
 }
 
+static BenchResult bench_memory_flat_search_batch(uint64_t iters) {
+    BenchResult r{};
+    r.name = "features.memory flat_search_batch";
+    r.ops = iters * kBenchMemoryBatchQueries;
+    const uint32_t dim = memory_bench_dim();
+    const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+    const AstralMemoryMetric metric = parse_memory_metric_env();
+
+    AstralMemoryIndexDesc desc{};
+    desc.size = sizeof(AstralMemoryIndexDesc);
+    desc.dim = dim;
+    desc.capacity = capacity;
+    desc.metric = metric;
+    desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    desc.storage_kind = parse_memory_storage_env();
+
+    AstralHandle index = 0;
+    AstralErr err = astral_memory_create(&desc, &index);
+    if (err != ASTRAL_OK) {
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<AstralMemoryRecord> records(capacity);
+    std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+    fill_memory_fixture(records, vectors, capacity, dim);
+    err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
+    if (err != ASTRAL_OK) {
+        astral_memory_destroy(index);
+        r.ops = 0;
+        return r;
+    }
+
+    std::vector<float> queries(static_cast<size_t>(kBenchMemoryBatchQueries) * dim);
+    for (uint32_t i = 0; i < kBenchMemoryBatchQueries; ++i) {
+        fill_memory_query(queries.data() + static_cast<size_t>(i) * dim, dim, i);
+    }
+    AstralMemorySearchDesc search{};
+    search.size = sizeof(AstralMemorySearchDesc);
+    search.top_k = kBenchMemoryTopK;
+    search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    search.graph_search = memory_graph_query_search();
+    AstralMemorySearchResult results[kBenchMemoryBatchQueries * kBenchMemoryTopK]{};
+    uint32_t counts[kBenchMemoryBatchQueries]{};
+
+    const uint64_t t0 = ticks_now();
+    const uint64_t n0 = ns_now();
+    for (uint64_t i = 0; i < iters; ++i) {
+        err = astral_memory_search_batch(
+            index,
+            &search,
+            queries.data(),
+            kBenchMemoryBatchQueries,
+            results,
+            kBenchMemoryBatchQueries * kBenchMemoryTopK,
+            counts);
+        if (err != ASTRAL_OK || counts[0] == 0) {
+            r.ops = i * kBenchMemoryBatchQueries;
+            break;
+        }
+    }
+    const uint64_t t1 = ticks_now();
+    const uint64_t n1 = ns_now();
+
+    r.ticks = t1 - t0;
+    r.ns = n1 - n0;
+    astral_memory_destroy(index);
+    return r;
+}
+
 static BenchResult bench_memory_graph_search(uint64_t iters) {
     BenchResult r{};
     r.name = "features.memory graph_search";
@@ -2284,6 +2356,9 @@ static void print_memory_benchmarks(uint64_t iters) {
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatSearch)) {
             print_result(bench_memory_flat_search(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseFlatSearchBatch)) {
+            print_result(bench_memory_flat_search_batch(iters), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatQ8RecallSearch)) {
             print_result(bench_memory_flat_q8_recall_search(iters), clock_info().name);

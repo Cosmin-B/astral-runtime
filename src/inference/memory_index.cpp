@@ -2256,6 +2256,37 @@ AstralErr memory_search(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
   return ASTRAL_OK;
 }
 
+AstralErr memory_search_batch(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                              const float* queries, uint32_t query_count,
+                              AstralMemorySearchResult* out_results, uint32_t max_results,
+                              uint32_t* out_counts) {
+  if (index == nullptr || desc == nullptr || desc->size != sizeof(AstralMemorySearchDesc) ||
+      queries == nullptr || out_results == nullptr || out_counts == nullptr ||
+      desc->top_k == 0 || query_count == 0) {
+    return ASTRAL_E_INVALID;
+  }
+  if (query_count > kU32Max / desc->top_k) {
+    return ASTRAL_E_NOMEM;
+  }
+  const uint32_t result_capacity = query_count * desc->top_k;
+  if (max_results < result_capacity) {
+    return ASTRAL_E_NOMEM;
+  }
+
+  for (uint32_t i = 0; i < query_count; ++i) {
+    uint32_t count = 0;
+    const float* query = queries + static_cast<size_t>(i) * index->dim;
+    AstralMemorySearchResult* results = out_results + static_cast<size_t>(i) * desc->top_k;
+    if (index->index_kind == ASTRAL_MEMORY_INDEX_GRAPH) {
+      memory_search_graph(index, desc, query, results, &count);
+    } else {
+      memory_search_flat(index, desc, query, results, &count);
+    }
+    out_counts[i] = count;
+  }
+  return ASTRAL_OK;
+}
+
 AstralErr memory_search_begin(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                               const float* query, MemorySearchCursor** out_cursor) {
   if (index == nullptr || desc == nullptr || desc->size != sizeof(AstralMemorySearchDesc) ||

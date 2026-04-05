@@ -161,6 +161,33 @@ namespace Astral.Runtime
             return written;
         }
 
+        public unsafe void SearchBatch(
+            ref AstralNative.AstralMemorySearchDesc desc,
+            NativeArray<float> queries,
+            uint queryCount,
+            NativeArray<AstralNative.AstralMemorySearchResult> outResults,
+            NativeArray<uint> outCounts)
+        {
+            ThrowIfInvalid();
+            EnsureSearchDescSize(ref desc);
+            ulong requiredScalars = (ulong)queryCount * m_dim;
+            if (queryCount == 0 || (ulong)queries.Length != requiredScalars || (ulong)outCounts.Length < queryCount)
+            {
+                throw new AstralException("Invalid memory batch search buffers.", AstralNative.ASTRAL_E_INVALID);
+            }
+            ValidateResults(outResults);
+
+            int err = AstralNative.astral_memory_search_batch(
+                m_handle,
+                ref desc,
+                (float*)queries.GetUnsafeReadOnlyPtr(),
+                queryCount,
+                (AstralNative.AstralMemorySearchResult*)outResults.GetUnsafePtr(),
+                (uint)outResults.Length,
+                (uint*)outCounts.GetUnsafePtr());
+            ThrowIfError(err, "astral_memory_search_batch");
+        }
+
         public unsafe AstralMemorySearchCursor BeginSearch(ref AstralNative.AstralMemorySearchDesc desc, NativeArray<float> query)
         {
             ThrowIfInvalid();

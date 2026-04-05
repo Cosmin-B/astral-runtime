@@ -363,6 +363,9 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_memory_add_batch(0, &memory_record, nullptr, kMemoryTopK), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_remove(0, kMemoryKey), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_search(0, &memory_search, nullptr, &memory_result, kMemoryTopK, &token_count), ASTRAL_E_INVALID);
+    const AstralErr memory_batch_err =
+        astral_memory_search_batch(0, &memory_search, nullptr, kMemoryTopK, &memory_result, kMemoryTopK, &token_count);
+    ASSERT_EQ(memory_batch_err, ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_search_begin(0, &memory_search, nullptr, &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_search_fetch(0, &memory_result, kMemoryFetchCapacity, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_save_size(0, nullptr), ASTRAL_E_INVALID);

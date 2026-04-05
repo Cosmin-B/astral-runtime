@@ -24,6 +24,7 @@ and keep the flat index as the recall oracle.
 - `astral_memory_remove()`
 - `astral_memory_clear()`
 - `astral_memory_search()`
+- `astral_memory_search_batch()`
 - `astral_memory_search_begin()`
 - `astral_memory_search_fetch()`
 - `astral_memory_search_end()`
@@ -37,6 +38,10 @@ The index is fixed-dimension and fixed-capacity. Add operations copy vectors
 into native storage and use a bounded native key table for update/remove lookup.
 Search returns result metadata first; callers decide whether to fetch text or
 engine objects for the selected keys.
+`astral_memory_search_batch()` accepts a row-major query matrix and writes each
+query's results into a fixed `top_k` stride in the output array. `out_counts[i]`
+reports how many results were written for query `i`, so callers can batch RAG
+lookups without repeated ABI crossings while still using caller-owned buffers.
 
 `AstralMemoryIndexDesc::index_kind` selects storage/search behavior:
 
@@ -178,8 +183,8 @@ against an index built with a larger graph search capacity. Set
 vectors are rotated through the graph recall benchmark. These controls let local
 runs cover vector scans and graph recall/latency tuning without changing source.
 Set `ASTRAL_BENCH_MEMORY_CASE` to one case name, such as
-`flat_q8_recall_search` or `graph_recall_search`, when collecting a narrow
-profile and avoiding unrelated index rebuilds.
+`flat_search_batch`, `flat_q8_recall_search`, or `graph_recall_search`, when
+collecting a narrow profile and avoiding unrelated index rebuilds.
 Set
 `ASTRAL_BENCH_MEMORY_SWEEP=1` to run the built-in 100/1k/10k/100k flat-index
 sweep in one invocation. Set
@@ -305,6 +310,7 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_ME
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
 perf stat -e cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses,dTLB-loads,dTLB-load-misses -- env ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_SWEEP=1 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=flat_search_batch ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=flat_q8_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search_sweep ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=512 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=64 ./build/dev/benchmarks/astral_benchmarks --only features
@@ -320,6 +326,7 @@ filtered exact fallback, save/load, and remove/rebuild behavior.
 Expected markers include `features.memory add_batch`,
 `features.memory graph_add_batch`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
+`features.memory flat_search_batch`,
 `features.memory flat_q8_recall_search`,
 `features.memory graph_top1`, `features.memory graph_search`,
 `features.memory graph_recall`, `features.memory graph_recall_top1`,
