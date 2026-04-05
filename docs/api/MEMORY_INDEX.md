@@ -42,6 +42,9 @@ engine objects for the selected keys.
 query's results into a fixed `top_k` stride in the output array. `out_counts[i]`
 reports how many results were written for query `i`, so callers can batch RAG
 lookups without repeated ABI crossings while still using caller-owned buffers.
+Flat batch search processes small query chunks against the vector table in one
+pass per chunk, so multi-query RAG can reuse cache-hot vector rows instead of
+re-running a full scan for every query.
 
 `AstralMemoryIndexDesc::index_kind` selects storage/search behavior:
 
@@ -149,6 +152,9 @@ Search keeps the top-k result set in the caller-provided output array, avoiding
 heap allocation during query execution. The flat scanner dispatches by metric
 before entering the vector loop, so dot, cosine, and L2 searches do not branch
 through a generic scorer for every stored vector.
+Batch flat search precomputes query scales for a bounded stack chunk, scans the
+stored rows once per chunk, and writes each query's top-k set into its fixed
+output stride.
 Batch ingest uses the same fixed-capacity vector storage and a free-slot cursor
 so sequential adds do not scan old slots to find the next open row.
 
