@@ -42,6 +42,7 @@ constexpr uint32_t kGraphDefaultSearch = 64;
 constexpr uint32_t kGraphMinSearch = 4;
 constexpr uint32_t kGraphLongLinkCount = 4;
 constexpr uint32_t kGraphMaxLevels = 16;
+constexpr uint32_t kMemoryBatchStackQueries = 16;
 constexpr int32_t kQ8MinValue = -127;
 constexpr int32_t kQ8MaxValue = 127;
 constexpr float kQ8MaxFloat = 127.0f;
@@ -909,6 +910,9 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
 
 void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                         AstralMemorySearchResult* out_results, uint32_t* out_count);
+void memory_search_flat_batch(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                              const float* queries, uint32_t query_count,
+                              AstralMemorySearchResult* out_results, uint32_t* out_counts);
 void graph_begin_visit(MemoryIndex* index);
 void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, float score,
                          uint32_t* candidate_count);
@@ -1815,6 +1819,40 @@ void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
   }
 }
 
+void memory_search_flat_batch(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                              const float* queries, uint32_t query_count,
+                              AstralMemorySearchResult* out_results, uint32_t* out_counts) {
+  float query_scales[kMemoryBatchStackQueries];
+  for (uint32_t query_i = 0; query_i < query_count; ++query_i) {
+    const float* query = queries + static_cast<size_t>(query_i) * index->dim;
+    query_scales[query_i] =
+        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 1.0f;
+    out_counts[query_i] = kNoResults;
+  }
+
+  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+    const uint32_t slot = active_slot_at(index, active_pos);
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    for (uint32_t query_i = 0; query_i < query_count; ++query_i) {
+      AstralMemorySearchResult* results = out_results + static_cast<size_t>(query_i) * desc->top_k;
+      uint32_t* filled = out_counts + query_i;
+      const float* query = queries + static_cast<size_t>(query_i) * index->dim;
+      const float score = score_slot(index, query, slot, query_scales[query_i]);
+      if (*filled == desc->top_k &&
+          !result_better_values(score, s.record.key, results[desc->top_k - 1u])) {
+        continue;
+      }
+      AstralMemorySearchResult candidate{};
+      fill_result(&candidate, s, score);
+      insert_result(results, desc->top_k, filled, candidate);
+    }
+  }
+}
+
 void destroy_allocations(MemoryIndex* index) {
   if (index->slots != nullptr) {
     core::runtime_free_array(index->slots, index->capacity);
@@ -2261,8 +2299,8 @@ AstralErr memory_search_batch(MemoryIndex* index, const AstralMemorySearchDesc* 
                               AstralMemorySearchResult* out_results, uint32_t max_results,
                               uint32_t* out_counts) {
   if (index == nullptr || desc == nullptr || desc->size != sizeof(AstralMemorySearchDesc) ||
-      queries == nullptr || out_results == nullptr || out_counts == nullptr ||
-      desc->top_k == 0 || query_count == 0) {
+      queries == nullptr || out_results == nullptr || out_counts == nullptr || desc->top_k == 0 ||
+      query_count == 0) {
     return ASTRAL_E_INVALID;
   }
   if (query_count > kU32Max / desc->top_k) {
@@ -2271,6 +2309,19 @@ AstralErr memory_search_batch(MemoryIndex* index, const AstralMemorySearchDesc* 
   const uint32_t result_capacity = query_count * desc->top_k;
   if (max_results < result_capacity) {
     return ASTRAL_E_NOMEM;
+  }
+
+  if (index->index_kind == ASTRAL_MEMORY_INDEX_FLAT) {
+    for (uint32_t query_base = 0; query_base < query_count;
+         query_base += kMemoryBatchStackQueries) {
+      const uint32_t remaining = query_count - query_base;
+      const uint32_t chunk =
+          remaining < kMemoryBatchStackQueries ? remaining : kMemoryBatchStackQueries;
+      memory_search_flat_batch(index, desc, queries + static_cast<size_t>(query_base) * index->dim,
+                               chunk, out_results + static_cast<size_t>(query_base) * desc->top_k,
+                               out_counts + query_base);
+    }
+    return ASTRAL_OK;
   }
 
   for (uint32_t i = 0; i < query_count; ++i) {
