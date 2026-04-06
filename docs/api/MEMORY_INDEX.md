@@ -198,15 +198,18 @@ sweep in one invocation. Set
 prompt cache, tool, chunk, and agent benchmarks do not dilute the memory-index
 counter profile. Use `scripts/run_memory_bench_matrix.sh` to run the
 memory-only benchmark across multiple metrics, dimensions, and capacities in one
-log.
+log. Use `scripts/run_memory_search_acceptance.sh` to capture the common exact
+flat, reduced flat, q8 recall, graph recall, and graph top-1 recall lanes into
+one output directory for a single dataset shape.
 
 For release tuning, capture `features.memory flat_search_top1`,
-`features.memory flat_q8_recall_search`, and `features.memory graph_recall` for
-the same dimension, metric, capacity, neighbor count, and search budget. A graph
-run is useful only when its recall meets the product target and its latency
-beats the exact flat baseline for that dataset. Keep the flat index available as
-the correctness oracle while tuning new embedding models or document
-distributions.
+`features.memory flat_search_batch`, `features.memory flat_q8_recall_search`,
+`features.memory graph_recall_search`, and `features.memory graph_recall_top1`
+for the same dimension, metric, capacity, neighbor count, and search budget. A
+graph run is useful only when its recall meets the product target and its
+latency beats the exact flat baseline for that dataset. Keep the flat index
+available as the correctness oracle while tuning new embedding models or
+document distributions.
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
@@ -324,6 +327,7 @@ ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAP
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
 scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage q8 --out /tmp/astral-memory-graph-q8.txt
+scripts/run_memory_search_acceptance.sh --preset dev --capacity 100000 --dim 384 --metric cosine --out-dir /tmp/astral-memory-search
 ```
 
 Native tests include `inference_memory_index_graph_mock` for graph search,
