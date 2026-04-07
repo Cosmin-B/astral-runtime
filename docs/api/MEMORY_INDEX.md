@@ -58,8 +58,9 @@ re-running a full scan for every query.
   searches use the exact flat scanner. Use the graph recall benchmark before
   choosing this path for retrieval. Graph construction assigns deterministic
   upper levels from each record key, descends those levels before base-layer
-  expansion, and keeps a few deterministic spread links at the base layer to
-  avoid purely local neighborhoods.
+  expansion, selects a diverse bounded neighbor set from the construction
+  candidate pool, and keeps a few deterministic spread links at the base layer
+  to avoid purely local neighborhoods.
 
 `AstralMemoryIndexDesc::storage_kind` selects vector storage:
 
