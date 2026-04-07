@@ -65,11 +65,12 @@ re-running a full scan for every query.
 
 - `ASTRAL_MEMORY_STORAGE_F32` is the default exact float32 storage.
 - `ASTRAL_MEMORY_STORAGE_Q8` stores each vector as signed 8-bit values plus one
-  per-vector scale. Add/load still accept float32 vectors, and save emits the
-  existing float32 snapshot format. Q8 search is approximate and is intended for
-  memory-footprint-sensitive retrieval. Graph q8 uses q8 pair scoring during
-  construction and q8-vs-f32 scoring for queries, so measure recall against the
-  flat f32 oracle before using it for retrieval.
+  per-vector scale. Add/load accept float32 vectors. Save uses a versioned
+  snapshot: q8 indexes write the per-vector scale and signed bytes, while older
+  float32 snapshots remain readable. Q8 search is approximate and is intended
+  for memory-footprint-sensitive retrieval. Graph q8 uses q8 pair scoring
+  during construction and q8-vs-f32 scoring for queries, so measure recall
+  against the flat f32 oracle before using it for retrieval.
 
 Choose the flat index when exact ranking, filtered search, or small-to-medium
 corpora matter more than avoiding a full scan. Choose the graph index only after
@@ -102,7 +103,8 @@ capacity sizing. `vector_bytes` covers row-major vector storage,
 the key table, and `graph_bytes` covers graph-only adjacency, frontier,
 scratch, level, and visited buffers. `total_bytes` is the runtime footprint
 sum, while `save_bytes` matches the current serialized snapshot size returned
-by `astral_memory_save_size()`.
+by `astral_memory_save_size()`. For q8 indexes, `save_bytes` reflects the
+compact q8 snapshot rather than an expanded float32 copy.
 
 ## Metrics
 

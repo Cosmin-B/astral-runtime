@@ -2675,6 +2675,11 @@ TEST(inference_memory_index_q8_storage_mock) {
     constexpr uint64_t kKeyA = 701;
     constexpr uint64_t kKeyB = 702;
     constexpr uint64_t kKeyC = 703;
+    constexpr uint64_t kSavedQ8VectorBytes =
+        static_cast<uint64_t>(kRecordCount) *
+        (sizeof(float) + static_cast<uint64_t>(kDim) * sizeof(int8_t));
+    constexpr uint64_t kSavedF32VectorBytes =
+        static_cast<uint64_t>(kRecordCount) * kDim * sizeof(float);
 
     AstralMemoryIndexDesc desc{};
     desc.size = sizeof(AstralMemoryIndexDesc);
@@ -2730,6 +2735,8 @@ TEST(inference_memory_index_q8_storage_mock) {
     uint64_t save_bytes = 0;
     err = astral_memory_save_size(index, &save_bytes);
     ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(stats.save_bytes, save_bytes);
+    ASSERT_LT(save_bytes, save_bytes - kSavedQ8VectorBytes + kSavedF32VectorBytes);
     std::string blob;
     blob.resize(static_cast<size_t>(save_bytes));
     AstralMutSpanU8 out_blob{};
@@ -2774,6 +2781,8 @@ TEST(inference_memory_index_q8_storage_mock) {
 
     err = astral_memory_save_size(graph, &save_bytes);
     ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(stats.save_bytes, save_bytes);
+    ASSERT_LT(save_bytes, save_bytes - kSavedQ8VectorBytes + kSavedF32VectorBytes);
     blob.resize(static_cast<size_t>(save_bytes));
     out_blob.data = reinterpret_cast<uint8_t*>(&blob[0]);
     out_blob.len = static_cast<uint32_t>(blob.size());

@@ -21,7 +21,8 @@ namespace {
 
 constexpr uint32_t kMaxDim = 8192;
 constexpr uint32_t kSaveMagic = 0x414D454Du;
-constexpr uint32_t kSaveVersion = 1;
+constexpr uint32_t kSaveVersionF32 = 1;
+constexpr uint32_t kSaveVersion = 2;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
 constexpr uint32_t kTopOne = 1;
@@ -630,8 +631,13 @@ struct MemorySearchCursor {
 namespace {
 
 inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
+  const uint64_t vector_bytes =
+      index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8
+          ? static_cast<uint64_t>(index->count) *
+                (sizeof(float) + static_cast<uint64_t>(index->dim) * sizeof(int8_t))
+          : static_cast<uint64_t>(index->count) * index->dim * sizeof(float);
   return sizeof(SaveHeader) + static_cast<uint64_t>(index->count) * sizeof(AstralMemoryRecord) +
-         static_cast<uint64_t>(index->count) * index->dim * sizeof(float);
+         vector_bytes;
 }
 
 } // namespace
@@ -2477,6 +2483,7 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
   header.count = index->count;
   header.metric = index->metric;
   header.index_kind = index->index_kind;
+  header._reserved0 = index->storage_kind;
 
   uint8_t* cursor = out_bytes.data;
   std::memcpy(cursor, &header, sizeof(header));
@@ -2487,16 +2494,16 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
     std::memcpy(cursor, &index->slots[slot].record, sizeof(AstralMemoryRecord));
     cursor += sizeof(AstralMemoryRecord);
     if (q8_storage(index)) {
-      float* dst = reinterpret_cast<float*>(cursor);
-      const int8_t* src = q8_vector_at(index, slot);
       const float scale = index->q8_scales[slot];
-      for (uint32_t i = 0; i < index->dim; ++i) {
-        dst[i] = static_cast<float>(src[i]) * scale;
-      }
+      std::memcpy(cursor, &scale, sizeof(float));
+      cursor += sizeof(float);
+      std::memcpy(cursor, q8_vector_at(index, slot),
+                  static_cast<size_t>(index->dim) * sizeof(int8_t));
+      cursor += static_cast<size_t>(index->dim) * sizeof(int8_t);
     } else {
       std::memcpy(cursor, vector_at(index, slot), sizeof(float) * index->dim);
+      cursor += sizeof(float) * index->dim;
     }
-    cursor += sizeof(float) * index->dim;
   }
   return ASTRAL_OK;
 }
@@ -2510,15 +2517,25 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
 
   SaveHeader header{};
   std::memcpy(&header, bytes.data, sizeof(header));
-  if (header.magic != kSaveMagic || header.version != kSaveVersion || header.dim != desc->dim ||
+  const bool version_valid = header.version == kSaveVersionF32 || header.version == kSaveVersion;
+  AstralMemoryStorageKind saved_storage = static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
+  if (header.version == kSaveVersion) {
+    saved_storage = static_cast<AstralMemoryStorageKind>(header._reserved0);
+  }
+  if (header.magic != kSaveMagic || !version_valid || header.dim != desc->dim ||
       header.metric != desc->metric || header.index_kind != desc->index_kind ||
-      header.count > desc->capacity) {
+      header.count > desc->capacity || !storage_kind_valid(saved_storage)) {
     return ASTRAL_E_INVALID;
   }
 
+  const uint64_t saved_vector_bytes =
+      saved_storage == ASTRAL_MEMORY_STORAGE_Q8
+          ? static_cast<uint64_t>(header.count) *
+                (sizeof(float) + static_cast<uint64_t>(header.dim) * sizeof(int8_t))
+          : static_cast<uint64_t>(header.count) * header.dim * sizeof(float);
   const uint64_t need = sizeof(SaveHeader) +
                         static_cast<uint64_t>(header.count) * sizeof(AstralMemoryRecord) +
-                        static_cast<uint64_t>(header.count) * header.dim * sizeof(float);
+                        saved_vector_bytes;
   if (bytes.len < need) {
     return ASTRAL_E_INVALID;
   }
@@ -2530,16 +2547,29 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
   }
 
   const uint8_t* cursor = bytes.data + sizeof(SaveHeader);
+  float vector[kMaxDim];
   for (uint32_t i = 0; i < header.count; ++i) {
     AstralMemoryRecord record{};
     std::memcpy(&record, cursor, sizeof(record));
     cursor += sizeof(record);
-    err = memory_add_batch(index, &record, reinterpret_cast<const float*>(cursor), 1);
+    if (saved_storage == ASTRAL_MEMORY_STORAGE_Q8) {
+      float scale = 1.0f;
+      std::memcpy(&scale, cursor, sizeof(float));
+      cursor += sizeof(float);
+      const int8_t* q8 = reinterpret_cast<const int8_t*>(cursor);
+      for (uint32_t dim_i = 0; dim_i < header.dim; ++dim_i) {
+        vector[dim_i] = static_cast<float>(q8[dim_i]) * scale;
+      }
+      cursor += static_cast<size_t>(header.dim) * sizeof(int8_t);
+    } else {
+      std::memcpy(vector, cursor, sizeof(float) * header.dim);
+      cursor += sizeof(float) * header.dim;
+    }
+    err = memory_add_batch(index, &record, vector, 1);
     if (err != ASTRAL_OK) {
       memory_destroy(index);
       return err;
     }
-    cursor += sizeof(float) * header.dim;
   }
 
   *out_index = index;
