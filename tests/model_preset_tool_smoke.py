@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import http.server
 import json
+import shlex
 import subprocess
 import struct
 import sys
@@ -28,6 +29,7 @@ QWEN_TEXT_FILE = "Qwen3-0.6B-Q8_0.gguf"
 QWEN_TEXT_REPO = "Qwen/Qwen3-0.6B-GGUF"
 UNKNOWN_PRESET = "missing-preset"
 CUSTOM_OUTPUT_DIR = "build/model-preset-smoke"
+CUSTOM_OUTPUT_DIR_WITH_SPACE = "build/model preset smoke"
 CUSTOM_MODEL_URL = "https://example.test/model.gguf"
 CUSTOM_MODEL_FILE = "model.gguf"
 CUSTOM_BAD_MODEL_FILE = "../model.gguf"
@@ -219,6 +221,11 @@ def main(argv: list[str]) -> int:
     require(info["include_in_package"] is False, "Qwen preset should not package by default")
     require(info["path"].endswith(f"{CUSTOM_OUTPUT_DIR}/{QWEN_TEXT_FILE}"), "wrong resolved path")
     require(QWEN_TEXT_PRESET in info["download_command"], "download command does not name preset")
+    spaced_info = json.loads(run_tool(root, "info", QWEN_TEXT_PRESET, "--dir", CUSTOM_OUTPUT_DIR_WITH_SPACE).stdout)
+    require(
+        shlex.split(spaced_info["download_command"])[-1].endswith(CUSTOM_OUTPUT_DIR_WITH_SPACE),
+        "download command should quote output directories with spaces",
+    )
 
     embed = json.loads(run_tool(root, "info", QWEN_EMBED_PRESET).stdout)
     require(embed["embedding_dimension"] == EXPECTED_EMBED_DIMENSION, "wrong embedding dimension")
