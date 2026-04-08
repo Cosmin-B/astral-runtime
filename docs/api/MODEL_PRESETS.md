@@ -49,7 +49,8 @@ embedding dimension, package flag, sample-matrix flag, license note, and
 repeatable downloader command. `list --format json` prints the same records for
 every selected preset, optionally filtered by `--type text` or `--type
 embedding`. Engine setup tools can consume this output without scraping dry-run
-text.
+text. The generated downloader command is shell-quoted so paths with spaces can
+be copied or displayed without changing the argument boundaries.
 
 `status` prints the same preset metadata plus local file state. `status-all`
 prints those records for the selected manifest rows so setup tools can inspect a

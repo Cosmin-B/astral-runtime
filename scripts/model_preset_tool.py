@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import struct
 import sys
 import time
@@ -426,9 +427,13 @@ def _resolved_output_path(args: argparse.Namespace, preset: Preset) -> Path:
 
 
 def _format_download_command(preset: Preset, output_dir: Path) -> str:
+    script = str(Path("tests") / "model_downloader.sh")
+    output = str(output_dir)
     if preset.name == CUSTOM_PRESET_NAME:
-        return f"{Path('tests') / 'model_downloader.sh'} --url {preset.url} --file {preset.filename} --dir {output_dir}"
-    return f"{Path('tests') / 'model_downloader.sh'} --preset {preset.name} --dir {output_dir}"
+        parts = [script, "--url", preset.url, "--file", preset.filename, "--dir", output]
+    else:
+        parts = [script, "--preset", preset.name, "--dir", output]
+    return " ".join(shlex.quote(part) for part in parts)
 
 
 def _preset_record(preset: Preset, output_dir: Path) -> Dict[str, Any]:
