@@ -926,6 +926,8 @@ bool graph_pop_candidate(MemoryIndex* index, uint32_t* candidate_count, uint32_t
                          float* out_score);
 inline void graph_mark_visited(MemoryIndex* index, uint32_t slot);
 inline bool graph_was_visited(const MemoryIndex* index, uint32_t slot);
+bool graph_neighbor_diverse(MemoryIndex* index, uint32_t candidate_slot, float candidate_score,
+                            const uint32_t* neighbors, uint32_t count);
 
 void insert_result(AstralMemorySearchResult* results, uint32_t top_k, uint32_t* filled,
                    const AstralMemorySearchResult& candidate) {
@@ -965,6 +967,11 @@ void insert_graph_neighbor(MemoryIndex* index, uint32_t owner_slot, uint32_t nei
     return;
   }
 
+  const float candidate_score = score_pair(index, owner_slot, neighbor_slot);
+  if (!graph_neighbor_diverse(index, neighbor_slot, candidate_score, neighbors, count)) {
+    return;
+  }
+
   uint32_t worst_pos = 0;
   float worst_score = score_pair(index, owner_slot, neighbors[0]);
   for (uint32_t i = 1; i < count; ++i) {
@@ -975,7 +982,6 @@ void insert_graph_neighbor(MemoryIndex* index, uint32_t owner_slot, uint32_t nei
     }
   }
 
-  const float candidate_score = score_pair(index, owner_slot, neighbor_slot);
   if (candidate_score > worst_score) {
     neighbors[worst_pos] = neighbor_slot;
   }
@@ -1001,15 +1007,15 @@ void force_graph_neighbor(MemoryIndex* index, uint32_t owner_slot, uint32_t neig
   neighbors[position] = neighbor_slot;
 }
 
-void insert_graph_build_candidate(MemoryIndex* index, uint32_t* filled, uint32_t slot,
-                                  float score) {
+void insert_graph_build_candidate(MemoryIndex* index, uint32_t capacity, uint32_t* filled,
+                                  uint32_t slot, float score) {
   uint32_t pos = *filled;
-  if (pos < index->graph_neighbor_capacity) {
+  if (pos < capacity) {
     ++(*filled);
-  } else if (score <= index->graph_scratch_scores[index->graph_neighbor_capacity - 1u]) {
+  } else if (score <= index->graph_scratch_scores[capacity - 1u]) {
     return;
   } else {
-    pos = index->graph_neighbor_capacity - 1u;
+    pos = capacity - 1u;
   }
 
   while (pos > 0 && score > index->graph_scratch_scores[pos - 1u]) {
@@ -1019,6 +1025,51 @@ void insert_graph_build_candidate(MemoryIndex* index, uint32_t* filled, uint32_t
   }
   index->graph_scratch_scores[pos] = score;
   index->graph_scratch_slots[pos] = slot;
+}
+
+bool graph_neighbor_selected(const uint32_t* neighbors, uint32_t count, uint32_t slot) {
+  for (uint32_t i = 0; i < count; ++i) {
+    if (neighbors[i] == slot) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool graph_neighbor_diverse(MemoryIndex* index, uint32_t candidate_slot, float candidate_score,
+                            const uint32_t* neighbors, uint32_t count) {
+  for (uint32_t i = 0; i < count; ++i) {
+    if (score_pair(index, candidate_slot, neighbors[i]) > candidate_score) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t candidate_count,
+                            uint32_t* neighbors, uint32_t* out_count) {
+  uint32_t selected = 0;
+  for (uint32_t i = 0; i < candidate_count && selected < index->graph_neighbor_capacity; ++i) {
+    const uint32_t candidate = index->graph_scratch_slots[i];
+    const float candidate_score = index->graph_scratch_scores[i];
+    if (candidate == owner_slot || graph_neighbor_selected(neighbors, selected, candidate)) {
+      continue;
+    }
+    if (graph_neighbor_diverse(index, candidate, candidate_score, neighbors, selected)) {
+      neighbors[selected] = candidate;
+      ++selected;
+    }
+  }
+
+  for (uint32_t i = 0; i < candidate_count && selected < index->graph_neighbor_capacity; ++i) {
+    const uint32_t candidate = index->graph_scratch_slots[i];
+    if (candidate == owner_slot || graph_neighbor_selected(neighbors, selected, candidate)) {
+      continue;
+    }
+    neighbors[selected] = candidate;
+    ++selected;
+  }
+  *out_count = selected;
 }
 
 bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t* filled,
@@ -1049,7 +1100,8 @@ void graph_collect_neighbors_exact(MemoryIndex* index, uint32_t slot, uint32_t l
     if (other == slot || index->slots[other].occupied == 0 || index->graph_levels[other] < level) {
       continue;
     }
-    insert_graph_build_candidate(index, filled, other, score_pair(index, slot, other));
+    insert_graph_build_candidate(index, index->graph_scratch_capacity, filled, other,
+                                 score_pair(index, slot, other));
   }
 }
 
@@ -1075,7 +1127,8 @@ void graph_collect_neighbors_bounded(MemoryIndex* index, uint32_t slot, uint32_t
     }
 
     ++expanded_count;
-    insert_graph_build_candidate(index, filled, current, current_score);
+    insert_graph_build_candidate(index, index->graph_scratch_capacity, filled, current,
+                                 current_score);
 
     const uint32_t* neighbors = graph_neighbors_at_level(index, current, level);
     const uint32_t neighbor_count = graph_neighbor_count_at_level(index, current, level);
@@ -1193,18 +1246,19 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
 
   uint32_t level = slot_level < index->graph_max_level ? slot_level : index->graph_max_level;
   for (;;) {
-    uint32_t filled = 0;
+    uint32_t candidate_count = 0;
     if (index->count <= index->graph_search_capacity) {
-      graph_collect_neighbors_exact(index, slot, level, &filled);
+      graph_collect_neighbors_exact(index, slot, level, &candidate_count);
     } else {
-      graph_collect_neighbors_bounded(index, slot, level, entry, &filled);
+      graph_collect_neighbors_bounded(index, slot, level, entry, &candidate_count);
     }
 
     uint32_t* neighbors = graph_neighbors_at_level(index, slot, level);
+    uint32_t filled = 0;
+    graph_select_neighbors(index, slot, candidate_count, neighbors, &filled);
     graph_neighbor_count_ref(index, slot, level) = filled;
     for (uint32_t i = 0; i < filled; ++i) {
-      neighbors[i] = index->graph_scratch_slots[i];
-      insert_graph_neighbor(index, index->graph_scratch_slots[i], slot, level);
+      insert_graph_neighbor(index, neighbors[i], slot, level);
     }
     if (level == 0 && index->count > index->graph_neighbor_capacity &&
         index->graph_neighbor_capacity > kGraphLongLinkCount) {
@@ -2518,7 +2572,8 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
   SaveHeader header{};
   std::memcpy(&header, bytes.data, sizeof(header));
   const bool version_valid = header.version == kSaveVersionF32 || header.version == kSaveVersion;
-  AstralMemoryStorageKind saved_storage = static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
+  AstralMemoryStorageKind saved_storage =
+      static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version == kSaveVersion) {
     saved_storage = static_cast<AstralMemoryStorageKind>(header._reserved0);
   }
