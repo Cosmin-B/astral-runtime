@@ -42,7 +42,7 @@ if [[ "${#clang_files[@]}" -gt 0 ]]; then
     echo "[pre-commit] clang-format not found; install it or run with --no-verify" >&2
     exit 1
   fi
-  clang-format --dry-run --Werror "${clang_files[@]}"
+  python3 scripts/check_staged_clang_format.py --repo "${repo_root}" "${clang_files[@]}"
 fi
 
 for path in "${shell_files[@]}"; do
