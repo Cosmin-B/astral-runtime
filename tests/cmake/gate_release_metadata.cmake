@@ -204,7 +204,9 @@ file(WRITE "${out_dir}/release-evidence.json"
 ")
 
 execute_process(
-  COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/generate_release_metadata.sh" "${out_dir}"
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "ASTRAL_REPOSITORY_URL=https://github.com/example/astral-renamed"
+    "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/generate_release_metadata.sh" "${out_dir}"
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE metadata_result
   ERROR_VARIABLE metadata_error
@@ -257,6 +259,12 @@ if(NOT sbom MATCHES "\"name\"[ \t\r\n]*:[ \t\r\n]*\"AstralRT\"")
 endif()
 if(NOT sbom MATCHES "\"name\"[ \t\r\n]*:[ \t\r\n]*\"llama\\.cpp\"")
   message(FATAL_ERROR "release-sbom.spdx.json does not list llama.cpp")
+endif()
+if(NOT sbom MATCHES "\"documentNamespace\"[ \t\r\n]*:[ \t\r\n]*\"https://github\\.com/example/astral-renamed/releases/0\\.1\\.0/sbom/[0-9a-f][0-9a-f]*\"")
+  message(FATAL_ERROR "release-sbom.spdx.json does not use the configured repository URL")
+endif()
+if(NOT sbom MATCHES "git%2Bhttps://github\\.com/example/astral-renamed\\.git@[0-9a-f][0-9a-f]*")
+  message(FATAL_ERROR "release-sbom.spdx.json package URL does not use the configured repository URL")
 endif()
 
 execute_process(
