@@ -545,6 +545,42 @@ FString UAstralBlueprintLibrary::ErrorCodeName(int32 ErrorCode)
     }
 }
 
+FString UAstralBlueprintLibrary::RequestKindName(EAstralRequestKind Kind) {
+  switch (Kind) {
+  case EAstralRequestKind::Session:
+    return TEXT("Session");
+  case EAstralRequestKind::Conversation:
+    return TEXT("Conversation");
+  case EAstralRequestKind::AgentChat:
+    return TEXT("AgentChat");
+  case EAstralRequestKind::Embedding:
+    return TEXT("Embedding");
+  case EAstralRequestKind::MemorySearch:
+    return TEXT("MemorySearch");
+  case EAstralRequestKind::None:
+  default:
+    return TEXT("None");
+  }
+}
+
+FString UAstralBlueprintLibrary::RequestStateName(EAstralRequestState State) {
+  switch (State) {
+  case EAstralRequestState::Queued:
+    return TEXT("Queued");
+  case EAstralRequestState::Running:
+    return TEXT("Running");
+  case EAstralRequestState::Completed:
+    return TEXT("Completed");
+  case EAstralRequestState::Canceled:
+    return TEXT("Canceled");
+  case EAstralRequestState::Failed:
+    return TEXT("Failed");
+  case EAstralRequestState::Invalid:
+  default:
+    return TEXT("Invalid");
+  }
+}
+
 int32 UAstralBlueprintLibrary::MaxSessionAdapters()
 {
     return static_cast<int32>(ASTRAL_SESSION_ADAPTERS_MAX);

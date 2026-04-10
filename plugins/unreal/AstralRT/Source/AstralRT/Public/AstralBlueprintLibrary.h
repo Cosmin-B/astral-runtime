@@ -36,6 +36,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "Astral|Diagnostics")
     static FString ErrorCodeName(int32 ErrorCode);
 
+    UFUNCTION(BlueprintPure, Category = "Astral|Diagnostics")
+    static FString RequestKindName(EAstralRequestKind Kind);
+
+    UFUNCTION(BlueprintPure, Category = "Astral|Diagnostics")
+    static FString RequestStateName(EAstralRequestState State);
+
     /** Maximum number of adapters that can be attached to one session. */
     UFUNCTION(BlueprintPure, Category = "Astral|Adapters")
     static int32 MaxSessionAdapters();

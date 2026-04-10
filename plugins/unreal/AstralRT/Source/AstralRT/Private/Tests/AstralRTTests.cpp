@@ -225,6 +225,12 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("unknown error name"),
               UAstralBlueprintLibrary::ErrorCodeName(-12345),
               FString(TEXT("ASTRAL_E_-12345")));
+    TestEqual(TEXT("request kind name"),
+              UAstralBlueprintLibrary::RequestKindName(EAstralRequestKind::MemorySearch),
+              FString(TEXT("MemorySearch")));
+    TestEqual(TEXT("request state name"),
+              UAstralBlueprintLibrary::RequestStateName(EAstralRequestState::Canceled),
+              FString(TEXT("Canceled")));
 
     const int64 Caps = static_cast<int64>(ASTRAL_CAP_EMBEDDINGS |
                                           ASTRAL_CAP_SAMPLER_EXT |
