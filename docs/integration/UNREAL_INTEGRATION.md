@@ -32,6 +32,8 @@ setup and diagnostics:
   failed Astral call.
 - `ErrorCodeName` maps native integer error codes to stable symbolic names such
   as `ASTRAL_E_TIMEOUT`.
+- `RequestKindName` and `RequestStateName` convert async request enums into
+  compact labels for Blueprint logs and UI.
 - `FAstralAsyncResult` reports `bSuccess`, native `ErrorCode`, ticket, and
   queue-state flags for ticketed Blueprint operations.
 - `FAstralOperationResult` reports native handle, count, and polling state for
