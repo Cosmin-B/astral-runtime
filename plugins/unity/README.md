@@ -359,6 +359,7 @@ if (AstralRequest.TryGetStatus(request, out var status, out int err))
 {
     bool queued = AstralRequest.IsQueued(status);
     bool ticketed = AstralRequest.HasTicket(status);
+    string label = AstralRequest.StateName(status.state);
 }
 ```
 

@@ -272,6 +272,8 @@ namespace Astral.Runtime.Tests
             Assert.True(AstralRequest.IsQueued(status));
             Assert.True(AstralRequest.IsActive(status));
             Assert.True(AstralRequest.HasTicket(status));
+            Assert.AreEqual("Embedding", AstralRequest.KindName(status.kind));
+            Assert.AreEqual("Queued", AstralRequest.StateName(status.state));
             Assert.False(AstralRequest.IsTerminal(status));
             Assert.False(AstralRequest.IsStream(status));
 
@@ -279,11 +281,13 @@ namespace Astral.Runtime.Tests
             status.flags |= AstralNative.AstralRequestFlags.Stream;
             Assert.True(AstralRequest.IsRunning(status));
             Assert.True(AstralRequest.IsActive(status));
+            Assert.AreEqual("Running", AstralRequest.StateName(status.state));
             Assert.True(AstralRequest.IsStream(status));
 
             status.state = AstralNative.AstralRequestState.Completed;
             Assert.True(AstralRequest.IsCompleted(status));
             Assert.True(AstralRequest.IsTerminal(status));
+            Assert.AreEqual("Completed", AstralRequest.StateName(status.state));
             Assert.True(AstralRequest.IsSuccessful(status));
             Assert.False(AstralRequest.IsActive(status));
 
@@ -291,12 +295,34 @@ namespace Astral.Runtime.Tests
             status.result = AstralNative.ASTRAL_E_BACKEND;
             Assert.True(AstralRequest.IsFailed(status));
             Assert.True(AstralRequest.IsTerminal(status));
+            Assert.AreEqual("Failed", AstralRequest.StateName(status.state));
             Assert.False(AstralRequest.IsSuccessful(status));
 
             status.state = AstralNative.AstralRequestState.Canceled;
             status.result = AstralNative.ASTRAL_E_CANCELED;
             Assert.True(AstralRequest.IsCanceled(status));
+            Assert.AreEqual("Canceled", AstralRequest.StateName(status.state));
             Assert.True(AstralRequest.IsTerminal(status));
+        }
+
+        [Test]
+        public void RequestLifecycle_LabelHelpers_CoverNativeEnums()
+        {
+            Assert.AreEqual("None", AstralRequest.KindName(AstralNative.AstralRequestKind.None));
+            Assert.AreEqual("Session", AstralRequest.KindName(AstralNative.AstralRequestKind.Session));
+            Assert.AreEqual("Conversation", AstralRequest.KindName(AstralNative.AstralRequestKind.Conversation));
+            Assert.AreEqual("AgentChat", AstralRequest.KindName(AstralNative.AstralRequestKind.AgentChat));
+            Assert.AreEqual("Embedding", AstralRequest.KindName(AstralNative.AstralRequestKind.Embedding));
+            Assert.AreEqual("MemorySearch", AstralRequest.KindName(AstralNative.AstralRequestKind.MemorySearch));
+            Assert.AreEqual("None", AstralRequest.KindName((AstralNative.AstralRequestKind)999u));
+
+            Assert.AreEqual("Invalid", AstralRequest.StateName(AstralNative.AstralRequestState.Invalid));
+            Assert.AreEqual("Queued", AstralRequest.StateName(AstralNative.AstralRequestState.Queued));
+            Assert.AreEqual("Running", AstralRequest.StateName(AstralNative.AstralRequestState.Running));
+            Assert.AreEqual("Completed", AstralRequest.StateName(AstralNative.AstralRequestState.Completed));
+            Assert.AreEqual("Canceled", AstralRequest.StateName(AstralNative.AstralRequestState.Canceled));
+            Assert.AreEqual("Failed", AstralRequest.StateName(AstralNative.AstralRequestState.Failed));
+            Assert.AreEqual("Invalid", AstralRequest.StateName((AstralNative.AstralRequestState)999u));
         }
 
         [Test]
