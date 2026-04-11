@@ -198,6 +198,46 @@ namespace Astral.Runtime
             return (status.flags & AstralNative.AstralRequestFlags.Stream) != 0;
         }
 
+        public static string KindName(AstralNative.AstralRequestKind kind)
+        {
+            switch (kind)
+            {
+                case AstralNative.AstralRequestKind.Session:
+                    return "Session";
+                case AstralNative.AstralRequestKind.Conversation:
+                    return "Conversation";
+                case AstralNative.AstralRequestKind.AgentChat:
+                    return "AgentChat";
+                case AstralNative.AstralRequestKind.Embedding:
+                    return "Embedding";
+                case AstralNative.AstralRequestKind.MemorySearch:
+                    return "MemorySearch";
+                case AstralNative.AstralRequestKind.None:
+                default:
+                    return "None";
+            }
+        }
+
+        public static string StateName(AstralNative.AstralRequestState state)
+        {
+            switch (state)
+            {
+                case AstralNative.AstralRequestState.Queued:
+                    return "Queued";
+                case AstralNative.AstralRequestState.Running:
+                    return "Running";
+                case AstralNative.AstralRequestState.Completed:
+                    return "Completed";
+                case AstralNative.AstralRequestState.Canceled:
+                    return "Canceled";
+                case AstralNative.AstralRequestState.Failed:
+                    return "Failed";
+                case AstralNative.AstralRequestState.Invalid:
+                default:
+                    return "Invalid";
+            }
+        }
+
         private static AstralNative.AstralRequestStatus NewStatus()
         {
             return new AstralNative.AstralRequestStatus
