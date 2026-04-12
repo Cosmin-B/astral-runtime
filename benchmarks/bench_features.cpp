@@ -109,10 +109,12 @@ static constexpr char kBenchMemoryCaseAddBatch[] = "add_batch";
 static constexpr char kBenchMemoryCaseGraphAddBatch[] = "graph_add_batch";
 static constexpr char kBenchMemoryCaseFlatSearchTop1[] = "flat_search_top1";
 static constexpr char kBenchMemoryCaseFlatSearch[] = "flat_search";
+static constexpr char kBenchMemoryCaseFlatSearchLatency[] = "flat_search_latency";
 static constexpr char kBenchMemoryCaseFlatSearchBatch[] = "flat_search_batch";
 static constexpr char kBenchMemoryCaseFlatQ8RecallSearch[] = "flat_q8_recall_search";
 static constexpr char kBenchMemoryCaseGraphTop1[] = "graph_top1";
 static constexpr char kBenchMemoryCaseGraphSearch[] = "graph_search";
+static constexpr char kBenchMemoryCaseGraphSearchLatency[] = "graph_search_latency";
 static constexpr char kBenchMemoryCaseGraphRecall[] = "graph_recall";
 static constexpr char kBenchMemoryCaseGraphRecallTop1[] = "graph_recall_top1";
 static constexpr char kBenchMemoryCaseGraphRecallSearch[] = "graph_recall_search";
@@ -212,6 +214,29 @@ static uint32_t bounded_env_u32(const char* key, uint32_t fallback, uint32_t min
         return max_value;
     }
     return parsed;
+}
+
+static void sort_ticks(std::vector<uint64_t>& values) {
+  const size_t count = values.size();
+  for (size_t i = 1; i < count; ++i) {
+    const uint64_t value = values[i];
+    size_t j = i;
+    while (j > 0 && values[j - 1] > value) {
+      values[j] = values[j - 1];
+      --j;
+    }
+    values[j] = value;
+  }
+}
+
+static uint64_t percentile_ticks(std::vector<uint64_t>& values, uint32_t percentile) {
+  if (values.empty()) {
+    return 0;
+  }
+  sort_ticks(values);
+  const uint64_t scaled = static_cast<uint64_t>(values.size() - 1u) * percentile;
+  const uint64_t scale = static_cast<uint64_t>(kBenchMemoryPercentScale);
+  return values[static_cast<size_t>(scaled / scale)];
 }
 
 static AstralMemoryMetric parse_memory_metric_env() {
@@ -1486,6 +1511,86 @@ static BenchResult bench_memory_graph_search(uint64_t iters) {
     return r;
 }
 
+static LatencyResult bench_memory_search_latency(uint64_t iters, bool graph) {
+  LatencyResult r{};
+  r.name = graph ? "features.memory graph_search_latency" : "features.memory flat_search_latency";
+  r.tick_to_ns = clock_info().tick_to_ns;
+
+  const uint32_t dim = memory_bench_dim();
+  const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+  const AstralMemoryMetric metric = parse_memory_metric_env();
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = dim;
+  desc.capacity = capacity;
+  desc.metric = metric;
+  desc.index_kind = graph ? ASTRAL_MEMORY_INDEX_GRAPH : ASTRAL_MEMORY_INDEX_FLAT;
+  desc.graph_neighbors = graph ? memory_graph_neighbors() : 0u;
+  desc.graph_search = graph ? memory_graph_search() : 0u;
+  desc.storage_kind = parse_memory_storage_env();
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  if (err != ASTRAL_OK) {
+    return r;
+  }
+
+  std::vector<AstralMemoryRecord> records(capacity);
+  std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+  fill_memory_fixture(records, vectors, capacity, dim);
+  err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
+  if (err != ASTRAL_OK) {
+    astral_memory_destroy(index);
+    return r;
+  }
+
+  std::vector<float> query(dim);
+  fill_memory_query(query);
+  AstralMemorySearchDesc search{};
+  search.size = sizeof(AstralMemorySearchDesc);
+  search.top_k = kBenchMemoryTopK;
+  search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+  search.graph_search = memory_graph_query_search();
+  AstralMemorySearchResult results[kBenchMemoryTopK]{};
+  uint32_t result_count = 0;
+  err =
+      astral_memory_search(index, &search, query.data(), results, kBenchMemoryTopK, &result_count);
+  if (err != ASTRAL_OK || result_count == 0) {
+    astral_memory_destroy(index);
+    return r;
+  }
+
+  std::vector<uint64_t> samples;
+  samples.reserve(static_cast<size_t>(iters));
+  for (uint64_t i = 0; i < iters; ++i) {
+    const uint64_t t0 = ticks_now();
+    err = astral_memory_search(index, &search, query.data(), results, kBenchMemoryTopK,
+                               &result_count);
+    const uint64_t t1 = ticks_now();
+    if (err != ASTRAL_OK || result_count == 0) {
+      break;
+    }
+    samples.push_back(t1 - t0);
+  }
+
+  if (!samples.empty()) {
+    uint64_t max_ticks = 0;
+    for (uint64_t sample : samples) {
+      if (sample > max_ticks) {
+        max_ticks = sample;
+      }
+    }
+    r.max_ticks = max_ticks;
+    r.p50_ticks = percentile_ticks(samples, 50);
+    r.p95_ticks = percentile_ticks(samples, 95);
+    r.p99_ticks = percentile_ticks(samples, 99);
+  }
+
+  astral_memory_destroy(index);
+  return r;
+}
+
 static BenchResult bench_memory_graph_top1(uint64_t iters) {
     BenchResult r{};
     r.name = "features.memory graph_top1";
@@ -2357,6 +2462,9 @@ static void print_memory_benchmarks(uint64_t iters) {
         if (memory_case_enabled(kBenchMemoryCaseFlatSearch)) {
             print_result(bench_memory_flat_search(iters), clock_info().name);
         }
+        if (memory_case_enabled(kBenchMemoryCaseFlatSearchLatency)) {
+          print_latency_result(bench_memory_search_latency(iters, false), clock_info().name);
+        }
         if (memory_case_enabled(kBenchMemoryCaseFlatSearchBatch)) {
             print_result(bench_memory_flat_search_batch(iters), clock_info().name);
         }
@@ -2368,6 +2476,9 @@ static void print_memory_benchmarks(uint64_t iters) {
         }
         if (memory_case_enabled(kBenchMemoryCaseGraphSearch)) {
             print_result(bench_memory_graph_search(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphSearchLatency)) {
+          print_latency_result(bench_memory_search_latency(iters, true), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseGraphRecall)) {
             print_result(bench_memory_graph_recall(iters), clock_info().name);
