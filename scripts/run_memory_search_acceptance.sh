@@ -10,7 +10,8 @@ Usage: scripts/run_memory_search_acceptance.sh [options]
 
 Runs focused native memory-search benchmarks that compare exact flat search,
 reduced-vector flat search, and approximate graph search against the flat
-oracle. Logs are written outside the repository by default.
+oracle. The summary includes recall and latency markers. Logs are written
+outside the repository by default.
 
 Options:
   --preset <name>       CMake preset / build dir to use (default: release-with-tests)
@@ -105,8 +106,10 @@ run_case() {
 } > "${out_dir}/summary.txt"
 
 run_case "flat_f32_batch" "f32" "flat_search_batch"
+run_case "flat_f32_latency" "f32" "flat_search_latency"
 run_case "flat_q8_batch" "q8" "flat_search_batch"
 run_case "flat_q8_recall" "q8" "flat_q8_recall_search"
+run_case "graph_f32_latency" "f32" "graph_search_latency"
 run_case "graph_q8_recall" "q8" "graph_recall_search"
 run_case "graph_q8_top1_recall" "q8" "graph_recall_top1"
 

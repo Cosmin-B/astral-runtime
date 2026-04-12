@@ -202,11 +202,13 @@ prompt cache, tool, chunk, and agent benchmarks do not dilute the memory-index
 counter profile. Use `scripts/run_memory_bench_matrix.sh` to run the
 memory-only benchmark across multiple metrics, dimensions, and capacities in one
 log. Use `scripts/run_memory_search_acceptance.sh` to capture the common exact
-flat, reduced flat, q8 recall, graph recall, and graph top-1 recall lanes into
-one output directory for a single dataset shape.
+flat, exact flat latency, reduced flat, q8 recall, graph latency, graph recall,
+and graph top-1 recall lanes into one output directory for a single dataset
+shape.
 
 For release tuning, capture `features.memory flat_search_top1`,
-`features.memory flat_search_batch`, `features.memory flat_q8_recall_search`,
+`features.memory flat_search_batch`, `features.memory flat_search_latency`,
+`features.memory flat_q8_recall_search`, `features.memory graph_search_latency`,
 `features.memory graph_recall_search`, and `features.memory graph_recall_top1`
 for the same dimension, metric, capacity, neighbor count, and search budget. A
 graph run is useful only when its recall meets the product target and its
