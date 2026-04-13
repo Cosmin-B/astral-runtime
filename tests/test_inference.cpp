@@ -836,6 +836,7 @@ TEST(inference_agents_share_model_executor_mock) {
     ASSERT_EQ(astral_request_wait(&request_b, kRequestTimeoutMs, &status_b), ASTRAL_OK);
     ASSERT_EQ(status_a.state, ASTRAL_REQUEST_COMPLETED);
     ASSERT_EQ(status_b.state, ASTRAL_REQUEST_COMPLETED);
+    ASSERT_EQ(astral_agent_release_slot(agent_a), ASTRAL_E_BUSY);
     (void)read_agent_stream_all(agent_a);
     (void)read_agent_stream_all(agent_b);
 
