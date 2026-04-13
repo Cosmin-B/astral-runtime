@@ -754,6 +754,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("memory stats metadata bytes"), MemoryStats.MetadataBytes > EmptyByteCount);
     TestEqual(TEXT("memory stats graph bytes"), MemoryStats.GraphBytes, EmptyByteCount);
     TestTrue(TEXT("memory stats total bytes"), MemoryStats.TotalBytes >= MemoryStats.VectorBytes);
+    TestTrue(TEXT("memory stats save bytes"), MemoryStats.SaveBytes > EmptyByteCount);
 
     TArray<float> Query;
     Query.Add(VectorOne);
@@ -886,6 +887,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("graph memory stats neighbors"), GraphMemoryStats.GraphNeighbors, GraphMemoryDesc.GraphNeighbors);
     TestEqual(TEXT("graph memory stats search"), GraphMemoryStats.GraphSearch, GraphMemoryDesc.GraphSearch);
     TestTrue(TEXT("graph memory stats graph bytes"), GraphMemoryStats.GraphBytes > EmptyByteCount);
+    TestTrue(TEXT("graph memory stats save bytes"), GraphMemoryStats.SaveBytes > EmptyByteCount);
     TArray<FAstralMemorySearchResult> GraphMemoryResults;
     const FAstralOperationResult GraphSearchMemory =
         UAstralBlueprintLibrary::SearchMemoryIndexResult(GraphMemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup, GraphMemoryResults);
