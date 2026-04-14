@@ -534,6 +534,12 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("second shared-model agent chat wait succeeds"), AgentBChatWait.bSuccess);
     TestEqual(TEXT("second shared-model agent chat wait state"), AgentBChatWaitStatus.State, EAstralRequestState::Completed);
 
+    const FAstralOperationResult ReleaseUnreadAgentSlot =
+        UAstralBlueprintLibrary::ReleaseAgentSlotResult(AgentCreate.Handle);
+    TestFalse(TEXT("release unread agent slot fails"), ReleaseUnreadAgentSlot.bSuccess);
+    TestEqual(TEXT("release unread agent slot error"), ReleaseUnreadAgentSlot.ErrorCode,
+              static_cast<int32>(ASTRAL_E_BUSY));
+
     for (int32 ReadIndex = 0; ReadIndex < AgentChatMaxReads; ++ReadIndex) {
         FString Chunk;
         const FAstralOperationResult ReadAgentChat =
