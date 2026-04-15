@@ -435,7 +435,7 @@ namespace Astral
         }
 
         /// <summary>
-        /// Feed a prompt from NativeArray (zero-copy).
+        /// Feed a prompt from a caller-owned NativeArray.
         /// </summary>
         public unsafe void FeedNative(NativeArray<byte> utf8Prompt, bool finalize = true)
         {
@@ -532,70 +532,24 @@ namespace Astral
 }
 ```
 
-## Unity Allocator Adapter (`AstralAllocator.cs`)
+## Unity Allocator Bridge
 
-```csharp
-using System;
-using System.Runtime.InteropServices;
-using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
+`AstralRuntime.Initialize()` uses `AstralAllocatorBridge.CreateUnityAllocator()`
+when `AstralConfig.useUnityAllocator` is enabled. The bridge passes
+`UnsafeUtility.Malloc()` / `UnsafeUtility.Free()` callbacks into
+`AstralInit.sys_alloc`, roots the delegates for native lifetime safety, and
+keeps simple allocation counters for debugging.
 
-namespace Astral
-{
-    /// <summary>
-    /// Adapts Unity's native allocators to Astral's C allocator interface.
-    /// </summary>
-    public static class AstralAllocatorAdapter
-    {
-        // Keep delegates alive (GC root)
-        private static AstralNative.AllocFn allocDelegate;
-        private static AstralNative.FreeFn freeDelegate;
-
-        public static AstralNative.AstralAllocator CreatePersistent()
-        {
-            allocDelegate = UnityAlloc;
-            freeDelegate = UnityFree;
-
-            return new AstralNative.AstralAllocator
-            {
-                alloc = Marshal.GetFunctionPointerForDelegate(allocDelegate),
-                free = Marshal.GetFunctionPointerForDelegate(freeDelegate),
-                user = IntPtr.Zero
-            };
-        }
-
-        [AOT.MonoPInvokeCallback(typeof(AstralNative.AllocFn))]
-        private static IntPtr UnityAlloc(IntPtr user, UIntPtr size, UIntPtr align)
-        {
-            unsafe
-            {
-                // Use Unity's persistent allocator
-                void* ptr = UnsafeUtility.Malloc(
-                    (long)size,
-                    (int)align,
-                    Allocator.Persistent
-                );
-                return (IntPtr)ptr;
-            }
-        }
-
-        [AOT.MonoPInvokeCallback(typeof(AstralNative.FreeFn))]
-        private static void UnityFree(IntPtr user, IntPtr ptr, UIntPtr size, UIntPtr align)
-        {
-            unsafe
-            {
-                UnsafeUtility.Free((void*)ptr, Allocator.Persistent);
-            }
-        }
-    }
-}
-```
+The allocator bridge is a runtime ownership setting. It does not change the
+caller-owned span model for prompt bytes, stream buffers, embedding vectors, or
+memory-search results. See `plugins/unity/ALLOCATOR_INTEGRATION.md` for the
+current contract and validation notes.
 
 ## Usage Example (`BasicChatExample.cs`)
 
 ```csharp
 using UnityEngine;
-using Astral;
+using Astral.Runtime;
 using Unity.Collections;
 
 public class BasicChatExample : MonoBehaviour
@@ -605,26 +559,15 @@ public class BasicChatExample : MonoBehaviour
 
     void Start()
     {
-        // Initialize Astral runtime
-        var initCfg = new AstralNative.AstralInit
-        {
-            sys_alloc = AstralAllocatorAdapter.CreatePersistent(),
-            log_cb = IntPtr.Zero, // Optional: implement logging
-            log_user = IntPtr.Zero,
-            reserve_bytes = 2UL << 30, // 2 GB
-            thread_count = 0, // Auto
-            numa_node = 0xFFFFFFFF, // Any
-            enable_hugepages = 0
-        };
+        var config = AstralConfig.Default;
+        config.useUnityAllocator = true;
 
-        var err = AstralNative.astral_init(ref initCfg);
-        if (err != AstralNative.AstralErr.OK)
+        if (!AstralRuntime.Initialize(config, out var err))
         {
-            Debug.LogError($"Astral init failed: {err}");
+            Debug.LogError(AstralRuntime.GetErrorString(err));
             return;
         }
 
-        // Load model
         string modelPath = Application.streamingAssetsPath + "/models/llama-7b-q4.gguf";
         byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(modelPath);
 
@@ -651,16 +594,11 @@ public class BasicChatExample : MonoBehaviour
             }
         }
 
-        // Create session
         session = new AstralSession(modelHandle, maxTokens: 512, temperature: 0.7f);
 
-        // Feed prompt
         session.Feed("Once upon a time", finalize: true);
-
-        // Start decode
         session.Decode();
 
-        // Poll for tokens in Update
         Debug.Log("Inference started");
     }
 
@@ -683,7 +621,7 @@ public class BasicChatExample : MonoBehaviour
         {
             AstralNative.astral_model_release(modelHandle);
         }
-        AstralNative.astral_shutdown();
+        AstralRuntime.Shutdown();
     }
 }
 ```
@@ -732,17 +670,19 @@ job.bytesRead.Dispose();
 
 ### Android
 
-- **IL2CPP**: Always use IL2CPP (not Mono) for ARM targets
-- **Native Lib**: Build `libastral_rt.so` for `arm64-v8a` (v0.1.1)
-- **Threading**: Use `pthread` backend; avoid JNI calls from native threads
-- **Memory**: Reserve smaller amount (512MB) due to device constraints
+- **Scripting backend**: Use IL2CPP for ARM64 player validation.
+- **Native library**: Stage `libastral_rt.so` under `Plugins/Android/arm64-v8a/`.
+- **Threading**: Keep Unity API calls on Unity-owned threads.
+- **Memory**: Tune reserve size on the target device.
 
 ### iOS
 
-- **IL2CPP**: Required for App Store
-- **Bitcode**: Disable bitcode or provide bitcode-enabled lib
-- **Memory**: Use `mmap` via POSIX; avoid `vm_allocate` (restricted)
-- **Entitlements**: No special entitlements needed for inference
+- **Scripting backend**: Use IL2CPP for device validation.
+- **Native library**: Stage the iOS static library through the Unity plugin
+  layout.
+- **Memory**: Tune model size, context length, and reserve size on the target
+  device.
+- **Entitlements**: Inference does not require Astral-specific entitlements.
 
 ### WebGL
 
@@ -754,7 +694,8 @@ job.bytesRead.Dispose();
 2. **Prefer `StreamRead()` in polling loops**: Use caller-owned `NativeArray` buffers when managed strings are not needed.
 3. **Burst Compile Jobs**: Use `StreamReadJob` where job scheduling fits the caller's frame model.
 4. **Profile Allocations**: Use Unity Profiler Memory views to check whether token polling allocates.
-5. **Thread Affinity**: Pin decode thread to performance cores on mobile (optional)
+5. **Threading**: Keep Unity object access on Unity-owned threads and measure
+   native worker settings per device.
 
 ## Troubleshooting
 
@@ -769,20 +710,11 @@ job.bytesRead.Dispose();
 - Use `StreamRead()` with persistent `NativeArray`, not `StreamReadString()`
 - Avoid `string.Format()` in hot path; use `StringBuilder` or `UnsafeUtility.WriteArrayElement`
 
-### Crashes on iOS
+### Player Build Failures
 
-- Enable "Enable Exceptions" in Player Settings → Other Settings
-- Disable Bitcode or rebuild native lib with Bitcode
-
-### Slow Inference
-
-- Increase `n_batch` (512 → 2048) for throughput
-- Enable GPU layers if Metal/OpenCL backend available
-- Profile with Unity Profiler → Deep Profile to find hot spots
-
-## Future Enhancements
-
-- **Jobs System Integration**: Full Burst-compiled decode path
-- **Async/Await**: C# async wrappers for `Decode()` and `StreamRead()`
-- **Scriptable Objects**: Config via `AstralModelAsset` and `AstralSessionAsset`
-- **Editor Tools**: Model inspector, tokenizer visualizer, benchmark runner
+- Verify the native plugin is staged for the selected Unity target and CPU
+  architecture.
+- Check that model files are staged or downloaded into the runtime path the
+  wrapper resolves.
+- Run the native benchmark suite on the target hardware before changing context
+  length, batch size, or worker-thread settings.
