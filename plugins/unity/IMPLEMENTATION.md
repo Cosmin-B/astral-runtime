@@ -71,7 +71,7 @@ public static extern int astral_init(ref AstralInit cfg);
 // From managed string (allocates temporary NativeArray)
 var span = AstralSpanU8.FromString(str, out NativeArray<byte> tempArray);
 
-// From NativeArray (zero-copy)
+// From caller-owned NativeArray storage
 var span = AstralSpanU8.FromNativeArray(nativeArray);
 ```
 
@@ -180,8 +180,8 @@ session.ReadStream(buffer);
 | `AstralModel.Load()` | 1x temp string | 1x model weights |
 | `AstralSession.Create()` | 0 | 1x session context |
 | `session.Feed(string)` | 1x temp UTF-8 | 0 (uses session buffer) |
-| `session.Feed(NativeArray)` | 0 | 0 (zero-copy) |
-| `session.ReadStream(NativeArray)` | 0 | 0 (zero-copy) |
+| `session.Feed(NativeArray)` | 0 | 0 |
+| `session.ReadStream(NativeArray)` | 0 | 0 |
 | `session.ReadStreamAsString()` | 1x string | 0 |
 
 **Best Practice**: Use `NativeArray` APIs for hot paths; use `string` APIs for convenience during initialization.
@@ -236,7 +236,6 @@ IEnumerator StreamNativeArray()
     using var session = AstralSession.Create(model);
     using var buffer = new NativeArray<byte>(4096, Allocator.Persistent);
 
-    // Feed prompt (zero-copy)
     var promptBytes = System.Text.Encoding.UTF8.GetBytes("Once upon a time");
     var promptArray = new NativeArray<byte>(promptBytes, Allocator.Temp);
     session.Feed(promptArray, finalize: true);
