@@ -1,10 +1,3 @@
-// Astral Unity Jobs System integration.
-// Jobs poll token streams on worker threads with caller-owned NativeArray buffers.
-//
-// Design: Use Unity Jobs System for async token streaming.
-// Allocation model: callers own NativeArray buffers before scheduling.
-// Thread-safety: NativeArray owns the cross-thread byte buffers.
-
 using System;
 using Unity.Collections;
 using Unity.Jobs;
@@ -13,22 +6,7 @@ using UnityEngine;
 namespace Astral.Runtime
 {
     /// <summary>
-    /// Job for polling Astral token stream on background thread.
-    ///
-    /// JOB DATA:
-    /// - All fields are blittable types
-    /// - No managed references (IntPtr for session handle)
-    /// - No exceptions (returns error codes)
-    ///
-    /// THREAD-SAFETY:
-    /// - NativeArray owns the cross-thread byte buffers
-    /// - Session handle is thread-safe (Astral runtime handles locking)
-    /// - No shared state between jobs
-    ///
-    /// PERFORMANCE:
-    /// - The job wrapper only forwards caller-owned buffers to native code.
-    /// - Caller-owned buffers avoid per-token managed string conversion.
-    /// - Native stream reads come from the runtime SPSC queue.
+    /// Polls an Astral stream into caller-owned NativeArray storage.
     /// </summary>
     public struct AstralStreamReadJob : IJob
     {
@@ -46,23 +24,16 @@ namespace Astral.Runtime
 
         public void Execute()
         {
-            // Convert NativeArray to mutable span (zero-copy)
             var span = outputBuffer.AsMutSpan();
 
-            // Read from Astral stream
-            // Returns: >0 = bytes read, 0 = timeout/no data, <0 = error code
             int result = AstralNative.astral_stream_read(session, span, timeout_ms);
 
-            // Store result
             bytesRead[0] = result;
         }
     }
 
     /// <summary>
-    /// Job for feeding prompt chunks to Astral session.
-    ///
-    /// Use case: Large prompts can be fed incrementally on background thread
-    /// to avoid blocking main thread.
+    /// Feeds a UTF-8 prompt chunk from caller-owned NativeArray storage.
     /// </summary>
     public struct AstralSessionFeedJob : IJob
     {
@@ -80,13 +51,10 @@ namespace Astral.Runtime
 
         public void Execute()
         {
-            // Convert NativeArray to read-only span (zero-copy)
             var span = AstralNative.AstralSpanU8.FromNativeArray(promptChunk);
 
-            // Feed to Astral session
             int result = (int)AstralNative.astral_session_feed(session, span, finalize);
 
-            // Store error code
             errorCode[0] = result;
         }
     }
@@ -150,23 +118,7 @@ namespace Astral.Runtime
     /// </summary>
     public static class AstralJobs
     {
-        /// <summary>
-        /// Schedule stream read on background thread.
-        ///
-        /// PARAMETERS:
-        /// - session: Astral session handle
-        /// - outputBuffer: Pre-allocated buffer for token bytes (caller must dispose)
-        /// - bytesRead: Output array (length 1) for bytes read count (caller must dispose)
-        /// - timeout_ms: Timeout in milliseconds (0 = non-blocking)
-        /// - dependency: Optional job dependency
-        ///
-        /// RETURNS:
-        /// - JobHandle: Use .Complete() to wait or chain dependencies
-        ///
-        /// THREAD-SAFETY:
-        /// - Safe to call from any thread
-        /// - outputBuffer/bytesRead must not be accessed until job completes
-        /// </summary>
+        /// <summary>Schedules a stream read job.</summary>
         public static JobHandle ScheduleStreamRead(
             AstralNative.AstralHandle session,
             NativeArray<byte> outputBuffer,
@@ -205,19 +157,7 @@ namespace Astral.Runtime
             return job.Schedule(dependency);
         }
 
-        /// <summary>
-        /// Schedule prompt feed on background thread.
-        ///
-        /// PARAMETERS:
-        /// - session: Astral session handle
-        /// - promptChunk: UTF-8 encoded prompt bytes (caller must dispose)
-        /// - finalize: 1 = last chunk, 0 = more chunks coming
-        /// - errorCode: Output array (length 1) for error code (caller must dispose)
-        /// - dependency: Optional job dependency
-        ///
-        /// RETURNS:
-        /// - JobHandle: Use .Complete() to wait or chain dependencies
-        /// </summary>
+        /// <summary>Schedules a prompt feed job.</summary>
         public static JobHandle ScheduleFeed(
             AstralNative.AstralHandle session,
             NativeArray<byte> promptChunk,
@@ -256,20 +196,7 @@ namespace Astral.Runtime
             return job.Schedule(dependency);
         }
 
-        /// <summary>
-        /// Schedule decode on background thread.
-        ///
-        /// PARAMETERS:
-        /// - session: Astral session handle
-        /// - errorCode: Output array (length 1) for error code (caller must dispose)
-        /// - dependency: Optional job dependency
-        ///
-        /// RETURNS:
-        /// - JobHandle: Use .Complete() to wait or chain dependencies
-        ///
-        /// NOTE: Decode is typically fast (just queues work), but scheduling on
-        /// background thread avoids any potential blocking on main thread.
-        /// </summary>
+        /// <summary>Schedules a decode request job.</summary>
         public static JobHandle ScheduleDecode(
             AstralNative.AstralHandle session,
             NativeArray<int> errorCode,
@@ -305,21 +232,8 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Schedule full inference pipeline: Feed -> Decode -> StreamRead.
-        ///
-        /// CONVENIENCE METHOD: Chains all three operations with dependencies.
-        ///
-        /// PARAMETERS:
-        /// - session: Astral session handle
-        /// - prompt: UTF-8 encoded prompt bytes
-        /// - outputBuffer: Pre-allocated buffer for response
-        /// - bytesRead: Output array for bytes read count
-        /// - timeout_ms: Timeout for stream read
-        ///
-        /// RETURNS:
-        /// - JobHandle: Completes when all operations finish
-        ///
-        /// CLEANUP: Caller must dispose prompt, outputBuffer, bytesRead after handle completes
+        /// Schedules feed, decode, and one stream read as a dependent job chain.
+        /// The caller owns all NativeArray inputs and outputs.
         /// </summary>
         public static JobHandle ScheduleInference(
             AstralNative.AstralHandle session,

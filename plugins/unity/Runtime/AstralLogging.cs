@@ -1,10 +1,3 @@
-// Astral Unity Logging Bridge
-// Forwards Astral runtime logs to Unity Debug.Log
-//
-// Thread-safety: All callbacks are thread-safe (Unity Debug.Log is thread-safe)
-// IL2CPP: Uses MonoPInvokeCallback for IL2CPP compatibility
-// Performance: Non-blocking (drops logs if Unity logger is slow)
-
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
@@ -14,22 +7,15 @@ using UnityEngine;
 namespace Astral.Runtime
 {
     /// <summary>
-    /// Bridge between Astral runtime logging and Unity Debug.Log.
-    ///
-    /// 
-    /// - Callback must be non-blocking (Astral drops logs if callback is slow >10ms)
-    /// - Must catch managed exceptions before returning through the C ABI callback
-    /// - Must be thread-safe (Unity Debug.Log is thread-safe)
+    /// Creates the native log callback used by AstralRuntime.Initialize().
     /// </summary>
     internal static class AstralLogging
     {
         private const string Prefix = "[Astral] ";
 
-        // Callback delegate for Astral C ABI
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate void LogFn(IntPtr user, int level, AstralNative.AstralSpanU8 msg);
 
-        // Keep delegate alive to prevent GC collection
         private static LogFn s_logDelegate;
 
         // Maximum log level to forward (0=error .. 4=trace).
@@ -158,7 +144,6 @@ namespace Astral.Runtime
         /// </summary>
         internal static IntPtr GetLogCallback()
         {
-            // Initialize delegate (GC root)
             s_logDelegate = UnityLogCallback;
 
             return Marshal.GetFunctionPointerForDelegate(s_logDelegate);
@@ -173,14 +158,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Logging callback - forwards to Unity Debug.Log.
-        ///
-        /// CRITICAL REQUIREMENTS:
-        /// - MUST be non-blocking (Astral drops logs if >10ms)
-        /// - MUST NOT throw exceptions (catch all)
-        /// - MUST be thread-safe (Unity Debug.Log is thread-safe)
-        ///
-        /// MonoPInvokeCallback required for IL2CPP compatibility.
+        /// Native log callback. Managed exceptions are logged and swallowed at the ABI boundary.
         /// </summary>
         [MonoPInvokeCallback(typeof(LogFn))]
         private static void UnityLogCallback(IntPtr user, int level, AstralNative.AstralSpanU8 msg)

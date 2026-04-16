@@ -236,7 +236,6 @@ namespace Astral.Runtime.Examples
 
                 session = AstralSession.Create(m_model, sessionConfig);
 
-                // Feed prompt (zero-copy)
                 var promptBytes = System.Text.Encoding.UTF8.GetBytes(prompt);
                 var promptArray = new NativeArray<byte>(promptBytes, Allocator.Temp);
                 session.Feed(promptArray, finalize: true);

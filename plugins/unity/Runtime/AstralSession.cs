@@ -384,8 +384,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Feed a prompt from NativeArray (zero-copy).
-        ///  No GC allocations.
+        /// Feed UTF-8 prompt bytes from a caller-owned NativeArray.
         /// </summary>
         /// <param name="promptChunk">UTF-8 prompt data</param>
         /// <param name="finalize">True if this is the last chunk</param>
@@ -530,7 +529,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Add a UTF-8 stop sequence (zero-copy).
+        /// Add a UTF-8 stop sequence from a caller-owned NativeArray.
         /// Preconditions: Must not be decoding (Cancel + Wait first).
         /// </summary>
         public void StopAdd(NativeArray<byte> utf8)

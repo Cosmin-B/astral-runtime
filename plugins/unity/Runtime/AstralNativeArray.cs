@@ -1,10 +1,3 @@
-// Astral Unity NativeArray Extensions
-// Zero-copy conversions between Unity NativeArray and Astral spans
-//
-// Performance: All conversions are zero-copy (pointer-based)
-// Safety: The caller keeps the NativeArray alive for the span lifetime.
-// Compatibility: Works with Burst compiler and IL2CPP
-
 using System;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -14,31 +7,13 @@ using Unity.Collections.LowLevel.Unsafe;
 namespace Astral.Runtime
 {
     /// <summary>
-    /// Helpers for zero-copy conversion between NativeArray and Astral spans.
-    ///
-    /// Span conversion rules:
-    /// - All conversions are zero-copy (no memcpy, just pointer casts)
-    /// - Lifetime: Span is valid only while NativeArray is alive
-    /// - Thread-safety: NativeArray must not be disposed while span is in use
-    /// - UTF-8: All string conversions use UTF-8 encoding (no UTF-16)
+    /// Creates Astral span views over Unity NativeArray and NativeSlice storage.
     /// </summary>
     public static class AstralNativeArray
     {
-        // ====== NativeArray<byte> -> Astral Spans ======
-
         /// <summary>
-        /// Convert NativeArray{byte} to AstralSpanU8 (read-only, zero-copy).
-        ///
-        /// SAFETY:
-        /// - NativeArray must remain alive while span is in use
-        /// - Caller is responsible for lifetime management
-        /// - No bounds checking after conversion (Astral runtime handles this)
-        ///
-        /// Usage:
-        ///   var array = new NativeArray{byte}(1024, Allocator.Temp);
-        ///   var span = array.AsSpan();
-        ///   AstralNative.astral_session_feed(session, span, finalize: 0);
-        ///   array.Dispose();
+        /// Creates a read-only span view. The NativeArray must stay alive while
+        /// native code uses the span.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe AstralNative.AstralSpanU8 AsSpan(this NativeArray<byte> array)
@@ -51,19 +26,8 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Convert NativeArray{byte} to AstralMutSpanU8 (mutable, zero-copy).
-        ///
-        /// SAFETY:
-        /// - NativeArray must remain alive while span is in use
-        /// - NativeArray must be writable (not read-only)
-        /// - Caller is responsible for thread-safety (no concurrent writes)
-        ///
-        /// Usage:
-        ///   var buffer = new NativeArray{byte}(1024, Allocator.Temp);
-        ///   var span = buffer.AsMutSpan();
-        ///   int bytesRead = AstralNative.astral_stream_read(session, span, 1000);
-        ///   // Use buffer[0..bytesRead]
-        ///   buffer.Dispose();
+        /// Creates a mutable span view. The NativeArray must stay writable and
+        /// alive while native code uses the span.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe AstralNative.AstralMutSpanU8 AsMutSpan(this NativeArray<byte> array)
@@ -76,16 +40,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Convert NativeSlice{byte} to AstralSpanU8 (read-only, zero-copy).
-        ///
-        /// SAFETY:
-        /// - NativeSlice must remain alive while span is in use
-        /// - Underlying NativeArray must remain alive
-        ///
-        /// Usage:
-        ///   var array = new NativeArray{byte}(1024, Allocator.Temp);
-        ///   var slice = new NativeSlice{byte}(array, 0, 512);
-        ///   var span = slice.AsSpan();
+        /// Creates a read-only span view over a NativeSlice.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe AstralNative.AstralSpanU8 AsSpan(this NativeSlice<byte> slice)
@@ -98,7 +53,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Convert NativeSlice{byte} to AstralMutSpanU8 (mutable, zero-copy).
+        /// Creates a mutable span view over a NativeSlice.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe AstralNative.AstralMutSpanU8 AsMutSpan(this NativeSlice<byte> slice)
@@ -110,29 +65,8 @@ namespace Astral.Runtime
             };
         }
 
-        // ====== String -> NativeArray<byte> (UTF-8) ======
-
         /// <summary>
-        /// Convert C# string to NativeArray{byte} (UTF-8 encoding).
-        ///
-        /// 
-        /// - Always UTF-8 encoding (no UTF-16, no Latin-1)
-        /// - Caller must dispose NativeArray when done
-        /// - No NUL terminator (Astral uses length-based spans)
-        ///
-        /// Performance:
-        /// - Allocates NativeArray (caller must dispose)
-        /// - Encoding.UTF8.GetBytes allocates managed array (GC pressure)
-        /// - Use Allocator.Temp for short-lived conversions
-        /// - Use Allocator.TempJob for job-based conversions
-        /// - Use Allocator.Persistent for long-lived conversions
-        ///
-        /// Usage:
-        ///   using (var utf8 = "Hello, AI!".ToUtf8(Allocator.Temp))
-        ///   {
-        ///       var span = utf8.AsSpan();
-        ///       AstralNative.astral_session_feed(session, span, finalize: 1);
-        ///   } // utf8 disposed here
+        /// Encodes a managed string into a caller-disposed UTF-8 NativeArray.
         /// </summary>
         public static NativeArray<byte> ToUtf8(this string str, Allocator allocator)
         {
@@ -141,13 +75,10 @@ namespace Astral.Runtime
                 return new NativeArray<byte>(0, allocator);
             }
 
-            // Get UTF-8 bytes (managed allocation - GC pressure)
             byte[] bytes = Encoding.UTF8.GetBytes(str);
 
-            // Allocate NativeArray
             var array = new NativeArray<byte>(bytes.Length, allocator, NativeArrayOptions.UninitializedMemory);
 
-            // Copy bytes (unsafe memcpy for performance)
             unsafe
             {
                 fixed (byte* src = bytes)
@@ -195,22 +126,8 @@ namespace Astral.Runtime
             return bytes.Length;
         }
 
-        // ====== NativeArray<byte> (UTF-8) -> String ======
-
         /// <summary>
-        /// Convert NativeArray{byte} (UTF-8) to C# string.
-        ///
-        /// 
-        /// - Input MUST be valid UTF-8 (no validation, undefined behavior on invalid UTF-8)
-        /// - Allocates managed string (GC pressure)
-        /// - Use sparingly in hot paths (prefer working with NativeArray directly)
-        ///
-        /// Usage:
-        ///   var buffer = new NativeArray{byte}(1024, Allocator.Temp);
-        ///   int bytesRead = AstralNative.astral_stream_read(session, buffer.AsMutSpan(), 1000);
-        ///   var slice = new NativeSlice{byte}(buffer, 0, bytesRead);
-        ///   string response = slice.ToUtf8String();
-        ///   buffer.Dispose();
+        /// Decodes a UTF-8 NativeArray into a managed string.
         /// </summary>
         public static unsafe string ToUtf8String(this NativeArray<byte> array)
         {
@@ -279,10 +196,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Validate UTF-8 byte sequence.
-        /// Returns true if valid UTF-8, false otherwise.
-        ///
-        /// PERFORMANCE: This is expensive (O(n) scan). Use sparingly.
+        /// Returns true when the byte array is valid UTF-8.
         /// </summary>
         public static unsafe bool IsValidUtf8(this NativeArray<byte> array)
         {
