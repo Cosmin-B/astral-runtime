@@ -24,11 +24,16 @@ Options:
   --query-search <N>    Per-query graph search budget (default: graph budget)
   --graph-neighbors <N> Graph neighbor budget (default: 32)
   --recall-queries <N>  Recall query count (default: 32)
+  --perf                Wrap benchmark lanes with perf stat
+  --perf-bin <path>     Perf executable to use (default: perf from PATH)
+  --perf-events <csv>   Perf stat event list
+  --require-perf        Fail when perf is missing or blocked
   --help                Show help
 
 Examples:
   scripts/run_memory_search_acceptance.sh --out-dir /tmp/astral-memory-search
   scripts/run_memory_search_acceptance.sh --capacity 10000 --iters 20 --graph-search 256
+  scripts/run_memory_search_acceptance.sh --capacity 10000 --perf --perf-bin /path/to/linux-6.13/tools/perf/perf
 EOF
 }
 
@@ -42,6 +47,10 @@ graph_search="64"
 query_search=""
 graph_neighbors="32"
 recall_queries="32"
+perf_enabled="0"
+require_perf="0"
+perf_bin=""
+perf_events="cycles,instructions,branches,branch-misses,cache-references,cache-misses,LLC-loads,LLC-load-misses,L1-dcache-loads,L1-dcache-load-misses,dTLB-loads,dTLB-load-misses"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,10 +64,18 @@ while [[ $# -gt 0 ]]; do
     --query-search) query_search="${2:-}"; shift 2 ;;
     --graph-neighbors) graph_neighbors="${2:-}"; shift 2 ;;
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
+    --perf) perf_enabled="1"; shift ;;
+    --perf-bin) perf_bin="${2:-}"; shift 2 ;;
+    --perf-events) perf_events="${2:-}"; shift 2 ;;
+    --require-perf) require_perf="1"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+if [[ "${require_perf}" == "1" ]]; then
+  perf_enabled="1"
+fi
 
 if [[ -z "${query_search}" ]]; then
   query_search="${graph_search}"
@@ -75,6 +92,19 @@ run_case() {
   local storage="$2"
   local bench_case="$3"
   local out_file="${out_dir}/${name}.txt"
+  local perf_args=()
+  if [[ "${perf_enabled}" == "1" ]]; then
+    perf_args+=(--perf)
+  fi
+  if [[ "${require_perf}" == "1" ]]; then
+    perf_args+=(--require-perf)
+  fi
+  if [[ -n "${perf_bin}" ]]; then
+    perf_args+=(--perf-bin "${perf_bin}")
+  fi
+  if [[ -n "${perf_events}" ]]; then
+    perf_args+=(--perf-events "${perf_events}")
+  fi
   scripts/run_memory_bench_matrix.sh \
     --preset "${preset}" \
     --case "${bench_case}" \
@@ -87,6 +117,7 @@ run_case() {
     --query-search "${query_search}" \
     --graph-neighbors "${graph_neighbors}" \
     --recall-queries "${recall_queries}" \
+    "${perf_args[@]}" \
     --out "${out_file}"
 }
 
@@ -102,6 +133,9 @@ run_case() {
   echo "# query_search: ${query_search}"
   echo "# graph_neighbors: ${graph_neighbors}"
   echo "# recall_queries: ${recall_queries}"
+  echo "# perf_enabled: ${perf_enabled}"
+  echo "# perf_bin: ${perf_bin}"
+  echo "# perf_events: ${perf_events}"
   echo
 } > "${out_dir}/summary.txt"
 
@@ -123,6 +157,7 @@ for file in "${out_dir}"/*.txt; do
     echo
     echo "## $(basename "${file}")"
     grep -nE "features\\.memory|recall_pct" "${file}" || true
+    grep -nE "^# perf_stat:" "${file}" || true
   } >> "${out_dir}/summary.txt"
 done
 

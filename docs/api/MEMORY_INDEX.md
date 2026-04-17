@@ -204,7 +204,11 @@ memory-only benchmark across multiple metrics, dimensions, and capacities in one
 log. Use `scripts/run_memory_search_acceptance.sh` to capture the common exact
 flat, exact flat latency, reduced flat, q8 recall, graph build cost, graph
 latency, graph recall, and graph top-1 recall lanes into one output directory
-for a single dataset shape.
+for a single dataset shape. Both runners can wrap each benchmark lane in
+`perf stat` with `--perf`, `--perf-bin`, `--perf-events`, and `--require-perf`.
+Perf CSV and stderr files are written beside the runner logs, so hardware
+counter evidence stays with the sidecar capture instead of entering the
+repository.
 
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,
@@ -336,6 +340,7 @@ ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8 ASTRAL_BENCH_FEATURE_I
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
 scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage q8 --out /tmp/astral-memory-graph-q8.txt
 scripts/run_memory_search_acceptance.sh --preset dev --capacity 100000 --dim 384 --metric cosine --out-dir /tmp/astral-memory-search
+scripts/run_memory_search_acceptance.sh --preset dev --capacity 10000 --dim 384 --metric cosine --perf --perf-bin /path/to/linux-6.13/tools/perf/perf --out-dir /tmp/astral-memory-search-perf
 ```
 
 Native tests include `inference_memory_index_graph_mock` for graph search,
