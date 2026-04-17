@@ -24,11 +24,16 @@ Options:
   --query-search <N>    Per-query graph search budget (default: index budget)
   --graph-neighbors <N> Graph neighbor budget (default: 32)
   --recall-queries <N>  Graph recall queries (default: 32)
+  --perf                Wrap each benchmark invocation with perf stat
+  --perf-bin <path>     Perf executable to use (default: perf from PATH)
+  --perf-events <csv>   Perf stat event list
+  --require-perf        Fail when perf is missing or blocked
   --help                Show help
 
 Examples:
   scripts/run_memory_bench_matrix.sh --preset release-with-tests --out /tmp/astral-memory.txt
   scripts/run_memory_bench_matrix.sh --dims 384,768 --capacities 10000,100000 --metrics cosine --out /tmp/memory.txt
+  scripts/run_memory_bench_matrix.sh --case graph_recall_search --perf --perf-bin /path/to/linux-6.13/tools/perf/perf --out /tmp/memory-perf.txt
 EOF
 }
 
@@ -44,6 +49,10 @@ graph_search="64"
 query_search=""
 graph_neighbors="32"
 recall_queries="32"
+perf_enabled="0"
+require_perf="0"
+perf_bin=""
+perf_events="cycles,instructions,branches,branch-misses,cache-references,cache-misses,LLC-loads,LLC-load-misses,L1-dcache-loads,L1-dcache-load-misses,dTLB-loads,dTLB-load-misses"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -59,10 +68,18 @@ while [[ $# -gt 0 ]]; do
     --query-search) query_search="${2:-}"; shift 2 ;;
     --graph-neighbors) graph_neighbors="${2:-}"; shift 2 ;;
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
+    --perf) perf_enabled="1"; shift ;;
+    --perf-bin) perf_bin="${2:-}"; shift 2 ;;
+    --perf-events) perf_events="${2:-}"; shift 2 ;;
+    --require-perf) require_perf="1"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+if [[ "${require_perf}" == "1" ]]; then
+  perf_enabled="1"
+fi
 
 if [[ -z "${out_file}" ]]; then
   echo "Missing required arg: --out" >&2
@@ -88,11 +105,28 @@ if [[ ! -x "${bench_bin}" ]]; then
   exit 2
 fi
 
+if [[ "${perf_enabled}" == "1" ]]; then
+  if [[ -z "${perf_bin}" ]] && command -v perf >/dev/null 2>&1; then
+    perf_bin="$(command -v perf)"
+  fi
+  if [[ -z "${perf_bin}" || ! -x "${perf_bin}" ]]; then
+    if [[ "${require_perf}" == "1" ]]; then
+      echo "perf not found" >&2
+      exit 2
+    fi
+    perf_enabled="0"
+  fi
+fi
+
 IFS=',' read -r -a dim_values <<< "${dims}"
 IFS=',' read -r -a capacity_values <<< "${capacities}"
 IFS=',' read -r -a metric_values <<< "${metrics}"
 
 mkdir -p "$(dirname "${out_file}")"
+perf_dir="$(dirname "${out_file}")/$(basename "${out_file}" .txt)-perf"
+if [[ "${perf_enabled}" == "1" ]]; then
+  mkdir -p "${perf_dir}"
+fi
 {
   echo "# Astral memory bench matrix"
   echo "# date: $(date -Iseconds)"
@@ -107,6 +141,9 @@ mkdir -p "$(dirname "${out_file}")"
   echo "# query_search: ${query_search}"
   echo "# graph_neighbors: ${graph_neighbors}"
   echo "# recall_queries: ${recall_queries}"
+  echo "# perf_enabled: ${perf_enabled}"
+  echo "# perf_bin: ${perf_bin}"
+  echo "# perf_events: ${perf_events}"
   echo
 } > "${out_file}"
 
@@ -117,21 +154,46 @@ for metric in "${metric_values[@]}"; do
       {
         echo
         echo "## metric=${metric} dim=${dim} capacity=${capacity}"
+        if [[ "${perf_enabled}" == "1" ]]; then
+          echo "# perf_stat: ${perf_dir}/${metric}-d${dim}-n${capacity}.csv"
+        fi
         echo
       } >> "${out_file}"
 
-      ASTRAL_BENCH_MEMORY_ONLY=1 \
-      ASTRAL_BENCH_FEATURE_ITERS="${iters}" \
-      ASTRAL_BENCH_MEMORY_METRIC="${metric}" \
-      ASTRAL_BENCH_MEMORY_STORAGE="${storage}" \
-      ASTRAL_BENCH_MEMORY_CASE="${memory_case}" \
-      ASTRAL_BENCH_MEMORY_DIM="${dim}" \
-      ASTRAL_BENCH_MEMORY_CAPACITY="${capacity}" \
-      ASTRAL_BENCH_MEMORY_GRAPH_SEARCH="${graph_search}" \
-      ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH="${query_search}" \
-      ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS="${graph_neighbors}" \
-      ASTRAL_BENCH_MEMORY_RECALL_QUERIES="${recall_queries}" \
-      "${bench_bin}" --only features >> "${out_file}" 2>&1
+      bench_cmd=(
+        env
+        "ASTRAL_BENCH_MEMORY_ONLY=1"
+        "ASTRAL_BENCH_FEATURE_ITERS=${iters}"
+        "ASTRAL_BENCH_MEMORY_METRIC=${metric}"
+        "ASTRAL_BENCH_MEMORY_STORAGE=${storage}"
+        "ASTRAL_BENCH_MEMORY_CASE=${memory_case}"
+        "ASTRAL_BENCH_MEMORY_DIM=${dim}"
+        "ASTRAL_BENCH_MEMORY_CAPACITY=${capacity}"
+        "ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=${graph_search}"
+        "ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=${query_search}"
+        "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=${graph_neighbors}"
+        "ASTRAL_BENCH_MEMORY_RECALL_QUERIES=${recall_queries}"
+        "${bench_bin}"
+        --only
+        features
+      )
+      if [[ "${perf_enabled}" == "1" ]]; then
+        perf_prefix="${perf_dir}/${metric}-d${dim}-n${capacity}"
+        if ! "${perf_bin}" stat -x, -e "${perf_events}" -o "${perf_prefix}.csv" -- "${bench_cmd[@]}" \
+          >> "${out_file}" 2> "${perf_prefix}.stderr"; then
+          if [[ "${require_perf}" == "1" ]]; then
+            cat "${perf_prefix}.stderr" >&2
+            exit 1
+          fi
+          {
+            echo "# perf unavailable for metric=${metric} dim=${dim} capacity=${capacity}"
+            cat "${perf_prefix}.stderr"
+          } >> "${out_file}"
+          "${bench_cmd[@]}" >> "${out_file}" 2>&1
+        fi
+      else
+        "${bench_cmd[@]}" >> "${out_file}" 2>&1
+      fi
 
       ran=$((ran+1))
     done
