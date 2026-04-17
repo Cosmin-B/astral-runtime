@@ -203,8 +203,9 @@ counter profile. Use `scripts/run_memory_bench_matrix.sh` to run the
 memory-only benchmark across multiple metrics, dimensions, and capacities in one
 log. Use `scripts/run_memory_search_acceptance.sh` to capture the common exact
 flat, exact flat latency, reduced flat, q8 recall, graph build cost, graph
-latency, graph recall, and graph top-1 recall lanes into one output directory
-for a single dataset shape. Both runners can wrap each benchmark lane in
+latency, f32/q8 graph recall, and f32/q8 graph top-1 recall lanes into one
+output directory for a single dataset shape. Both runners can wrap each
+benchmark lane in
 `perf stat` with `--perf`, `--perf-bin`, `--perf-events`, and `--require-perf`.
 Perf CSV and stderr files are written beside the runner logs, so hardware
 counter evidence stays with the sidecar capture instead of entering the
