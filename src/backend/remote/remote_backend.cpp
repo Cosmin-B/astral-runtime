@@ -226,99 +226,105 @@ static uint32_t clamp_size_to_u32(std::size_t value) {
                                                         : static_cast<uint32_t>(value);
 }
 
-static void remote_stream_append(RemoteSession* session, const char* data, uint32_t len) {
-    if (session == nullptr || data == nullptr || len == 0) {
-        return;
-    }
-    std::unique_lock<std::mutex> lock(session->stream_mutex);
-    const uint32_t room = kRemoteMaxOutputBytes - session->output_len;
-    const uint32_t n = std::min(len, room);
-    if (n != 0) {
-        std::memcpy(session->output + session->output_len, data, n);
-        session->output_len += n;
-        lock.unlock();
-        session->stream_cv.notify_all();
-    }
+static AstralErr remote_stream_append(RemoteSession* session, const char* data, uint32_t len) {
+  if (session == nullptr || data == nullptr || len == 0) {
+    return ASTRAL_OK;
+  }
+  std::unique_lock<std::mutex> lock(session->stream_mutex);
+  const uint32_t room = kRemoteMaxOutputBytes - session->output_len;
+  if (len > room) {
+    session->stream_err = ASTRAL_E_NOMEM;
+    session->stream_done = true;
+    lock.unlock();
+    session->stream_cv.notify_all();
+    return ASTRAL_E_NOMEM;
+  }
+  std::memcpy(session->output + session->output_len, data, len);
+  session->output_len += len;
+  lock.unlock();
+  session->stream_cv.notify_all();
+  return ASTRAL_OK;
 }
 
 static void remote_stream_finish(RemoteSession* session, AstralErr err) {
-    if (session == nullptr) {
-        return;
+  if (session == nullptr) {
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(session->stream_mutex);
+    if (session->stream_err == ASTRAL_OK || err != ASTRAL_OK) {
+      session->stream_err = err;
     }
-    {
-        std::lock_guard<std::mutex> lock(session->stream_mutex);
-        session->stream_err = err;
-        session->stream_done = true;
-    }
-    session->stream_cv.notify_all();
+    session->stream_done = true;
+  }
+  session->stream_cv.notify_all();
+}
+
+static AstralErr remote_stream_error(RemoteSession* session) {
+  if (session == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
+  std::lock_guard<std::mutex> lock(session->stream_mutex);
+  return session->stream_err;
 }
 
 struct RemoteStreamReceiver {
-    RemoteSession* session;
+  RemoteSession* session;
 
-    bool operator()(const char* data, size_t len) const {
-        if (len > 0) {
-            remote_stream_append(session, data, clamp_size_to_u32(len));
-        }
-        return true;
-    }
+  bool operator()(const char* data, size_t len) const {
+    return len == 0 || remote_stream_append(session, data, clamp_size_to_u32(len)) == ASTRAL_OK;
+  }
 };
 
 static AstralErr post_remote_stream(RemoteSession* session, const char* body, uint32_t body_len) {
-    ASTRAL_ZONE_N("astral.remote.stream_completion");
-    if (session == nullptr || session->model == nullptr) {
-        return ASTRAL_E_INVALID;
-    }
+  ASTRAL_ZONE_N("astral.remote.stream_completion");
+  if (session == nullptr || session->model == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
 
-    httplib::Client client(session->model->base_url);
-    client.set_connection_timeout(kRemoteTimeoutSeconds, 0);
-    client.set_read_timeout(kRemoteTimeoutSeconds, 0);
-    client.set_write_timeout(kRemoteTimeoutSeconds, 0);
+  httplib::Client client(session->model->base_url);
+  client.set_connection_timeout(kRemoteTimeoutSeconds, 0);
+  client.set_read_timeout(kRemoteTimeoutSeconds, 0);
+  client.set_write_timeout(kRemoteTimeoutSeconds, 0);
 
-    const std::string payload(body != nullptr ? body : "", body_len);
-    AstralErr last_err = ASTRAL_E_TIMEOUT;
-    RemoteStreamReceiver receiver{session};
-    for (uint32_t attempt = 0; attempt < kRemoteMaxAttempts; ++attempt) {
-        auto result = client.Post(
-            "/completion/stream",
-            remote_headers(session->model),
-            payload,
-            "text/plain",
-            receiver);
-        if (!result) {
-            last_err = ASTRAL_E_TIMEOUT;
-            continue;
-        }
-        const AstralErr status_err = http_status_to_err(result->status);
-        if (status_err == ASTRAL_OK) {
-            return ASTRAL_OK;
-        }
-        last_err = status_err;
-        if (!http_status_retryable(result->status)) {
-            return last_err;
-        }
+  const std::string payload(body != nullptr ? body : "", body_len);
+  AstralErr last_err = ASTRAL_E_TIMEOUT;
+  RemoteStreamReceiver receiver{session};
+  for (uint32_t attempt = 0; attempt < kRemoteMaxAttempts; ++attempt) {
+    auto result = client.Post("/completion/stream", remote_headers(session->model), payload,
+                              "text/plain", receiver);
+    const AstralErr stream_err = remote_stream_error(session);
+    if (stream_err != ASTRAL_OK) {
+      return stream_err;
     }
-    return last_err;
+    if (!result) {
+      last_err = ASTRAL_E_TIMEOUT;
+      continue;
+    }
+    const AstralErr status_err = http_status_to_err(result->status);
+    if (status_err == ASTRAL_OK) {
+      return ASTRAL_OK;
+    }
+    last_err = status_err;
+    if (!http_status_retryable(result->status)) {
+      return last_err;
+    }
+  }
+  return last_err;
 }
 
 static void remote_completion_worker(RemoteSession* session) {
-    AstralErr err = post_remote_stream(
-        session,
-        reinterpret_cast<const char*>(session->prompt),
-        session->prompt_len);
-    if (err == ASTRAL_E_NOT_FOUND || err == ASTRAL_E_UNSUPPORTED) {
-        std::string body;
-        err = post_remote(
-            session->model,
-            "/completion",
-            reinterpret_cast<const char*>(session->prompt),
-            session->prompt_len,
-            &body);
-        if (err == ASTRAL_OK) {
-            remote_stream_append(session, body.data(), clamp_size_to_u32(body.size()));
-        }
+  AstralErr err = post_remote_stream(session, reinterpret_cast<const char*>(session->prompt),
+                                     session->prompt_len);
+  if (err == ASTRAL_E_NOT_FOUND || err == ASTRAL_E_UNSUPPORTED) {
+    std::string body;
+    err = post_remote(session->model, "/completion", reinterpret_cast<const char*>(session->prompt),
+                      session->prompt_len, &body);
+    if (err == ASTRAL_OK) {
+      err = remote_stream_append(session, body.data(), clamp_size_to_u32(body.size()));
     }
-    remote_stream_finish(session, err);
+  }
+  remote_stream_finish(session, err);
 }
 
 static AstralErr remote_session_start_stream(RemoteSession* session) {

@@ -24,6 +24,8 @@ namespace {
 
 std::atomic<uint64_t> g_new_calls{0};
 constexpr size_t kRemoteStreamChunkBytes = 1;
+constexpr size_t kRemoteOverflowResponseBytes = 9000;
+constexpr uint32_t kRemoteOverflowCtxTokens = 10000;
 constexpr int kHttpOk = 200;
 constexpr int kHttpNotImplemented = 501;
 constexpr int32_t kExpectedRemoteBosToken = 256;
@@ -41,93 +43,107 @@ struct RemoteTestServer {
     int health_failure_status = 503;
     int tokenize_status = kHttpOk;
     int stream_completion_status = kHttpOk;
+    std::string completion_response;
+    std::string stream_response;
 
     bool start(bool require_auth) {
-        server.Get("/health", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
+      server.Get("/health",
+                 [this, require_auth](const httplib::Request& req, httplib::Response& res) {
+                   if (require_auth && req.get_header_value("Authorization") != "Bearer test-key") {
+                     res.status = 401;
+                     return;
+                   }
+                   health_calls.fetch_add(1, std::memory_order_relaxed);
+                   if (health_failures != 0) {
+                     --health_failures;
+                     res.status = health_failure_status;
+                     return;
+                   }
+                   res.set_content("ok", "text/plain");
+                 });
+      server.Post(
+          "/tokenize", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
             if (require_auth && req.get_header_value("Authorization") != "Bearer test-key") {
-                res.status = 401;
-                return;
-            }
-            health_calls.fetch_add(1, std::memory_order_relaxed);
-            if (health_failures != 0) {
-                --health_failures;
-                res.status = health_failure_status;
-                return;
-            }
-            res.set_content("ok", "text/plain");
-        });
-        server.Post("/tokenize", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
-            if (require_auth && req.get_header_value("Authorization") != "Bearer test-key") {
-                res.status = 401;
-                return;
+              res.status = 401;
+              return;
             }
             tokenize_calls.fetch_add(1, std::memory_order_relaxed);
             if (tokenize_status != kHttpOk) {
-                res.status = tokenize_status;
-                return;
+              res.status = tokenize_status;
+              return;
             }
             char body[1024];
             uint32_t n = 0;
             for (unsigned char c : req.body) {
-                const int written = std::snprintf(body + n, sizeof(body) - n, "%s%u", n == 0 ? "" : ",", static_cast<unsigned>(c));
-                if (written <= 0 || static_cast<uint32_t>(written) >= sizeof(body) - n) {
-                    break;
-                }
-                n += static_cast<uint32_t>(written);
+              const int written = std::snprintf(body + n, sizeof(body) - n, "%s%u",
+                                                n == 0 ? "" : ",", static_cast<unsigned>(c));
+              if (written <= 0 || static_cast<uint32_t>(written) >= sizeof(body) - n) {
+                break;
+              }
+              n += static_cast<uint32_t>(written);
             }
             res.set_content(std::string(body, n), "text/plain");
-        });
-        server.Post("/completion", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
+          });
+      server.Post(
+          "/completion", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
             if (require_auth && req.get_header_value("Authorization") != "Bearer test-key") {
-                res.status = 401;
-                return;
+              res.status = 401;
+              return;
             }
             completion_calls.fetch_add(1, std::memory_order_relaxed);
-            res.set_content(req.body == "hello" ? "remote-ok" : "remote-fallback", "text/plain");
-        });
-        server.Post("/completion/stream", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
-            if (require_auth && req.get_header_value("Authorization") != "Bearer test-key") {
-                res.status = 401;
-                return;
+            std::string response = completion_response;
+            if (response.empty()) {
+              response = req.body == "hello" ? "remote-ok" : "remote-fallback";
             }
-            stream_completion_calls.fetch_add(1, std::memory_order_relaxed);
-            if (stream_completion_status != kHttpOk) {
-                res.status = stream_completion_status;
-                return;
-            }
-            const std::string response = req.body == "hello" ? "remote-ok" : "remote-fallback";
-            res.set_chunked_content_provider("text/plain", [response](size_t offset, httplib::DataSink& sink) {
-                if (offset >= response.size()) {
-                    sink.done();
-                    return false;
-                }
-                return sink.write(response.data() + offset, kRemoteStreamChunkBytes);
+            res.set_content(response, "text/plain");
+          });
+      server.Post("/completion/stream", [this, require_auth](const httplib::Request& req,
+                                                             httplib::Response& res) {
+        if (require_auth && req.get_header_value("Authorization") != "Bearer test-key") {
+          res.status = 401;
+          return;
+        }
+        stream_completion_calls.fetch_add(1, std::memory_order_relaxed);
+        if (stream_completion_status != kHttpOk) {
+          res.status = stream_completion_status;
+          return;
+        }
+        std::string response = stream_response;
+        if (response.empty()) {
+          response = req.body == "hello" ? "remote-ok" : "remote-fallback";
+        }
+        res.set_chunked_content_provider(
+            "text/plain", [response](size_t offset, httplib::DataSink& sink) {
+              if (offset >= response.size()) {
+                sink.done();
+                return false;
+              }
+              return sink.write(response.data() + offset, kRemoteStreamChunkBytes);
             });
-        });
-        server.Post("/embeddings", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
+      });
+      server.Post(
+          "/embeddings", [this, require_auth](const httplib::Request& req, httplib::Response& res) {
             if (require_auth && req.get_header_value("Authorization") != "Bearer test-key") {
-                res.status = 401;
-                return;
+              res.status = 401;
+              return;
             }
             embedding_calls.fetch_add(1, std::memory_order_relaxed);
             res.set_content("[1,2,3,4,5,6,7,8]", "application/json");
-        });
+          });
 
-        port = server.bind_to_any_port("127.0.0.1");
-        if (port <= 0) {
-            return false;
-        }
-        thread = std::thread([this]() {
-            server.listen_after_bind();
-        });
-        return true;
+      port = server.bind_to_any_port("127.0.0.1");
+      if (port <= 0) {
+        return false;
+      }
+      thread = std::thread([this]() { server.listen_after_bind(); });
+      return true;
     }
 
     void stop() {
-        server.stop();
-        if (thread.joinable()) {
-            thread.join();
-        }
+      server.stop();
+      if (thread.joinable()) {
+        thread.join();
+      }
     }
 
     ~RemoteTestServer() {
@@ -862,6 +878,71 @@ TEST(backend_remote_stream_falls_back_to_completion) {
     astral_session_destroy(session);
     astral_model_release(model);
     astral_shutdown();
+}
+
+TEST(backend_remote_stream_overflow_reports_error) {
+  RemoteTestServer remote;
+  remote.stream_completion_status = kHttpNotImplemented;
+  remote.completion_response.assign(kRemoteOverflowResponseBytes, 'x');
+  ASSERT_TRUE(remote.start(true));
+
+  AstralInit cfg = {};
+  cfg.reserve_bytes = 64 * 1024 * 1024;
+  cfg.thread_count = 1;
+  AstralErr err = astral_init(&cfg);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  char url[128];
+  const int url_len = std::snprintf(url, sizeof(url), "http://127.0.0.1:%d", remote.port);
+  ASSERT_TRUE(url_len > 0);
+
+  AstralModelDesc model_desc = {};
+  model_desc.size = sizeof(AstralModelDesc);
+  model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+  const char* backend = "remote";
+  model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+  model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend));
+  model_desc.model_path.data = reinterpret_cast<const uint8_t*>(url);
+  model_desc.model_path.len = static_cast<uint32_t>(url_len);
+  const char* api_key = "test-key";
+  model_desc.model_bytes.data = reinterpret_cast<const uint8_t*>(api_key);
+  model_desc.model_bytes.len = static_cast<uint32_t>(std::strlen(api_key));
+  model_desc.n_ctx = kRemoteOverflowCtxTokens;
+  model_desc.n_batch = 32;
+
+  AstralHandle model = 0;
+  err = astral_model_load(&model_desc, &model);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  AstralSessionDesc session_desc = {};
+  session_desc.model = model;
+  session_desc.max_tokens = 1;
+  session_desc.temperature = 0.0f;
+  session_desc.top_k = 0;
+  session_desc.top_p = 1.0f;
+  session_desc.stream_enabled = 1;
+
+  AstralHandle session = 0;
+  err = astral_session_create(&session_desc, &session);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  const char* prompt = "hello";
+  AstralSpanU8 prompt_span{};
+  prompt_span.data = reinterpret_cast<const uint8_t*>(prompt);
+  prompt_span.len = static_cast<uint32_t>(std::strlen(prompt));
+  err = astral_session_feed(session, prompt_span, 1);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  err = astral_session_decode(session);
+  ASSERT_EQ(err, ASTRAL_OK);
+  err = astral_session_wait(session, 5000);
+  ASSERT_EQ(err, ASTRAL_E_NOMEM);
+  ASSERT_EQ(remote.stream_completion_calls.load(std::memory_order_relaxed), 1u);
+  ASSERT_EQ(remote.completion_calls.load(std::memory_order_relaxed), 1u);
+
+  astral_session_destroy(session);
+  astral_model_release(model);
+  astral_shutdown();
 }
 
 TEST(backend_remote_auth_failure) {
