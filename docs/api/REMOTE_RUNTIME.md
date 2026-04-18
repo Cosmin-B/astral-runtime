@@ -51,6 +51,8 @@ Remote model, session, and embedder handles are regular Astral handles. Prompt
 and response buffers inside the provider are fixed-capacity native storage.
 Callers still own output buffers for tokenization, detokenization, stream reads,
 and embedding collection.
+If a remote completion response exceeds the provider response buffer, the
+request fails with `ASTRAL_E_NOMEM` rather than returning truncated text.
 
 Remote requests are not part of the local decode inner loop optimization model.
 They carry network latency. The provider receives completion chunks on a
@@ -99,6 +101,7 @@ Expected markers:
 - `backend_remote_loopback_completion_and_embeddings` passes.
 - `backend_remote_tokenize_falls_back_to_byte_tokens` passes.
 - `backend_remote_stream_falls_back_to_completion` passes.
+- `backend_remote_stream_overflow_reports_error` passes.
 - `backend_remote_auth_failure` passes.
 - `backend_remote_https_requires_tls_build` passes.
 - `backend_remote_health_retry_and_timeout_status` passes.
