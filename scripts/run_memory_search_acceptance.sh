@@ -24,6 +24,7 @@ Options:
   --query-search <N>    Per-query graph search budget (default: graph budget)
   --graph-neighbors <N> Graph neighbor budget (default: 32)
   --recall-queries <N>  Recall query count (default: 32)
+  --budget-sweep        Also capture graph_recall_search_sweep for f32 and q8
   --perf                Wrap benchmark lanes with perf stat
   --perf-bin <path>     Perf executable to use (default: perf from PATH)
   --perf-events <csv>   Perf stat event list
@@ -47,6 +48,7 @@ graph_search="64"
 query_search=""
 graph_neighbors="32"
 recall_queries="32"
+budget_sweep="0"
 perf_enabled="0"
 require_perf="0"
 perf_bin=""
@@ -64,6 +66,7 @@ while [[ $# -gt 0 ]]; do
     --query-search) query_search="${2:-}"; shift 2 ;;
     --graph-neighbors) graph_neighbors="${2:-}"; shift 2 ;;
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
+    --budget-sweep) budget_sweep="1"; shift ;;
     --perf) perf_enabled="1"; shift ;;
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
@@ -133,6 +136,7 @@ run_case() {
   echo "# query_search: ${query_search}"
   echo "# graph_neighbors: ${graph_neighbors}"
   echo "# recall_queries: ${recall_queries}"
+  echo "# budget_sweep: ${budget_sweep}"
   echo "# perf_enabled: ${perf_enabled}"
   echo "# perf_bin: ${perf_bin}"
   echo "# perf_events: ${perf_events}"
@@ -150,6 +154,11 @@ run_case "graph_f32_top1_recall" "f32" "graph_recall_top1"
 run_case "graph_q8_build" "q8" "graph_add_batch"
 run_case "graph_q8_recall" "q8" "graph_recall_search"
 run_case "graph_q8_top1_recall" "q8" "graph_recall_top1"
+
+if [[ "${budget_sweep}" == "1" ]]; then
+  run_case "graph_f32_budget_sweep" "f32" "graph_recall_search_sweep"
+  run_case "graph_q8_budget_sweep" "q8" "graph_recall_search_sweep"
+fi
 
 for file in "${out_dir}"/*.txt; do
   if [[ "$(basename "${file}")" == "summary.txt" ]]; then
