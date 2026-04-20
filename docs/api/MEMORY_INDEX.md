@@ -204,7 +204,10 @@ memory-only benchmark across multiple metrics, dimensions, and capacities in one
 log. Use `scripts/run_memory_search_acceptance.sh` to capture the common exact
 flat, exact flat latency, reduced flat, q8 recall, graph build cost, graph
 latency, f32/q8 graph recall, and f32/q8 graph top-1 recall lanes into one
-output directory for a single dataset shape. Both runners can wrap each
+output directory for a single dataset shape. Add `--budget-sweep` when tuning
+graph recall/latency so the runner also captures `graph_recall_search_sweep`
+for f32 and q8 graph indexes using one build and multiple per-query budgets.
+Both runners can wrap each
 benchmark lane in
 `perf stat` with `--perf`, `--perf-bin`, `--perf-events`, and `--require-perf`.
 Perf CSV and stderr files are written beside the runner logs, so hardware
