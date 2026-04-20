@@ -42,6 +42,7 @@ constexpr uint32_t kGraphMaxNeighbors = 64;
 constexpr uint32_t kGraphDefaultSearch = 64;
 constexpr uint32_t kGraphMinSearch = 4;
 constexpr uint32_t kGraphLongLinkCount = 4;
+constexpr uint32_t kGraphNeighborPrefetchDistance = 2;
 constexpr uint32_t kGraphMaxLevels = 16;
 constexpr uint32_t kMemoryBatchStackQueries = 16;
 constexpr int32_t kQ8MinValue = -127;
@@ -724,6 +725,19 @@ inline const int8_t* q8_vector_at(const MemoryIndex* index, uint32_t slot) {
 
 inline bool q8_storage(const MemoryIndex* index) {
   return index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8;
+}
+
+inline void prefetch_slot_vector(const MemoryIndex* index, uint32_t slot) {
+#if defined(__GNUC__) || defined(__clang__)
+  if (q8_storage(index)) {
+    __builtin_prefetch(q8_vector_at(index, slot), 0, 1);
+  } else {
+    __builtin_prefetch(vector_at(index, slot), 0, 1);
+  }
+#else
+  (void)index;
+  (void)slot;
+#endif
 }
 
 inline uint32_t graph_search_for_query(const MemoryIndex* index,
@@ -1510,6 +1524,9 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
     const uint32_t neighbor_count = graph_neighbor_count_at_level(index, slot, 0);
     for (uint32_t i = 0; i < neighbor_count; ++i) {
       const uint32_t neighbor = neighbors[i];
+      if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
+        prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
+      }
       if (graph_was_visited(index, neighbor) || index->slots[neighbor].occupied == 0) {
         continue;
       }
