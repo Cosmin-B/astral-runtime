@@ -22,7 +22,9 @@ namespace {
 constexpr uint32_t kMaxDim = 8192;
 constexpr uint32_t kSaveMagic = 0x414D454Du;
 constexpr uint32_t kSaveVersionF32 = 1;
-constexpr uint32_t kSaveVersion = 2;
+constexpr uint32_t kSaveVersionCompactStorage = 2;
+constexpr uint32_t kSaveVersion = 3;
+constexpr uint32_t kSaveGraphTopologyFlag = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
 constexpr uint32_t kTopOne = 1;
@@ -89,6 +91,15 @@ struct SaveHeader {
   uint32_t index_kind;
   uint32_t _reserved0;
   uint32_t _reserved1;
+};
+
+struct SaveGraphHeader {
+  uint32_t flags;
+  uint32_t neighbor_capacity;
+  uint32_t search_capacity;
+  uint32_t level_capacity;
+  uint32_t max_level;
+  uint32_t entry_active_pos;
 };
 
 inline bool metric_valid(AstralMemoryMetric metric) {
@@ -691,8 +702,16 @@ inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
           ? static_cast<uint64_t>(index->count) *
                 (sizeof(float) + static_cast<uint64_t>(index->dim) * sizeof(int8_t))
           : static_cast<uint64_t>(index->count) * index->dim * sizeof(float);
-  return sizeof(SaveHeader) + static_cast<uint64_t>(index->count) * sizeof(AstralMemoryRecord) +
-         vector_bytes;
+  uint64_t bytes = sizeof(SaveHeader) +
+                   static_cast<uint64_t>(index->count) * sizeof(AstralMemoryRecord) + vector_bytes;
+  if (index->index_kind == ASTRAL_MEMORY_INDEX_GRAPH && index->graph_neighbor_capacity != 0) {
+    const uint64_t level_count = static_cast<uint64_t>(index->count) * index->graph_level_capacity;
+    bytes += sizeof(SaveGraphHeader);
+    bytes += static_cast<uint64_t>(index->count) * sizeof(uint8_t);
+    bytes += level_count * sizeof(uint32_t);
+    bytes += level_count * index->graph_neighbor_capacity * sizeof(uint32_t);
+  }
+  return bytes;
 }
 
 } // namespace
@@ -2609,6 +2628,7 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
   header.metric = index->metric;
   header.index_kind = index->index_kind;
   header._reserved0 = index->storage_kind;
+  header._reserved1 = graph_enabled(index) ? kSaveGraphTopologyFlag : 0;
 
   uint8_t* cursor = out_bytes.data;
   std::memcpy(cursor, &header, sizeof(header));
@@ -2630,6 +2650,49 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
       cursor += sizeof(float) * index->dim;
     }
   }
+
+  if (graph_enabled(index)) {
+    SaveGraphHeader graph_header{};
+    graph_header.flags = kSaveGraphTopologyFlag;
+    graph_header.neighbor_capacity = index->graph_neighbor_capacity;
+    graph_header.search_capacity = index->graph_search_capacity;
+    graph_header.level_capacity = index->graph_level_capacity;
+    graph_header.max_level = index->graph_max_level;
+    graph_header.entry_active_pos = index->graph_entry_slot != kU32Max
+                                        ? index->slots[index->graph_entry_slot].active_pos
+                                        : kU32Max;
+    std::memcpy(cursor, &graph_header, sizeof(graph_header));
+    cursor += sizeof(graph_header);
+
+    for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+      const uint32_t slot = active_slot_at(index, active_pos);
+      *cursor = index->graph_levels[slot];
+      ++cursor;
+    }
+    for (uint32_t level = 0; level < index->graph_level_capacity; ++level) {
+      for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+        const uint32_t slot = active_slot_at(index, active_pos);
+        const uint32_t count = graph_neighbor_count_at_level(index, slot, level);
+        std::memcpy(cursor, &count, sizeof(count));
+        cursor += sizeof(count);
+      }
+    }
+    for (uint32_t level = 0; level < index->graph_level_capacity; ++level) {
+      for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+        const uint32_t slot = active_slot_at(index, active_pos);
+        const uint32_t* neighbors = graph_neighbors_at_level(index, slot, level);
+        for (uint32_t i = 0; i < index->graph_neighbor_capacity; ++i) {
+          const uint32_t neighbor = neighbors[i];
+          const uint32_t neighbor_pos = neighbor != kU32Max && neighbor < index->capacity &&
+                                                index->slots[neighbor].occupied != 0
+                                            ? index->slots[neighbor].active_pos
+                                            : kU32Max;
+          std::memcpy(cursor, &neighbor_pos, sizeof(neighbor_pos));
+          cursor += sizeof(neighbor_pos);
+        }
+      }
+    }
+  }
   return ASTRAL_OK;
 }
 
@@ -2642,10 +2705,12 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
 
   SaveHeader header{};
   std::memcpy(&header, bytes.data, sizeof(header));
-  const bool version_valid = header.version == kSaveVersionF32 || header.version == kSaveVersion;
+  const bool version_valid = header.version == kSaveVersionF32 ||
+                             header.version == kSaveVersionCompactStorage ||
+                             header.version == kSaveVersion;
   AstralMemoryStorageKind saved_storage =
       static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
-  if (header.version == kSaveVersion) {
+  if (header.version >= kSaveVersionCompactStorage) {
     saved_storage = static_cast<AstralMemoryStorageKind>(header._reserved0);
   }
   if (header.magic != kSaveMagic || !version_valid || header.dim != desc->dim ||
@@ -2678,6 +2743,10 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
     AstralMemoryRecord record{};
     std::memcpy(&record, cursor, sizeof(record));
     cursor += sizeof(record);
+    if (record.size != sizeof(AstralMemoryRecord) || record.key == 0) {
+      memory_destroy(index);
+      return ASTRAL_E_INVALID;
+    }
     if (saved_storage == ASTRAL_MEMORY_STORAGE_Q8) {
       float scale = 1.0f;
       std::memcpy(&scale, cursor, sizeof(float));
@@ -2691,11 +2760,114 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
       std::memcpy(vector, cursor, sizeof(float) * header.dim);
       cursor += sizeof(float) * header.dim;
     }
-    err = memory_add_batch(index, &record, vector, 1);
+
+    const uint32_t slot = i;
+    const uint64_t key_hash = key_hash_mix(record.key);
+    if (find_slot_by_key_hashed(index, record.key, key_hash) != kU32Max) {
+      memory_destroy(index);
+      return ASTRAL_E_INVALID;
+    }
+    err = key_table_insert_new_hashed(index, key_hash, slot);
     if (err != ASTRAL_OK) {
       memory_destroy(index);
       return err;
     }
+    index->slots[slot].record = record;
+    index->slots[slot].score_scale =
+        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(vector, index->dim) : 0.0f;
+    index->slots[slot].active_pos = i;
+    index->slots[slot].occupied = 1;
+    index->active_slots[i] = slot;
+    if (q8_storage(index)) {
+      quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector, index->dim);
+    } else {
+      std::memcpy(vector_at(index, slot), vector, sizeof(float) * index->dim);
+    }
+    if (graph_enabled(index)) {
+      index->graph_levels[slot] = static_cast<uint8_t>(graph_level_for_key(index, record.key));
+    }
+  }
+  index->count = header.count;
+  index->free_slot_hint = header.count < index->capacity ? header.count : 0;
+  index->dense_active = 1u;
+
+  bool graph_loaded = false;
+  if (graph_enabled(index) && header.version == kSaveVersion &&
+      header._reserved1 == kSaveGraphTopologyFlag) {
+    if (bytes.len < static_cast<uint64_t>(cursor - bytes.data) + sizeof(SaveGraphHeader)) {
+      memory_destroy(index);
+      return ASTRAL_E_INVALID;
+    }
+    SaveGraphHeader graph_header{};
+    std::memcpy(&graph_header, cursor, sizeof(graph_header));
+    cursor += sizeof(graph_header);
+    if (graph_header.neighbor_capacity == 0 ||
+        graph_header.neighbor_capacity > kGraphMaxNeighbors || graph_header.level_capacity == 0 ||
+        graph_header.level_capacity > kGraphMaxLevels ||
+        graph_header.search_capacity > desc->capacity) {
+      memory_destroy(index);
+      return ASTRAL_E_INVALID;
+    }
+    const uint64_t level_count = static_cast<uint64_t>(header.count) * graph_header.level_capacity;
+    const uint64_t graph_bytes = sizeof(SaveGraphHeader) +
+                                 static_cast<uint64_t>(header.count) * sizeof(uint8_t) +
+                                 level_count * sizeof(uint32_t) +
+                                 level_count * graph_header.neighbor_capacity * sizeof(uint32_t);
+    const uint64_t graph_begin = need;
+    if (graph_header.flags != kSaveGraphTopologyFlag || bytes.len < graph_begin + graph_bytes) {
+      memory_destroy(index);
+      return ASTRAL_E_INVALID;
+    }
+    const bool topology_matches =
+        graph_header.neighbor_capacity == index->graph_neighbor_capacity &&
+        graph_header.search_capacity == index->graph_search_capacity &&
+        graph_header.level_capacity == index->graph_level_capacity &&
+        graph_header.max_level < graph_header.level_capacity &&
+        graph_header.entry_active_pos < header.count;
+    if (topology_matches) {
+      for (uint32_t active_pos = 0; active_pos < header.count; ++active_pos) {
+        const uint8_t level = *cursor;
+        ++cursor;
+        if (level >= index->graph_level_capacity) {
+          memory_destroy(index);
+          return ASTRAL_E_INVALID;
+        }
+        index->graph_levels[active_pos] = level;
+      }
+      for (uint32_t level = 0; level < index->graph_level_capacity; ++level) {
+        for (uint32_t active_pos = 0; active_pos < header.count; ++active_pos) {
+          uint32_t count = 0;
+          std::memcpy(&count, cursor, sizeof(count));
+          cursor += sizeof(count);
+          if (count > index->graph_neighbor_capacity) {
+            memory_destroy(index);
+            return ASTRAL_E_INVALID;
+          }
+          graph_neighbor_count_ref(index, active_pos, level) = count;
+        }
+      }
+      for (uint32_t level = 0; level < index->graph_level_capacity; ++level) {
+        for (uint32_t active_pos = 0; active_pos < header.count; ++active_pos) {
+          uint32_t* neighbors = graph_neighbors_at_level(index, active_pos, level);
+          for (uint32_t i = 0; i < index->graph_neighbor_capacity; ++i) {
+            uint32_t neighbor_pos = kU32Max;
+            std::memcpy(&neighbor_pos, cursor, sizeof(neighbor_pos));
+            cursor += sizeof(neighbor_pos);
+            if (neighbor_pos != kU32Max && neighbor_pos >= header.count) {
+              memory_destroy(index);
+              return ASTRAL_E_INVALID;
+            }
+            neighbors[i] = neighbor_pos;
+          }
+        }
+      }
+      index->graph_entry_slot = graph_header.entry_active_pos;
+      index->graph_max_level = graph_header.max_level;
+      graph_loaded = true;
+    }
+  }
+  if (graph_enabled(index) && !graph_loaded) {
+    graph_rebuild(index);
   }
 
   *out_index = index;

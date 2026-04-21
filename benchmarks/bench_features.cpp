@@ -107,6 +107,7 @@ static constexpr char kBenchMemoryStorageF32[] = "f32";
 static constexpr char kBenchMemoryStorageQ8[] = "q8";
 static constexpr char kBenchMemoryCaseAddBatch[] = "add_batch";
 static constexpr char kBenchMemoryCaseGraphAddBatch[] = "graph_add_batch";
+static constexpr char kBenchMemoryCaseGraphLoad[] = "graph_load";
 static constexpr char kBenchMemoryCaseFlatSearchTop1[] = "flat_search_top1";
 static constexpr char kBenchMemoryCaseFlatSearch[] = "flat_search";
 static constexpr char kBenchMemoryCaseFlatSearchLatency[] = "flat_search_latency";
@@ -1314,6 +1315,81 @@ static BenchResult bench_memory_graph_add_batch(uint64_t iters) {
     return r;
 }
 
+static BenchResult bench_memory_graph_load(uint64_t iters) {
+  BenchResult r{};
+  r.name = "features.memory graph_load";
+  r.ops = iters;
+  const uint32_t dim = memory_bench_dim();
+  const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+  const AstralMemoryMetric metric = parse_memory_metric_env();
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = dim;
+  desc.capacity = capacity;
+  desc.metric = metric;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+  desc.graph_neighbors = memory_graph_neighbors();
+  desc.graph_search = memory_graph_search();
+  desc.storage_kind = parse_memory_storage_env();
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  if (err != ASTRAL_OK) {
+    r.ops = 0;
+    return r;
+  }
+
+  std::vector<AstralMemoryRecord> records(capacity);
+  std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+  fill_memory_fixture(records, vectors, capacity, dim);
+  err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
+  if (err != ASTRAL_OK) {
+    astral_memory_destroy(index);
+    r.ops = 0;
+    return r;
+  }
+
+  uint64_t save_bytes = 0;
+  err = astral_memory_save_size(index, &save_bytes);
+  if (err != ASTRAL_OK || save_bytes > UINT32_MAX) {
+    astral_memory_destroy(index);
+    r.ops = 0;
+    return r;
+  }
+  std::vector<uint8_t> blob(static_cast<size_t>(save_bytes));
+  AstralMutSpanU8 out{};
+  out.data = blob.data();
+  out.len = static_cast<uint32_t>(blob.size());
+  uint64_t written = 0;
+  err = astral_memory_save(index, out, &written);
+  astral_memory_destroy(index);
+  if (err != ASTRAL_OK || written != save_bytes) {
+    r.ops = 0;
+    return r;
+  }
+
+  AstralSpanU8 span{};
+  span.data = blob.data();
+  span.len = static_cast<uint32_t>(blob.size());
+  const uint64_t t0 = ticks_now();
+  const uint64_t n0 = ns_now();
+  for (uint64_t i = 0; i < iters; ++i) {
+    AstralHandle loaded = 0;
+    err = astral_memory_load(&desc, span, &loaded);
+    if (err != ASTRAL_OK) {
+      r.ops = i;
+      break;
+    }
+    astral_memory_destroy(loaded);
+  }
+  const uint64_t t1 = ticks_now();
+  const uint64_t n1 = ns_now();
+  r.ticks = t1 - t0;
+  r.ns = n1 - n0;
+  return r;
+}
+
 static BenchResult bench_memory_flat_search_impl(uint64_t iters, uint32_t capacity, const char* name) {
     BenchResult r{};
     r.name = name;
@@ -2455,6 +2531,9 @@ static void print_memory_benchmarks(uint64_t iters) {
         }
         if (memory_case_enabled(kBenchMemoryCaseGraphAddBatch)) {
             print_result(bench_memory_graph_add_batch(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphLoad)) {
+          print_result(bench_memory_graph_load(iters), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatSearchTop1)) {
             print_result(bench_memory_flat_search_top1(iters), clock_info().name);

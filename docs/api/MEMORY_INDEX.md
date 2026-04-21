@@ -73,6 +73,12 @@ re-running a full scan for every query.
   during construction and q8-vs-f32 scoring for queries, so measure recall
   against the flat f32 oracle before using it for retrieval.
 
+Graph snapshots include the routing topology when the load descriptor matches
+the saved graph neighbor, search, and level capacities. If those knobs differ,
+load keeps the records and vectors and rebuilds the graph for the requested
+shape. Use `features.memory graph_load` beside `features.memory graph_add_batch`
+when deciding whether to ship a prebuilt graph snapshot or rebuild at startup.
+
 Choose the flat index when exact ranking, filtered search, or small-to-medium
 corpora matter more than avoiding a full scan. Choose the graph index only after
 measuring recall on the target vectors. Higher `graph_neighbors` and
@@ -131,7 +137,7 @@ the target corpus and latency budget justify the extra tuning work.
 | --- | --- | --- |
 | Flat f32 | Exact ranking matters, filtered search is common, or the corpus is small enough for full scans. | `flat_search_top1`, `flat_search`, memory bandwidth counters, and `astral_memory_stats()`. |
 | Flat q8 | The corpus is memory-bandwidth-bound and approximate scores are acceptable. | `flat_q8_recall_search` versus flat f32 on the target vectors, q8 ingest cost, `flat_search_top1`, and `vector_bytes`. |
-| Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, and the chosen `graph_neighbors`/`graph_search` pair. |
+| Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, `graph_load`, and the chosen `graph_neighbors`/`graph_search` pair. |
 | Graph q8 | Approximate graph search also needs lower vector footprint. | The graph f32 measurements above, plus q8 recall drop, graph build cost, and `graph_bytes`/`vector_bytes`. |
 
 Do not use the graph index for group-filtered retrieval unless the group is
@@ -203,7 +209,7 @@ counter profile. Use `scripts/run_memory_bench_matrix.sh` to run the
 memory-only benchmark across multiple metrics, dimensions, and capacities in one
 log. Use `scripts/run_memory_search_acceptance.sh` to capture the common exact
 flat, exact flat latency, reduced flat, q8 recall, graph build cost, graph
-latency, f32/q8 graph recall, and f32/q8 graph top-1 recall lanes into one
+snapshot load cost, latency, f32/q8 graph recall, and f32/q8 graph top-1 recall lanes into one
 output directory for a single dataset shape. Add `--budget-sweep` when tuning
 graph recall/latency so the runner also captures `graph_recall_search_sweep`
 for f32 and q8 graph indexes using one build and multiple per-query budgets.
@@ -217,8 +223,9 @@ repository.
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,
 `features.memory flat_q8_recall_search`, `features.memory graph_add_batch`,
-`features.memory graph_search_latency`, `features.memory graph_recall_search`,
-and `features.memory graph_recall_top1` for the same dimension, metric,
+`features.memory graph_load`, `features.memory graph_search_latency`,
+`features.memory graph_recall_search`, and `features.memory graph_recall_top1`
+for the same dimension, metric,
 capacity, neighbor count, and search budget. A graph run is useful only when its
 recall meets the product target, its latency beats the exact flat baseline, and
 its ingest cost is acceptable for that dataset. Keep the flat index available as
@@ -333,6 +340,7 @@ ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_ME
 ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MEMORY_SWEEP=1 ./build/dev/benchmarks/astral_benchmarks --only features
 perf stat -e cycles,instructions,cache-references,cache-misses,LLC-loads,LLC-load-misses,dTLB-loads,dTLB-load-misses -- env ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_SWEEP=1 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_load ASTRAL_BENCH_FEATURE_ITERS=8 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=flat_search_batch ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=flat_search_latency ASTRAL_BENCH_FEATURE_ITERS=256 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=flat_q8_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
@@ -352,6 +360,7 @@ filtered exact fallback, save/load, and remove/rebuild behavior.
 
 Expected markers include `features.memory add_batch`,
 `features.memory graph_add_batch`,
+`features.memory graph_load`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
 `features.memory flat_search_latency`, `features.memory flat_search_batch`,
 `features.memory flat_q8_recall_search`,
