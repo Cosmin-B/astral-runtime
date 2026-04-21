@@ -11,6 +11,7 @@ Usage: scripts/run_memory_search_acceptance.sh [options]
 Runs focused native memory-search benchmarks that compare exact flat search,
 reduced-vector flat search, and approximate graph search against the flat
 oracle. The summary includes recall, latency, and graph build-cost markers.
+Graph lanes also capture snapshot load cost when graph topology is persisted.
 Logs are written outside the repository by default.
 
 Options:
@@ -148,10 +149,12 @@ run_case "flat_f32_latency" "f32" "flat_search_latency"
 run_case "flat_q8_batch" "q8" "flat_search_batch"
 run_case "flat_q8_recall" "q8" "flat_q8_recall_search"
 run_case "graph_f32_build" "f32" "graph_add_batch"
+run_case "graph_f32_load" "f32" "graph_load"
 run_case "graph_f32_latency" "f32" "graph_search_latency"
 run_case "graph_f32_recall" "f32" "graph_recall_search"
 run_case "graph_f32_top1_recall" "f32" "graph_recall_top1"
 run_case "graph_q8_build" "q8" "graph_add_batch"
+run_case "graph_q8_load" "q8" "graph_load"
 run_case "graph_q8_recall" "q8" "graph_recall_search"
 run_case "graph_q8_top1_recall" "q8" "graph_recall_top1"
 

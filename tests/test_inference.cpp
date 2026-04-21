@@ -2658,6 +2658,18 @@ TEST(inference_memory_index_graph_mock) {
     ASSERT_EQ(count, kTopK);
     ASSERT_EQ(results[0].key, kKeyA);
 
+    AstralMemoryIndexDesc retuned_desc = desc;
+    retuned_desc.graph_search = 4;
+    AstralHandle retuned_loaded = 0;
+    err = astral_memory_load(&retuned_desc, blob_span, &retuned_loaded);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(retuned_loaded));
+    err = astral_memory_search(retuned_loaded, &search, query, results, kTopK, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_GT(count, 0u);
+    ASSERT_EQ(results[0].key, kKeyA);
+    astral_memory_destroy(retuned_loaded);
+
     err = astral_memory_remove(loaded, kKeyA);
     ASSERT_EQ(err, ASTRAL_OK);
     err = astral_memory_search(loaded, &search, query, results, kTopK, &count);
