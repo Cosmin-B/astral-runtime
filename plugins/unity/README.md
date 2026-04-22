@@ -402,6 +402,28 @@ Use `AstralModelPath.StreamingAssets(...)` for files staged with the player and
 cache files. Absolute paths and `AstralModelPath.Raw(...)` are passed through
 unchanged.
 
+### Mobile Model Setup
+
+Use the smallest preset that proves the target workflow before raising context
+length or model size:
+
+| Use | Preset | Notes |
+|-----|--------|-------|
+| Text smoke | `gemma3-270m-q4km` | Smallest documented text preset for player-load checks. |
+| Text quality pass | `qwen3-0.6b-q8` | Use when device memory and first-token latency are acceptable. |
+| Embeddings | `qwen3-embed-0.6b-q8` | Pair with `AstralModelConfig.Embeddings`. |
+
+Ship packaged models under `StreamingAssets/Models` and resolve them with
+`AstralModelPath.StreamingAssets(...)`. For first-run downloads, write the GGUF
+to `Application.persistentDataPath`, verify it with the shared preset manifest
+or downloader tooling, then resolve it with `AstralModelPath.PersistentData(...)`.
+Keep partial downloads and GGUF files out of source control.
+
+Start mobile players with `AstralConfig.Mobile` and `AstralModelConfig.Mobile`.
+Measure target devices before increasing `contextSize`, `batchSize`, or worker
+thread count. The wrapper does not pin Unity threads or select big/little cores;
+those settings must be validated on the actual device runner.
+
 ### Session Configuration
 
 ```csharp

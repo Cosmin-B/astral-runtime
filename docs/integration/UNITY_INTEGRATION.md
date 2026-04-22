@@ -674,6 +674,11 @@ job.bytesRead.Dispose();
 - **Native library**: Stage `libastral_rt.so` under `Plugins/Android/arm64-v8a/`.
 - **Threading**: Keep Unity API calls on Unity-owned threads.
 - **Memory**: Tune reserve size on the target device.
+- **Models**: Start with `gemma3-270m-q4km` for text smoke checks and
+  `qwen3-embed-0.6b-q8` for embedding checks. Use
+  `AstralModelPath.StreamingAssets(...)` for packaged GGUF files and
+  `AstralModelPath.PersistentData(...)` for first-run downloads after checksum
+  validation.
 
 ### iOS
 
@@ -682,6 +687,9 @@ job.bytesRead.Dispose();
   layout.
 - **Memory**: Tune model size, context length, and reserve size on the target
   device.
+- **Models**: Keep downloaded GGUF files under `Application.persistentDataPath`
+  and keep packaged models under `StreamingAssets/Models`. Validate the selected
+  preset on device before increasing context length or batch size.
 - **Entitlements**: Inference does not require Astral-specific entitlements.
 
 ### WebGL
