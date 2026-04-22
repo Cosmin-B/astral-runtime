@@ -1623,6 +1623,61 @@ void memory_search_q8_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
                            uint32_t* out_count) {
   const float query_scale =
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 0.0f;
+  if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY) {
+    if (index->count == 0) {
+      *out_count = kNoResults;
+      return;
+    }
+
+    if (index->dense_active != 0) {
+      MemorySlot* slots = index->slots;
+      const uint32_t dim = index->dim;
+      const int8_t* vectors = index->q8_vectors;
+      const float* scales = index->q8_scales;
+      MemorySlot* best_slot = &slots[0];
+      float best_score = 0.0f;
+      if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
+        best_score = dot_q8_f32(vectors, query, dim) * scales[0];
+        for (uint32_t slot = 1; slot < index->count; ++slot) {
+          MemorySlot& s = slots[slot];
+          const float score =
+              dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) * scales[slot];
+          if (score > best_score || (score == best_score && s.record.key < best_slot->record.key)) {
+            best_slot = &s;
+            best_score = score;
+          }
+        }
+      } else if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+        best_score =
+            dot_q8_f32(vectors, query, dim) * scales[0] * query_scale * best_slot->score_scale;
+        for (uint32_t slot = 1; slot < index->count; ++slot) {
+          MemorySlot& s = slots[slot];
+          const float score = dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) *
+                              scales[slot] * query_scale * s.score_scale;
+          if (score > best_score || (score == best_score && s.record.key < best_slot->record.key)) {
+            best_slot = &s;
+            best_score = score;
+          }
+        }
+      } else {
+        best_score = l2_score_q8_f32(vectors, scales[0], query, dim);
+        for (uint32_t slot = 1; slot < index->count; ++slot) {
+          MemorySlot& s = slots[slot];
+          const float score =
+              l2_score_q8_f32(vectors + static_cast<size_t>(slot) * dim, scales[slot], query, dim);
+          if (score > best_score || (score == best_score && s.record.key < best_slot->record.key)) {
+            best_slot = &s;
+            best_score = score;
+          }
+        }
+      }
+
+      fill_result(out_results, *best_slot, best_score);
+      *out_count = kTopOne;
+      return;
+    }
+  }
+
   const MemorySlot* best_slot = nullptr;
   float best_score = 0.0f;
   uint64_t best_key = 0;
