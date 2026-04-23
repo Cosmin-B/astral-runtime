@@ -1597,6 +1597,56 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
                       AstralMemorySearchResult* out_results, uint32_t* out_count) {
   const float query_scale =
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 0.0f;
+  if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY && index->dense_active != 0) {
+    uint32_t filled = 0;
+    MemorySlot* slots = index->slots;
+    const uint32_t dim = index->dim;
+    const int8_t* vectors = index->q8_vectors;
+    const float* scales = index->q8_scales;
+    if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
+      for (uint32_t slot = 0; slot < index->count; ++slot) {
+        MemorySlot& s = slots[slot];
+        const float score =
+            dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) * scales[slot];
+        if (filled == desc->top_k &&
+            !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+          continue;
+        }
+        AstralMemorySearchResult candidate{};
+        fill_result(&candidate, s, score);
+        insert_result(out_results, desc->top_k, &filled, candidate);
+      }
+    } else if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      for (uint32_t slot = 0; slot < index->count; ++slot) {
+        MemorySlot& s = slots[slot];
+        const float score = dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) *
+                            scales[slot] * query_scale * s.score_scale;
+        if (filled == desc->top_k &&
+            !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+          continue;
+        }
+        AstralMemorySearchResult candidate{};
+        fill_result(&candidate, s, score);
+        insert_result(out_results, desc->top_k, &filled, candidate);
+      }
+    } else {
+      for (uint32_t slot = 0; slot < index->count; ++slot) {
+        MemorySlot& s = slots[slot];
+        const float score =
+            l2_score_q8_f32(vectors + static_cast<size_t>(slot) * dim, scales[slot], query, dim);
+        if (filled == desc->top_k &&
+            !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+          continue;
+        }
+        AstralMemorySearchResult candidate{};
+        fill_result(&candidate, s, score);
+        insert_result(out_results, desc->top_k, &filled, candidate);
+      }
+    }
+    *out_count = filled;
+    return;
+  }
+
   uint32_t filled = 0;
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
     const uint32_t slot = active_slot_at(index, active_pos);
