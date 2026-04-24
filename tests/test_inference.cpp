@@ -2745,6 +2745,20 @@ TEST(inference_memory_index_q8_storage_mock) {
     ASSERT_EQ(count, kTopK);
     ASSERT_EQ(results[0].key, kKeyA);
 
+    constexpr uint32_t kBatchQueryCount = 2;
+    const float batch_queries[kBatchQueryCount * kDim] = {
+        1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+    };
+    AstralMemorySearchResult batch_results[kBatchQueryCount * kTopK]{};
+    uint32_t batch_counts[kBatchQueryCount]{};
+    err = astral_memory_search_batch(index, &search, batch_queries, kBatchQueryCount, batch_results,
+                                     kBatchQueryCount * kTopK, batch_counts);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(batch_counts[0], kTopK);
+    ASSERT_EQ(batch_counts[1], kTopK);
+    ASSERT_EQ(batch_results[0].key, kKeyA);
+    ASSERT_EQ(batch_results[kTopK].key, kKeyB);
+
     uint64_t save_bytes = 0;
     err = astral_memory_save_size(index, &save_bytes);
     ASSERT_EQ(err, ASTRAL_OK);
