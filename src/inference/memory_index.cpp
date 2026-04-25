@@ -1161,19 +1161,45 @@ void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t ca
 
 bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t* filled,
                                 uint32_t slot, float score) {
-  uint32_t pos = *filled;
-  if (pos < capacity) {
-    ++(*filled);
-  } else if (score <= index->graph_scratch_scores[capacity - 1u]) {
-    return false;
-  } else {
-    pos = capacity - 1u;
+  uint32_t count = *filled;
+  if (count < capacity) {
+    uint32_t pos = count;
+    while (pos > 0) {
+      const uint32_t parent = (pos - 1u) >> 1u;
+      if (index->graph_scratch_scores[parent] <= score) {
+        break;
+      }
+      index->graph_scratch_scores[pos] = index->graph_scratch_scores[parent];
+      index->graph_scratch_slots[pos] = index->graph_scratch_slots[parent];
+      pos = parent;
+    }
+    index->graph_scratch_scores[pos] = score;
+    index->graph_scratch_slots[pos] = slot;
+    *filled = count + 1u;
+    return true;
   }
 
-  while (pos > 0 && score > index->graph_scratch_scores[pos - 1u]) {
-    index->graph_scratch_scores[pos] = index->graph_scratch_scores[pos - 1u];
-    index->graph_scratch_slots[pos] = index->graph_scratch_slots[pos - 1u];
-    --pos;
+  if (score <= index->graph_scratch_scores[0]) {
+    return false;
+  }
+
+  uint32_t pos = 0;
+  for (;;) {
+    const uint32_t left = (pos << 1u) + 1u;
+    if (left >= count) {
+      break;
+    }
+    const uint32_t right = left + 1u;
+    uint32_t child = left;
+    if (right < count && index->graph_scratch_scores[right] < index->graph_scratch_scores[left]) {
+      child = right;
+    }
+    if (index->graph_scratch_scores[child] >= score) {
+      break;
+    }
+    index->graph_scratch_scores[pos] = index->graph_scratch_scores[child];
+    index->graph_scratch_slots[pos] = index->graph_scratch_slots[child];
+    pos = child;
   }
   index->graph_scratch_scores[pos] = score;
   index->graph_scratch_slots[pos] = slot;
@@ -1433,6 +1459,7 @@ void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, f
   }
   if (score > worst_score) {
     uint32_t pos = worst_pos;
+    bool moved_up = false;
     while (pos > 0) {
       const uint32_t parent = (pos - 1u) >> 1u;
       if (index->graph_candidate_scores[parent] >= score) {
@@ -1441,6 +1468,27 @@ void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, f
       index->graph_candidates[pos] = index->graph_candidates[parent];
       index->graph_candidate_scores[pos] = index->graph_candidate_scores[parent];
       pos = parent;
+      moved_up = true;
+    }
+    if (!moved_up) {
+      for (;;) {
+        const uint32_t left = (pos << 1u) + 1u;
+        if (left >= count) {
+          break;
+        }
+        const uint32_t right = left + 1u;
+        uint32_t child = left;
+        if (right < count &&
+            index->graph_candidate_scores[right] > index->graph_candidate_scores[left]) {
+          child = right;
+        }
+        if (index->graph_candidate_scores[child] <= score) {
+          break;
+        }
+        index->graph_candidates[pos] = index->graph_candidates[child];
+        index->graph_candidate_scores[pos] = index->graph_candidate_scores[child];
+        pos = child;
+      }
     }
     index->graph_candidates[pos] = slot;
     index->graph_candidate_scores[pos] = score;
@@ -1533,8 +1581,7 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
     if (!graph_pop_candidate(index, &candidate_count, &slot, &slot_score)) {
       break;
     }
-    if (top_count == search_capacity &&
-        slot_score < index->graph_scratch_scores[search_capacity - 1u]) {
+    if (top_count == search_capacity && slot_score < index->graph_scratch_scores[0]) {
       break;
     }
 
