@@ -16,6 +16,7 @@ static constexpr int32 kInlineChunkRangeCapacity = 32;
 static constexpr int32 kInlineChunkTextBytes = 4096;
 static constexpr int32 kInlineMemoryRecordCapacity = 32;
 static constexpr int32 kInlineMemoryResultCapacity = 16;
+static constexpr int32 kInlineMemoryQueryCapacity = 16;
 static constexpr int32 kAgentReadBufferBytes = 4096;
 static constexpr int32 kInlineAgentTextBytes = kAgentReadBufferBytes;
 static constexpr int32 kInlineAdapterPathBytes = 1024;
@@ -1374,56 +1375,110 @@ FAstralOperationResult UAstralBlueprintLibrary::SearchMemoryIndexResult(
     return make_operation_result(ASTRAL_OK, MemoryHandle, static_cast<int32>(ResultCount));
 }
 
-bool UAstralBlueprintLibrary::BeginMemorySearch(
-    int64 MemoryHandle,
-    const TArray<float>& Query,
-    int32 TopK,
-    int32 GroupId,
-    int64& OutCursorHandle,
-    int32& OutErrorCode,
-    int32 GraphSearch
-)
-{
-    const FAstralOperationResult Result = BeginMemorySearchResult(MemoryHandle, Query, TopK, GroupId, GraphSearch);
-    OutCursorHandle = Result.Handle;
-    OutErrorCode = Result.ErrorCode;
-    return Result.bSuccess;
+bool UAstralBlueprintLibrary::SearchMemoryIndexBatch(int64 MemoryHandle,
+                                                     const TArray<float>& Queries, int32 QueryCount,
+                                                     int32 TopK, int32 GroupId,
+                                                     TArray<FAstralMemorySearchResult>& OutResults,
+                                                     TArray<int32>& OutCounts, int32& OutErrorCode,
+                                                     int32 GraphSearch) {
+  const FAstralOperationResult Result = SearchMemoryIndexBatchResult(
+      MemoryHandle, Queries, QueryCount, TopK, GroupId, OutResults, OutCounts, GraphSearch);
+  OutErrorCode = Result.ErrorCode;
+  return Result.bSuccess;
 }
 
-FAstralOperationResult UAstralBlueprintLibrary::BeginMemorySearchResult(
-    int64 MemoryHandle,
-    const TArray<float>& Query,
-    int32 TopK,
-    int32 GroupId,
-    int32 GraphSearch
-)
-{
-    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_BeginMemorySearch);
+FAstralOperationResult UAstralBlueprintLibrary::SearchMemoryIndexBatchResult(
+    int64 MemoryHandle, const TArray<float>& Queries, int32 QueryCount, int32 TopK, int32 GroupId,
+    TArray<FAstralMemorySearchResult>& OutResults, TArray<int32>& OutCounts, int32 GraphSearch) {
+  TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SearchMemoryIndexBatch);
 
-    if (MemoryHandle == 0 || Query.Num() == 0 || TopK <= 0)
-    {
-        return make_operation_result(ASTRAL_E_INVALID);
+  OutResults.Reset();
+  OutCounts.Reset();
+  if (MemoryHandle == 0 || Queries.Num() == 0 || QueryCount <= 0 || TopK <= 0) {
+    return make_operation_result(ASTRAL_E_INVALID);
+  }
+  if (QueryCount > TNumericLimits<int32>::Max() / TopK) {
+    return make_operation_result(ASTRAL_E_NOMEM);
+  }
+
+  FAstralMemoryStats Stats;
+  const FAstralOperationResult StatsResult = GetMemoryStatsResult(MemoryHandle, Stats);
+  if (!StatsResult.bSuccess) {
+    return StatsResult;
+  }
+  if (Stats.Dimension <= 0 || Queries.Num() != QueryCount * Stats.Dimension) {
+    return make_operation_result(ASTRAL_E_INVALID);
+  }
+
+  AstralMemorySearchDesc NativeSearch{};
+  NativeSearch.size = sizeof(AstralMemorySearchDesc);
+  NativeSearch.top_k = static_cast<uint32_t>(TopK);
+  NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
+  NativeSearch.graph_search = GraphSearch > 0 ? static_cast<uint32_t>(GraphSearch) : 0u;
+
+  const int32 ResultCapacity = QueryCount * TopK;
+  TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
+  TArray<uint32_t, TInlineAllocator<kInlineMemoryQueryCapacity>> NativeCounts;
+  NativeResults.SetNumZeroed(ResultCapacity);
+  NativeCounts.SetNumZeroed(QueryCount);
+
+  const AstralErr Err = astral_memory_search_batch(
+      static_cast<AstralHandle>(MemoryHandle), &NativeSearch, Queries.GetData(),
+      static_cast<uint32_t>(QueryCount), NativeResults.GetData(),
+      static_cast<uint32_t>(NativeResults.Num()), NativeCounts.GetData());
+  if (Err != ASTRAL_OK) {
+    return make_operation_result(Err);
+  }
+
+  OutResults.Reserve(ResultCapacity);
+  OutCounts.Reserve(QueryCount);
+  int32 TotalCount = 0;
+  for (int32 QueryIndex = 0; QueryIndex < QueryCount; ++QueryIndex) {
+    const int32 Count = static_cast<int32>(NativeCounts[QueryIndex]);
+    OutCounts.Add(Count);
+    TotalCount += Count;
+    const int32 ResultOffset = QueryIndex * TopK;
+    for (int32 ResultIndex = 0; ResultIndex < Count; ++ResultIndex) {
+      OutResults.Add(from_native_memory_result(NativeResults[ResultOffset + ResultIndex]));
     }
+  }
+  return make_operation_result(ASTRAL_OK, MemoryHandle, TotalCount);
+}
 
-    AstralMemorySearchDesc NativeSearch{};
-    NativeSearch.size = sizeof(AstralMemorySearchDesc);
-    NativeSearch.top_k = static_cast<uint32_t>(TopK);
-    NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
-    NativeSearch.graph_search = GraphSearch > 0 ? static_cast<uint32_t>(GraphSearch) : 0u;
+bool UAstralBlueprintLibrary::BeginMemorySearch(int64 MemoryHandle, const TArray<float>& Query,
+                                                int32 TopK, int32 GroupId, int64& OutCursorHandle,
+                                                int32& OutErrorCode, int32 GraphSearch) {
+  const FAstralOperationResult Result =
+      BeginMemorySearchResult(MemoryHandle, Query, TopK, GroupId, GraphSearch);
+  OutCursorHandle = Result.Handle;
+  OutErrorCode = Result.ErrorCode;
+  return Result.bSuccess;
+}
 
-    AstralHandle Cursor = 0;
-    const AstralErr Err = astral_memory_search_begin(
-        static_cast<AstralHandle>(MemoryHandle),
-        &NativeSearch,
-        Query.GetData(),
-        &Cursor
-    );
-    if (Err != ASTRAL_OK)
-    {
-        return make_operation_result(Err);
-    }
+FAstralOperationResult UAstralBlueprintLibrary::BeginMemorySearchResult(int64 MemoryHandle,
+                                                                        const TArray<float>& Query,
+                                                                        int32 TopK, int32 GroupId,
+                                                                        int32 GraphSearch) {
+  TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_BeginMemorySearch);
 
-    return make_operation_result(ASTRAL_OK, static_cast<int64>(Cursor));
+  if (MemoryHandle == 0 || Query.Num() == 0 || TopK <= 0) {
+    return make_operation_result(ASTRAL_E_INVALID);
+  }
+
+  AstralMemorySearchDesc NativeSearch{};
+  NativeSearch.size = sizeof(AstralMemorySearchDesc);
+  NativeSearch.top_k = static_cast<uint32_t>(TopK);
+  NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
+  NativeSearch.graph_search = GraphSearch > 0 ? static_cast<uint32_t>(GraphSearch) : 0u;
+
+  AstralHandle Cursor = 0;
+  const AstralErr Err = astral_memory_search_begin(static_cast<AstralHandle>(MemoryHandle),
+                                                   &NativeSearch, Query.GetData(), &Cursor);
+  if (Err != ASTRAL_OK) {
+    return make_operation_result(Err);
+  }
+
+  return make_operation_result(ASTRAL_OK, static_cast<int64>(Cursor));
 }
 
 bool UAstralBlueprintLibrary::FetchMemorySearch(

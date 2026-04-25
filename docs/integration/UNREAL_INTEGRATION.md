@@ -60,8 +60,8 @@ result-returning helpers:
   `AddMemoryBatchResult`, `GetMemoryRecordCountResult`,
   `RemoveMemoryRecordResult`,
   `ClearMemoryIndexResult`, `SaveMemoryIndexResult`,
-  `SearchMemoryIndexResult`, `BeginMemorySearchResult`, and
-  `FetchMemorySearchResult`
+  `SearchMemoryIndexResult`, `SearchMemoryIndexBatchResult`,
+  `BeginMemorySearchResult`, and `FetchMemorySearchResult`
 - `CreateSessionRequestResult`, `CreateConversationRequestResult`,
   `CreateAgentChatRequestResult`, `CreateEmbeddingRequestResult`,
   `CreateMemorySearchRequestResult`, `GetRequestStatusResult`,

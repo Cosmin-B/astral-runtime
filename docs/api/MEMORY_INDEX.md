@@ -236,8 +236,11 @@ Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
 storage and search ordering. Unreal's `FAstralMemoryIndexDesc` exposes flat and
 graph index modes plus graph neighbor/search budgets; `0` keeps the native
-defaults. `FAstralMemoryStats` and Unity `AstralMemoryIndex.GetStats()` expose
-the same native footprint counters for engine-side budgeting and telemetry.
+defaults. Unreal `SearchMemoryIndexBatchResult()` and Unity
+`AstralMemoryIndex.SearchBatch()` call the native row-major batch search path
+for multi-query retrieval. `FAstralMemoryStats` and Unity
+`AstralMemoryIndex.GetStats()` expose the same native footprint counters for
+engine-side budgeting and telemetry.
 
 ## Unity
 

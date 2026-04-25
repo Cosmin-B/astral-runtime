@@ -206,6 +206,20 @@ public:
         int32 GraphSearch = 0
     );
 
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static bool SearchMemoryIndexBatch(int64 MemoryHandle, const TArray<float>& Queries,
+                                       int32 QueryCount, int32 TopK, int32 GroupId,
+                                       TArray<FAstralMemorySearchResult>& OutResults,
+                                       TArray<int32>& OutCounts, int32& OutErrorCode,
+                                       int32 GraphSearch = 0);
+
+    UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
+    static FAstralOperationResult
+    SearchMemoryIndexBatchResult(int64 MemoryHandle, const TArray<float>& Queries, int32 QueryCount,
+                                 int32 TopK, int32 GroupId,
+                                 TArray<FAstralMemorySearchResult>& OutResults,
+                                 TArray<int32>& OutCounts, int32 GraphSearch = 0);
+
     /** Start an incremental memory search. Release it with EndMemorySearch. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Memory")
     static bool BeginMemorySearch(
