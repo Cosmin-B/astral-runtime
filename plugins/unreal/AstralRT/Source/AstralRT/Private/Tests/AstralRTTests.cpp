@@ -774,6 +774,34 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
         TestEqual(TEXT("memory top key"), MemoryResults[0].Key, RecordA.Key);
     }
 
+    constexpr int32 BatchTopK = 1;
+    constexpr int32 BatchQueryCount = 2;
+    TArray<float> BatchQueries;
+    BatchQueries.Add(VectorOne);
+    BatchQueries.Add(VectorZero);
+    BatchQueries.Add(VectorZero);
+    BatchQueries.Add(VectorOne);
+    TArray<FAstralMemorySearchResult> BatchMemoryResults;
+    TArray<int32> BatchMemoryCounts;
+    const FAstralOperationResult BatchSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexBatchResult(
+            MemoryCreate.Handle, BatchQueries, BatchQueryCount, BatchTopK, AnyMemoryGroup,
+            BatchMemoryResults, BatchMemoryCounts);
+    TestTrue(TEXT("memory batch search succeeds"), BatchSearchMemory.bSuccess);
+    TestEqual(TEXT("memory batch search total count"), BatchSearchMemory.Count,
+              BatchQueryCount * BatchTopK);
+    TestEqual(TEXT("memory batch count entries"), BatchMemoryCounts.Num(), BatchQueryCount);
+    if (BatchMemoryCounts.Num() == BatchQueryCount) {
+      TestEqual(TEXT("memory batch first count"), BatchMemoryCounts[0], BatchTopK);
+      TestEqual(TEXT("memory batch second count"), BatchMemoryCounts[1], BatchTopK);
+    }
+    TestEqual(TEXT("memory batch result entries"), BatchMemoryResults.Num(),
+              BatchQueryCount * BatchTopK);
+    if (BatchMemoryResults.Num() == BatchQueryCount * BatchTopK) {
+      TestEqual(TEXT("memory batch first top key"), BatchMemoryResults[0].Key, RecordA.Key);
+      TestEqual(TEXT("memory batch second top key"), BatchMemoryResults[1].Key, UpdatedRecord.Key);
+    }
+
     const FAstralOperationResult BeginSearch =
         UAstralBlueprintLibrary::BeginMemorySearchResult(MemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup);
     TestTrue(TEXT("memory cursor begin succeeds"), BeginSearch.bSuccess);
