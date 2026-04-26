@@ -439,6 +439,67 @@ namespace Astral.Runtime.Tests
         }
 
         [Test]
+        public void MemoryIndex_SearchBatch_ReturnsPerQueryResults()
+        {
+            RequireNative();
+
+            AstralRuntime.Initialize(new AstralConfig
+            {
+                reserveBytes = 64UL << 20,
+                threadCount = 1,
+                useUnityAllocator = false,
+                enableLogging = false
+            });
+
+            try
+            {
+                using var index = AstralMemoryIndex.Create(new AstralMemoryIndexConfig
+                {
+                    dim = 2,
+                    capacity = 2,
+                    metric = AstralNative.AstralMemoryMetric.Cosine,
+                    indexKind = AstralNative.AstralMemoryIndexKind.Flat
+                });
+
+                using var records = new NativeArray<AstralNative.AstralMemoryRecord>(2, Allocator.Temp);
+                records[0] = new AstralNative.AstralMemoryRecord
+                {
+                    size = (uint)Marshal.SizeOf<AstralNative.AstralMemoryRecord>(),
+                    group_id = 7,
+                    key = 1001,
+                    document_id = 10,
+                    chunk_id = 100
+                };
+                records[1] = new AstralNative.AstralMemoryRecord
+                {
+                    size = (uint)Marshal.SizeOf<AstralNative.AstralMemoryRecord>(),
+                    group_id = 7,
+                    key = 1002,
+                    document_id = 20,
+                    chunk_id = 200
+                };
+                using var vectors = new NativeArray<float>(new[] { 1.0f, 0.0f, 0.0f, 1.0f }, Allocator.Temp);
+                index.AddBatch(records, vectors);
+
+                var desc = AstralMemoryIndex.SearchDesc(topK: 1, groupId: AstralMemoryIndex.DefaultSearchGroupId);
+                using var queries = new NativeArray<float>(new[] { 1.0f, 0.0f, 0.0f, 1.0f }, Allocator.Temp);
+                using var results = new NativeArray<AstralNative.AstralMemorySearchResult>(2, Allocator.Temp);
+                using var counts = new NativeArray<uint>(2, Allocator.Temp);
+
+                index.SearchBatch(ref desc, queries, queryCount: 2, results, counts);
+
+                Assert.AreEqual(1u, counts[0]);
+                Assert.AreEqual(1u, counts[1]);
+                Assert.AreEqual(1001UL, results[0].key);
+                Assert.AreEqual(1002UL, results[1].key);
+            }
+            finally
+            {
+                AstralRuntime.Shutdown();
+            }
+        }
+
+        [Test]
         public void ToolCall_StatusHelpers_MapParseStatus()
         {
             var parsed = new AstralToolCall
