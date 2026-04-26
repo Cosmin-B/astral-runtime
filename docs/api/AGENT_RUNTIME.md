@@ -125,8 +125,11 @@ contiguous metadata. The decode hot path remains the existing conversation
 executor, stream ring, sampler, grammar, and backend slot machinery.
 Slot release and automatic completed-slot reuse are control-path operations.
 They do not add checks to token streaming or decode loops. Applications that
-need strict fairness across more agents than executor slots can still wait for
-a request, drain its stream, release its slot, and enqueue the next ready agent.
+run more completed agents than executor slots should drain streams promptly so
+the native runtime can rotate reusable completed slots instead of repeatedly
+reclaiming the same agent. Applications that need strict queue ordering can
+still wait for a request, drain its stream, release its slot, and enqueue the
+next ready agent.
 
 `AstralAgentChatResult` reports `prompt_cache_reused_tokens`,
 `prompt_cache_new_tokens`, `prompt_cache_hits`, and `prompt_cache_misses` for
