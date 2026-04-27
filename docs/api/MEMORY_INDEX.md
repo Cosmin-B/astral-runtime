@@ -213,8 +213,9 @@ snapshot load cost, latency, f32/q8 graph recall, and f32/q8 graph top-1 recall 
 output directory for a single dataset shape. Add `--budget-sweep` when tuning
 graph recall/latency so the runner also captures `graph_recall_search_sweep`
 for f32 and q8 graph indexes using one build and multiple per-query budgets.
-Both runners can wrap each
-benchmark lane in
+Add `--recall-detail` when aggregate recall hides hard queries; it captures one
+`features.memory graph_recall_qNNN` lane per deterministic query row with the
+same graph and oracle setup. Both runners can wrap each benchmark lane in
 `perf stat` with `--perf`, `--perf-bin`, `--perf-events`, and `--require-perf`.
 Perf CSV and stderr files are written beside the runner logs, so hardware
 counter evidence stays with the sidecar capture instead of entering the
@@ -231,6 +232,9 @@ recall meets the product target, its latency beats the exact flat baseline, and
 its ingest cost is acceptable for that dataset. Keep the flat index available as
 the correctness oracle while tuning new embedding models or document
 distributions.
+When aggregate top-k recall moves in the right direction but remains unstable,
+run `graph_recall_detail` to see whether failures are isolated to a few query
+regions or spread across the corpus.
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
@@ -350,6 +354,7 @@ ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=flat_q8_recall_search ASTRAL
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_search_latency ASTRAL_BENCH_FEATURE_ITERS=256 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search_sweep ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=512 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=64 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_detail ASTRAL_BENCH_FEATURE_ITERS=32 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=16 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
