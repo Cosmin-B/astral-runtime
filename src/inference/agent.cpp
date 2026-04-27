@@ -256,6 +256,15 @@ void model_agent_unlink(Agent* agent) {
         return;
     }
     lock_flag(model->executor_lock);
+    if (model->agent_reclaim_cursor == agent) {
+      if (agent->model_next != nullptr) {
+        model->agent_reclaim_cursor = agent->model_next;
+      } else if (agent->model_prev != nullptr) {
+        model->agent_reclaim_cursor = model->agents;
+      } else {
+        model->agent_reclaim_cursor = nullptr;
+      }
+    }
     if (agent->model_prev != nullptr) {
         agent->model_prev->model_next = agent->model_next;
     } else if (model->agents == agent) {
@@ -1047,32 +1056,48 @@ bool agent_slot_matches_request(const Agent* requester, const Agent* candidate) 
     return candidate->conv_ptr->slot_id.load(std::memory_order_acquire) == preferred_slot;
 }
 
+bool agent_can_reclaim_slot(Agent* requester, Agent* candidate) {
+  if (candidate == requester || !agent_slot_matches_request(requester, candidate) ||
+      candidate->conv_ptr == nullptr) {
+    return false;
+  }
+
+  AstralSessionState state = ASTRAL_SESSION_FAILED;
+  return conv_state(candidate->conv_ptr, &state) == ASTRAL_OK && state != ASTRAL_SESSION_DECODING &&
+         candidate->conv_ptr->pending_len <= candidate->conv_ptr->pending_off &&
+         candidate->conv_ptr->token_ring.empty();
+}
+
 AstralErr reclaim_completed_agent_slot(Agent* requester) {
-    Model* model = requester != nullptr ? requester->model : nullptr;
-    if (model == nullptr) {
-        return ASTRAL_E_INVALID;
+  Model* model = requester != nullptr ? requester->model : nullptr;
+  if (model == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
+
+  Agent* reclaim = nullptr;
+  lock_flag(model->executor_lock);
+  Agent* start =
+      model->agent_reclaim_cursor != nullptr ? model->agent_reclaim_cursor : model->agents;
+  for (Agent* candidate = start; candidate != nullptr; candidate = candidate->model_next) {
+    if (agent_can_reclaim_slot(requester, candidate)) {
+      reclaim = candidate;
+      break;
     }
-
-    Agent* reclaim = nullptr;
-    lock_flag(model->executor_lock);
-    for (Agent* candidate = model->agents; candidate != nullptr; candidate = candidate->model_next) {
-        if (candidate == requester || !agent_slot_matches_request(requester, candidate) ||
-            candidate->conv_ptr == nullptr) {
-            continue;
-        }
-
-        AstralSessionState state = ASTRAL_SESSION_FAILED;
-        if (conv_state(candidate->conv_ptr, &state) != ASTRAL_OK || state == ASTRAL_SESSION_DECODING ||
-            candidate->conv_ptr->pending_len > candidate->conv_ptr->pending_off ||
-            !candidate->conv_ptr->token_ring.empty()) {
-            continue;
-        }
-
+  }
+  if (reclaim == nullptr && start != model->agents) {
+    for (Agent* candidate = model->agents; candidate != start; candidate = candidate->model_next) {
+      if (agent_can_reclaim_slot(requester, candidate)) {
         reclaim = candidate;
         break;
+      }
     }
-    unlock_flag(model->executor_lock);
-    return reclaim != nullptr ? agent_release_slot(reclaim) : ASTRAL_E_BUSY;
+  }
+  if (reclaim != nullptr) {
+    model->agent_reclaim_cursor =
+        reclaim->model_next != nullptr ? reclaim->model_next : model->agents;
+  }
+  unlock_flag(model->executor_lock);
+  return reclaim != nullptr ? agent_release_slot(reclaim) : ASTRAL_E_BUSY;
 }
 
 AstralErr agent_ensure_conversation(Agent* agent, const AstralConvDesc* conv_desc) {

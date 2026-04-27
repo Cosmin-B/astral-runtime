@@ -875,13 +875,32 @@ TEST(inference_agents_share_model_executor_mock) {
     ASSERT_EQ(astral_request_wait(&reuse_request, kRequestTimeoutMs, &reuse_status), ASTRAL_OK);
     ASSERT_EQ(reuse_status.state, ASTRAL_REQUEST_COMPLETED);
     (void)read_agent_stream_all(reuse_agent);
-    astral_agent_destroy(reuse_agent);
 
-    ASSERT_EQ(astral_agent_release_slot(idle_agent), ASTRAL_E_NOT_FOUND);
-    ASSERT_EQ(astral_agent_release_slot(agent_a), ASTRAL_OK);
+    AstralHandle reuse_agent_2 = 0;
+    ASSERT_EQ(astral_agent_create(&desc, &reuse_agent_2), ASTRAL_OK);
+    AstralAgentChatDesc reuse_chat_2{};
+    reuse_chat_2.size = sizeof(AstralAgentChatDesc);
+    reuse_chat_2.user_message = span_from_cstr("reuse the next completed slot");
+    ASSERT_EQ(astral_agent_chat_enqueue(reuse_agent_2, &reuse_chat_2), ASTRAL_OK);
+    uint32_t reuse_slot_2 = kNoAssignedSlot;
+    ASSERT_EQ(astral_agent_assigned_slot(reuse_agent_2, &reuse_slot_2), ASTRAL_OK);
+    ASSERT_EQ(reuse_slot_2, kAgentASlot);
     slot_a = kNoAssignedSlot;
     ASSERT_EQ(astral_agent_assigned_slot(agent_a, &slot_a), ASTRAL_E_NOT_FOUND);
     ASSERT_EQ(slot_a, kNoAssignedSlot);
+
+    AstralRequestRef reuse_request_2{};
+    ASSERT_EQ(astral_request_from_agent_chat(reuse_agent_2, &reuse_request_2), ASTRAL_OK);
+    AstralRequestStatus reuse_status_2{};
+    reuse_status_2.size = sizeof(AstralRequestStatus);
+    ASSERT_EQ(astral_request_wait(&reuse_request_2, kRequestTimeoutMs, &reuse_status_2), ASTRAL_OK);
+    ASSERT_EQ(reuse_status_2.state, ASTRAL_REQUEST_COMPLETED);
+    (void)read_agent_stream_all(reuse_agent_2);
+    astral_agent_destroy(reuse_agent_2);
+    astral_agent_destroy(reuse_agent);
+
+    ASSERT_EQ(astral_agent_release_slot(idle_agent), ASTRAL_E_NOT_FOUND);
+    ASSERT_EQ(astral_agent_release_slot(agent_a), ASTRAL_E_NOT_FOUND);
 
     AstralAgentChatResult released_result{};
     released_result.size = sizeof(AstralAgentChatResult);
