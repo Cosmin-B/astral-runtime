@@ -53,6 +53,11 @@ static constexpr uint32_t kBenchMemoryHashShift1 = 15u;
 static constexpr uint32_t kBenchMemoryHashShift2 = 16u;
 static constexpr uint32_t kBenchMemoryHashRowMul = 0x9E3779B9u;
 static constexpr uint32_t kBenchMemoryHashColMul = 0x85EBCA6Bu;
+static constexpr uint64_t kBenchMemoryKeyHashMul0 = 0xBF58476D1CE4E5B9ull;
+static constexpr uint64_t kBenchMemoryKeyHashMul1 = 0x94D049BB133111EBull;
+static constexpr uint32_t kBenchMemoryKeyHashShift0 = 30u;
+static constexpr uint32_t kBenchMemoryKeyHashShift1 = 27u;
+static constexpr uint32_t kBenchMemoryKeyHashShift2 = 31u;
 static constexpr float kBenchMemoryI32Scale = 1.0f / 2147483648.0f;
 static constexpr uint32_t kBenchMemoryRecallQueries = 32u;
 static constexpr uint32_t kBenchMemoryMinRecallQueries = 1u;
@@ -65,6 +70,7 @@ static constexpr uint32_t kBenchMemoryGraphNeighbors = 32;
 static constexpr uint32_t kBenchMemoryGraphMaxNeighbors = 64;
 static constexpr uint32_t kBenchMemoryGraphSearch = 64;
 static constexpr uint32_t kBenchMemoryGraphMinSearch = 4;
+static constexpr uint32_t kBenchMemoryGraphMaxLevels = 16;
 static constexpr double kBenchMemoryPercentScale = 100.0;
 static constexpr uint32_t kBenchAgentContextTokens = 256;
 static constexpr uint32_t kBenchAgentSlots = 1;
@@ -122,6 +128,7 @@ static constexpr char kBenchMemoryCaseGraphRecallTop1[] = "graph_recall_top1";
 static constexpr char kBenchMemoryCaseGraphRecallSearch[] = "graph_recall_search";
 static constexpr char kBenchMemoryCaseGraphRecallSearchSweep[] = "graph_recall_search_sweep";
 static constexpr char kBenchMemoryCaseGraphRecallDetail[] = "graph_recall_detail";
+static constexpr char kBenchMemoryCaseGraphLevelStats[] = "graph_level_stats";
 static constexpr char kBenchMemoryCaseCursorBeginFetch[] = "cursor_begin_fetch";
 static constexpr char kBenchMemoryCaseMemoryStatus[] = "memory_status";
 static constexpr const char* kBenchMemorySweepAddNames[] = {
@@ -277,19 +284,48 @@ static uint32_t memory_graph_search() {
 }
 
 static uint32_t memory_graph_query_search() {
-    const char* value = std::getenv(kBenchMemoryGraphQuerySearchEnv);
-    if (value == nullptr || value[0] == '\0') {
-        return 0;
-    }
-    return bounded_env_u32(kBenchMemoryGraphQuerySearchEnv, kBenchMemoryGraphMinSearch, kBenchMemoryGraphMinSearch, UINT32_MAX);
+  const char* value = std::getenv(kBenchMemoryGraphQuerySearchEnv);
+  if (value == nullptr || value[0] == '\0') {
+    return 0;
+  }
+  return bounded_env_u32(kBenchMemoryGraphQuerySearchEnv, kBenchMemoryGraphMinSearch,
+                         kBenchMemoryGraphMinSearch, UINT32_MAX);
 }
 
 static uint32_t memory_recall_queries() {
-    return bounded_env_u32(
-        kBenchMemoryRecallQueriesEnv,
-        kBenchMemoryRecallQueries,
-        kBenchMemoryMinRecallQueries,
-        kBenchMemoryMaxRecallQueries);
+  return bounded_env_u32(kBenchMemoryRecallQueriesEnv, kBenchMemoryRecallQueries,
+                         kBenchMemoryMinRecallQueries, kBenchMemoryMaxRecallQueries);
+}
+
+static uint64_t memory_key_hash_mix(uint64_t x) {
+  x ^= x >> kBenchMemoryKeyHashShift0;
+  x *= kBenchMemoryKeyHashMul0;
+  x ^= x >> kBenchMemoryKeyHashShift1;
+  x *= kBenchMemoryKeyHashMul1;
+  x ^= x >> kBenchMemoryKeyHashShift2;
+  return x;
+}
+
+static uint32_t memory_graph_level_capacity(uint32_t capacity, uint32_t neighbors) {
+  uint32_t levels = 1;
+  uint32_t remaining = capacity;
+  while (remaining >= neighbors && levels < kBenchMemoryGraphMaxLevels) {
+    remaining /= neighbors;
+    ++levels;
+  }
+  return levels;
+}
+
+static uint32_t memory_graph_level_for_key(uint64_t key, uint32_t level_capacity,
+                                           uint32_t neighbors) {
+  uint32_t level = 0;
+  uint64_t hash = memory_key_hash_mix(key);
+  const uint32_t threshold = UINT32_MAX / neighbors;
+  while (level + 1u < level_capacity && static_cast<uint32_t>(hash) <= threshold) {
+    ++level;
+    hash = memory_key_hash_mix(hash + key);
+  }
+  return level;
 }
 
 static uint32_t memory_bench_dim() {
@@ -2423,6 +2459,34 @@ static void print_memory_graph_recall_detail(uint64_t iters) {
   astral_memory_destroy(flat_index);
 }
 
+static void print_memory_graph_level_stats() {
+  const uint32_t dim = memory_bench_dim();
+  const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+  const uint32_t neighbors = memory_graph_neighbors();
+  const uint32_t level_capacity = memory_graph_level_capacity(capacity, neighbors);
+  std::vector<uint32_t> level_counts(level_capacity);
+  for (uint32_t row = 0; row < capacity; ++row) {
+    const uint64_t key = static_cast<uint64_t>(row) + kBenchMemoryKeyBase;
+    const uint32_t level = memory_graph_level_for_key(key, level_capacity, neighbors);
+    ++level_counts[level];
+  }
+
+  for (uint32_t level = 0; level < level_capacity; ++level) {
+    uint32_t nodes_at_or_above = 0;
+    for (uint32_t candidate_level = level; candidate_level < level_capacity; ++candidate_level) {
+      nodes_at_or_above += level_counts[candidate_level];
+    }
+    BenchResult r{};
+    char name[kBenchMemoryRecallNameBytes];
+    std::snprintf(name, sizeof(name), "features.memory graph_level_%02u", level);
+    r.name = name;
+    r.ops = capacity;
+    r.extra_label = "node_count";
+    r.extra_value = static_cast<double>(nodes_at_or_above);
+    print_result(r, clock_info().name);
+  }
+}
+
 static BenchResult bench_memory_flat_search_top1_impl(uint64_t iters, uint32_t capacity, const char* name) {
     BenchResult r{};
     r.name = name;
@@ -2657,16 +2721,16 @@ static void print_memory_benchmarks(uint64_t iters) {
           print_result(bench_memory_graph_load(iters), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatSearchTop1)) {
-            print_result(bench_memory_flat_search_top1(iters), clock_info().name);
+          print_result(bench_memory_flat_search_top1(iters), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatSearch)) {
-            print_result(bench_memory_flat_search(iters), clock_info().name);
+          print_result(bench_memory_flat_search(iters), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatSearchLatency)) {
           print_latency_result(bench_memory_search_latency(iters, false), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatSearchBatch)) {
-            print_result(bench_memory_flat_search_batch(iters), clock_info().name);
+          print_result(bench_memory_flat_search_batch(iters), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatQ8RecallSearch)) {
             print_result(bench_memory_flat_q8_recall_search(iters), clock_info().name);
@@ -2694,6 +2758,9 @@ static void print_memory_benchmarks(uint64_t iters) {
         }
         if (memory_case_enabled(kBenchMemoryCaseGraphRecallDetail)) {
           print_memory_graph_recall_detail(iters);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphLevelStats)) {
+          print_memory_graph_level_stats();
         }
         if (memory_case_enabled(kBenchMemoryCaseCursorBeginFetch)) {
             print_result(bench_memory_cursor_fetch(iters), clock_info().name);

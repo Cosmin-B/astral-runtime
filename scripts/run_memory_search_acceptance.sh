@@ -27,6 +27,7 @@ Options:
   --recall-queries <N>  Recall query count (default: 32)
   --budget-sweep        Also capture graph_recall_search_sweep for f32 and q8
   --recall-detail       Also capture graph_recall_detail for f32 and q8
+  --level-stats         Also capture deterministic graph level distribution
   --perf                Wrap benchmark lanes with perf stat
   --perf-bin <path>     Perf executable to use (default: perf from PATH)
   --perf-events <csv>   Perf stat event list
@@ -52,6 +53,7 @@ graph_neighbors="32"
 recall_queries="32"
 budget_sweep="0"
 recall_detail="0"
+level_stats="0"
 perf_enabled="0"
 require_perf="0"
 perf_bin=""
@@ -71,6 +73,7 @@ while [[ $# -gt 0 ]]; do
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
     --budget-sweep) budget_sweep="1"; shift ;;
     --recall-detail) recall_detail="1"; shift ;;
+    --level-stats) level_stats="1"; shift ;;
     --perf) perf_enabled="1"; shift ;;
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
@@ -142,6 +145,7 @@ run_case() {
   echo "# recall_queries: ${recall_queries}"
   echo "# budget_sweep: ${budget_sweep}"
   echo "# recall_detail: ${recall_detail}"
+  echo "# level_stats: ${level_stats}"
   echo "# perf_enabled: ${perf_enabled}"
   echo "# perf_bin: ${perf_bin}"
   echo "# perf_events: ${perf_events}"
@@ -170,6 +174,10 @@ fi
 if [[ "${recall_detail}" == "1" ]]; then
   run_case "graph_f32_recall_detail" "f32" "graph_recall_detail"
   run_case "graph_q8_recall_detail" "q8" "graph_recall_detail"
+fi
+
+if [[ "${level_stats}" == "1" ]]; then
+  run_case "graph_level_stats" "f32" "graph_level_stats"
 fi
 
 for file in "${out_dir}"/*.txt; do
