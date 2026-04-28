@@ -138,7 +138,7 @@ session.ReadStream(buffer);
 
 ### Compilation
 
-- [ ] Code compiles in Unity 6.0+ with a real Unity Editor runner.
+- [x] Code imports and assemblies compile in Unity 6.0+ GameCI container validation.
 - [x] `allowUnsafeCode: true` in asmdef
 - [ ] IL2CPP player build has no compile errors on each supported target.
 
@@ -266,9 +266,9 @@ IEnumerator StreamNativeArray()
 
 ## Known Limitations
 
-1. **Editor runner required**: ABI and mock-backend tests need a real Unity Editor with native binaries present.
-2. **Native packaging incomplete**: Platform binaries are built by CMake, but release packaging still needs final UPM-ready artifact layout, signing, and Unity import evidence for each target.
-3. **Real model coverage pending**: Text/media embeddings are exposed through `AstralEmbedder`, but production sign-off still needs real GGUF and MTMD fixture runs.
+1. **Licensed Editor execution required**: ABI and mock-backend EditMode tests need a Unity Editor runner with native binaries and valid Unity license material.
+2. **Player-build coverage pending**: Desktop and mobile plugin layouts exist, but IL2CPP/player builds still need target-specific Unity runner evidence.
+3. **Real model coverage pending**: Text/media embeddings are exposed through `AstralEmbedder`, but release sign-off still needs real GGUF and MTMD fixture runs.
 4. **GPU validation pending**: CUDA builds are handled by the native runtime gates; Unity-specific GPU artifact and runtime validation are still release-lane work.
 
 ## Testing Strategy
