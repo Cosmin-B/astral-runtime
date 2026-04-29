@@ -84,6 +84,11 @@ set(TRACKED_COMMENT_TOKENS
   "${hack_token}"
 )
 
+set(tracker_long_term "bea")
+string(APPEND tracker_long_term "ds")
+set(tracker_short_term "b")
+string(APPEND tracker_short_term "d")
+
 set(ai_generation_phrase "AI")
 string(APPEND ai_generation_phrase " generation")
 set(automated_tools_phrase "automated")
@@ -497,6 +502,10 @@ foreach(path IN LISTS FILES)
         message(FATAL_ERROR "Unreviewed generic prose '${phrase}' found in ${path}:${line_no}; rewrite it with project-specific ownership, lifecycle, or failure-mode language")
       endif()
     endforeach()
+    if(line MATCHES "(^|[^A-Za-z0-9_])${tracker_long_term}([^A-Za-z0-9_]|$)" OR
+       line MATCHES "(^|[^A-Za-z0-9_])${tracker_short_term}([^A-Za-z0-9_]|$)")
+      message(FATAL_ERROR "Internal tracker wording found in ${path}:${line_no}; keep coordination metadata outside the repository")
+    endif()
     if(is_lambda_gated_source AND ext MATCHES "^\\.(h|hpp|c|cc|cpp)$" AND line MATCHES "\\[[^]]*\\][ \t]*\\(" AND NOT line MATCHES "operator[^[]*\\[[ \t]*\\]")
       message(FATAL_ERROR "Lambda expression found in ${path}:${line_no}; use a named helper so ownership, profiling, and control flow stay reviewable")
     endif()
