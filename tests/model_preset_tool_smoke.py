@@ -25,6 +25,7 @@ MODEL_TYPE_EMBEDDING = "embedding"
 MODEL_TYPE_TEXT = "text"
 QWEN_TEXT_PRESET = "qwen3-0.6b-q8"
 QWEN_EMBED_PRESET = "qwen3-embed-0.6b-q8"
+EMBEDDINGGEMMA_PRESET = "embeddinggemma-300m-q4"
 QWEN_TEXT_FILE = "Qwen3-0.6B-Q8_0.gguf"
 QWEN_TEXT_REPO = "Qwen/Qwen3-0.6B-GGUF"
 UNKNOWN_PRESET = "missing-preset"
@@ -234,6 +235,7 @@ def main(argv: list[str]) -> int:
 
     embedding_presets = json.loads(run_tool(root, "list", "--type", MODEL_TYPE_EMBEDDING, "--format", "json").stdout)
     require(any(row["name"] == QWEN_EMBED_PRESET for row in embedding_presets), "embedding list missed Qwen embed preset")
+    require(any(row["name"] == EMBEDDINGGEMMA_PRESET for row in embedding_presets), "embedding list missed EmbeddingGemma preset")
     require(all(row["model_type"] == MODEL_TYPE_EMBEDDING for row in embedding_presets), "embedding list mixed model types")
 
     embedding_status = json.loads(
