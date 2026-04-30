@@ -43,6 +43,7 @@ For additional small smoke fixtures, use the Qwen3 presets:
 ```bash
 ./tests/model_downloader.sh --preset qwen3-0.6b-q8
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8
+./tests/model_downloader.sh --preset embeddinggemma-300m-q4
 ```
 
 For a newer tiny text-generation fixture, use Gemma 3 270M:

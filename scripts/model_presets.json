@@ -168,6 +168,21 @@
       "embedding_dimension": 1024,
       "include_in_unreal_sample_matrix": false,
       "include_in_package": false
+    },
+    {
+      "name": "embeddinggemma-300m-q4",
+      "label": "EmbeddingGemma on-device embedding smoke model",
+      "model_type": "embedding",
+      "repo": "ggml-org/embeddinggemma-300M-qat-q4_0-GGUF",
+      "filename": "embeddinggemma-300M-qat-Q4_0.gguf",
+      "revision": "main",
+      "size_bytes": 277852192,
+      "sha256": "324cfebd87bff45726218c7413e52d4cb54b34f9a9c9a72b7b9db27f69c2a05a",
+      "license_note": "Gemma license. See the Hugging Face model repository for terms.",
+      "context_length": 2048,
+      "embedding_dimension": 768,
+      "include_in_unreal_sample_matrix": false,
+      "include_in_package": false
     }
   ]
 }
