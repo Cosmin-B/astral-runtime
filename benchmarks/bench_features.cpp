@@ -129,6 +129,7 @@ static constexpr char kBenchMemoryCaseGraphRecallSearch[] = "graph_recall_search
 static constexpr char kBenchMemoryCaseGraphRecallSearchSweep[] = "graph_recall_search_sweep";
 static constexpr char kBenchMemoryCaseGraphRecallDetail[] = "graph_recall_detail";
 static constexpr char kBenchMemoryCaseGraphLevelStats[] = "graph_level_stats";
+static constexpr char kBenchMemoryCaseGraphEdgeStats[] = "graph_edge_stats";
 static constexpr char kBenchMemoryCaseCursorBeginFetch[] = "cursor_begin_fetch";
 static constexpr char kBenchMemoryCaseMemoryStatus[] = "memory_status";
 static constexpr const char* kBenchMemorySweepAddNames[] = {
@@ -2487,6 +2488,65 @@ static void print_memory_graph_level_stats() {
   }
 }
 
+static void print_memory_graph_edge_stats() {
+  const uint32_t dim = memory_bench_dim();
+  const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+  const AstralMemoryMetric metric = parse_memory_metric_env();
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = dim;
+  desc.capacity = capacity;
+  desc.metric = metric;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+  desc.graph_neighbors = memory_graph_neighbors();
+  desc.graph_search = memory_graph_search();
+  desc.storage_kind = parse_memory_storage_env();
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  if (err != ASTRAL_OK) {
+    return;
+  }
+
+  std::vector<AstralMemoryRecord> records(capacity);
+  std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+  fill_memory_fixture(records, vectors, capacity, dim);
+  err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
+  if (err != ASTRAL_OK) {
+    astral_memory_destroy(index);
+    return;
+  }
+
+  AstralMemoryStats stats{};
+  stats.size = sizeof(AstralMemoryStats);
+  err = astral_memory_stats(index, &stats);
+  if (err != ASTRAL_OK) {
+    astral_memory_destroy(index);
+    return;
+  }
+
+  struct EdgeStat {
+    const char* name;
+    const char* label;
+    uint64_t value;
+  };
+  const EdgeStat edge_stats[] = {
+      {"features.memory graph_edges", "edge_count", stats.graph_edges},
+      {"features.memory graph_base_edges", "edge_count", stats.graph_base_edges},
+      {"features.memory graph_upper_edges", "edge_count", stats.graph_upper_edges},
+  };
+  for (const EdgeStat& stat : edge_stats) {
+    BenchResult r{};
+    r.name = stat.name;
+    r.ops = capacity;
+    r.extra_label = stat.label;
+    r.extra_value = static_cast<double>(stat.value);
+    print_result(r, clock_info().name);
+  }
+  astral_memory_destroy(index);
+}
+
 static BenchResult bench_memory_flat_search_top1_impl(uint64_t iters, uint32_t capacity, const char* name) {
     BenchResult r{};
     r.name = name;
@@ -2761,6 +2821,9 @@ static void print_memory_benchmarks(uint64_t iters) {
         }
         if (memory_case_enabled(kBenchMemoryCaseGraphLevelStats)) {
           print_memory_graph_level_stats();
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphEdgeStats)) {
+          print_memory_graph_edge_stats();
         }
         if (memory_case_enabled(kBenchMemoryCaseCursorBeginFetch)) {
             print_result(bench_memory_cursor_fetch(iters), clock_info().name);

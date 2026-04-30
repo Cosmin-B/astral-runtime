@@ -759,6 +759,9 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("memory stats vector bytes"), MemoryStats.VectorBytes > EmptyByteCount);
     TestTrue(TEXT("memory stats metadata bytes"), MemoryStats.MetadataBytes > EmptyByteCount);
     TestEqual(TEXT("memory stats graph bytes"), MemoryStats.GraphBytes, EmptyByteCount);
+    TestEqual(TEXT("memory stats graph edges"), MemoryStats.GraphEdges, EmptyByteCount);
+    TestEqual(TEXT("memory stats graph base edges"), MemoryStats.GraphBaseEdges, EmptyByteCount);
+    TestEqual(TEXT("memory stats graph upper edges"), MemoryStats.GraphUpperEdges, EmptyByteCount);
     TestTrue(TEXT("memory stats total bytes"), MemoryStats.TotalBytes >= MemoryStats.VectorBytes);
     TestTrue(TEXT("memory stats save bytes"), MemoryStats.SaveBytes > EmptyByteCount);
 
@@ -918,9 +921,16 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("graph memory stats succeeds"), GraphMemoryStatsResult.bSuccess);
     TestEqual(TEXT("graph memory stats index kind"), GraphMemoryStats.IndexKind, EAstralMemoryIndexKind::Graph);
     TestEqual(TEXT("graph memory stats storage kind"), GraphMemoryStats.StorageKind, EAstralMemoryStorageKind::F32);
-    TestEqual(TEXT("graph memory stats neighbors"), GraphMemoryStats.GraphNeighbors, GraphMemoryDesc.GraphNeighbors);
-    TestEqual(TEXT("graph memory stats search"), GraphMemoryStats.GraphSearch, GraphMemoryDesc.GraphSearch);
+    TestEqual(TEXT("graph memory stats neighbors"), GraphMemoryStats.GraphNeighbors,
+              GraphMemoryDesc.GraphNeighbors);
+    TestEqual(TEXT("graph memory stats search"), GraphMemoryStats.GraphSearch,
+              GraphMemoryDesc.GraphSearch);
     TestTrue(TEXT("graph memory stats graph bytes"), GraphMemoryStats.GraphBytes > EmptyByteCount);
+    TestTrue(TEXT("graph memory stats graph edges"), GraphMemoryStats.GraphEdges > EmptyByteCount);
+    TestTrue(TEXT("graph memory stats base edges"),
+             GraphMemoryStats.GraphBaseEdges > EmptyByteCount);
+    TestEqual(TEXT("graph memory stats edge split"), GraphMemoryStats.GraphEdges,
+              GraphMemoryStats.GraphBaseEdges + GraphMemoryStats.GraphUpperEdges);
     TestTrue(TEXT("graph memory stats save bytes"), GraphMemoryStats.SaveBytes > EmptyByteCount);
     TArray<FAstralMemorySearchResult> GraphMemoryResults;
     const FAstralOperationResult GraphSearchMemory =

@@ -2453,6 +2453,8 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
       static_cast<uint64_t>(index->capacity) * sizeof(uint32_t) +
       static_cast<uint64_t>(index->key_table_capacity) * sizeof(uint32_t);
   uint64_t graph_bytes = 0;
+  uint64_t graph_base_edges = 0;
+  uint64_t graph_upper_edges = 0;
   if (graph_enabled(index)) {
     graph_bytes += static_cast<uint64_t>(index->capacity) * index->graph_level_capacity *
                    index->graph_neighbor_capacity * sizeof(uint32_t);
@@ -2464,6 +2466,13 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
     graph_bytes += static_cast<uint64_t>(index->graph_scratch_capacity) * sizeof(uint32_t);
     graph_bytes += static_cast<uint64_t>(index->graph_scratch_capacity) * sizeof(float);
     graph_bytes += static_cast<uint64_t>(index->capacity) * sizeof(uint32_t);
+    for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+      const uint32_t slot = active_slot_at(index, active_pos);
+      graph_base_edges += graph_neighbor_count_at_level(index, slot, 0);
+      for (uint32_t level = 1; level < index->graph_level_capacity; ++level) {
+        graph_upper_edges += graph_neighbor_count_at_level(index, slot, level);
+      }
+    }
   }
 
   out_stats->dim = index->dim;
@@ -2478,6 +2487,9 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
   out_stats->vector_bytes = vector_bytes;
   out_stats->metadata_bytes = metadata_bytes;
   out_stats->graph_bytes = graph_bytes;
+  out_stats->graph_edges = graph_base_edges + graph_upper_edges;
+  out_stats->graph_base_edges = graph_base_edges;
+  out_stats->graph_upper_edges = graph_upper_edges;
   out_stats->total_bytes = vector_bytes + metadata_bytes + graph_bytes;
   out_stats->save_bytes = memory_save_byte_count(index);
   return ASTRAL_OK;

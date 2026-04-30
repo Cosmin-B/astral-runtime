@@ -1042,6 +1042,9 @@ namespace Astral.Runtime
             public ulong vector_bytes;
             public ulong metadata_bytes;
             public ulong graph_bytes;
+            public ulong graph_edges;
+            public ulong graph_base_edges;
+            public ulong graph_upper_edges;
             public ulong total_bytes;
             public ulong save_bytes;
         }
