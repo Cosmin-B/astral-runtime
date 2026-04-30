@@ -108,10 +108,13 @@ remaining result depth; it does not release the cursor handle.
 capacity sizing. `vector_bytes` covers row-major vector storage,
 `metadata_bytes` covers native index metadata, slots, active-slot storage, and
 the key table, and `graph_bytes` covers graph-only adjacency, frontier,
-scratch, level, and visited buffers. `total_bytes` is the runtime footprint
-sum, while `save_bytes` matches the current serialized snapshot size returned
-by `astral_memory_save_size()`. For q8 indexes, `save_bytes` reflects the
-compact q8 snapshot rather than an expanded float32 copy.
+scratch, level, and visited buffers. Graph indexes also report
+`graph_edges`, split into `graph_base_edges` and `graph_upper_edges`, so
+callers can inspect how dense the stored routing graph became after ingest or
+load. `total_bytes` is the runtime footprint sum, while `save_bytes` matches
+the current serialized snapshot size returned by `astral_memory_save_size()`.
+For q8 indexes, `save_bytes` reflects the compact q8 snapshot rather than an
+expanded float32 copy.
 
 ## Metrics
 
@@ -216,8 +219,9 @@ for f32 and q8 graph indexes using one build and multiple per-query budgets.
 Add `--recall-detail` when aggregate recall hides hard queries; it captures one
 `features.memory graph_recall_qNNN` lane per deterministic query row with the
 same graph and oracle setup. Add `--level-stats` to capture deterministic upper
-level node counts for the same capacity and neighbor budget. Both runners can
-wrap each benchmark lane in
+level node counts for the same capacity and neighbor budget. Add `--edge-stats`
+to capture stored total, base-layer, and upper-layer edge counts through the
+public memory stats API. Both runners can wrap each benchmark lane in
 `perf stat` with `--perf`, `--perf-bin`, `--perf-events`, and `--require-perf`.
 Perf CSV and stderr files are written beside the runner logs, so hardware
 counter evidence stays with the sidecar capture instead of entering the
@@ -238,7 +242,9 @@ When aggregate top-k recall moves in the right direction but remains unstable,
 run `graph_recall_detail` to see whether failures are isolated to a few query
 regions or spread across the corpus. Run `graph_level_stats` beside large graph
 tuning when changing neighbor budgets, since very sparse upper levels reduce
-the value of greedy routing before base-layer expansion.
+the value of greedy routing before base-layer expansion. Run `graph_edge_stats`
+when changing insertion or pruning behavior so recall changes can be compared
+against the actual stored edge count.
 
 Unreal and Unity wrappers expose the same native descriptors and result records.
 Wrapper arrays are converted at the engine boundary; the native index owns vector
@@ -247,8 +253,8 @@ graph index modes plus graph neighbor/search budgets; `0` keeps the native
 defaults. Unreal `SearchMemoryIndexBatchResult()` and Unity
 `AstralMemoryIndex.SearchBatch()` call the native row-major batch search path
 for multi-query retrieval. `FAstralMemoryStats` and Unity
-`AstralMemoryIndex.GetStats()` expose the same native footprint counters for
-engine-side budgeting and telemetry.
+`AstralMemoryIndex.GetStats()` expose the same native footprint and graph-edge
+counters for engine-side budgeting and telemetry.
 
 ## Unity
 
@@ -360,6 +366,7 @@ ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search_sweep AS
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=64 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_detail ASTRAL_BENCH_FEATURE_ITERS=32 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=16 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_level_stats ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=32 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_edge_stats ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=32 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
@@ -380,7 +387,9 @@ Expected markers include `features.memory add_batch`,
 `features.memory graph_top1`, `features.memory graph_search`,
 `features.memory graph_search_latency`,
 `features.memory graph_recall`, `features.memory graph_recall_top1`,
-`features.memory graph_recall_search`, and `features.memory cursor_begin_fetch`.
+`features.memory graph_recall_search`, `features.memory graph_edges`,
+`features.memory graph_base_edges`, `features.memory graph_upper_edges`, and
+`features.memory cursor_begin_fetch`.
 The focused graph recall sweep case emits
 `features.memory graph_recall_s<N>` markers for each per-search budget.
 Sweep runs also include
