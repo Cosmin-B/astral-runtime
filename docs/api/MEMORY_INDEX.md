@@ -226,6 +226,12 @@ public memory stats API. Both runners can wrap each benchmark lane in
 Perf CSV and stderr files are written beside the runner logs, so hardware
 counter evidence stays with the sidecar capture instead of entering the
 repository.
+Use `scripts/run_memory_ann_tuning.sh` when comparing several graph shapes. It
+wraps the acceptance runner across neighbor, build-search, and per-query search
+budgets, then writes one roll-up summary with f32/q8 recall, top-1 recall,
+build, load, level, and edge-count markers for every shape. The default output
+directory is under `/tmp`; pass `--out-dir` to place the capture in a sidecar
+evidence folder.
 
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,
