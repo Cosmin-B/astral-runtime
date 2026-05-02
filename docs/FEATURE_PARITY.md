@@ -75,6 +75,8 @@ These areas remain product work or release validation work:
 
 - [`FEATURE_MATRIX.md`](FEATURE_MATRIX.md): maintained capability map.
 - [`CUDA_PARITY.md`](CUDA_PARITY.md): CUDA parity policy and commands.
+- [`api/MODEL_PATHS.md`](api/MODEL_PATHS.md): packaged-content and first-run
+  download path resolution.
 - [`integration/UNREAL_57_QUICKSTART.md`](integration/UNREAL_57_QUICKSTART.md):
   UE 5.7 runner path and evidence list.
 - [`../plugins/unity/README.md`](../plugins/unity/README.md): current Unity
