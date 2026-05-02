@@ -77,6 +77,7 @@ cmake --build --preset dev -j8 --target test_tokenization test_abi_invalid_args
 ctest --preset dev -R '^(test_tokenization|test_abi_invalid_args|gate_unreal_header_mirror|gate_source_scans)$' --output-on-failure
 ASTRAL_BENCH_TOKENIZE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ASTRAL_BENCH_MODEL=tests/models/gpt2.Q2_K.gguf ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_feature_bench_suite.sh --preset dev --models-dir tests/models --tokenize-only --out /tmp/astral-tokenizers.txt
+scripts/run_feature_bench_suite.sh --preset dev --models-dir tests/models --model-presets qwen3-0.6b-q8,qwen3-embed-0.6b-q8 --tokenize-only --skip-missing --out /tmp/astral-tokenizers-presets.txt
 ```
 
 Expected evidence markers include `test_tokenization Passed` and

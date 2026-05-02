@@ -469,13 +469,17 @@ in the Unreal packaged-sample matrix.
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --inspect-metadata
 python3 ./scripts/model_preset_tool.py validate-manifest
 python3 ./scripts/model_preset_tool.py inspect qwen3-embed-0.6b-q8 --dir tests/models --validate
+./scripts/run_feature_bench_suite.sh --preset release-with-tests --models-dir tests/models --model-presets qwen3-0.6b-q8,qwen3-embed-0.6b-q8 --tokenize-only --skip-missing --out /tmp/astral-tokenizers.txt
 ```
 
 Existing files are validated against the pinned byte size and SHA-256 before
 they are reused. Incomplete downloads resume from the `.part` file when the
 server accepts range requests. Metadata validation reads only the GGUF header
 and checks context length, embedding dimension, and embedding pooling support
-against the manifest.
+against the manifest. The feature benchmark suite can also select presets from
+the same manifest by name, type, packaged-sample flag, or Unreal matrix flag, so
+tokenizer and feature sweeps use the pinned model list instead of ad hoc file
+globs.
 
 `hetzner_watchdog.sh` can keep long-running HF downloads and wait+bench jobs
 alive on a remote runner. Use `--dry-run` to inspect the exact commands before
