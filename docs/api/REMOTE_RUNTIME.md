@@ -46,8 +46,10 @@ services. If `/completion/stream` returns one of those statuses, the provider
 uses `/completion` for the request instead.
 
 For Server-Sent Events, the provider strips the `data:` prefix, ignores empty
-event lines, and ignores `data: [DONE]`. The payload is forwarded as text; JSON
-objects inside `data:` frames are not interpreted by the remote provider.
+event lines, and ignores `data: [DONE]`. Plain payloads are forwarded as text.
+JSON payloads that contain a string `content` or `text` field are unescaped and
+forwarded as generated text, which covers common OpenAI-compatible streaming
+responses without adding a JSON dependency.
 
 ## Ownership
 
@@ -106,6 +108,7 @@ Expected markers:
 - `backend_remote_tokenize_falls_back_to_byte_tokens` passes.
 - `backend_remote_stream_falls_back_to_completion` passes.
 - `backend_remote_stream_accepts_sse_data_frames` passes.
+- `backend_remote_stream_extracts_sse_json_text` passes.
 - `backend_remote_stream_overflow_reports_error` passes.
 - `backend_remote_auth_failure` passes.
 - `backend_remote_https_requires_tls_build` passes.
