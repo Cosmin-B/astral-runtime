@@ -880,6 +880,90 @@ TEST(backend_remote_stream_falls_back_to_completion) {
     astral_shutdown();
 }
 
+TEST(backend_remote_stream_accepts_sse_data_frames) {
+  RemoteTestServer remote;
+  remote.stream_response = "data: remote-\n\ndata: sse\n\ndata: [DONE]\n\n";
+  ASSERT_TRUE(remote.start(true));
+
+  AstralInit cfg = {};
+  cfg.reserve_bytes = 64 * 1024 * 1024;
+  cfg.thread_count = 1;
+  AstralErr err = astral_init(&cfg);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  char url[128];
+  const int url_len = std::snprintf(url, sizeof(url), "http://127.0.0.1:%d", remote.port);
+  ASSERT_TRUE(url_len > 0);
+
+  AstralModelDesc model_desc = {};
+  model_desc.size = sizeof(AstralModelDesc);
+  model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+  const char* backend = "remote";
+  model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend);
+  model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend));
+  model_desc.model_path.data = reinterpret_cast<const uint8_t*>(url);
+  model_desc.model_path.len = static_cast<uint32_t>(url_len);
+  const char* api_key = "test-key";
+  model_desc.model_bytes.data = reinterpret_cast<const uint8_t*>(api_key);
+  model_desc.model_bytes.len = static_cast<uint32_t>(std::strlen(api_key));
+  model_desc.n_ctx = 128;
+  model_desc.n_batch = 32;
+
+  AstralHandle model = 0;
+  err = astral_model_load(&model_desc, &model);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  AstralSessionDesc session_desc = {};
+  session_desc.model = model;
+  session_desc.max_tokens = 32;
+  session_desc.temperature = 0.0f;
+  session_desc.top_k = 0;
+  session_desc.top_p = 1.0f;
+  session_desc.stream_enabled = 1;
+
+  AstralHandle session = 0;
+  err = astral_session_create(&session_desc, &session);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  const char* prompt = "hello";
+  AstralSpanU8 prompt_span{};
+  prompt_span.data = reinterpret_cast<const uint8_t*>(prompt);
+  prompt_span.len = static_cast<uint32_t>(std::strlen(prompt));
+  err = astral_session_feed(session, prompt_span, 1);
+  ASSERT_EQ(err, ASTRAL_OK);
+  err = astral_session_decode(session);
+  ASSERT_EQ(err, ASTRAL_OK);
+  err = astral_session_wait(session, 5000);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  uint8_t out[64];
+  uint32_t total = 0;
+  for (uint32_t i = 0; i < 32 && total < sizeof(out); ++i) {
+    AstralMutSpanU8 dst{};
+    dst.data = out + total;
+    dst.len = sizeof(out) - total;
+    const int32_t n = astral_stream_read(session, dst, 100);
+    if (n < 0) {
+      ASSERT_EQ(n, ASTRAL_E_TIMEOUT);
+      continue;
+    }
+    if (n == 0) {
+      break;
+    }
+    total += static_cast<uint32_t>(n);
+  }
+
+  const char* expected = "remote-sse";
+  ASSERT_EQ(total, static_cast<uint32_t>(std::strlen(expected)));
+  ASSERT_EQ(std::memcmp(out, expected, total), 0);
+  ASSERT_EQ(remote.stream_completion_calls.load(std::memory_order_relaxed), 1u);
+  ASSERT_EQ(remote.completion_calls.load(std::memory_order_relaxed), 0u);
+
+  astral_session_destroy(session);
+  astral_model_release(model);
+  astral_shutdown();
+}
+
 TEST(backend_remote_stream_overflow_reports_error) {
   RemoteTestServer remote;
   remote.stream_completion_status = kHttpNotImplemented;

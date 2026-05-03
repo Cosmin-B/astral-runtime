@@ -27,10 +27,13 @@ constexpr uint32_t kRemoteMaxPromptBytes = 8192;
 constexpr uint32_t kRemoteMaxOutputBytes = 8192;
 constexpr uint32_t kRemoteMaxUrlBytes = 512;
 constexpr uint32_t kRemoteMaxApiKeyBytes = 256;
+constexpr uint32_t kRemoteMaxStreamLineBytes = 4096;
 constexpr uint32_t kRemoteTimeoutSeconds = 5;
 constexpr uint32_t kRemoteMaxAttempts = 2;
 constexpr float kRemoteSelectedLogit = 1000.0f;
 constexpr float kRemoteSuppressedLogit = -1000.0f;
+constexpr char kRemoteSseDataPrefix[] = "data:";
+constexpr char kRemoteSseDone[] = "[DONE]";
 
 struct RemoteModel {
     char base_url[kRemoteMaxUrlBytes];
@@ -46,14 +49,18 @@ struct RemoteSession {
     std::thread stream_thread;
     uint8_t prompt[kRemoteMaxPromptBytes];
     uint8_t output[kRemoteMaxOutputBytes];
+    char stream_line[kRemoteMaxStreamLineBytes];
     float logits[kRemoteVocabSize];
     uint32_t prompt_len = 0;
     uint32_t output_len = 0;
     uint32_t output_pos = 0;
+    uint32_t stream_line_len = 0;
     uint32_t last_batch_outputs = 0;
     AstralErr stream_err = ASTRAL_OK;
+    bool stream_passthrough = false;
     bool stream_started = false;
     bool stream_done = false;
+    bool stream_sse_mode = false;
 };
 
 struct RemoteEmbedder {
@@ -226,24 +233,128 @@ static uint32_t clamp_size_to_u32(std::size_t value) {
                                                         : static_cast<uint32_t>(value);
 }
 
-static AstralErr remote_stream_append(RemoteSession* session, const char* data, uint32_t len) {
+static AstralErr remote_stream_set_error(RemoteSession* session, AstralErr err) {
+  if (session == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
+  std::unique_lock<std::mutex> lock(session->stream_mutex);
+  session->stream_err = err;
+  session->stream_done = true;
+  lock.unlock();
+  session->stream_cv.notify_all();
+  return err;
+}
+
+static AstralErr remote_stream_append_raw(RemoteSession* session, const char* data, uint32_t len) {
   if (session == nullptr || data == nullptr || len == 0) {
     return ASTRAL_OK;
   }
   std::unique_lock<std::mutex> lock(session->stream_mutex);
   const uint32_t room = kRemoteMaxOutputBytes - session->output_len;
   if (len > room) {
-    session->stream_err = ASTRAL_E_NOMEM;
-    session->stream_done = true;
     lock.unlock();
-    session->stream_cv.notify_all();
-    return ASTRAL_E_NOMEM;
+    return remote_stream_set_error(session, ASTRAL_E_NOMEM);
   }
   std::memcpy(session->output + session->output_len, data, len);
   session->output_len += len;
   lock.unlock();
   session->stream_cv.notify_all();
   return ASTRAL_OK;
+}
+
+static bool remote_stream_line_matches_prefix(const char* line, uint32_t len) {
+  const uint32_t prefix_len = static_cast<uint32_t>(sizeof(kRemoteSseDataPrefix) - 1);
+  return len <= prefix_len && std::memcmp(line, kRemoteSseDataPrefix, len) == 0;
+}
+
+static AstralErr remote_stream_process_sse_line(RemoteSession* session) {
+  uint32_t len = session->stream_line_len;
+  if (len != 0 && session->stream_line[len - 1] == '\n') {
+    --len;
+  }
+  if (len != 0 && session->stream_line[len - 1] == '\r') {
+    --len;
+  }
+
+  const uint32_t prefix_len = static_cast<uint32_t>(sizeof(kRemoteSseDataPrefix) - 1);
+  if (len >= prefix_len &&
+      std::memcmp(session->stream_line, kRemoteSseDataPrefix, prefix_len) == 0) {
+    const char* payload = session->stream_line + prefix_len;
+    uint32_t payload_len = len - prefix_len;
+    while (payload_len != 0 && *payload == ' ') {
+      ++payload;
+      --payload_len;
+    }
+    const uint32_t done_len = static_cast<uint32_t>(sizeof(kRemoteSseDone) - 1);
+    if (payload_len != 0 &&
+        (payload_len != done_len || std::memcmp(payload, kRemoteSseDone, done_len) != 0)) {
+      const AstralErr err = remote_stream_append_raw(session, payload, payload_len);
+      if (err != ASTRAL_OK) {
+        session->stream_line_len = 0;
+        return err;
+      }
+    }
+  }
+  session->stream_line_len = 0;
+  return ASTRAL_OK;
+}
+
+static AstralErr remote_stream_append_sse_aware(RemoteSession* session, const char* data,
+                                                uint32_t len) {
+  if (session == nullptr || data == nullptr || len == 0) {
+    return ASTRAL_OK;
+  }
+
+  uint32_t offset = 0;
+  while (offset < len) {
+    if (session->stream_passthrough) {
+      return remote_stream_append_raw(session, data + offset, len - offset);
+    }
+
+    if (session->stream_line_len == kRemoteMaxStreamLineBytes) {
+      return remote_stream_set_error(session, ASTRAL_E_NOMEM);
+    }
+
+    const char c = data[offset++];
+    session->stream_line[session->stream_line_len++] = c;
+
+    if (!session->stream_sse_mode) {
+      if (!remote_stream_line_matches_prefix(session->stream_line, session->stream_line_len)) {
+        session->stream_passthrough = true;
+        const AstralErr err =
+            remote_stream_append_raw(session, session->stream_line, session->stream_line_len);
+        session->stream_line_len = 0;
+        if (err != ASTRAL_OK) {
+          return err;
+        }
+      } else if (session->stream_line_len ==
+                 static_cast<uint32_t>(sizeof(kRemoteSseDataPrefix) - 1)) {
+        session->stream_sse_mode = true;
+      }
+      continue;
+    }
+
+    if (c == '\n') {
+      const AstralErr err = remote_stream_process_sse_line(session);
+      if (err != ASTRAL_OK) {
+        return err;
+      }
+    }
+  }
+  return ASTRAL_OK;
+}
+
+static AstralErr remote_stream_flush_parser(RemoteSession* session) {
+  if (session == nullptr || session->stream_line_len == 0) {
+    return ASTRAL_OK;
+  }
+  if (session->stream_sse_mode) {
+    return remote_stream_process_sse_line(session);
+  }
+  const AstralErr err =
+      remote_stream_append_raw(session, session->stream_line, session->stream_line_len);
+  session->stream_line_len = 0;
+  return err;
 }
 
 static void remote_stream_finish(RemoteSession* session, AstralErr err) {
@@ -272,7 +383,8 @@ struct RemoteStreamReceiver {
   RemoteSession* session;
 
   bool operator()(const char* data, size_t len) const {
-    return len == 0 || remote_stream_append(session, data, clamp_size_to_u32(len)) == ASTRAL_OK;
+    return len == 0 ||
+           remote_stream_append_sse_aware(session, data, clamp_size_to_u32(len)) == ASTRAL_OK;
   }
 };
 
@@ -303,7 +415,7 @@ static AstralErr post_remote_stream(RemoteSession* session, const char* body, ui
     }
     const AstralErr status_err = http_status_to_err(result->status);
     if (status_err == ASTRAL_OK) {
-      return ASTRAL_OK;
+      return remote_stream_flush_parser(session);
     }
     last_err = status_err;
     if (!http_status_retryable(result->status)) {
@@ -321,7 +433,7 @@ static void remote_completion_worker(RemoteSession* session) {
     err = post_remote(session->model, "/completion", reinterpret_cast<const char*>(session->prompt),
                       session->prompt_len, &body);
     if (err == ASTRAL_OK) {
-      err = remote_stream_append(session, body.data(), clamp_size_to_u32(body.size()));
+      err = remote_stream_append_raw(session, body.data(), clamp_size_to_u32(body.size()));
     }
   }
   remote_stream_finish(session, err);
@@ -338,9 +450,12 @@ static AstralErr remote_session_start_stream(RemoteSession* session) {
         }
         session->output_len = 0;
         session->output_pos = 0;
+        session->stream_line_len = 0;
         session->stream_err = ASTRAL_OK;
+        session->stream_passthrough = false;
         session->stream_done = false;
         session->stream_started = true;
+        session->stream_sse_mode = false;
     }
     try {
         session->stream_thread = std::thread(remote_completion_worker, session);
