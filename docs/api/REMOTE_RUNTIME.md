@@ -34,7 +34,7 @@ The current provider uses a small text protocol:
 - `POST /tokenize`: request body is UTF-8 text; response is a comma-separated
   or JSON-like list of integer token ids.
 - `POST /completion/stream`: request body is the prompt text; response body is
-  generated text delivered as response chunks.
+  generated text delivered as raw chunks or Server-Sent Events `data:` frames.
 - `POST /completion`: fallback endpoint for services that do not expose the
   streaming path.
 - `POST /embeddings`: request body is UTF-8 text; response is a comma-separated
@@ -44,6 +44,10 @@ If `/tokenize` returns `404`, `405`, or `501`, the provider falls back to byte
 tokens so basic session flow can still run against very small loopback
 services. If `/completion/stream` returns one of those statuses, the provider
 uses `/completion` for the request instead.
+
+For Server-Sent Events, the provider strips the `data:` prefix, ignores empty
+event lines, and ignores `data: [DONE]`. The payload is forwarded as text; JSON
+objects inside `data:` frames are not interpreted by the remote provider.
 
 ## Ownership
 
@@ -101,6 +105,7 @@ Expected markers:
 - `backend_remote_loopback_completion_and_embeddings` passes.
 - `backend_remote_tokenize_falls_back_to_byte_tokens` passes.
 - `backend_remote_stream_falls_back_to_completion` passes.
+- `backend_remote_stream_accepts_sse_data_frames` passes.
 - `backend_remote_stream_overflow_reports_error` passes.
 - `backend_remote_auth_failure` passes.
 - `backend_remote_https_requires_tls_build` passes.
