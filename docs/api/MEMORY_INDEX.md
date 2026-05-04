@@ -229,9 +229,11 @@ repository.
 Use `scripts/run_memory_ann_tuning.sh` when comparing several graph shapes. It
 wraps the acceptance runner across neighbor, build-search, and per-query search
 budgets, then writes one roll-up summary with f32/q8 recall, top-1 recall,
-build, load, level, and edge-count markers for every shape. The default output
-directory is under `/tmp`; pass `--out-dir` to place the capture in a sidecar
-evidence folder.
+build, load, level, and edge-count markers for every shape. It also writes
+`results.csv` with one f32 and one q8 row per graph shape so large sweeps can be
+sorted without manually parsing each lane log. The default output directory is
+under `/tmp`; pass `--out-dir` to place the capture in a sidecar evidence
+folder.
 
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,

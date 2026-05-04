@@ -83,6 +83,7 @@ if [[ -z "${out_dir}" ]]; then
 fi
 
 mkdir -p "${out_dir}"
+csv_file="${out_dir}/results.csv"
 
 IFS=',' read -r -a neighbor_values <<< "${neighbors_csv}"
 IFS=',' read -r -a build_search_values <<< "${build_search_csv}"
@@ -136,6 +137,70 @@ fi
   echo
 } > "${out_dir}/summary.txt"
 
+echo "neighbors,build_search,query_search,storage,build_ns,load_ns,recall_ns,recall_pct,top1_ns,top1_recall_pct,edge_count,base_edges,upper_edges" > "${csv_file}"
+
+metric_value() {
+  local file="$1"
+  local key="$2"
+  awk -v key="${key}" '
+    index($0, key) {
+      value = substr($0, index($0, key) + length(key))
+      sub(/^[[:space:]]*/, "", value)
+      split(value, parts, /[[:space:]]+/)
+      print parts[1]
+      exit
+    }
+  ' "${file}"
+}
+
+metric_ns() {
+  local file="$1"
+  awk '
+    /features\.memory/ {
+      for (i = 1; i <= NF; ++i) {
+        if ($i == "ns/op") {
+          print $(i - 1)
+          exit
+        }
+      }
+    }
+  ' "${file}"
+}
+
+edge_metric_value() {
+  local file="$1"
+  local metric="$2"
+  awk -v metric="${metric}" '
+    index($0, metric) && index($0, "edge_count=") {
+      value = substr($0, index($0, "edge_count=") + length("edge_count="))
+      sub(/^[[:space:]]*/, "", value)
+      split(value, parts, /[[:space:]]+/)
+      print parts[1]
+      exit
+    }
+  ' "${file}"
+}
+
+append_csv_row() {
+  local shape_dir="$1"
+  local neighbors="$2"
+  local build_search="$3"
+  local query_search="$4"
+  local storage="$5"
+  local prefix="graph_${storage}"
+  local build_ns load_ns recall_ns recall_pct top1_ns top1_recall edge_count base_edges upper_edges
+  build_ns="$(metric_ns "${shape_dir}/${prefix}_build.txt")"
+  load_ns="$(metric_ns "${shape_dir}/${prefix}_load.txt")"
+  recall_ns="$(metric_ns "${shape_dir}/${prefix}_recall.txt")"
+  recall_pct="$(metric_value "${shape_dir}/${prefix}_recall.txt" "recall_pct=")"
+  top1_ns="$(metric_ns "${shape_dir}/${prefix}_top1_recall.txt")"
+  top1_recall="$(metric_value "${shape_dir}/${prefix}_top1_recall.txt" "top1_recall_pct=")"
+  edge_count="$(edge_metric_value "${shape_dir}/${prefix}_edge_stats.txt" "features.memory graph_edges")"
+  base_edges="$(edge_metric_value "${shape_dir}/${prefix}_edge_stats.txt" "features.memory graph_base_edges")"
+  upper_edges="$(edge_metric_value "${shape_dir}/${prefix}_edge_stats.txt" "features.memory graph_upper_edges")"
+  echo "${neighbors},${build_search},${query_search},${storage},${build_ns},${load_ns},${recall_ns},${recall_pct},${top1_ns},${top1_recall},${edge_count},${base_edges},${upper_edges}" >> "${csv_file}"
+}
+
 run_count=0
 for neighbors in "${neighbor_values[@]}"; do
   for build_search in "${build_search_values[@]}"; do
@@ -154,10 +219,13 @@ for neighbors in "${neighbor_values[@]}"; do
         echo "# summary: ${shape_dir}/summary.txt"
         grep -nE "features\\.memory|recall_pct|top1_recall_pct|edge_count|level_count" "${shape_dir}/summary.txt" || true
       } >> "${out_dir}/summary.txt"
+      append_csv_row "${shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f32"
+      append_csv_row "${shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "q8"
       run_count=$((run_count + 1))
     done
   done
 done
 
 echo "# runs: ${run_count}" >> "${out_dir}/summary.txt"
+echo "# results_csv: ${csv_file}" >> "${out_dir}/summary.txt"
 echo "[memory-ann-tuning] wrote ${out_dir}"
