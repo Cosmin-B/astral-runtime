@@ -34,6 +34,8 @@ constexpr float kRemoteSelectedLogit = 1000.0f;
 constexpr float kRemoteSuppressedLogit = -1000.0f;
 constexpr char kRemoteSseDataPrefix[] = "data:";
 constexpr char kRemoteSseDone[] = "[DONE]";
+constexpr char kRemoteJsonContentKey[] = "\"content\"";
+constexpr char kRemoteJsonTextKey[] = "\"text\"";
 
 struct RemoteModel {
     char base_url[kRemoteMaxUrlBytes];
@@ -267,6 +269,122 @@ static bool remote_stream_line_matches_prefix(const char* line, uint32_t len) {
   return len <= prefix_len && std::memcmp(line, kRemoteSseDataPrefix, len) == 0;
 }
 
+static const char* remote_find_bytes(const char* haystack, uint32_t haystack_len,
+                                     const char* needle, uint32_t needle_len) {
+  if (needle_len == 0 || haystack_len < needle_len) {
+    return nullptr;
+  }
+  const uint32_t limit = haystack_len - needle_len;
+  for (uint32_t i = 0; i <= limit; ++i) {
+    if (std::memcmp(haystack + i, needle, needle_len) == 0) {
+      return haystack + i;
+    }
+  }
+  return nullptr;
+}
+
+static const char* remote_json_string_value(const char* payload, uint32_t payload_len,
+                                            const char* key, uint32_t key_len, uint32_t* out_len) {
+  const char* key_pos = remote_find_bytes(payload, payload_len, key, key_len);
+  if (key_pos == nullptr) {
+    return nullptr;
+  }
+
+  const char* cursor = key_pos + key_len;
+  const char* end = payload + payload_len;
+  while (cursor < end && std::isspace(static_cast<unsigned char>(*cursor))) {
+    ++cursor;
+  }
+  if (cursor == end || *cursor != ':') {
+    return nullptr;
+  }
+  ++cursor;
+  while (cursor < end && std::isspace(static_cast<unsigned char>(*cursor))) {
+    ++cursor;
+  }
+  if (cursor == end || *cursor != '"') {
+    return nullptr;
+  }
+  ++cursor;
+
+  const char* value = cursor;
+  uint32_t len = 0;
+  bool escaped = false;
+  while (cursor < end) {
+    const char c = *cursor++;
+    if (escaped) {
+      escaped = false;
+      ++len;
+      continue;
+    }
+    if (c == '\\') {
+      escaped = true;
+      ++len;
+      continue;
+    }
+    if (c == '"') {
+      *out_len = len;
+      return value;
+    }
+    ++len;
+  }
+  return nullptr;
+}
+
+static AstralErr remote_stream_append_json_string(RemoteSession* session, const char* value,
+                                                  uint32_t len) {
+  char decoded[kRemoteMaxStreamLineBytes];
+  uint32_t decoded_len = 0;
+  for (uint32_t i = 0; i < len && decoded_len < kRemoteMaxStreamLineBytes; ++i) {
+    char c = value[i];
+    if (c == '\\' && i + 1u < len) {
+      c = value[++i];
+      switch (c) {
+      case 'n':
+        c = '\n';
+        break;
+      case 'r':
+        c = '\r';
+        break;
+      case 't':
+        c = '\t';
+        break;
+      case 'b':
+        c = '\b';
+        break;
+      case 'f':
+        c = '\f';
+        break;
+      case 'u':
+        if (i + 4u < len) {
+          i += 4u;
+        }
+        c = '?';
+        break;
+      default:
+        break;
+      }
+    }
+    decoded[decoded_len++] = c;
+  }
+  return decoded_len != 0 ? remote_stream_append_raw(session, decoded, decoded_len) : ASTRAL_OK;
+}
+
+static AstralErr remote_stream_append_sse_payload(RemoteSession* session, const char* payload,
+                                                  uint32_t payload_len) {
+  const uint32_t content_key_len = static_cast<uint32_t>(sizeof(kRemoteJsonContentKey) - 1);
+  const uint32_t text_key_len = static_cast<uint32_t>(sizeof(kRemoteJsonTextKey) - 1);
+  uint32_t value_len = 0;
+  const char* value = remote_json_string_value(payload, payload_len, kRemoteJsonContentKey,
+                                               content_key_len, &value_len);
+  if (value == nullptr) {
+    value = remote_json_string_value(payload, payload_len, kRemoteJsonTextKey, text_key_len,
+                                     &value_len);
+  }
+  return value != nullptr ? remote_stream_append_json_string(session, value, value_len)
+                          : remote_stream_append_raw(session, payload, payload_len);
+}
+
 static AstralErr remote_stream_process_sse_line(RemoteSession* session) {
   uint32_t len = session->stream_line_len;
   if (len != 0 && session->stream_line[len - 1] == '\n') {
@@ -288,7 +406,7 @@ static AstralErr remote_stream_process_sse_line(RemoteSession* session) {
     const uint32_t done_len = static_cast<uint32_t>(sizeof(kRemoteSseDone) - 1);
     if (payload_len != 0 &&
         (payload_len != done_len || std::memcmp(payload, kRemoteSseDone, done_len) != 0)) {
-      const AstralErr err = remote_stream_append_raw(session, payload, payload_len);
+      const AstralErr err = remote_stream_append_sse_payload(session, payload, payload_len);
       if (err != ASTRAL_OK) {
         session->stream_line_len = 0;
         return err;
