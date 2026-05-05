@@ -5,10 +5,12 @@ endif()
 set(root "${ASTRAL_SOURCE_DIR}")
 set(presets_file "${root}/CMakePresets.json")
 set(unity_cmake "${root}/plugins/unity/CMakeLists.txt")
+set(package_json "${root}/plugins/unity/package.json")
 set(plugin_readme "${root}/plugins/unity/Runtime/Plugins/README.md")
 set(native_cs "${root}/plugins/unity/Runtime/AstralNative.cs")
+set(basic_chat_sample "${root}/plugins/unity/Samples~/BasicChat/BasicChatExample.cs")
 
-foreach(path "${presets_file}" "${unity_cmake}" "${plugin_readme}" "${native_cs}")
+foreach(path "${presets_file}" "${unity_cmake}" "${package_json}" "${plugin_readme}" "${native_cs}" "${basic_chat_sample}")
   if(NOT EXISTS "${path}")
     message(FATAL_ERROR "Unity mobile package layout input is missing: ${path}")
   endif()
@@ -44,6 +46,21 @@ foreach(required
     message(FATAL_ERROR "Unity CMake package layout is missing: ${required}")
   endif()
 endforeach()
+
+file(READ "${package_json}" package_json_text)
+foreach(required
+  "\"samples\""
+  "\"displayName\": \"Basic Chat Example\""
+  "\"path\": \"Samples~/BasicChat\""
+)
+  if(NOT package_json_text MATCHES "${required}")
+    message(FATAL_ERROR "Unity package metadata is missing: ${required}")
+  endif()
+endforeach()
+
+if(package_json_text MATCHES "Samples~/BasicInference")
+  message(FATAL_ERROR "Unity package metadata still points at a missing BasicInference sample")
+endif()
 
 file(READ "${plugin_readme}" readme_text)
 foreach(required
