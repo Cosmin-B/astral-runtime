@@ -137,7 +137,7 @@ fi
   echo
 } > "${out_dir}/summary.txt"
 
-echo "neighbors,build_search,query_search,storage,build_ns,load_ns,recall_ns,recall_pct,top1_ns,top1_recall_pct,edge_count,base_edges,upper_edges" > "${csv_file}"
+echo "neighbors,build_search,query_search,effective_query_search,storage,build_ns,load_ns,recall_ns,recall_pct,top1_ns,top1_recall_pct,edge_count,base_edges,upper_edges" > "${csv_file}"
 
 metric_value() {
   local file="$1"
@@ -187,6 +187,10 @@ append_csv_row() {
   local build_search="$3"
   local query_search="$4"
   local storage="$5"
+  local effective_query_search="${query_search}"
+  if (( effective_query_search > build_search )); then
+    effective_query_search="${build_search}"
+  fi
   local prefix="graph_${storage}"
   local build_ns load_ns recall_ns recall_pct top1_ns top1_recall edge_count base_edges upper_edges
   build_ns="$(metric_ns "${shape_dir}/${prefix}_build.txt")"
@@ -198,7 +202,7 @@ append_csv_row() {
   edge_count="$(edge_metric_value "${shape_dir}/${prefix}_edge_stats.txt" "features.memory graph_edges")"
   base_edges="$(edge_metric_value "${shape_dir}/${prefix}_edge_stats.txt" "features.memory graph_base_edges")"
   upper_edges="$(edge_metric_value "${shape_dir}/${prefix}_edge_stats.txt" "features.memory graph_upper_edges")"
-  echo "${neighbors},${build_search},${query_search},${storage},${build_ns},${load_ns},${recall_ns},${recall_pct},${top1_ns},${top1_recall},${edge_count},${base_edges},${upper_edges}" >> "${csv_file}"
+  echo "${neighbors},${build_search},${query_search},${effective_query_search},${storage},${build_ns},${load_ns},${recall_ns},${recall_pct},${top1_ns},${top1_recall},${edge_count},${base_edges},${upper_edges}" >> "${csv_file}"
 }
 
 run_count=0
