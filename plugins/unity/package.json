@@ -27,9 +27,9 @@
   },
   "samples": [
     {
-      "displayName": "Basic Inference Example",
-      "description": "Simple example demonstrating model loading and inference",
-      "path": "Samples~/BasicInference"
+      "displayName": "Basic Chat Example",
+      "description": "Minimal chat example demonstrating model loading, streaming, and inference",
+      "path": "Samples~/BasicChat"
     }
   ]
 }
