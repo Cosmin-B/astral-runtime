@@ -234,8 +234,11 @@ build, load, level, and edge-count markers for every shape. It also writes
 sorted without manually parsing each lane log. The CSV records both the
 requested per-query budget and the effective budget after clamping to the graph
 build/search capacity, so rows with a larger requested query budget are not
-mistaken for distinct runtime work. The default output directory is under
-`/tmp`; pass `--out-dir` to place the capture in a sidecar evidence folder.
+mistaken for distinct runtime work. When multiple requested budgets clamp to
+the same effective budget for a graph shape, the runner reuses the first
+capture and still writes one CSV row per requested budget. The default output
+directory is under `/tmp`; pass `--out-dir` to place the capture in a sidecar
+evidence folder.
 
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,

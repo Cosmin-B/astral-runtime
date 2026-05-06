@@ -181,16 +181,24 @@ edge_metric_value() {
   ' "${file}"
 }
 
+effective_query_search_for() {
+  local build_search="$1"
+  local query_search="$2"
+  if (( query_search > build_search )); then
+    echo "${build_search}"
+  else
+    echo "${query_search}"
+  fi
+}
+
 append_csv_row() {
   local shape_dir="$1"
   local neighbors="$2"
   local build_search="$3"
   local query_search="$4"
   local storage="$5"
-  local effective_query_search="${query_search}"
-  if (( effective_query_search > build_search )); then
-    effective_query_search="${build_search}"
-  fi
+  local effective_query_search
+  effective_query_search="$(effective_query_search_for "${build_search}" "${query_search}")"
   local prefix="graph_${storage}"
   local build_ns load_ns recall_ns recall_pct top1_ns top1_recall edge_count base_edges upper_edges
   build_ns="$(metric_ns "${shape_dir}/${prefix}_build.txt")"
@@ -206,26 +214,40 @@ append_csv_row() {
 }
 
 run_count=0
+declare -A captured_shape_dirs=()
 for neighbors in "${neighbor_values[@]}"; do
   for build_search in "${build_search_values[@]}"; do
     for query_search in "${query_search_values[@]}"; do
+      effective_query_search="$(effective_query_search_for "${build_search}" "${query_search}")"
+      shape_key="${neighbors}_${build_search}_${effective_query_search}"
       shape_dir="${out_dir}/n${neighbors}_b${build_search}_q${query_search}"
-      scripts/run_memory_search_acceptance.sh \
-        "${common_args[@]}" \
-        --out-dir "${shape_dir}" \
-        --graph-neighbors "${neighbors}" \
-        --graph-search "${build_search}" \
-        --query-search "${query_search}"
+      source_shape_dir="${captured_shape_dirs[${shape_key}]:-}"
+      if [[ -z "${source_shape_dir}" ]]; then
+        scripts/run_memory_search_acceptance.sh \
+          "${common_args[@]}" \
+          --out-dir "${shape_dir}" \
+          --graph-neighbors "${neighbors}" \
+          --graph-search "${build_search}" \
+          --query-search "${effective_query_search}"
 
-      {
-        echo
-        echo "## neighbors=${neighbors} build_search=${build_search} query_search=${query_search}"
-        echo "# summary: ${shape_dir}/summary.txt"
-        grep -nE "features\\.memory|recall_pct|top1_recall_pct|edge_count|level_count" "${shape_dir}/summary.txt" || true
-      } >> "${out_dir}/summary.txt"
-      append_csv_row "${shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f32"
-      append_csv_row "${shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "q8"
-      run_count=$((run_count + 1))
+        captured_shape_dirs["${shape_key}"]="${shape_dir}"
+        source_shape_dir="${shape_dir}"
+        {
+          echo
+          echo "## neighbors=${neighbors} build_search=${build_search} query_search=${query_search} effective_query_search=${effective_query_search}"
+          echo "# summary: ${source_shape_dir}/summary.txt"
+          grep -nE "features\\.memory|recall_pct|top1_recall_pct|edge_count|level_count" "${source_shape_dir}/summary.txt" || true
+        } >> "${out_dir}/summary.txt"
+        run_count=$((run_count + 1))
+      else
+        {
+          echo
+          echo "## neighbors=${neighbors} build_search=${build_search} query_search=${query_search} effective_query_search=${effective_query_search}"
+          echo "# reused: ${source_shape_dir}"
+        } >> "${out_dir}/summary.txt"
+      fi
+      append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f32"
+      append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "q8"
     done
   done
 done
