@@ -236,9 +236,11 @@ requested per-query budget and the effective budget after clamping to the graph
 build/search capacity, so rows with a larger requested query budget are not
 mistaken for distinct runtime work. When multiple requested budgets clamp to
 the same effective budget for a graph shape, the runner reuses the first
-capture and still writes one CSV row per requested budget. The default output
-directory is under `/tmp`; pass `--out-dir` to place the capture in a sidecar
-evidence folder.
+capture and still writes one CSV row per requested budget. The first captured
+shape includes the exact flat baseline lanes; later graph shapes skip those
+duplicate flat lanes because the flat baseline only depends on the dataset
+shape, metric, and storage. The default output directory is under `/tmp`; pass
+`--out-dir` to place the capture in a sidecar evidence folder.
 
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,

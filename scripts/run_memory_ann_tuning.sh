@@ -214,6 +214,7 @@ append_csv_row() {
 }
 
 run_count=0
+flat_baseline_captured=0
 declare -A captured_shape_dirs=()
 for neighbors in "${neighbor_values[@]}"; do
   for build_search in "${build_search_values[@]}"; do
@@ -223,14 +224,20 @@ for neighbors in "${neighbor_values[@]}"; do
       shape_dir="${out_dir}/n${neighbors}_b${build_search}_q${query_search}"
       source_shape_dir="${captured_shape_dirs[${shape_key}]:-}"
       if [[ -z "${source_shape_dir}" ]]; then
+        shape_args=()
+        if [[ "${flat_baseline_captured}" == "1" ]]; then
+          shape_args+=(--skip-flat-baseline)
+        fi
         scripts/run_memory_search_acceptance.sh \
           "${common_args[@]}" \
+          "${shape_args[@]}" \
           --out-dir "${shape_dir}" \
           --graph-neighbors "${neighbors}" \
           --graph-search "${build_search}" \
           --query-search "${effective_query_search}"
 
         captured_shape_dirs["${shape_key}"]="${shape_dir}"
+        flat_baseline_captured="1"
         source_shape_dir="${shape_dir}"
         {
           echo
