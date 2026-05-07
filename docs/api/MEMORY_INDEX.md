@@ -239,8 +239,11 @@ the same effective budget for a graph shape, the runner reuses the first
 capture and still writes one CSV row per requested budget. The first captured
 shape includes the exact flat baseline lanes; later graph shapes skip those
 duplicate flat lanes because the flat baseline only depends on the dataset
-shape, metric, and storage. The default output directory is under `/tmp`; pass
-`--out-dir` to place the capture in a sidecar evidence folder.
+shape, metric, and storage. The summary also includes compact best-row sections
+sorted by recall first and latency second, including a high-recall section for
+rows at or above 95% recall when those rows exist. The default output directory
+is under `/tmp`; pass `--out-dir` to place the capture in a sidecar evidence
+folder.
 
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,
