@@ -29,6 +29,7 @@ Options:
   --recall-detail       Also capture graph_recall_detail for f32 and q8
   --level-stats         Also capture deterministic graph level distribution
   --edge-stats          Also capture stored graph edge counts
+  --skip-flat-baseline  Skip flat baseline lanes when a caller already captured them
   --perf                Wrap benchmark lanes with perf stat
   --perf-bin <path>     Perf executable to use (default: perf from PATH)
   --perf-events <csv>   Perf stat event list
@@ -56,6 +57,7 @@ budget_sweep="0"
 recall_detail="0"
 level_stats="0"
 edge_stats="0"
+skip_flat_baseline="0"
 perf_enabled="0"
 require_perf="0"
 perf_bin=""
@@ -77,6 +79,7 @@ while [[ $# -gt 0 ]]; do
     --recall-detail) recall_detail="1"; shift ;;
     --level-stats) level_stats="1"; shift ;;
     --edge-stats) edge_stats="1"; shift ;;
+    --skip-flat-baseline) skip_flat_baseline="1"; shift ;;
     --perf) perf_enabled="1"; shift ;;
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
@@ -150,16 +153,19 @@ run_case() {
   echo "# recall_detail: ${recall_detail}"
   echo "# level_stats: ${level_stats}"
   echo "# edge_stats: ${edge_stats}"
+  echo "# skip_flat_baseline: ${skip_flat_baseline}"
   echo "# perf_enabled: ${perf_enabled}"
   echo "# perf_bin: ${perf_bin}"
   echo "# perf_events: ${perf_events}"
   echo
 } > "${out_dir}/summary.txt"
 
-run_case "flat_f32_batch" "f32" "flat_search_batch"
-run_case "flat_f32_latency" "f32" "flat_search_latency"
-run_case "flat_q8_batch" "q8" "flat_search_batch"
-run_case "flat_q8_recall" "q8" "flat_q8_recall_search"
+if [[ "${skip_flat_baseline}" != "1" ]]; then
+  run_case "flat_f32_batch" "f32" "flat_search_batch"
+  run_case "flat_f32_latency" "f32" "flat_search_latency"
+  run_case "flat_q8_batch" "q8" "flat_search_batch"
+  run_case "flat_q8_recall" "q8" "flat_q8_recall_search"
+fi
 run_case "graph_f32_build" "f32" "graph_add_batch"
 run_case "graph_f32_load" "f32" "graph_load"
 run_case "graph_f32_latency" "f32" "graph_search_latency"
