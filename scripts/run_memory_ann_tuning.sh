@@ -213,6 +213,66 @@ append_csv_row() {
   echo "${neighbors},${build_search},${query_search},${effective_query_search},${storage},${build_ns},${load_ns},${recall_ns},${recall_pct},${top1_ns},${top1_recall},${edge_count},${base_edges},${upper_edges}" >> "${csv_file}"
 }
 
+append_recall_rows() {
+  local threshold="$1"
+  local limit="$2"
+  local title="$3"
+  awk -F, -v threshold="${threshold}" -v limit="${limit}" -v title="${title}" '
+    NR == 1 { next }
+    threshold == "" || ($9 + 0.0) >= (threshold + 0.0) {
+      printf "%012.3f,%012.3f,%s\n", -($9 + 0.0), ($8 + 0.0), $0
+    }
+  ' "${csv_file}" | sort | head -n "${limit}" | awk -F, -v title="${title}" '
+    BEGIN {
+      print ""
+      print "## " title
+    }
+    {
+      row = $3
+      for (i = 4; i <= NF; ++i) {
+        row = row "," $i
+      }
+      print row
+      seen = 1
+    }
+    END {
+      if (!seen) {
+        print "# none"
+      }
+    }
+  ' >> "${out_dir}/summary.txt"
+}
+
+append_fast_rows() {
+  local threshold="$1"
+  local limit="$2"
+  local title="$3"
+  awk -F, -v threshold="${threshold}" -v limit="${limit}" -v title="${title}" '
+    NR == 1 { next }
+    threshold == "" || ($9 + 0.0) >= (threshold + 0.0) {
+      printf "%012.3f,%s\n", ($8 + 0.0), $0
+    }
+  ' "${csv_file}" | sort | head -n "${limit}" | awk -F, -v title="${title}" '
+    BEGIN {
+      print ""
+      print "## " title
+    }
+    {
+      row = $2
+      for (i = 3; i <= NF; ++i) {
+        row = row "," $i
+      }
+      print row
+      seen = 1
+    }
+    END {
+      if (!seen) {
+        print "# none"
+      }
+    }
+  ' >> "${out_dir}/summary.txt"
+}
+
 run_count=0
 flat_baseline_captured=0
 declare -A captured_shape_dirs=()
@@ -259,6 +319,8 @@ for neighbors in "${neighbor_values[@]}"; do
   done
 done
 
+append_recall_rows "" 5 "best recall rows"
+append_fast_rows "95" 5 "fastest rows at or above 95 recall"
 echo "# runs: ${run_count}" >> "${out_dir}/summary.txt"
 echo "# results_csv: ${csv_file}" >> "${out_dir}/summary.txt"
 echo "[memory-ann-tuning] wrote ${out_dir}"
