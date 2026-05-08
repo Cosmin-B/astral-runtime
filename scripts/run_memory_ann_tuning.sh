@@ -222,7 +222,7 @@ append_recall_rows() {
     threshold == "" || ($9 + 0.0) >= (threshold + 0.0) {
       printf "%012.3f,%012.3f,%s\n", -($9 + 0.0), ($8 + 0.0), $0
     }
-  ' "${csv_file}" | sort | head -n "${limit}" | awk -F, -v title="${title}" '
+  ' "${csv_file}" | sort -t, -k1,1n -k2,2n | head -n "${limit}" | awk -F, -v title="${title}" '
     BEGIN {
       print ""
       print "## " title
@@ -252,7 +252,7 @@ append_fast_rows() {
     threshold == "" || ($9 + 0.0) >= (threshold + 0.0) {
       printf "%012.3f,%s\n", ($8 + 0.0), $0
     }
-  ' "${csv_file}" | sort | head -n "${limit}" | awk -F, -v title="${title}" '
+  ' "${csv_file}" | sort -t, -k1,1n | head -n "${limit}" | awk -F, -v title="${title}" '
     BEGIN {
       print ""
       print "## " title
