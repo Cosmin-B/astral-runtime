@@ -681,6 +681,8 @@ struct MemoryIndex {
   uint32_t graph_entry_slot;
   uint32_t graph_max_level;
   uint32_t graph_visit_generation;
+  uint64_t graph_build_score_evals;
+  uint64_t graph_build_candidate_visits;
   uint32_t free_slot_hint;
   uint8_t dense_active;
 };
@@ -976,6 +978,7 @@ inline float score_slot_q8_query(MemoryIndex* index, const int8_t* query, float 
 }
 
 inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
+  ++index->graph_build_score_evals;
   if (q8_storage(index)) {
     const int8_t* va = q8_vector_at(index, a);
     const int8_t* vb = q8_vector_at(index, b);
@@ -1213,6 +1216,7 @@ void graph_collect_neighbors_exact(MemoryIndex* index, uint32_t slot, uint32_t l
     if (other == slot || index->slots[other].occupied == 0 || index->graph_levels[other] < level) {
       continue;
     }
+    ++index->graph_build_candidate_visits;
     insert_graph_build_candidate(index, index->graph_scratch_capacity, filled, other,
                                  score_pair(index, slot, other));
   }
@@ -1240,6 +1244,7 @@ void graph_collect_neighbors_bounded(MemoryIndex* index, uint32_t slot, uint32_t
     }
 
     ++expanded_count;
+    ++index->graph_build_candidate_visits;
     insert_graph_build_candidate(index, index->graph_scratch_capacity, filled, current,
                                  current_score);
 
@@ -1408,6 +1413,8 @@ void graph_rebuild(MemoryIndex* index) {
               sizeof(uint32_t) * index->capacity * index->graph_level_capacity);
   index->graph_entry_slot = kU32Max;
   index->graph_max_level = 0;
+  index->graph_build_score_evals = 0;
+  index->graph_build_candidate_visits = 0;
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
     graph_connect_slot(index, active_slot_at(index, active_pos));
   }
@@ -2356,6 +2363,8 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->graph_entry_slot = kU32Max;
   index->graph_max_level = 0;
   index->graph_visit_generation = 0;
+  index->graph_build_score_evals = 0;
+  index->graph_build_candidate_visits = 0;
   index->dense_active = 1u;
   if (graph_neighbor_capacity != 0) {
     if (desc->capacity > kU32Max / graph_neighbor_capacity ||
@@ -2490,6 +2499,8 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
   out_stats->graph_edges = graph_base_edges + graph_upper_edges;
   out_stats->graph_base_edges = graph_base_edges;
   out_stats->graph_upper_edges = graph_upper_edges;
+  out_stats->graph_build_score_evals = index->graph_build_score_evals;
+  out_stats->graph_build_candidate_visits = index->graph_build_candidate_visits;
   out_stats->total_bytes = vector_bytes + metadata_bytes + graph_bytes;
   out_stats->save_bytes = memory_save_byte_count(index);
   return ASTRAL_OK;
@@ -2510,6 +2521,8 @@ AstralErr memory_clear(MemoryIndex* index) {
     index->graph_entry_slot = kU32Max;
     index->graph_max_level = 0;
     index->graph_visit_generation = 0;
+    index->graph_build_score_evals = 0;
+    index->graph_build_candidate_visits = 0;
   }
   index->count = 0;
   index->free_slot_hint = 0;

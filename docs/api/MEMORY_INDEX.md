@@ -111,10 +111,13 @@ the key table, and `graph_bytes` covers graph-only adjacency, frontier,
 scratch, level, and visited buffers. Graph indexes also report
 `graph_edges`, split into `graph_base_edges` and `graph_upper_edges`, so
 callers can inspect how dense the stored routing graph became after ingest or
-load. `total_bytes` is the runtime footprint sum, while `save_bytes` matches
-the current serialized snapshot size returned by `astral_memory_save_size()`.
-For q8 indexes, `save_bytes` reflects the compact q8 snapshot rather than an
-expanded float32 copy.
+load. `graph_build_score_evals` and `graph_build_candidate_visits` report
+cold-path construction work since the current graph topology was built, which
+helps compare ANN tuning changes against build cost. `total_bytes` is the
+runtime footprint sum, while `save_bytes` matches the current serialized
+snapshot size returned by `astral_memory_save_size()`. For q8 indexes,
+`save_bytes` reflects the compact q8 snapshot rather than an expanded float32
+copy.
 
 ## Metrics
 
@@ -220,9 +223,10 @@ Add `--recall-detail` when aggregate recall hides hard queries; it captures one
 `features.memory graph_recall_qNNN` lane per deterministic query row with the
 same graph and oracle setup. Add `--level-stats` to capture deterministic upper
 level node counts for the same capacity and neighbor budget. Add `--edge-stats`
-to capture stored total, base-layer, and upper-layer edge counts through the
-public memory stats API. Both runners can wrap each benchmark lane in
-`perf stat` with `--perf`, `--perf-bin`, `--perf-events`, and `--require-perf`.
+to capture stored total, base-layer, upper-layer, and graph construction-work
+counts through the public memory stats API. Both runners can wrap each
+benchmark lane in `perf stat` with `--perf`, `--perf-bin`, `--perf-events`, and
+`--require-perf`.
 Perf CSV and stderr files are written beside the runner logs, so hardware
 counter evidence stays with the sidecar capture instead of entering the
 repository.
@@ -233,18 +237,19 @@ build, load, level, and edge-count markers for every shape. It also writes
 `results.csv` with one f32 and one q8 row per graph shape so large sweeps can be
 sorted without manually parsing each lane log. The CSV records both the
 requested per-query budget and the effective budget after clamping to the graph
-build/search capacity, so rows with a larger requested query budget are not
-mistaken for distinct runtime work. When multiple requested budgets clamp to
-the same effective budget for a graph shape, the runner reuses the first
-capture and still writes one CSV row per requested budget. The first captured
-shape includes the exact flat baseline lanes; later graph shapes skip those
-duplicate flat lanes because the flat baseline only depends on the dataset
-shape, metric, and storage. The summary also includes compact best-row sections
-sorted by recall first and latency second, including a high-recall section for
-rows at or above 95% recall when those rows exist. Use `--summary-only
---out-dir <existing-dir>` to write `summary_best.txt` from an existing
-`results.csv` without rerunning benchmark lanes or overwriting the full
-per-shape summary. The default output directory is under `/tmp`; pass
+build/search capacity, plus edge counts and graph construction-work counts, so
+rows with a larger requested query budget are not mistaken for distinct runtime
+work and build-cost changes remain visible. When multiple requested budgets
+clamp to the same effective budget for a graph shape, the runner reuses the
+first capture and still writes one CSV row per requested budget. The first
+captured shape includes the exact flat baseline lanes; later graph shapes skip
+those duplicate flat lanes because the flat baseline only depends on the
+dataset shape, metric, and storage. The summary also includes compact best-row
+sections sorted by recall first and latency second, including a high-recall
+section for rows at or above 95% recall when those rows exist. Use
+`--summary-only --out-dir <existing-dir>` to write `summary_best.txt` from an
+existing `results.csv` without rerunning benchmark lanes or overwriting the
+full per-shape summary. The default output directory is under `/tmp`; pass
 `--out-dir` to place the capture in a sidecar evidence folder.
 
 For release tuning, capture `features.memory flat_search_top1`,
@@ -408,7 +413,9 @@ Expected markers include `features.memory add_batch`,
 `features.memory graph_search_latency`,
 `features.memory graph_recall`, `features.memory graph_recall_top1`,
 `features.memory graph_recall_search`, `features.memory graph_edges`,
-`features.memory graph_base_edges`, `features.memory graph_upper_edges`, and
+`features.memory graph_base_edges`, `features.memory graph_upper_edges`,
+`features.memory graph_build_score_evals`,
+`features.memory graph_build_candidate_visits`, and
 `features.memory cursor_begin_fetch`.
 The focused graph recall sweep case emits
 `features.memory graph_recall_s<N>` markers for each per-search budget.

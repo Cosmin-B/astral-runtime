@@ -2535,6 +2535,10 @@ static void print_memory_graph_edge_stats() {
       {"features.memory graph_edges", "edge_count", stats.graph_edges},
       {"features.memory graph_base_edges", "edge_count", stats.graph_base_edges},
       {"features.memory graph_upper_edges", "edge_count", stats.graph_upper_edges},
+      {"features.memory graph_build_score_evals", "score_eval_count",
+       stats.graph_build_score_evals},
+      {"features.memory graph_build_candidate_visits", "candidate_visit_count",
+       stats.graph_build_candidate_visits},
   };
   for (const EdgeStat& stat : edge_stats) {
     BenchResult r{};

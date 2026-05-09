@@ -757,6 +757,12 @@ struct ASTRALRT_API FAstralMemoryStats
     int64 GraphUpperEdges = 0;
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int64 GraphBuildScoreEvals = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int64 GraphBuildCandidateVisits = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
     int64 TotalBytes = 0;
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")

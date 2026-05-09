@@ -931,6 +931,10 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
              GraphMemoryStats.GraphBaseEdges > EmptyByteCount);
     TestEqual(TEXT("graph memory stats edge split"), GraphMemoryStats.GraphEdges,
               GraphMemoryStats.GraphBaseEdges + GraphMemoryStats.GraphUpperEdges);
+    TestTrue(TEXT("graph memory stats build score evals"),
+             GraphMemoryStats.GraphBuildScoreEvals > EmptyByteCount);
+    TestTrue(TEXT("graph memory stats build candidate visits"),
+             GraphMemoryStats.GraphBuildCandidateVisits > EmptyByteCount);
     TestTrue(TEXT("graph memory stats save bytes"), GraphMemoryStats.SaveBytes > EmptyByteCount);
     TArray<FAstralMemorySearchResult> GraphMemoryResults;
     const FAstralOperationResult GraphSearchMemory =

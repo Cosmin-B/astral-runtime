@@ -1045,6 +1045,8 @@ namespace Astral.Runtime
             public ulong graph_edges;
             public ulong graph_base_edges;
             public ulong graph_upper_edges;
+            public ulong graph_build_score_evals;
+            public ulong graph_build_candidate_visits;
             public ulong total_bytes;
             public ulong save_bytes;
         }

@@ -318,6 +318,8 @@ typedef struct AstralMemoryStats {
     uint64_t graph_edges;
     uint64_t graph_base_edges;
     uint64_t graph_upper_edges;
+    uint64_t graph_build_score_evals;
+    uint64_t graph_build_candidate_visits;
     uint64_t total_bytes;
     uint64_t save_bytes;
 } AstralMemoryStats;
@@ -352,8 +354,8 @@ ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 20,
                      "AstralMemorySearchDesc must be 20 bytes on 64-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32,
                      "AstralMemorySearchResult must be 32 bytes on 64-bit");
-ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 104,
-                     "AstralMemoryStats must be 104 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 120,
+                     "AstralMemoryStats must be 120 bytes on 64-bit");
 #else
 ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 8, "AstralSpanU8 must be 8 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 8, "AstralMutSpanU8 must be 8 bytes on 32-bit");
@@ -376,8 +378,8 @@ ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 20,
                      "AstralMemorySearchDesc must be 20 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32,
                      "AstralMemorySearchResult must be 32 bytes on 32-bit");
-ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 104,
-                     "AstralMemoryStats must be 104 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 120,
+                     "AstralMemoryStats must be 120 bytes on 32-bit");
 #endif
 
 // ============================================================================
