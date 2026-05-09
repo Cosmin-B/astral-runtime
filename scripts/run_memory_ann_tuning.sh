@@ -26,6 +26,7 @@ Options:
   --recall-queries <N>     Recall query count (default: 32)
   --budget-sweep           Capture per-query graph budget sweep lanes
   --recall-detail          Capture per-query recall detail lanes
+  --summary-only           Rebuild summary best-row sections from an existing results.csv
   --perf                   Wrap benchmark lanes with perf stat
   --perf-bin <path>        Perf executable to use
   --perf-events <csv>      Perf stat event list
@@ -50,6 +51,7 @@ query_search_csv="64,128"
 recall_queries="32"
 budget_sweep="0"
 recall_detail="0"
+summary_only="0"
 perf_enabled="0"
 require_perf="0"
 perf_bin=""
@@ -69,6 +71,7 @@ while [[ $# -gt 0 ]]; do
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
     --budget-sweep) budget_sweep="1"; shift ;;
     --recall-detail) recall_detail="1"; shift ;;
+    --summary-only) summary_only="1"; shift ;;
     --perf) perf_enabled="1"; shift ;;
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
@@ -84,6 +87,10 @@ fi
 
 mkdir -p "${out_dir}"
 csv_file="${out_dir}/results.csv"
+summary_file="${out_dir}/summary.txt"
+if [[ "${summary_only}" == "1" ]]; then
+  summary_file="${out_dir}/summary_best.txt"
+fi
 
 IFS=',' read -r -a neighbor_values <<< "${neighbors_csv}"
 IFS=',' read -r -a build_search_values <<< "${build_search_csv}"
@@ -120,24 +127,32 @@ if [[ -n "${perf_events}" ]]; then
 fi
 
 {
-  echo "# Astral ANN tuning sweep"
   echo "# date: $(date -Iseconds)"
-  echo "# preset: ${preset}"
-  echo "# iters: ${iters}"
-  echo "# dim: ${dim}"
-  echo "# capacity: ${capacity}"
-  echo "# metric: ${metric}"
-  echo "# neighbors: ${neighbors_csv}"
-  echo "# build_search: ${build_search_csv}"
-  echo "# query_search: ${query_search_csv}"
-  echo "# recall_queries: ${recall_queries}"
-  echo "# budget_sweep: ${budget_sweep}"
-  echo "# recall_detail: ${recall_detail}"
-  echo "# perf_enabled: ${perf_enabled}"
+  if [[ "${summary_only}" == "1" ]]; then
+    echo "# Astral ANN tuning summary"
+    echo "# summary_only: 1"
+    echo "# results_csv: ${csv_file}"
+  else
+    echo "# Astral ANN tuning sweep"
+    echo "# preset: ${preset}"
+    echo "# iters: ${iters}"
+    echo "# dim: ${dim}"
+    echo "# capacity: ${capacity}"
+    echo "# metric: ${metric}"
+    echo "# neighbors: ${neighbors_csv}"
+    echo "# build_search: ${build_search_csv}"
+    echo "# query_search: ${query_search_csv}"
+    echo "# recall_queries: ${recall_queries}"
+    echo "# budget_sweep: ${budget_sweep}"
+    echo "# recall_detail: ${recall_detail}"
+    echo "# perf_enabled: ${perf_enabled}"
+  fi
   echo
-} > "${out_dir}/summary.txt"
+} > "${summary_file}"
 
-echo "neighbors,build_search,query_search,effective_query_search,storage,build_ns,load_ns,recall_ns,recall_pct,top1_ns,top1_recall_pct,edge_count,base_edges,upper_edges" > "${csv_file}"
+if [[ "${summary_only}" != "1" ]]; then
+  echo "neighbors,build_search,query_search,effective_query_search,storage,build_ns,load_ns,recall_ns,recall_pct,top1_ns,top1_recall_pct,edge_count,base_edges,upper_edges" > "${csv_file}"
+fi
 
 metric_value() {
   local file="$1"
@@ -240,7 +255,7 @@ append_recall_rows() {
         print "# none"
       }
     }
-  ' >> "${out_dir}/summary.txt"
+  ' >> "${summary_file}"
 }
 
 append_fast_rows() {
@@ -270,8 +285,22 @@ append_fast_rows() {
         print "# none"
       }
     }
-  ' >> "${out_dir}/summary.txt"
+  ' >> "${summary_file}"
 }
+
+if [[ "${summary_only}" == "1" ]]; then
+  if [[ ! -f "${csv_file}" ]]; then
+    echo "Missing CSV for summary-only run: ${csv_file}" >&2
+    exit 2
+  fi
+  append_recall_rows "" 5 "best recall rows"
+  append_fast_rows "95" 5 "fastest rows at or above 95 recall"
+  echo "# runs: 0" >> "${summary_file}"
+  echo "# summary_only: 1" >> "${summary_file}"
+  echo "# results_csv: ${csv_file}" >> "${summary_file}"
+  echo "[memory-ann-tuning] wrote ${summary_file}"
+  exit 0
+fi
 
 run_count=0
 flat_baseline_captured=0
@@ -304,14 +333,14 @@ for neighbors in "${neighbor_values[@]}"; do
           echo "## neighbors=${neighbors} build_search=${build_search} query_search=${query_search} effective_query_search=${effective_query_search}"
           echo "# summary: ${source_shape_dir}/summary.txt"
           grep -nE "features\\.memory|recall_pct|top1_recall_pct|edge_count|level_count" "${source_shape_dir}/summary.txt" || true
-        } >> "${out_dir}/summary.txt"
+        } >> "${summary_file}"
         run_count=$((run_count + 1))
       else
         {
           echo
           echo "## neighbors=${neighbors} build_search=${build_search} query_search=${query_search} effective_query_search=${effective_query_search}"
           echo "# reused: ${source_shape_dir}"
-        } >> "${out_dir}/summary.txt"
+        } >> "${summary_file}"
       fi
       append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f32"
       append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "q8"
@@ -321,6 +350,6 @@ done
 
 append_recall_rows "" 5 "best recall rows"
 append_fast_rows "95" 5 "fastest rows at or above 95 recall"
-echo "# runs: ${run_count}" >> "${out_dir}/summary.txt"
-echo "# results_csv: ${csv_file}" >> "${out_dir}/summary.txt"
+echo "# runs: ${run_count}" >> "${summary_file}"
+echo "# results_csv: ${csv_file}" >> "${summary_file}"
 echo "[memory-ann-tuning] wrote ${out_dir}"
