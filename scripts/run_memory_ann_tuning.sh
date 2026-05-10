@@ -27,6 +27,8 @@ Options:
   --budget-sweep           Capture per-query graph budget sweep lanes
   --recall-detail          Capture per-query recall detail lanes
   --summary-only           Rebuild summary best-row sections from an existing results.csv
+  --min-recall-pct <pct>   Fail unless one row reaches this recall percentage
+  --max-recall-ns <N>      With --min-recall-pct, fail unless one passing row is this fast
   --perf                   Wrap benchmark lanes with perf stat
   --perf-bin <path>        Perf executable to use
   --perf-events <csv>      Perf stat event list
@@ -52,6 +54,8 @@ recall_queries="32"
 budget_sweep="0"
 recall_detail="0"
 summary_only="0"
+min_recall_pct=""
+max_recall_ns=""
 perf_enabled="0"
 require_perf="0"
 perf_bin=""
@@ -72,6 +76,8 @@ while [[ $# -gt 0 ]]; do
     --budget-sweep) budget_sweep="1"; shift ;;
     --recall-detail) recall_detail="1"; shift ;;
     --summary-only) summary_only="1"; shift ;;
+    --min-recall-pct) min_recall_pct="${2:-}"; shift 2 ;;
+    --max-recall-ns) max_recall_ns="${2:-}"; shift 2 ;;
     --perf) perf_enabled="1"; shift ;;
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
@@ -132,6 +138,8 @@ fi
     echo "# Astral ANN tuning summary"
     echo "# summary_only: 1"
     echo "# results_csv: ${csv_file}"
+    echo "# min_recall_pct: ${min_recall_pct:-none}"
+    echo "# max_recall_ns: ${max_recall_ns:-none}"
   else
     echo "# Astral ANN tuning sweep"
     echo "# preset: ${preset}"
@@ -145,6 +153,8 @@ fi
     echo "# recall_queries: ${recall_queries}"
     echo "# budget_sweep: ${budget_sweep}"
     echo "# recall_detail: ${recall_detail}"
+    echo "# min_recall_pct: ${min_recall_pct:-none}"
+    echo "# max_recall_ns: ${max_recall_ns:-none}"
     echo "# perf_enabled: ${perf_enabled}"
   fi
   echo
@@ -291,6 +301,47 @@ append_fast_rows() {
   ' >> "${summary_file}"
 }
 
+validate_thresholds() {
+  if [[ -z "${min_recall_pct}" && -z "${max_recall_ns}" ]]; then
+    return 0
+  fi
+  awk -F, -v min_recall="${min_recall_pct:-0}" -v max_ns="${max_recall_ns}" '
+    NR == 1 {
+      next
+    }
+    {
+      recall = $9 + 0.0
+      ns = $8 + 0.0
+      if (recall >= (min_recall + 0.0) && (max_ns == "" || ns <= (max_ns + 0.0))) {
+        print $0
+        found = 1
+        exit
+      }
+    }
+    END {
+      if (!found) {
+        exit 1
+      }
+    }
+  ' "${csv_file}" > "${out_dir}/threshold_pass.csv" || {
+    {
+      echo
+      echo "# threshold_status: failed"
+      echo "# min_recall_pct: ${min_recall_pct:-0}"
+      echo "# max_recall_ns: ${max_recall_ns:-none}"
+    } >> "${summary_file}"
+    echo "No ANN row met min_recall_pct=${min_recall_pct:-0} max_recall_ns=${max_recall_ns:-none}" >&2
+    return 1
+  }
+  {
+    echo
+    echo "# threshold_status: passed"
+    echo "# min_recall_pct: ${min_recall_pct:-0}"
+    echo "# max_recall_ns: ${max_recall_ns:-none}"
+    echo "# threshold_row: $(cat "${out_dir}/threshold_pass.csv")"
+  } >> "${summary_file}"
+}
+
 if [[ "${summary_only}" == "1" ]]; then
   if [[ ! -f "${csv_file}" ]]; then
     echo "Missing CSV for summary-only run: ${csv_file}" >&2
@@ -298,6 +349,7 @@ if [[ "${summary_only}" == "1" ]]; then
   fi
   append_recall_rows "" 5 "best recall rows"
   append_fast_rows "95" 5 "fastest rows at or above 95 recall"
+  validate_thresholds
   echo "# runs: 0" >> "${summary_file}"
   echo "# summary_only: 1" >> "${summary_file}"
   echo "# results_csv: ${csv_file}" >> "${summary_file}"
@@ -353,6 +405,7 @@ done
 
 append_recall_rows "" 5 "best recall rows"
 append_fast_rows "95" 5 "fastest rows at or above 95 recall"
+validate_thresholds
 echo "# runs: ${run_count}" >> "${summary_file}"
 echo "# results_csv: ${csv_file}" >> "${summary_file}"
 echo "[memory-ann-tuning] wrote ${out_dir}"
