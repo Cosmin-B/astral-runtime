@@ -92,7 +92,7 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(32, Marshal.SizeOf<AstralNative.AstralMemoryRecord>());
             Assert.AreEqual(20, Marshal.SizeOf<AstralNative.AstralMemorySearchDesc>());
             Assert.AreEqual(32, Marshal.SizeOf<AstralNative.AstralMemorySearchResult>());
-            Assert.AreEqual(104, Marshal.SizeOf<AstralNative.AstralMemoryStats>());
+            Assert.AreEqual(120, Marshal.SizeOf<AstralNative.AstralMemoryStats>());
             int expectedAgentDesc = IntPtr.Size == 8 ? 136 : 108;
             Assert.AreEqual(expectedAgentDesc, Marshal.SizeOf<AstralNative.AstralAgentDesc>());
             Assert.AreEqual(64, Marshal.SizeOf<AstralNative.AstralAgentMemoryContextDesc>());

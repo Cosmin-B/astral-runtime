@@ -2484,6 +2484,8 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(stats.graph_edges, 0ull);
     ASSERT_EQ(stats.graph_base_edges, 0ull);
     ASSERT_EQ(stats.graph_upper_edges, 0ull);
+    ASSERT_EQ(stats.graph_build_score_evals, 0ull);
+    ASSERT_EQ(stats.graph_build_candidate_visits, 0ull);
     ASSERT_EQ(stats.total_bytes, stats.vector_bytes + stats.metadata_bytes + stats.graph_bytes);
     ASSERT_EQ(stats.save_bytes, save_bytes);
     AstralMemoryStats invalid_stats{};
@@ -2657,6 +2659,8 @@ TEST(inference_memory_index_graph_mock) {
     ASSERT_GT(stats.graph_edges, 0ull);
     ASSERT_GT(stats.graph_base_edges, 0ull);
     ASSERT_EQ(stats.graph_edges, stats.graph_base_edges + stats.graph_upper_edges);
+    ASSERT_GT(stats.graph_build_score_evals, 0ull);
+    ASSERT_GT(stats.graph_build_candidate_visits, 0ull);
     ASSERT_EQ(stats.total_bytes, stats.vector_bytes + stats.metadata_bytes + stats.graph_bytes);
     ASSERT_EQ(stats.save_bytes, save_bytes);
     std::string blob;

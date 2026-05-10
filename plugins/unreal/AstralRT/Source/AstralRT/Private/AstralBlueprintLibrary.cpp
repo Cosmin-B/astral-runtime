@@ -406,6 +406,8 @@ static FAstralMemoryStats from_native_memory_stats(const AstralMemoryStats& Nati
     Stats.GraphEdges = static_cast<int64>(Native.graph_edges);
     Stats.GraphBaseEdges = static_cast<int64>(Native.graph_base_edges);
     Stats.GraphUpperEdges = static_cast<int64>(Native.graph_upper_edges);
+    Stats.GraphBuildScoreEvals = static_cast<int64>(Native.graph_build_score_evals);
+    Stats.GraphBuildCandidateVisits = static_cast<int64>(Native.graph_build_candidate_visits);
     Stats.TotalBytes = static_cast<int64>(Native.total_bytes);
     Stats.SaveBytes = static_cast<int64>(Native.save_bytes);
     return Stats;
