@@ -251,6 +251,10 @@ section for rows at or above 95% recall when those rows exist. Use
 existing `results.csv` without rerunning benchmark lanes or overwriting the
 full per-shape summary. The default output directory is under `/tmp`; pass
 `--out-dir` to place the capture in a sidecar evidence folder.
+Use `--min-recall-pct` and `--max-recall-ns` when a tuning run should fail
+unless at least one row meets the chosen recall and latency envelope. The same
+thresholds work with `--summary-only`, so existing CSV captures can be checked
+without rerunning the benchmark lanes.
 
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,
