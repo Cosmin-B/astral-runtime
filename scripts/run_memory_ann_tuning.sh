@@ -192,6 +192,18 @@ metric_ns() {
           print $(i - 1)
           exit
         }
+        if ($i ~ /^p50=/) {
+          value = $i
+          sub(/^p50=/, "", value)
+          if (value != "") {
+            print value
+            exit
+          }
+          if ((i + 1) <= NF) {
+            print $(i + 1)
+            exit
+          }
+        }
         if ($i == "p50=" && (i + 1) <= NF) {
           print $(i + 1)
           exit
@@ -217,13 +229,9 @@ edge_metric_value() {
 }
 
 effective_query_search_for() {
-  local build_search="$1"
+  local _build_search="$1"
   local query_search="$2"
-  if (( query_search > build_search )); then
-    echo "${build_search}"
-  else
-    echo "${query_search}"
-  fi
+  echo "${query_search}"
 }
 
 append_csv_row() {
