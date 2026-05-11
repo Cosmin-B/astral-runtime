@@ -29,6 +29,7 @@ Options:
   --summary-only           Rebuild summary best-row sections from an existing results.csv
   --min-recall-pct <pct>   Fail unless one row reaches this recall percentage
   --max-recall-ns <N>      With --min-recall-pct, fail unless one passing row is this fast
+  --min-speedup-vs-flat <N> Fail unless one passing row reaches this flat-f32 speedup
   --perf                   Wrap benchmark lanes with perf stat
   --perf-bin <path>        Perf executable to use
   --perf-events <csv>      Perf stat event list
@@ -56,6 +57,7 @@ recall_detail="0"
 summary_only="0"
 min_recall_pct=""
 max_recall_ns=""
+min_speedup_vs_flat=""
 perf_enabled="0"
 require_perf="0"
 perf_bin=""
@@ -78,6 +80,7 @@ while [[ $# -gt 0 ]]; do
     --summary-only) summary_only="1"; shift ;;
     --min-recall-pct) min_recall_pct="${2:-}"; shift 2 ;;
     --max-recall-ns) max_recall_ns="${2:-}"; shift 2 ;;
+    --min-speedup-vs-flat) min_speedup_vs_flat="${2:-}"; shift 2 ;;
     --perf) perf_enabled="1"; shift ;;
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
@@ -140,6 +143,7 @@ fi
     echo "# results_csv: ${csv_file}"
     echo "# min_recall_pct: ${min_recall_pct:-none}"
     echo "# max_recall_ns: ${max_recall_ns:-none}"
+    echo "# min_speedup_vs_flat: ${min_speedup_vs_flat:-none}"
   else
     echo "# Astral ANN tuning sweep"
     echo "# preset: ${preset}"
@@ -155,13 +159,14 @@ fi
     echo "# recall_detail: ${recall_detail}"
     echo "# min_recall_pct: ${min_recall_pct:-none}"
     echo "# max_recall_ns: ${max_recall_ns:-none}"
+    echo "# min_speedup_vs_flat: ${min_speedup_vs_flat:-none}"
     echo "# perf_enabled: ${perf_enabled}"
   fi
   echo
 } > "${summary_file}"
 
 if [[ "${summary_only}" != "1" ]]; then
-  echo "neighbors,build_search,query_search,effective_query_search,storage,build_ns,load_ns,recall_ns,recall_pct,top1_ns,top1_recall_pct,edge_count,base_edges,upper_edges,build_score_evals,build_candidate_visits" > "${csv_file}"
+  echo "neighbors,build_search,query_search,effective_query_search,storage,build_ns,load_ns,recall_ns,recall_pct,top1_ns,top1_recall_pct,edge_count,base_edges,upper_edges,build_score_evals,build_candidate_visits,flat_f32_latency_ns,speedup_vs_flat_f32" > "${csv_file}"
 fi
 
 metric_value() {
@@ -185,6 +190,10 @@ metric_ns() {
       for (i = 1; i <= NF; ++i) {
         if ($i == "ns/op") {
           print $(i - 1)
+          exit
+        }
+        if ($i == "p50=" && (i + 1) <= NF) {
+          print $(i + 1)
           exit
         }
       }
@@ -226,7 +235,7 @@ append_csv_row() {
   local effective_query_search
   effective_query_search="$(effective_query_search_for "${build_search}" "${query_search}")"
   local prefix="graph_${storage}"
-  local build_ns load_ns recall_ns recall_pct top1_ns top1_recall edge_count base_edges upper_edges build_score_evals build_candidate_visits
+  local build_ns load_ns recall_ns recall_pct top1_ns top1_recall edge_count base_edges upper_edges build_score_evals build_candidate_visits speedup_vs_flat
   build_ns="$(metric_ns "${shape_dir}/${prefix}_build.txt")"
   load_ns="$(metric_ns "${shape_dir}/${prefix}_load.txt")"
   recall_ns="$(metric_ns "${shape_dir}/${prefix}_recall.txt")"
@@ -238,7 +247,14 @@ append_csv_row() {
   upper_edges="$(edge_metric_value "${shape_dir}/${prefix}_edge_stats.txt" "features.memory graph_upper_edges")"
   build_score_evals="$(edge_metric_value "${shape_dir}/${prefix}_edge_stats.txt" "features.memory graph_build_score_evals" "score_eval_count")"
   build_candidate_visits="$(edge_metric_value "${shape_dir}/${prefix}_edge_stats.txt" "features.memory graph_build_candidate_visits" "candidate_visit_count")"
-  echo "${neighbors},${build_search},${query_search},${effective_query_search},${storage},${build_ns},${load_ns},${recall_ns},${recall_pct},${top1_ns},${top1_recall},${edge_count},${base_edges},${upper_edges},${build_score_evals},${build_candidate_visits}" >> "${csv_file}"
+  speedup_vs_flat="$(awk -v flat="${flat_f32_latency_ns:-}" -v graph="${recall_ns}" 'BEGIN {
+    if (flat == "" || graph == "" || graph + 0.0 <= 0.0) {
+      print ""
+    } else {
+      printf "%.4f", (flat + 0.0) / (graph + 0.0)
+    }
+  }')"
+  echo "${neighbors},${build_search},${query_search},${effective_query_search},${storage},${build_ns},${load_ns},${recall_ns},${recall_pct},${top1_ns},${top1_recall},${edge_count},${base_edges},${upper_edges},${build_score_evals},${build_candidate_visits},${flat_f32_latency_ns:-},${speedup_vs_flat}" >> "${csv_file}"
 }
 
 append_recall_rows() {
@@ -302,17 +318,21 @@ append_fast_rows() {
 }
 
 validate_thresholds() {
-  if [[ -z "${min_recall_pct}" && -z "${max_recall_ns}" ]]; then
+  if [[ -z "${min_recall_pct}" && -z "${max_recall_ns}" && -z "${min_speedup_vs_flat}" ]]; then
     return 0
   fi
-  awk -F, -v min_recall="${min_recall_pct:-0}" -v max_ns="${max_recall_ns}" '
+  awk -F, -v min_recall="${min_recall_pct:-0}" -v max_ns="${max_recall_ns}" \
+    -v min_speedup="${min_speedup_vs_flat}" '
     NR == 1 {
       next
     }
     {
       recall = $9 + 0.0
       ns = $8 + 0.0
-      if (recall >= (min_recall + 0.0) && (max_ns == "" || ns <= (max_ns + 0.0))) {
+      speedup = $18 + 0.0
+      has_speedup = $18 != ""
+      if (recall >= (min_recall + 0.0) && (max_ns == "" || ns <= (max_ns + 0.0)) &&
+          (min_speedup == "" || (has_speedup && speedup >= (min_speedup + 0.0)))) {
         print $0
         found = 1
         exit
@@ -329,8 +349,9 @@ validate_thresholds() {
       echo "# threshold_status: failed"
       echo "# min_recall_pct: ${min_recall_pct:-0}"
       echo "# max_recall_ns: ${max_recall_ns:-none}"
+      echo "# min_speedup_vs_flat: ${min_speedup_vs_flat:-none}"
     } >> "${summary_file}"
-    echo "No ANN row met min_recall_pct=${min_recall_pct:-0} max_recall_ns=${max_recall_ns:-none}" >&2
+    echo "No ANN row met min_recall_pct=${min_recall_pct:-0} max_recall_ns=${max_recall_ns:-none} min_speedup_vs_flat=${min_speedup_vs_flat:-none}" >&2
     return 1
   }
   {
@@ -338,6 +359,7 @@ validate_thresholds() {
     echo "# threshold_status: passed"
     echo "# min_recall_pct: ${min_recall_pct:-0}"
     echo "# max_recall_ns: ${max_recall_ns:-none}"
+    echo "# min_speedup_vs_flat: ${min_speedup_vs_flat:-none}"
     echo "# threshold_row: $(cat "${out_dir}/threshold_pass.csv")"
   } >> "${summary_file}"
 }
@@ -359,6 +381,7 @@ fi
 
 run_count=0
 flat_baseline_captured=0
+flat_f32_latency_ns=""
 declare -A captured_shape_dirs=()
 for neighbors in "${neighbor_values[@]}"; do
   for build_search in "${build_search_values[@]}"; do
@@ -382,6 +405,9 @@ for neighbors in "${neighbor_values[@]}"; do
 
         captured_shape_dirs["${shape_key}"]="${shape_dir}"
         flat_baseline_captured="1"
+        if [[ -z "${flat_f32_latency_ns}" ]]; then
+          flat_f32_latency_ns="$(metric_ns "${shape_dir}/flat_f32_latency.txt")"
+        fi
         source_shape_dir="${shape_dir}"
         {
           echo

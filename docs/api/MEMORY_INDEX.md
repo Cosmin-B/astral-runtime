@@ -239,22 +239,24 @@ sorted without manually parsing each lane log. The CSV records both the
 requested per-query budget and the effective budget after clamping to the graph
 build/search capacity, plus edge counts and graph construction-work counts, so
 rows with a larger requested query budget are not mistaken for distinct runtime
-work and build-cost changes remain visible. When multiple requested budgets
-clamp to the same effective budget for a graph shape, the runner reuses the
-first capture and still writes one CSV row per requested budget. The first
-captured shape includes the exact flat baseline lanes; later graph shapes skip
-those duplicate flat lanes because the flat baseline only depends on the
-dataset shape, metric, and storage. The summary also includes compact best-row
-sections sorted by recall first and latency second, including a high-recall
-section for rows at or above 95% recall when those rows exist. Use
+work and build-cost changes remain visible. It also records the first exact
+flat f32 latency baseline and each graph row's speedup against that baseline.
+When multiple requested budgets clamp to the same effective budget for a graph
+shape, the runner reuses the first capture and still writes one CSV row per
+requested budget. The first captured shape includes the exact flat baseline
+lanes; later graph shapes skip those duplicate flat lanes because the flat
+baseline only depends on the dataset shape, metric, and storage. The summary
+also includes compact best-row sections sorted by recall first and latency
+second, including a high-recall section for rows at or above 95% recall. Use
 `--summary-only --out-dir <existing-dir>` to write `summary_best.txt` from an
 existing `results.csv` without rerunning benchmark lanes or overwriting the
 full per-shape summary. The default output directory is under `/tmp`; pass
 `--out-dir` to place the capture in a sidecar evidence folder.
 Use `--min-recall-pct` and `--max-recall-ns` when a tuning run should fail
 unless at least one row meets the chosen recall and latency envelope. The same
-thresholds work with `--summary-only`, so existing CSV captures can be checked
-without rerunning the benchmark lanes.
+threshold path also accepts `--min-speedup-vs-flat` for the graph-vs-exact
+baseline requirement. These checks work with `--summary-only`, so existing CSV
+captures can be checked without rerunning the benchmark lanes.
 
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,
