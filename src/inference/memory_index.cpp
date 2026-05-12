@@ -1605,7 +1605,7 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 1.0f;
   int8_t q8_query[kMaxDim];
   float q8_query_scale = 1.0f;
-  const bool use_q8_query = q8_storage(index) && desc->top_k == kTopOne;
+  const bool use_q8_query = q8_storage(index);
   if (use_q8_query) {
     quantize_q8_vector(q8_query, &q8_query_scale, query, index->dim);
   }
