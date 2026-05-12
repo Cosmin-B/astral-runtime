@@ -40,7 +40,7 @@ constexpr uint64_t kKeyHashMixMul1 = 0x94D049BB133111EBull;
 constexpr uint32_t kKeyHashMixShift0 = 30;
 constexpr uint32_t kKeyHashMixShift1 = 27;
 constexpr uint32_t kKeyHashMixShift2 = 31;
-constexpr uint32_t kGraphDefaultNeighbors = 32;
+constexpr uint32_t kGraphDefaultNeighbors = 64;
 constexpr uint32_t kGraphMaxNeighbors = 64;
 constexpr uint32_t kGraphBaseNeighborMultiplier = 2;
 constexpr uint32_t kGraphDefaultSearch = 64;
@@ -1269,8 +1269,8 @@ void graph_collect_neighbors_exact(MemoryIndex* index, uint32_t slot, uint32_t l
   }
 }
 
-void graph_collect_neighbors_bounded(MemoryIndex* index, uint32_t slot, uint32_t level,
-                                     uint32_t entry, uint32_t* filled) {
+void graph_search_layer_pair(MemoryIndex* index, uint32_t slot, uint32_t level, uint32_t entry,
+                             uint32_t capacity, uint32_t* filled) {
   if (entry == kU32Max || entry == slot || index->slots[entry].occupied == 0 ||
       index->graph_levels[entry] < level) {
     return;
@@ -1278,22 +1278,22 @@ void graph_collect_neighbors_bounded(MemoryIndex* index, uint32_t slot, uint32_t
 
   graph_begin_visit(index);
   uint32_t candidate_count = 0;
-  uint32_t expanded_count = 0;
   graph_mark_visited(index, entry);
-  graph_add_candidate(index, index->graph_search_capacity, entry, score_pair(index, slot, entry),
-                      &candidate_count);
+  const float entry_score = score_pair(index, slot, entry);
+  insert_graph_build_candidate(index, capacity, filled, entry, entry_score);
+  graph_add_candidate(index, capacity, entry, entry_score, &candidate_count);
 
-  while (candidate_count != 0 && expanded_count < index->graph_search_capacity) {
+  while (candidate_count != 0) {
     uint32_t current = kU32Max;
     float current_score = kWorstScore;
     if (!graph_pop_candidate(index, &candidate_count, &current, &current_score)) {
       break;
     }
+    if (*filled == capacity && current_score < index->graph_scratch_scores[capacity - 1u]) {
+      break;
+    }
 
-    ++expanded_count;
     ++index->graph_build_candidate_visits;
-    insert_graph_build_candidate(index, index->graph_scratch_capacity, filled, current,
-                                 current_score);
 
     const uint32_t* neighbors = graph_neighbors_at_level(index, current, level);
     const uint32_t neighbor_count = graph_neighbor_count_at_level(index, current, level);
@@ -1304,8 +1304,11 @@ void graph_collect_neighbors_bounded(MemoryIndex* index, uint32_t slot, uint32_t
         continue;
       }
       graph_mark_visited(index, neighbor);
-      graph_add_candidate(index, index->graph_search_capacity, neighbor,
-                          score_pair(index, slot, neighbor), &candidate_count);
+      const float score = score_pair(index, slot, neighbor);
+      if (*filled < capacity || score > index->graph_scratch_scores[capacity - 1u]) {
+        graph_add_candidate(index, capacity, neighbor, score, &candidate_count);
+        insert_graph_build_candidate(index, capacity, filled, neighbor, score);
+      }
     }
   }
 }
@@ -1415,9 +1418,11 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
     if (index->count <= index->graph_search_capacity) {
       graph_collect_neighbors_exact(index, slot, level, &candidate_count);
     } else {
-      graph_collect_neighbors_bounded(index, slot, level, entry, &candidate_count);
+      graph_search_layer_pair(index, slot, level, entry, index->graph_search_capacity,
+                              &candidate_count);
     }
 
+    const uint32_t next_entry = candidate_count != 0 ? index->graph_scratch_slots[0] : entry;
     uint32_t* neighbors = graph_neighbors_at_level(index, slot, level);
     uint32_t filled = 0;
     graph_select_neighbors(index, slot, level, candidate_count, neighbors, &filled);
@@ -1438,8 +1443,8 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
         force_graph_neighbor(index, linked, slot, first_long_pos + i, level);
       }
     }
-    if (filled != 0) {
-      entry = neighbors[0];
+    if (candidate_count != 0) {
+      entry = next_entry;
     }
     if (level == 0) {
       break;
