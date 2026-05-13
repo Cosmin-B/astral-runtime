@@ -653,6 +653,11 @@ float l2_score_q8_q8(const int8_t* a, float a_scale, const int8_t* b, float b_sc
 #endif
 }
 
+inline int32_t round_scaled_q8(float value) {
+  const float biased = value >= 0.0f ? value + 0.5f : value - 0.5f;
+  return static_cast<int32_t>(biased);
+}
+
 void quantize_q8_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
   float max_abs = 0.0f;
   for (uint32_t i = 0; i < dim; ++i) {
@@ -664,8 +669,7 @@ void quantize_q8_vector(int8_t* dst, float* out_scale, const float* src, uint32_
   const float scale = max_abs > 0.0f ? max_abs / kQ8MaxFloat : 1.0f;
   const float inv_scale = 1.0f / scale;
   for (uint32_t i = 0; i < dim; ++i) {
-    const float q = std::round(src[i] * inv_scale);
-    int32_t v = static_cast<int32_t>(q);
+    int32_t v = round_scaled_q8(src[i] * inv_scale);
     if (v < kQ8MinValue) {
       v = kQ8MinValue;
     } else if (v > kQ8MaxValue) {
