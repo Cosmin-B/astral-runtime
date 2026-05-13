@@ -686,6 +686,11 @@ inline float cosine_scale(const float* v, uint32_t dim) {
   return norm > 0.0f ? 1.0f / norm : 0.0f;
 }
 
+inline float cosine_scale_q8(const int8_t* v, float scale, uint32_t dim) {
+  const float sq = dot_q8_q8(v, v, dim) * scale * scale;
+  return sq > 0.0f ? 1.0f / std::sqrt(sq) : 0.0f;
+}
+
 } // namespace
 
 struct MemoryIndex {
@@ -3094,13 +3099,22 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
       memory_destroy(index);
       return ASTRAL_E_INVALID;
     }
-    if (saved_storage == ASTRAL_MEMORY_STORAGE_Q8) {
+    const bool saved_q8 = saved_storage == ASTRAL_MEMORY_STORAGE_Q8;
+    const bool dst_q8 = q8_storage(index);
+    float saved_q8_scale = 1.0f;
+    const int8_t* saved_q8_vector = nullptr;
+    if (saved_q8) {
       float scale = 1.0f;
       std::memcpy(&scale, cursor, sizeof(float));
       cursor += sizeof(float);
       const int8_t* q8 = reinterpret_cast<const int8_t*>(cursor);
-      for (uint32_t dim_i = 0; dim_i < header.dim; ++dim_i) {
-        vector[dim_i] = static_cast<float>(q8[dim_i]) * scale;
+      if (dst_q8) {
+        saved_q8_scale = scale;
+        saved_q8_vector = q8;
+      } else {
+        for (uint32_t dim_i = 0; dim_i < header.dim; ++dim_i) {
+          vector[dim_i] = static_cast<float>(q8[dim_i]) * scale;
+        }
       }
       cursor += static_cast<size_t>(header.dim) * sizeof(int8_t);
     } else {
@@ -3120,14 +3134,27 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
       return err;
     }
     index->slots[slot].record = record;
-    index->slots[slot].score_scale =
-        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(vector, index->dim) : 0.0f;
+    index->slots[slot].score_scale = 0.0f;
     index->slots[slot].active_pos = i;
     index->slots[slot].occupied = 1;
     index->active_slots[i] = slot;
-    if (q8_storage(index)) {
-      quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector, index->dim);
+    if (dst_q8) {
+      if (saved_q8) {
+        index->q8_scales[slot] = saved_q8_scale;
+        std::memcpy(q8_vector_at(index, slot), saved_q8_vector,
+                    static_cast<size_t>(index->dim) * sizeof(int8_t));
+        index->slots[slot].score_scale =
+            index->metric == ASTRAL_MEMORY_METRIC_COSINE
+                ? cosine_scale_q8(q8_vector_at(index, slot), saved_q8_scale, index->dim)
+                : 0.0f;
+      } else {
+        index->slots[slot].score_scale =
+            index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(vector, index->dim) : 0.0f;
+        quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector, index->dim);
+      }
     } else {
+      index->slots[slot].score_scale =
+          index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(vector, index->dim) : 0.0f;
       std::memcpy(vector_at(index, slot), vector, sizeof(float) * index->dim);
     }
     if (graph_enabled(index)) {
