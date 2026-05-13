@@ -61,9 +61,13 @@ constexpr uint32_t kAvx2I8Lanes = 16;
 constexpr size_t kVectorStorageAlign = 32;
 constexpr uint32_t kAvx2UnrollVectors = 4;
 constexpr uint32_t kAvx2UnrollF32 = kAvx2F32Lanes * kAvx2UnrollVectors;
+constexpr uint32_t kAvx2UnrollI8 = kAvx2I8Lanes * kAvx2UnrollVectors;
 constexpr uint32_t kAvx2Offset1 = kAvx2F32Lanes;
 constexpr uint32_t kAvx2Offset2 = kAvx2F32Lanes * 2u;
 constexpr uint32_t kAvx2Offset3 = kAvx2F32Lanes * 3u;
+constexpr uint32_t kAvx2I8Offset1 = kAvx2I8Lanes;
+constexpr uint32_t kAvx2I8Offset2 = kAvx2I8Lanes * 2u;
+constexpr uint32_t kAvx2I8Offset3 = kAvx2I8Lanes * 3u;
 #endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
 constexpr uint32_t kNeonF32Lanes = 4;
@@ -205,6 +209,14 @@ inline int32_t reduce_avx2_i32(__m256i acc) {
   sum = _mm_add_epi32(sum, _mm_srli_si128(sum, 8));
   sum = _mm_add_epi32(sum, _mm_srli_si128(sum, 4));
   return _mm_cvtsi128_si32(sum);
+}
+
+inline __m256i dot_i8x16_avx2(const int8_t* a, const int8_t* b, __m256i ones) {
+  const __m128i av = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a));
+  const __m128i bv = _mm_loadu_si128(reinterpret_cast<const __m128i*>(b));
+  const __m256i a16 = _mm256_cvtepi8_epi16(av);
+  const __m256i b16 = _mm256_cvtepi8_epi16(bv);
+  return _mm256_madd_epi16(_mm256_mullo_epi16(a16, b16), ones);
 }
 #endif
 
@@ -457,18 +469,26 @@ float dot_q8_f32(const int8_t* a, const float* b, uint32_t dim) {
 
 float dot_q8_q8(const int8_t* a, const int8_t* b, uint32_t dim) {
 #if defined(__AVX2__)
-  __m256i acc = _mm256_setzero_si256();
+  __m256i acc0 = _mm256_setzero_si256();
+  __m256i acc1 = _mm256_setzero_si256();
+  __m256i acc2 = _mm256_setzero_si256();
+  __m256i acc3 = _mm256_setzero_si256();
   const __m256i ones = _mm256_set1_epi16(1);
   uint32_t i = 0;
-  for (; i + kAvx2I8Lanes <= dim; i += kAvx2I8Lanes) {
-    const __m128i av = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a + i));
-    const __m128i bv = _mm_loadu_si128(reinterpret_cast<const __m128i*>(b + i));
-    const __m256i a16 = _mm256_cvtepi8_epi16(av);
-    const __m256i b16 = _mm256_cvtepi8_epi16(bv);
-    const __m256i products = _mm256_mullo_epi16(a16, b16);
-    acc = _mm256_add_epi32(acc, _mm256_madd_epi16(products, ones));
+  for (; i + kAvx2UnrollI8 <= dim; i += kAvx2UnrollI8) {
+    acc0 = _mm256_add_epi32(acc0, dot_i8x16_avx2(a + i, b + i, ones));
+    acc1 = _mm256_add_epi32(acc1,
+                            dot_i8x16_avx2(a + i + kAvx2I8Offset1, b + i + kAvx2I8Offset1, ones));
+    acc2 = _mm256_add_epi32(acc2,
+                            dot_i8x16_avx2(a + i + kAvx2I8Offset2, b + i + kAvx2I8Offset2, ones));
+    acc3 = _mm256_add_epi32(acc3,
+                            dot_i8x16_avx2(a + i + kAvx2I8Offset3, b + i + kAvx2I8Offset3, ones));
   }
-  int32_t sum = reduce_avx2_i32(acc);
+  for (; i + kAvx2I8Lanes <= dim; i += kAvx2I8Lanes) {
+    acc0 = _mm256_add_epi32(acc0, dot_i8x16_avx2(a + i, b + i, ones));
+  }
+  acc0 = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
+  int32_t sum = reduce_avx2_i32(acc0);
   for (; i < dim; ++i) {
     sum += static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
   }
