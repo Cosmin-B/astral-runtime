@@ -1695,13 +1695,13 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
         continue;
       }
       graph_mark_visited(index, neighbor);
-      const MemorySlot& s = index->slots[neighbor];
       const float score =
           use_q8_query ? score_slot_q8_query(index, q8_query, q8_query_scale, query_scale, neighbor)
                        : score_slot(index, query, neighbor, query_scale);
       if (insert_graph_top_candidate(index, search_capacity, &top_count, neighbor, score)) {
         graph_add_candidate(index, search_capacity, neighbor, score, &candidate_count);
       }
+      const MemorySlot& s = index->slots[neighbor];
       if (filled == desc->top_k &&
           !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
         continue;
