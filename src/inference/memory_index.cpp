@@ -43,7 +43,7 @@ constexpr uint32_t kKeyHashMixShift2 = 31;
 constexpr uint32_t kGraphDefaultNeighbors = 64;
 constexpr uint32_t kGraphMaxNeighbors = 64;
 constexpr uint32_t kGraphBaseNeighborMultiplier = 2;
-constexpr uint32_t kGraphDefaultSearch = 32;
+constexpr uint32_t kGraphDefaultEfConstruction = 68;
 constexpr uint32_t kGraphMinSearch = 4;
 constexpr uint32_t kGraphQueryReserveMultiplier = 16;
 constexpr uint32_t kGraphLongLinkCount = 0;
@@ -165,7 +165,8 @@ inline uint32_t graph_search_from_desc(const AstralMemoryIndexDesc* desc) {
   if (desc->index_kind != ASTRAL_MEMORY_INDEX_GRAPH) {
     return 0;
   }
-  const uint32_t requested = desc->graph_search != 0 ? desc->graph_search : kGraphDefaultSearch;
+  const uint32_t requested =
+      desc->graph_search != 0 ? desc->graph_search : kGraphDefaultEfConstruction;
   return requested < kGraphMinSearch ? kGraphMinSearch : requested;
 }
 
@@ -1008,6 +1009,22 @@ inline bool result_better_values(float candidate_score, uint64_t candidate_key,
          (candidate_score == existing.score && candidate_key < existing.key);
 }
 
+inline bool graph_candidate_better(const MemoryIndex* index, float candidate_score,
+                                   uint32_t candidate_slot, float existing_score,
+                                   uint32_t existing_slot) {
+  return candidate_score > existing_score ||
+         (candidate_score == existing_score &&
+          index->slots[candidate_slot].record.key < index->slots[existing_slot].record.key);
+}
+
+inline bool graph_candidate_worse(const MemoryIndex* index, float candidate_score,
+                                  uint32_t candidate_slot, float existing_score,
+                                  uint32_t existing_slot) {
+  return candidate_score < existing_score ||
+         (candidate_score == existing_score &&
+          index->slots[candidate_slot].record.key > index->slots[existing_slot].record.key);
+}
+
 inline void fill_result(AstralMemorySearchResult* out_result, const MemorySlot& slot, float score) {
   out_result->size = sizeof(AstralMemorySearchResult);
   out_result->group_id = slot.record.group_id;
@@ -1039,20 +1056,6 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
            index->slots[slot].score_scale;
   }
   return l2_score_f32(query, vector_at(index, slot), index->dim);
-}
-
-inline float score_slot_q8_query(MemoryIndex* index, const int8_t* query, float query_q8_scale,
-                                 float query_scale, uint32_t slot) {
-  const int8_t* q8 = q8_vector_at(index, slot);
-  const float scale = index->q8_scales[slot];
-  if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
-    return dot_q8_q8(q8, query, index->dim) * scale * query_q8_scale;
-  }
-  if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-    return dot_q8_q8(q8, query, index->dim) * scale * query_q8_scale * query_scale *
-           index->slots[slot].score_scale;
-  }
-  return l2_score_q8_q8(q8, scale, query, query_q8_scale, index->dim);
 }
 
 inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
@@ -1254,7 +1257,8 @@ bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t*
     uint32_t pos = count;
     while (pos > 0) {
       const uint32_t parent = (pos - 1u) >> 1u;
-      if (index->graph_scratch_scores[parent] <= score) {
+      if (!graph_candidate_better(index, index->graph_scratch_scores[parent],
+                                  index->graph_scratch_slots[parent], score, slot)) {
         break;
       }
       index->graph_scratch_scores[pos] = index->graph_scratch_scores[parent];
@@ -1267,7 +1271,8 @@ bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t*
     return true;
   }
 
-  if (score <= index->graph_scratch_scores[0]) {
+  if (!graph_candidate_better(index, score, slot, index->graph_scratch_scores[0],
+                              index->graph_scratch_slots[0])) {
     return false;
   }
 
@@ -1279,10 +1284,14 @@ bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t*
     }
     const uint32_t right = left + 1u;
     uint32_t child = left;
-    if (right < count && index->graph_scratch_scores[right] < index->graph_scratch_scores[left]) {
+    if (right < count &&
+        graph_candidate_worse(index, index->graph_scratch_scores[right],
+                              index->graph_scratch_slots[right], index->graph_scratch_scores[left],
+                              index->graph_scratch_slots[left])) {
       child = right;
     }
-    if (index->graph_scratch_scores[child] >= score) {
+    if (!graph_candidate_worse(index, index->graph_scratch_scores[child],
+                               index->graph_scratch_slots[child], score, slot)) {
       break;
     }
     index->graph_scratch_scores[pos] = index->graph_scratch_scores[child];
@@ -1405,35 +1414,6 @@ uint32_t graph_greedy_closest_query(MemoryIndex* index, const float* query, floa
   return closest;
 }
 
-uint32_t graph_greedy_closest_q8_query(MemoryIndex* index, const int8_t* query,
-                                       float query_q8_scale, float query_scale, uint32_t entry,
-                                       uint32_t begin_level, uint32_t end_level) {
-  uint32_t closest = entry;
-  float closest_score = score_slot_q8_query(index, query, query_q8_scale, query_scale, closest);
-  for (uint32_t level = begin_level; level > end_level; --level) {
-    bool changed = true;
-    while (changed) {
-      changed = false;
-      const uint32_t* neighbors = graph_neighbors_at_level(index, closest, level);
-      const uint32_t neighbor_count = graph_neighbor_count_at_level(index, closest, level);
-      for (uint32_t i = 0; i < neighbor_count; ++i) {
-        const uint32_t candidate = neighbors[i];
-        if (index->slots[candidate].occupied == 0 || index->graph_levels[candidate] < level) {
-          continue;
-        }
-        const float score =
-            score_slot_q8_query(index, query, query_q8_scale, query_scale, candidate);
-        if (score > closest_score) {
-          closest = candidate;
-          closest_score = score;
-          changed = true;
-        }
-      }
-    }
-  }
-  return closest;
-}
-
 void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
   if (!graph_enabled(index) || index->count <= 1u) {
     index->graph_entry_slot = slot;
@@ -1534,7 +1514,8 @@ void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, f
     uint32_t pos = count;
     while (pos > 0) {
       const uint32_t parent = (pos - 1u) >> 1u;
-      if (index->graph_candidate_scores[parent] >= score) {
+      if (!graph_candidate_better(index, score, slot, index->graph_candidate_scores[parent],
+                                  index->graph_candidates[parent])) {
         break;
       }
       index->graph_candidates[pos] = index->graph_candidates[parent];
@@ -1550,17 +1531,19 @@ void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, f
   uint32_t worst_pos = 0;
   float worst_score = index->graph_candidate_scores[0];
   for (uint32_t i = 1; i < count; ++i) {
-    if (index->graph_candidate_scores[i] < worst_score) {
+    if (graph_candidate_worse(index, index->graph_candidate_scores[i], index->graph_candidates[i],
+                              worst_score, index->graph_candidates[worst_pos])) {
       worst_score = index->graph_candidate_scores[i];
       worst_pos = i;
     }
   }
-  if (score > worst_score) {
+  if (graph_candidate_better(index, score, slot, worst_score, index->graph_candidates[worst_pos])) {
     uint32_t pos = worst_pos;
     bool moved_up = false;
     while (pos > 0) {
       const uint32_t parent = (pos - 1u) >> 1u;
-      if (index->graph_candidate_scores[parent] >= score) {
+      if (!graph_candidate_better(index, score, slot, index->graph_candidate_scores[parent],
+                                  index->graph_candidates[parent])) {
         break;
       }
       index->graph_candidates[pos] = index->graph_candidates[parent];
@@ -1576,11 +1559,14 @@ void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, f
         }
         const uint32_t right = left + 1u;
         uint32_t child = left;
-        if (right < count &&
-            index->graph_candidate_scores[right] > index->graph_candidate_scores[left]) {
+        if (right < count && graph_candidate_better(index, index->graph_candidate_scores[right],
+                                                    index->graph_candidates[right],
+                                                    index->graph_candidate_scores[left],
+                                                    index->graph_candidates[left])) {
           child = right;
         }
-        if (index->graph_candidate_scores[child] <= score) {
+        if (!graph_candidate_better(index, index->graph_candidate_scores[child],
+                                    index->graph_candidates[child], score, slot)) {
           break;
         }
         index->graph_candidates[pos] = index->graph_candidates[child];
@@ -1614,11 +1600,14 @@ bool graph_pop_candidate(MemoryIndex* index, uint32_t* candidate_count, uint32_t
       }
       const uint32_t right = left + 1u;
       uint32_t child = left;
-      if (right < count &&
-          index->graph_candidate_scores[right] > index->graph_candidate_scores[left]) {
+      if (right < count && graph_candidate_better(index, index->graph_candidate_scores[right],
+                                                  index->graph_candidates[right],
+                                                  index->graph_candidate_scores[left],
+                                                  index->graph_candidates[left])) {
         child = right;
       }
-      if (index->graph_candidate_scores[child] <= score) {
+      if (!graph_candidate_better(index, index->graph_candidate_scores[child],
+                                  index->graph_candidates[child], score, slot)) {
         break;
       }
       index->graph_candidates[pos] = index->graph_candidates[child];
@@ -1642,12 +1631,6 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
 
   const float query_scale =
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 1.0f;
-  int8_t q8_query[kMaxDim];
-  float q8_query_scale = 1.0f;
-  const bool use_q8_query = q8_storage(index);
-  if (use_q8_query) {
-    quantize_q8_vector(q8_query, &q8_query_scale, query, index->dim);
-  }
   graph_begin_visit(index);
   const uint32_t search_capacity = graph_search_for_query(index, desc);
 
@@ -1657,21 +1640,13 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
   uint32_t expanded_count = 0;
   const uint32_t entry =
       index->graph_max_level != 0
-          ? (use_q8_query
-                 ? graph_greedy_closest_q8_query(index, q8_query, q8_query_scale, query_scale,
-                                                 index->graph_entry_slot, index->graph_max_level, 0)
-                 : graph_greedy_closest_query(index, query, query_scale, index->graph_entry_slot,
-                                              index->graph_max_level, 0))
+          ? graph_greedy_closest_query(index, query, query_scale, index->graph_entry_slot,
+                                       index->graph_max_level, 0)
           : index->graph_entry_slot;
   graph_mark_visited(index, entry);
-  const float entry_score =
-      use_q8_query ? score_slot_q8_query(index, q8_query, q8_query_scale, query_scale, entry)
-                   : score_slot(index, query, entry, query_scale);
+  const float entry_score = score_slot(index, query, entry, query_scale);
   insert_graph_top_candidate(index, search_capacity, &top_count, entry, entry_score);
   graph_add_candidate(index, search_capacity, entry, entry_score, &candidate_count);
-  AstralMemorySearchResult entry_result{};
-  fill_result(&entry_result, index->slots[entry], entry_score);
-  insert_result(out_results, desc->top_k, &filled, entry_result);
 
   while (candidate_count != 0 && expanded_count < search_capacity) {
     uint32_t slot = kU32Max;
@@ -1695,23 +1670,20 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
         continue;
       }
       graph_mark_visited(index, neighbor);
-      const float score =
-          use_q8_query ? score_slot_q8_query(index, q8_query, q8_query_scale, query_scale, neighbor)
-                       : score_slot(index, query, neighbor, query_scale);
+      const float score = score_slot(index, query, neighbor, query_scale);
       if (insert_graph_top_candidate(index, search_capacity, &top_count, neighbor, score)) {
         graph_add_candidate(index, search_capacity, neighbor, score, &candidate_count);
       }
-      const MemorySlot& s = index->slots[neighbor];
-      if (filled == desc->top_k &&
-          !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
-        continue;
-      }
-      AstralMemorySearchResult candidate{};
-      fill_result(&candidate, s, score);
-      insert_result(out_results, desc->top_k, &filled, candidate);
     }
   }
 
+  for (uint32_t i = 0; i < top_count; ++i) {
+    const uint32_t slot = index->graph_scratch_slots[i];
+    const MemorySlot& s = index->slots[slot];
+    AstralMemorySearchResult candidate{};
+    fill_result(&candidate, s, index->graph_scratch_scores[i]);
+    insert_result(out_results, desc->top_k, &filled, candidate);
+  }
   *out_count = filled;
 }
 
@@ -2434,8 +2406,9 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   const uint32_t requested_graph_search = graph_search_from_desc(desc);
   const uint32_t graph_search_capacity =
       requested_graph_search > desc->capacity ? desc->capacity : requested_graph_search;
-  uint32_t requested_query_search =
-      kGraphDefaultSearch > graph_search_capacity ? kGraphDefaultSearch : graph_search_capacity;
+  uint32_t requested_query_search = kGraphDefaultEfConstruction > graph_search_capacity
+                                        ? kGraphDefaultEfConstruction
+                                        : graph_search_capacity;
   if (graph_search_capacity <= kU32Max / kGraphQueryReserveMultiplier) {
     const uint32_t reserve_query_search = graph_search_capacity * kGraphQueryReserveMultiplier;
     if (reserve_query_search > requested_query_search) {
