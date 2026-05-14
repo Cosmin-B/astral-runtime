@@ -45,8 +45,8 @@ constexpr uint32_t kGraphMaxNeighbors = 64;
 constexpr uint32_t kGraphBaseNeighborMultiplier = 2;
 constexpr uint32_t kGraphDefaultSearch = 32;
 constexpr uint32_t kGraphMinSearch = 4;
-constexpr uint32_t kGraphQueryReserveMultiplier = 4;
-constexpr uint32_t kGraphLongLinkCount = 4;
+constexpr uint32_t kGraphQueryReserveMultiplier = 16;
+constexpr uint32_t kGraphLongLinkCount = 0;
 constexpr uint32_t kGraphNeighborPrefetchDistance = 2;
 constexpr uint32_t kFlatQ8PrefetchDistance = 4;
 constexpr uint32_t kFlatQ8PrefetchMinCount = 32768;
@@ -1469,8 +1469,9 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
       refine_graph_neighbor_list(index, neighbors[i], slot, level);
     }
     const uint32_t level_capacity = graph_neighbor_capacity_at_level(index, level);
-    if (level == 0 && level_capacity == index->graph_neighbor_capacity &&
-        index->count > level_capacity && level_capacity > kGraphLongLinkCount) {
+    if (level == 0 && kGraphLongLinkCount != 0 &&
+        level_capacity == index->graph_neighbor_capacity && index->count > level_capacity &&
+        level_capacity > kGraphLongLinkCount) {
       const uint32_t long_links =
           kGraphLongLinkCount < level_capacity ? kGraphLongLinkCount : level_capacity;
       const uint32_t stride = index->count / long_links;
