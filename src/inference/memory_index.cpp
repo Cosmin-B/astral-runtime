@@ -48,6 +48,8 @@ constexpr uint32_t kGraphMinSearch = 4;
 constexpr uint32_t kGraphQueryReserveMultiplier = 4;
 constexpr uint32_t kGraphLongLinkCount = 4;
 constexpr uint32_t kGraphNeighborPrefetchDistance = 2;
+constexpr uint32_t kFlatQ8PrefetchDistance = 4;
+constexpr uint32_t kFlatQ8PrefetchMinCount = 32768;
 constexpr uint32_t kGraphMaxLevels = 16;
 constexpr uint32_t kMemoryBatchStackQueries = 16;
 constexpr int32_t kQ8MinValue = -127;
@@ -118,6 +120,13 @@ struct SaveGraphHeaderV3 {
   uint32_t max_level;
   uint32_t entry_active_pos;
 };
+
+inline void prefetch_dense_q8_slot(const int8_t* vectors, const float* scales,
+                                   const MemorySlot* slots, uint32_t dim, uint32_t slot) {
+  __builtin_prefetch(vectors + static_cast<size_t>(slot) * dim, 0, 1);
+  __builtin_prefetch(scales + slot, 0, 1);
+  __builtin_prefetch(slots + slot, 0, 1);
+}
 
 inline bool metric_valid(AstralMemoryMetric metric) {
   return metric == ASTRAL_MEMORY_METRIC_DOT || metric == ASTRAL_MEMORY_METRIC_COSINE ||
@@ -1738,8 +1747,12 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
     const uint32_t dim = index->dim;
     const int8_t* vectors = index->q8_vectors;
     const float* scales = index->q8_scales;
+    const bool use_prefetch = index->count >= kFlatQ8PrefetchMinCount;
     if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
       for (uint32_t slot = 0; slot < index->count; ++slot) {
+        if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
+          prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
+        }
         MemorySlot& s = slots[slot];
         const float score =
             dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) * scales[slot];
@@ -1753,6 +1766,9 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
       }
     } else if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       for (uint32_t slot = 0; slot < index->count; ++slot) {
+        if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
+          prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
+        }
         MemorySlot& s = slots[slot];
         const float score = dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) *
                             scales[slot] * query_scale * s.score_scale;
@@ -1766,6 +1782,9 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
       }
     } else {
       for (uint32_t slot = 0; slot < index->count; ++slot) {
+        if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
+          prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
+        }
         MemorySlot& s = slots[slot];
         const float score =
             l2_score_q8_f32(vectors + static_cast<size_t>(slot) * dim, scales[slot], query, dim);
@@ -1819,11 +1838,15 @@ void memory_search_q8_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
       const uint32_t dim = index->dim;
       const int8_t* vectors = index->q8_vectors;
       const float* scales = index->q8_scales;
+      const bool use_prefetch = index->count >= kFlatQ8PrefetchMinCount;
       MemorySlot* best_slot = &slots[0];
       float best_score = 0.0f;
       if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
         best_score = dot_q8_f32(vectors, query, dim) * scales[0];
         for (uint32_t slot = 1; slot < index->count; ++slot) {
+          if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
+            prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
+          }
           MemorySlot& s = slots[slot];
           const float score =
               dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) * scales[slot];
@@ -1836,6 +1859,9 @@ void memory_search_q8_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
         best_score =
             dot_q8_f32(vectors, query, dim) * scales[0] * query_scale * best_slot->score_scale;
         for (uint32_t slot = 1; slot < index->count; ++slot) {
+          if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
+            prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
+          }
           MemorySlot& s = slots[slot];
           const float score = dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) *
                               scales[slot] * query_scale * s.score_scale;
@@ -1847,6 +1873,9 @@ void memory_search_q8_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
       } else {
         best_score = l2_score_q8_f32(vectors, scales[0], query, dim);
         for (uint32_t slot = 1; slot < index->count; ++slot) {
+          if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
+            prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
+          }
           MemorySlot& s = slots[slot];
           const float score =
               l2_score_q8_f32(vectors + static_cast<size_t>(slot) * dim, scales[slot], query, dim);
