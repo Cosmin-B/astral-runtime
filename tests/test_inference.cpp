@@ -2996,6 +2996,21 @@ TEST(inference_memory_index_f6_e2m3_storage_mock) {
   ASSERT_EQ(err, ASTRAL_OK);
   ASSERT_EQ(results[0].key, kKeyA);
 
+  AstralMemoryIndexDesc graph_desc = desc;
+  graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+  graph_desc.graph_neighbors = 3;
+  graph_desc.graph_search = 6;
+  AstralHandle graph = 0;
+  err = astral_memory_create(&graph_desc, &graph);
+  ASSERT_EQ(err, ASTRAL_OK);
+  err = astral_memory_add_batch(graph, records, vectors, kRecordCount);
+  ASSERT_EQ(err, ASTRAL_OK);
+  err = astral_memory_search(graph, &search, query, results, kTopK, &count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(count, kTopK);
+  ASSERT_EQ(results[0].key, kKeyA);
+
+  astral_memory_destroy(graph);
   astral_memory_destroy(loaded_f32);
   astral_memory_destroy(loaded);
   astral_memory_destroy(index);

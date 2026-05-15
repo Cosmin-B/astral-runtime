@@ -1132,7 +1132,7 @@ inline void fill_result(AstralMemorySearchResult* out_result, const MemorySlot& 
 inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, float query_scale) {
   if (compact_storage(index)) {
     const int8_t* q8 = q8_vector_at(index, slot);
-    const float scale = index->q8_scales[slot];
+    const float scale = compact_value_scale(index, index->q8_scales[slot]);
     if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
       return dot_q8_f32(q8, query, index->dim) * scale;
     }
@@ -1141,18 +1141,6 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
              index->slots[slot].score_scale;
     }
     return l2_score_q8_f32(q8, scale, query, index->dim);
-  }
-  if (e2m3_storage(index)) {
-    const int8_t* v = q8_vector_at(index, slot);
-    const float scale = index->q8_scales[slot] * kE2M3InvScale;
-    if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
-      return dot_q8_f32(v, query, index->dim) * scale;
-    }
-    if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-      return dot_q8_f32(v, query, index->dim) * scale * query_scale *
-             index->slots[slot].score_scale;
-    }
-    return l2_score_q8_f32(v, scale, query, index->dim);
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
     return dot_f32(query, vector_at(index, slot), index->dim);
@@ -1166,25 +1154,11 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
 
 inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
   ++index->graph_build_score_evals;
-  if (q8_storage(index)) {
+  if (compact_storage(index)) {
     const int8_t* va = q8_vector_at(index, a);
     const int8_t* vb = q8_vector_at(index, b);
-    const float scale_a = index->q8_scales[a];
-    const float scale_b = index->q8_scales[b];
-    if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-      return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b * index->slots[a].score_scale *
-             index->slots[b].score_scale;
-    }
-    if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
-      return l2_score_q8_q8(va, scale_a, vb, scale_b, index->dim);
-    }
-    return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b;
-  }
-  if (e2m3_storage(index)) {
-    const int8_t* va = q8_vector_at(index, a);
-    const int8_t* vb = q8_vector_at(index, b);
-    const float scale_a = index->q8_scales[a] * kE2M3InvScale;
-    const float scale_b = index->q8_scales[b] * kE2M3InvScale;
+    const float scale_a = compact_value_scale(index, index->q8_scales[a]);
+    const float scale_b = compact_value_scale(index, index->q8_scales[b]);
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b * index->slots[a].score_scale *
              index->slots[b].score_scale;
@@ -1265,15 +1239,22 @@ void refine_graph_neighbor_list(MemoryIndex* index, uint32_t owner_slot, uint32_
   uint32_t filled = 0;
   const uint32_t refine_capacity = capacity + 1u;
   const float candidate_score = score_pair(index, owner_slot, candidate_slot);
-  float weakest_score = kWorstScore;
+  uint32_t weakest_slot = neighbors[0];
+  float weakest_score = score_pair(index, owner_slot, weakest_slot);
+  insert_graph_build_candidate(index, refine_capacity, &filled, weakest_slot, weakest_score);
   for (uint32_t i = 0; i < count; ++i) {
+    if (i == 0) {
+      continue;
+    }
     const float score = score_pair(index, owner_slot, neighbors[i]);
     insert_graph_build_candidate(index, refine_capacity, &filled, neighbors[i], score);
-    if (score < weakest_score) {
+    if (graph_candidate_worse(index, score, neighbors[i], weakest_score, weakest_slot)) {
       weakest_score = score;
+      weakest_slot = neighbors[i];
     }
   }
-  if (candidate_score <= weakest_score) {
+  if (!graph_candidate_better(index, candidate_score, candidate_slot, weakest_score,
+                              weakest_slot)) {
     return;
   }
 
