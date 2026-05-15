@@ -2,6 +2,9 @@
 
 #include "../core/handles.hpp"
 #include "../core/runtime_alloc.hpp"
+#include "../core/runtime_state.hpp"
+#include "../core/work_queue.hpp"
+#include "../platform/atomics.h"
 
 #include <atomic>
 #include <cmath>
@@ -52,6 +55,9 @@ constexpr uint32_t kFlatQ8PrefetchDistance = 4;
 constexpr uint32_t kFlatQ8PrefetchMinCount = 32768;
 constexpr uint32_t kGraphMaxLevels = 16;
 constexpr uint32_t kMemoryBatchStackQueries = 16;
+constexpr uint32_t kMemoryAddStackSlots = 256;
+constexpr uint32_t kMemoryAddParallelMinCount = 1024;
+constexpr uint32_t kMemoryAddParallelMaxWorkers = 8;
 constexpr int32_t kQ8MinValue = -127;
 constexpr int32_t kQ8MaxValue = 127;
 constexpr float kQ8MaxFloat = 127.0f;
@@ -757,6 +763,15 @@ struct MemorySearchCursor {
 };
 
 namespace {
+
+struct MemoryAddPreprocessJob {
+  MemoryIndex* index;
+  const float* vectors;
+  const uint32_t* slots;
+  uint32_t begin;
+  uint32_t end;
+  std::atomic<uint32_t>* remaining;
+};
 
 inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
   const uint64_t vector_bytes =
@@ -2386,6 +2401,85 @@ void destroy_search_cursor(MemorySearchCursor* cursor) {
   core::runtime_delete(cursor);
 }
 
+void memory_add_preprocess_range(MemoryIndex* index, const float* vectors, const uint32_t* slots,
+                                 uint32_t begin, uint32_t end) {
+  for (uint32_t i = begin; i < end; ++i) {
+    const uint32_t slot = slots[i];
+    const float* src = vectors + static_cast<size_t>(i) * index->dim;
+    if (q8_storage(index)) {
+      quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
+    } else {
+      std::memcpy(vector_at(index, slot), src, sizeof(float) * index->dim);
+    }
+    index->slots[slot].score_scale =
+        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(src, index->dim) : 0.0f;
+  }
+}
+
+void memory_add_preprocess_work(void* user) {
+  MemoryAddPreprocessJob* job = static_cast<MemoryAddPreprocessJob*>(user);
+  memory_add_preprocess_range(job->index, job->vectors, job->slots, job->begin, job->end);
+  job->remaining->fetch_sub(1, std::memory_order_release);
+  astral::platform::cpu_signal_event();
+}
+
+bool memory_add_preprocess_parallel(MemoryIndex* index, const float* vectors, const uint32_t* slots,
+                                    uint32_t count) {
+  if (graph_enabled(index) || count < kMemoryAddParallelMinCount || !core::runtime_initialized()) {
+    return false;
+  }
+
+  const uint32_t runtime_threads = core::runtime_thread_count();
+  const bool on_worker = core::runtime_on_worker_thread();
+  if (runtime_threads < 2u) {
+    return false;
+  }
+
+  uint32_t worker_count = on_worker ? runtime_threads - 1u : runtime_threads;
+  if (worker_count > kMemoryAddParallelMaxWorkers) {
+    worker_count = kMemoryAddParallelMaxWorkers;
+  }
+  if (worker_count < 2u) {
+    return false;
+  }
+  if (worker_count > count) {
+    worker_count = count;
+  }
+
+  MemoryAddPreprocessJob jobs[kMemoryAddParallelMaxWorkers]{};
+  std::atomic<uint32_t> remaining(worker_count);
+  const uint32_t chunk = (count + worker_count - 1u) / worker_count;
+  const uint32_t current_worker = on_worker ? core::runtime_worker_id() : kU32Max;
+  for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
+    const uint32_t begin = worker_i * chunk;
+    uint32_t end = begin + chunk;
+    if (end > count) {
+      end = count;
+    }
+    jobs[worker_i].index = index;
+    jobs[worker_i].vectors = vectors;
+    jobs[worker_i].slots = slots;
+    jobs[worker_i].begin = begin;
+    jobs[worker_i].end = end;
+    jobs[worker_i].remaining = &remaining;
+
+    uint32_t target_worker = worker_i;
+    if (on_worker && target_worker >= current_worker) {
+      ++target_worker;
+    }
+    const AstralErr err =
+        core::submit_work_affine(target_worker, memory_add_preprocess_work, &jobs[worker_i]);
+    if (err != ASTRAL_OK) {
+      memory_add_preprocess_work(&jobs[worker_i]);
+    }
+  }
+
+  while (remaining.load(std::memory_order_acquire) != 0) {
+    astral::platform::cpu_wait_for_event();
+  }
+  return true;
+}
+
 } // namespace
 
 AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_index) {
@@ -2698,9 +2792,22 @@ AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records
     return ASTRAL_E_INVALID;
   }
 
+  uint32_t stack_slots[kMemoryAddStackSlots];
+  const bool use_stack_slots = count <= kMemoryAddStackSlots;
+  uint32_t* batch_slots =
+      use_stack_slots ? stack_slots : core::runtime_alloc_array<uint32_t>(count);
+  if (batch_slots == nullptr) {
+    return ASTRAL_E_NOMEM;
+  }
+
+  const uint32_t initial_count = index->count;
   bool graph_rebuild_needed = false;
+  bool graph_has_new_slots = false;
   for (uint32_t i = 0; i < count; ++i) {
     if (records[i].size != sizeof(AstralMemoryRecord) || records[i].key == 0) {
+      if (!use_stack_slots) {
+        core::runtime_free_array(batch_slots, count);
+      }
       return ASTRAL_E_INVALID;
     }
     const uint64_t key_hash = key_hash_mix(records[i].key);
@@ -2727,33 +2834,41 @@ AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records
         --index->count;
         index->slots[slot] = MemorySlot{};
         index->free_slot_hint = slot;
+        if (!use_stack_slots) {
+          core::runtime_free_array(batch_slots, count);
+        }
         return key_err;
       }
       if (graph_enabled(index)) {
         index->graph_levels[slot] =
             static_cast<uint8_t>(graph_level_for_key(index, records[i].key));
+        graph_has_new_slots = true;
       }
     }
     index->slots[slot].record = records[i];
-    const float* src = vectors + static_cast<size_t>(i) * index->dim;
-    if (q8_storage(index)) {
-      quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
-    } else {
-      float* dst = vector_at(index, slot);
-      std::memcpy(dst, src, sizeof(float) * index->dim);
-    }
-    index->slots[slot].score_scale =
-        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(src, index->dim) : 0.0f;
-    if (graph_enabled(index)) {
-      if (is_update) {
-        graph_rebuild_needed = true;
-      } else {
-        graph_connect_slot(index, slot);
-      }
+    batch_slots[i] = slot;
+    if (graph_enabled(index) && is_update) {
+      graph_rebuild_needed = true;
     }
   }
+
+  if (!memory_add_preprocess_parallel(index, vectors, batch_slots, count)) {
+    memory_add_preprocess_range(index, vectors, batch_slots, 0, count);
+  }
+
   if (graph_rebuild_needed) {
     graph_rebuild(index);
+  } else if (graph_has_new_slots) {
+    const uint32_t final_count = index->count;
+    index->count = initial_count;
+    for (uint32_t i = 0; i < count; ++i) {
+      ++index->count;
+      graph_connect_slot(index, batch_slots[i]);
+    }
+    index->count = final_count;
+  }
+  if (!use_stack_slots) {
+    core::runtime_free_array(batch_slots, count);
   }
   return ASTRAL_OK;
 }
