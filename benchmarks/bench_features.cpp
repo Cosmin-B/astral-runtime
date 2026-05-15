@@ -112,6 +112,7 @@ static constexpr char kBenchMemoryMetricL2[] = "l2";
 static constexpr char kBenchMemoryMetricCosine[] = "cosine";
 static constexpr char kBenchMemoryStorageF32[] = "f32";
 static constexpr char kBenchMemoryStorageQ8[] = "q8";
+static constexpr char kBenchMemoryStorageF6E2M3[] = "f6e2m3";
 static constexpr char kBenchMemoryCaseAddBatch[] = "add_batch";
 static constexpr char kBenchMemoryCaseGraphAddBatch[] = "graph_add_batch";
 static constexpr char kBenchMemoryCaseGraphLoad[] = "graph_load";
@@ -268,6 +269,9 @@ static AstralMemoryStorageKind parse_memory_storage_env() {
     const char* value = std::getenv(kBenchMemoryStorageEnv);
     if (value != nullptr && std::strcmp(value, kBenchMemoryStorageQ8) == 0) {
         return ASTRAL_MEMORY_STORAGE_Q8;
+    }
+    if (value != nullptr && std::strcmp(value, kBenchMemoryStorageF6E2M3) == 0) {
+      return ASTRAL_MEMORY_STORAGE_F6_E2M3;
     }
     return ASTRAL_MEMORY_STORAGE_F32;
 }

@@ -254,8 +254,9 @@ enum {
 
 typedef uint32_t AstralMemoryStorageKind;
 enum {
-    ASTRAL_MEMORY_STORAGE_F32 = 0,
-    ASTRAL_MEMORY_STORAGE_Q8 = 1,
+  ASTRAL_MEMORY_STORAGE_F32 = 0,
+  ASTRAL_MEMORY_STORAGE_Q8 = 1,
+  ASTRAL_MEMORY_STORAGE_F6_E2M3 = 2,
 };
 
 enum {

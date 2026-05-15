@@ -61,6 +61,10 @@ constexpr uint32_t kMemoryAddParallelMaxWorkers = 8;
 constexpr int32_t kQ8MinValue = -127;
 constexpr int32_t kQ8MaxValue = 127;
 constexpr float kQ8MaxFloat = 127.0f;
+constexpr int32_t kE2M3Scale = 16;
+constexpr int32_t kE2M3MagnitudeMask = 0x1F;
+constexpr float kE2M3MaxFloat = 7.5f;
+constexpr float kE2M3InvScale = 1.0f / static_cast<float>(kE2M3Scale);
 constexpr float kL2CrossTermScale = 2.0f;
 constexpr float kWorstScore = -3.4028234663852886e38f;
 #if defined(__AVX2__)
@@ -144,7 +148,8 @@ inline bool index_kind_valid(AstralMemoryIndexKind kind) {
 }
 
 inline bool storage_kind_valid(AstralMemoryStorageKind kind) {
-  return kind == ASTRAL_MEMORY_STORAGE_F32 || kind == ASTRAL_MEMORY_STORAGE_Q8;
+  return kind == ASTRAL_MEMORY_STORAGE_F32 || kind == ASTRAL_MEMORY_STORAGE_Q8 ||
+         kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
 }
 
 inline bool desc_valid(const AstralMemoryIndexDesc* desc) {
@@ -696,6 +701,63 @@ void quantize_q8_vector(int8_t* dst, float* out_scale, const float* src, uint32_
   *out_scale = scale;
 }
 
+inline int8_t e2m3_magnitude_scaled(uint32_t magnitude) {
+  static constexpr int8_t kScaledMagnitudes[32] = {0,  2,  4,  6,  8,  10, 12, 14,  16,  18, 20,
+                                                   22, 24, 26, 28, 30, 32, 36, 40,  44,  48, 52,
+                                                   56, 60, 64, 72, 80, 88, 96, 104, 112, 120};
+  return kScaledMagnitudes[magnitude & kE2M3MagnitudeMask];
+}
+
+inline float e2m3_scaled_to_f32(int8_t scaled, float scale) {
+  return static_cast<float>(scaled) * scale * kE2M3InvScale;
+}
+
+int8_t round_scaled_e2m3(float value) {
+  const float abs_value = std::fabs(value);
+  int32_t best = 0;
+  float best_error = abs_value;
+  for (uint32_t i = 1; i < 32u; ++i) {
+    const int32_t candidate = e2m3_magnitude_scaled(i);
+    const float error = std::fabs(abs_value - static_cast<float>(candidate));
+    if (error < best_error) {
+      best = candidate;
+      best_error = error;
+    }
+  }
+  return value < 0.0f ? static_cast<int8_t>(-best) : static_cast<int8_t>(best);
+}
+
+void quantize_e2m3_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
+  float max_abs = 0.0f;
+  for (uint32_t i = 0; i < dim; ++i) {
+    const float abs_value = std::fabs(src[i]);
+    if (abs_value > max_abs) {
+      max_abs = abs_value;
+    }
+  }
+  const float scale = max_abs > 0.0f ? max_abs / kE2M3MaxFloat : 1.0f;
+  const float inv_scale = static_cast<float>(kE2M3Scale) / scale;
+  for (uint32_t i = 0; i < dim; ++i) {
+    dst[i] = round_scaled_e2m3(src[i] * inv_scale);
+  }
+  *out_scale = scale;
+}
+
+void quantize_e2m3_cosine_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
+  const float sq = dot_f32(src, src, dim);
+  const float norm = sq > 0.0f ? std::sqrt(sq) : 0.0f;
+  if (norm == 0.0f) {
+    quantize_e2m3_vector(dst, out_scale, src, dim);
+    return;
+  }
+  float normalized[kMaxDim];
+  const float inv_norm = 1.0f / norm;
+  for (uint32_t i = 0; i < dim; ++i) {
+    normalized[i] = src[i] * inv_norm;
+  }
+  quantize_e2m3_vector(dst, out_scale, normalized, dim);
+}
+
 inline float vector_norm(const float* v, uint32_t dim) {
   const float sq = dot_f32(v, v, dim);
   return sq > 0.0f ? std::sqrt(sq) : 0.0f;
@@ -775,7 +837,8 @@ struct MemoryAddPreprocessJob {
 
 inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
   const uint64_t vector_bytes =
-      index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8
+      (index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8 ||
+       index->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3)
           ? static_cast<uint64_t>(index->count) *
                 (sizeof(float) + static_cast<uint64_t>(index->dim) * sizeof(int8_t))
           : static_cast<uint64_t>(index->count) * index->dim * sizeof(float);
@@ -826,9 +889,25 @@ inline bool q8_storage(const MemoryIndex* index) {
   return index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8;
 }
 
+inline bool e2m3_storage(const MemoryIndex* index) {
+  return index->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
+}
+
+inline bool compact_storage_kind(AstralMemoryStorageKind kind) {
+  return kind == ASTRAL_MEMORY_STORAGE_Q8 || kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
+}
+
+inline bool compact_storage(const MemoryIndex* index) {
+  return compact_storage_kind(index->storage_kind);
+}
+
+inline float compact_value_scale(const MemoryIndex* index, float scale) {
+  return e2m3_storage(index) ? scale * kE2M3InvScale : scale;
+}
+
 inline void prefetch_slot_vector(const MemoryIndex* index, uint32_t slot) {
 #if defined(__GNUC__) || defined(__clang__)
-  if (q8_storage(index)) {
+  if (compact_storage(index)) {
     __builtin_prefetch(q8_vector_at(index, slot), 0, 1);
   } else {
     __builtin_prefetch(vector_at(index, slot), 0, 1);
@@ -1051,7 +1130,7 @@ inline void fill_result(AstralMemorySearchResult* out_result, const MemorySlot& 
 }
 
 inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, float query_scale) {
-  if (q8_storage(index)) {
+  if (compact_storage(index)) {
     const int8_t* q8 = q8_vector_at(index, slot);
     const float scale = index->q8_scales[slot];
     if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
@@ -1062,6 +1141,18 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
              index->slots[slot].score_scale;
     }
     return l2_score_q8_f32(q8, scale, query, index->dim);
+  }
+  if (e2m3_storage(index)) {
+    const int8_t* v = q8_vector_at(index, slot);
+    const float scale = index->q8_scales[slot] * kE2M3InvScale;
+    if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
+      return dot_q8_f32(v, query, index->dim) * scale;
+    }
+    if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      return dot_q8_f32(v, query, index->dim) * scale * query_scale *
+             index->slots[slot].score_scale;
+    }
+    return l2_score_q8_f32(v, scale, query, index->dim);
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
     return dot_f32(query, vector_at(index, slot), index->dim);
@@ -1080,6 +1171,20 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
     const int8_t* vb = q8_vector_at(index, b);
     const float scale_a = index->q8_scales[a];
     const float scale_b = index->q8_scales[b];
+    if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b * index->slots[a].score_scale *
+             index->slots[b].score_scale;
+    }
+    if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
+      return l2_score_q8_q8(va, scale_a, vb, scale_b, index->dim);
+    }
+    return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b;
+  }
+  if (e2m3_storage(index)) {
+    const int8_t* va = q8_vector_at(index, a);
+    const int8_t* vb = q8_vector_at(index, b);
+    const float scale_a = index->q8_scales[a] * kE2M3InvScale;
+    const float scale_b = index->q8_scales[b] * kE2M3InvScale;
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b * index->slots[a].score_scale *
              index->slots[b].score_scale;
@@ -1742,8 +1847,8 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
           prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
         }
         MemorySlot& s = slots[slot];
-        const float score =
-            dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) * scales[slot];
+        const float score = dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) *
+                            compact_value_scale(index, scales[slot]);
         if (filled == desc->top_k &&
             !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
           continue;
@@ -1759,7 +1864,7 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
         }
         MemorySlot& s = slots[slot];
         const float score = dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) *
-                            scales[slot] * query_scale * s.score_scale;
+                            compact_value_scale(index, scales[slot]) * query_scale * s.score_scale;
         if (filled == desc->top_k &&
             !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
           continue;
@@ -1774,8 +1879,8 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
           prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
         }
         MemorySlot& s = slots[slot];
-        const float score =
-            l2_score_q8_f32(vectors + static_cast<size_t>(slot) * dim, scales[slot], query, dim);
+        const float score = l2_score_q8_f32(vectors + static_cast<size_t>(slot) * dim,
+                                            compact_value_scale(index, scales[slot]), query, dim);
         if (filled == desc->top_k &&
             !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
           continue;
@@ -1830,43 +1935,44 @@ void memory_search_q8_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
       MemorySlot* best_slot = &slots[0];
       float best_score = 0.0f;
       if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
-        best_score = dot_q8_f32(vectors, query, dim) * scales[0];
-        for (uint32_t slot = 1; slot < index->count; ++slot) {
-          if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
-            prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
-          }
-          MemorySlot& s = slots[slot];
-          const float score =
-              dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) * scales[slot];
-          if (score > best_score || (score == best_score && s.record.key < best_slot->record.key)) {
-            best_slot = &s;
-            best_score = score;
-          }
-        }
-      } else if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-        best_score =
-            dot_q8_f32(vectors, query, dim) * scales[0] * query_scale * best_slot->score_scale;
+        best_score = dot_q8_f32(vectors, query, dim) * compact_value_scale(index, scales[0]);
         for (uint32_t slot = 1; slot < index->count; ++slot) {
           if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
             prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
           }
           MemorySlot& s = slots[slot];
           const float score = dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) *
-                              scales[slot] * query_scale * s.score_scale;
+                              compact_value_scale(index, scales[slot]);
+          if (score > best_score || (score == best_score && s.record.key < best_slot->record.key)) {
+            best_slot = &s;
+            best_score = score;
+          }
+        }
+      } else if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+        best_score = dot_q8_f32(vectors, query, dim) * compact_value_scale(index, scales[0]) *
+                     query_scale * best_slot->score_scale;
+        for (uint32_t slot = 1; slot < index->count; ++slot) {
+          if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
+            prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
+          }
+          MemorySlot& s = slots[slot];
+          const float score = dot_q8_f32(vectors + static_cast<size_t>(slot) * dim, query, dim) *
+                              compact_value_scale(index, scales[slot]) * query_scale *
+                              s.score_scale;
           if (score > best_score || (score == best_score && s.record.key < best_slot->record.key)) {
             best_slot = &s;
             best_score = score;
           }
         }
       } else {
-        best_score = l2_score_q8_f32(vectors, scales[0], query, dim);
+        best_score = l2_score_q8_f32(vectors, compact_value_scale(index, scales[0]), query, dim);
         for (uint32_t slot = 1; slot < index->count; ++slot) {
           if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
             prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
           }
           MemorySlot& s = slots[slot];
-          const float score =
-              l2_score_q8_f32(vectors + static_cast<size_t>(slot) * dim, scales[slot], query, dim);
+          const float score = l2_score_q8_f32(vectors + static_cast<size_t>(slot) * dim,
+                                              compact_value_scale(index, scales[slot]), query, dim);
           if (score > best_score || (score == best_score && s.record.key < best_slot->record.key)) {
             best_slot = &s;
             best_score = score;
@@ -2201,7 +2307,7 @@ void memory_search_l2_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
 
 void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                         AstralMemorySearchResult* out_results, uint32_t* out_count) {
-  if (q8_storage(index)) {
+  if (compact_storage(index)) {
     if (desc->top_k == kTopOne) {
       memory_search_q8_top1(index, desc, query, out_results, out_count);
     } else {
@@ -2237,7 +2343,8 @@ void memory_search_flat_batch(MemoryIndex* index, const AstralMemorySearchDesc* 
     out_counts[query_i] = kNoResults;
   }
 
-  if (q8_storage(index) && desc->group_id == ASTRAL_MEMORY_GROUP_ANY && index->dense_active != 0) {
+  if (compact_storage(index) && desc->group_id == ASTRAL_MEMORY_GROUP_ANY &&
+      index->dense_active != 0) {
     MemorySlot* slots = index->slots;
     const uint32_t dim = index->dim;
     const int8_t* vectors = index->q8_vectors;
@@ -2246,7 +2353,7 @@ void memory_search_flat_batch(MemoryIndex* index, const AstralMemorySearchDesc* 
       for (uint32_t slot = 0; slot < index->count; ++slot) {
         MemorySlot& s = slots[slot];
         const int8_t* vector = vectors + static_cast<size_t>(slot) * dim;
-        const float scale = scales[slot];
+        const float scale = compact_value_scale(index, scales[slot]);
         for (uint32_t query_i = 0; query_i < query_count; ++query_i) {
           AstralMemorySearchResult* results =
               out_results + static_cast<size_t>(query_i) * desc->top_k;
@@ -2266,7 +2373,7 @@ void memory_search_flat_batch(MemoryIndex* index, const AstralMemorySearchDesc* 
       for (uint32_t slot = 0; slot < index->count; ++slot) {
         MemorySlot& s = slots[slot];
         const int8_t* vector = vectors + static_cast<size_t>(slot) * dim;
-        const float scale = scales[slot] * s.score_scale;
+        const float scale = compact_value_scale(index, scales[slot]) * s.score_scale;
         for (uint32_t query_i = 0; query_i < query_count; ++query_i) {
           AstralMemorySearchResult* results =
               out_results + static_cast<size_t>(query_i) * desc->top_k;
@@ -2286,7 +2393,7 @@ void memory_search_flat_batch(MemoryIndex* index, const AstralMemorySearchDesc* 
       for (uint32_t slot = 0; slot < index->count; ++slot) {
         MemorySlot& s = slots[slot];
         const int8_t* vector = vectors + static_cast<size_t>(slot) * dim;
-        const float scale = scales[slot];
+        const float scale = compact_value_scale(index, scales[slot]);
         for (uint32_t query_i = 0; query_i < query_count; ++query_i) {
           AstralMemorySearchResult* results =
               out_results + static_cast<size_t>(query_i) * desc->top_k;
@@ -2408,11 +2515,20 @@ void memory_add_preprocess_range(MemoryIndex* index, const float* vectors, const
     const float* src = vectors + static_cast<size_t>(i) * index->dim;
     if (q8_storage(index)) {
       quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
+    } else if (e2m3_storage(index)) {
+      if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+        quantize_e2m3_cosine_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src,
+                                    index->dim);
+      } else {
+        quantize_e2m3_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
+      }
     } else {
       std::memcpy(vector_at(index, slot), src, sizeof(float) * index->dim);
     }
     index->slots[slot].score_scale =
-        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(src, index->dim) : 0.0f;
+        index->metric == ASTRAL_MEMORY_METRIC_COSINE
+            ? (e2m3_storage(index) ? 1.0f : cosine_scale(src, index->dim))
+            : 0.0f;
   }
 }
 
@@ -2537,10 +2653,10 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->vectors = desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32
                        ? alloc_vector_storage(desc->capacity, desc->dim)
                        : nullptr;
-  index->q8_vectors = desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8
+  index->q8_vectors = compact_storage_kind(desc->storage_kind)
                           ? alloc_q8_vector_storage(desc->capacity, desc->dim)
                           : nullptr;
-  index->q8_scales = desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8
+  index->q8_scales = compact_storage_kind(desc->storage_kind)
                          ? core::runtime_alloc_array<float>(desc->capacity)
                          : nullptr;
   index->active_slots = core::runtime_alloc_array<uint32_t>(desc->capacity);
@@ -2594,7 +2710,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   }
   if (index->slots == nullptr || index->active_slots == nullptr || index->key_table == nullptr ||
       (desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32 && index->vectors == nullptr) ||
-      (desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8 &&
+      (compact_storage_kind(desc->storage_kind) &&
        (index->q8_vectors == nullptr || index->q8_scales == nullptr)) ||
       (graph_neighbor_capacity != 0 &&
        (index->graph_neighbors == nullptr || index->graph_neighbor_counts == nullptr ||
@@ -2609,7 +2725,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   std::memset(index->slots, 0, sizeof(MemorySlot) * desc->capacity);
   std::memset(index->active_slots, 0, sizeof(uint32_t) * desc->capacity);
   std::memset(index->key_table, 0, sizeof(uint32_t) * key_table_capacity);
-  if (desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8) {
+  if (compact_storage_kind(desc->storage_kind)) {
     std::memset(index->q8_vectors, 0,
                 static_cast<size_t>(desc->capacity) * desc->dim * sizeof(int8_t));
     std::memset(index->q8_scales, 0, sizeof(float) * desc->capacity);
@@ -2660,9 +2776,10 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
   }
 
   const uint64_t vector_bytes =
-      q8_storage(index) ? static_cast<uint64_t>(index->capacity) * index->dim * sizeof(int8_t) +
-                              static_cast<uint64_t>(index->capacity) * sizeof(float)
-                        : static_cast<uint64_t>(index->capacity) * index->dim * sizeof(float);
+      compact_storage(index)
+          ? static_cast<uint64_t>(index->capacity) * index->dim * sizeof(int8_t) +
+                static_cast<uint64_t>(index->capacity) * sizeof(float)
+          : static_cast<uint64_t>(index->capacity) * index->dim * sizeof(float);
   const uint64_t metadata_bytes =
       sizeof(MemoryIndex) + static_cast<uint64_t>(index->capacity) * sizeof(MemorySlot) +
       static_cast<uint64_t>(index->capacity) * sizeof(uint32_t) +
@@ -3110,7 +3227,7 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
     const uint32_t slot = active_slot_at(index, active_pos);
     std::memcpy(cursor, &index->slots[slot].record, sizeof(AstralMemoryRecord));
     cursor += sizeof(AstralMemoryRecord);
-    if (q8_storage(index)) {
+    if (compact_storage(index)) {
       const float scale = index->q8_scales[slot];
       std::memcpy(cursor, &scale, sizeof(float));
       cursor += sizeof(float);
@@ -3194,7 +3311,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
   }
 
   const uint64_t saved_vector_bytes =
-      saved_storage == ASTRAL_MEMORY_STORAGE_Q8
+      compact_storage_kind(saved_storage)
           ? static_cast<uint64_t>(header.count) *
                 (sizeof(float) + static_cast<uint64_t>(header.dim) * sizeof(int8_t))
           : static_cast<uint64_t>(header.count) * header.dim * sizeof(float);
@@ -3221,21 +3338,23 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
       memory_destroy(index);
       return ASTRAL_E_INVALID;
     }
-    const bool saved_q8 = saved_storage == ASTRAL_MEMORY_STORAGE_Q8;
-    const bool dst_q8 = q8_storage(index);
-    float saved_q8_scale = 1.0f;
-    const int8_t* saved_q8_vector = nullptr;
-    if (saved_q8) {
+    const bool saved_compact = compact_storage_kind(saved_storage);
+    const bool dst_compact = compact_storage(index);
+    float saved_compact_scale = 1.0f;
+    const int8_t* saved_compact_vector = nullptr;
+    if (saved_compact) {
       float scale = 1.0f;
       std::memcpy(&scale, cursor, sizeof(float));
       cursor += sizeof(float);
-      const int8_t* q8 = reinterpret_cast<const int8_t*>(cursor);
-      if (dst_q8) {
-        saved_q8_scale = scale;
-        saved_q8_vector = q8;
+      const int8_t* compact = reinterpret_cast<const int8_t*>(cursor);
+      if (dst_compact && saved_storage == desc->storage_kind) {
+        saved_compact_scale = scale;
+        saved_compact_vector = compact;
       } else {
         for (uint32_t dim_i = 0; dim_i < header.dim; ++dim_i) {
-          vector[dim_i] = static_cast<float>(q8[dim_i]) * scale;
+          vector[dim_i] = saved_storage == ASTRAL_MEMORY_STORAGE_F6_E2M3
+                              ? e2m3_scaled_to_f32(compact[dim_i], scale)
+                              : static_cast<float>(compact[dim_i]) * scale;
         }
       }
       cursor += static_cast<size_t>(header.dim) * sizeof(int8_t);
@@ -3260,19 +3379,35 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
     index->slots[slot].active_pos = i;
     index->slots[slot].occupied = 1;
     index->active_slots[i] = slot;
-    if (dst_q8) {
-      if (saved_q8) {
-        index->q8_scales[slot] = saved_q8_scale;
-        std::memcpy(q8_vector_at(index, slot), saved_q8_vector,
+    if (dst_compact) {
+      if (saved_compact_vector != nullptr) {
+        index->q8_scales[slot] = saved_compact_scale;
+        std::memcpy(q8_vector_at(index, slot), saved_compact_vector,
                     static_cast<size_t>(index->dim) * sizeof(int8_t));
-        index->slots[slot].score_scale =
-            index->metric == ASTRAL_MEMORY_METRIC_COSINE
-                ? cosine_scale_q8(q8_vector_at(index, slot), saved_q8_scale, index->dim)
-                : 0.0f;
+        if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+          index->slots[slot].score_scale =
+              q8_storage(index)
+                  ? cosine_scale_q8(q8_vector_at(index, slot), saved_compact_scale, index->dim)
+                  : 1.0f;
+        }
       } else {
-        index->slots[slot].score_scale =
-            index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(vector, index->dim) : 0.0f;
-        quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector, index->dim);
+        if (q8_storage(index)) {
+          index->slots[slot].score_scale = index->metric == ASTRAL_MEMORY_METRIC_COSINE
+                                               ? cosine_scale(vector, index->dim)
+                                               : 0.0f;
+          quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
+                             index->dim);
+        } else {
+          index->slots[slot].score_scale =
+              index->metric == ASTRAL_MEMORY_METRIC_COSINE ? 1.0f : 0.0f;
+          if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+            quantize_e2m3_cosine_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
+                                        index->dim);
+          } else {
+            quantize_e2m3_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
+                                 index->dim);
+          }
+        }
       }
     } else {
       index->slots[slot].score_scale =
