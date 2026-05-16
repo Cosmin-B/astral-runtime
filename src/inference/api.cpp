@@ -2472,6 +2472,21 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save(AstralHandle index, AstralMu
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_info(AstralSpanU8 bytes,
+                                                             AstralMemorySnapshotInfo* out_info) {
+  ASTRAL_ABI_TRY_BEGIN
+  if (bytes.data == nullptr || out_info == nullptr) {
+    set_err_invalid("bytes/out_info");
+    return ASTRAL_E_INVALID;
+  }
+  const AstralErr err = astral::inference::memory_snapshot_info(bytes, out_info);
+  if (err != ASTRAL_OK) {
+    set_err_code(err);
+  }
+  return err;
+  ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
     const AstralMemoryIndexDesc* desc,
     AstralSpanU8 bytes,

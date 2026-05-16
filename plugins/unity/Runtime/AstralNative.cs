@@ -1051,6 +1051,28 @@ namespace Astral.Runtime
             public ulong save_bytes;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemorySnapshotInfo
+        {
+            public uint size;
+            public uint version;
+            public uint dim;
+            public uint count;
+            public AstralMemoryMetric metric;
+            public AstralMemoryIndexKind index_kind;
+            public AstralMemoryStorageKind storage_kind;
+            public uint flags;
+            public ulong record_offset;
+            public ulong record_stride;
+            public ulong vector_offset;
+            public ulong vector_stride;
+            public ulong scale_offset;
+            public ulong scale_stride;
+            public ulong graph_offset;
+            public ulong graph_bytes;
+            public ulong total_bytes;
+        }
+
         public enum AstralAgentRole : uint
         {
             System = 1,
@@ -1540,6 +1562,9 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_memory_save(AstralHandle index, AstralMutSpanU8 out_bytes, out ulong out_written);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_snapshot_info(AstralSpanU8 bytes, ref AstralMemorySnapshotInfo out_info);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_memory_load(ref AstralMemoryIndexDesc desc, AstralSpanU8 bytes, out AstralHandle out_index);

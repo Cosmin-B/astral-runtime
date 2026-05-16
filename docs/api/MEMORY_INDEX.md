@@ -31,6 +31,7 @@ and keep the flat index as the recall oracle.
 - `astral_request_from_memory_search()`
 - `astral_memory_save_size()`
 - `astral_memory_save()`
+- `astral_memory_snapshot_info()`
 - `astral_memory_load()`
 - `astral_memory_record_from_chunk()`
 
@@ -118,6 +119,14 @@ runtime footprint sum, while `save_bytes` matches the current serialized
 snapshot size returned by `astral_memory_save_size()`. For q8 indexes,
 `save_bytes` reflects the compact q8 snapshot rather than an expanded float32
 copy.
+
+`astral_memory_snapshot_info()` validates a saved snapshot without creating an
+index and reports the record, scale, vector, and graph byte ranges. New
+snapshots store records, compact scales, and vectors in separate contiguous
+blocks so callers can inspect or memory-map vector payloads before deciding
+whether to load the full native index. Older snapshots still load through
+`astral_memory_load()`, but their reported strides describe the legacy
+interleaved layout.
 
 ## Metrics
 

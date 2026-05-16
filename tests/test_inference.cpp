@@ -2803,9 +2803,27 @@ TEST(inference_memory_index_q8_storage_mock) {
     ASSERT_EQ(err, ASTRAL_OK);
     ASSERT_EQ(written, save_bytes);
 
+    AstralMemorySnapshotInfo snapshot{};
+    snapshot.size = sizeof(AstralMemorySnapshotInfo);
     AstralSpanU8 blob_span{};
     blob_span.data = reinterpret_cast<const uint8_t*>(blob.data());
     blob_span.len = static_cast<uint32_t>(blob.size());
+    err = astral_memory_snapshot_info(blob_span, &snapshot);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(snapshot.dim, kDim);
+    ASSERT_EQ(snapshot.count, kRecordCount);
+    ASSERT_EQ(snapshot.index_kind, ASTRAL_MEMORY_INDEX_FLAT);
+    ASSERT_EQ(snapshot.storage_kind, ASTRAL_MEMORY_STORAGE_Q8);
+    ASSERT_EQ(snapshot.record_stride, static_cast<uint64_t>(sizeof(AstralMemoryRecord)));
+    ASSERT_EQ(snapshot.scale_stride, static_cast<uint64_t>(sizeof(float)));
+    ASSERT_EQ(snapshot.vector_stride, static_cast<uint64_t>(kDim) * sizeof(int8_t));
+    ASSERT_EQ(snapshot.scale_offset, snapshot.record_offset + static_cast<uint64_t>(kRecordCount) *
+                                                                  sizeof(AstralMemoryRecord));
+    ASSERT_EQ(snapshot.vector_offset,
+              snapshot.scale_offset + static_cast<uint64_t>(kRecordCount) * sizeof(float));
+    ASSERT_EQ(snapshot.graph_bytes, 0ull);
+    ASSERT_EQ(snapshot.total_bytes, save_bytes);
+
     AstralHandle loaded = 0;
     err = astral_memory_load(&desc, blob_span, &loaded);
     ASSERT_EQ(err, ASTRAL_OK);
@@ -2847,6 +2865,14 @@ TEST(inference_memory_index_q8_storage_mock) {
     AstralSpanU8 graph_blob_span{};
     graph_blob_span.data = reinterpret_cast<const uint8_t*>(blob.data());
     graph_blob_span.len = static_cast<uint32_t>(blob.size());
+    snapshot = {};
+    snapshot.size = sizeof(AstralMemorySnapshotInfo);
+    err = astral_memory_snapshot_info(graph_blob_span, &snapshot);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(snapshot.index_kind, ASTRAL_MEMORY_INDEX_GRAPH);
+    ASSERT_EQ(snapshot.storage_kind, ASTRAL_MEMORY_STORAGE_Q8);
+    ASSERT_GT(snapshot.graph_bytes, 0ull);
+    ASSERT_EQ(snapshot.total_bytes, save_bytes);
     AstralHandle loaded_graph = 0;
     err = astral_memory_load(&graph_desc, graph_blob_span, &loaded_graph);
     ASSERT_EQ(err, ASTRAL_OK);

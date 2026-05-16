@@ -370,6 +370,10 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_memory_search_fetch(0, &memory_result, kMemoryFetchCapacity, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_save_size(0, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_save(0, null_mut_span(), nullptr), ASTRAL_E_INVALID);
+    AstralMemorySnapshotInfo memory_snapshot{};
+    memory_snapshot.size = sizeof(AstralMemorySnapshotInfo);
+    ASSERT_EQ(astral_memory_snapshot_info(null_span(), &memory_snapshot), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_snapshot_info(null_span(), nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(nullptr, null_span(), &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(&memory_desc, null_span(), nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_record_from_chunk(nullptr, kMemoryKey, 0, &memory_record), ASTRAL_E_INVALID);

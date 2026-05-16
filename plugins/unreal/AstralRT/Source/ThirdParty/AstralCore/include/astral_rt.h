@@ -327,6 +327,26 @@ typedef struct AstralMemoryStats {
     uint64_t save_bytes;
 } AstralMemoryStats;
 
+typedef struct AstralMemorySnapshotInfo {
+  uint32_t size;
+  uint32_t version;
+  uint32_t dim;
+  uint32_t count;
+  AstralMemoryMetric metric;
+  AstralMemoryIndexKind index_kind;
+  AstralMemoryStorageKind storage_kind;
+  uint32_t flags;
+  uint64_t record_offset;
+  uint64_t record_stride;
+  uint64_t vector_offset;
+  uint64_t vector_stride;
+  uint64_t scale_offset;
+  uint64_t scale_stride;
+  uint64_t graph_offset;
+  uint64_t graph_bytes;
+  uint64_t total_bytes;
+} AstralMemorySnapshotInfo;
+
 // Compile-time validation: Ensure struct sizes are correct
 // Use static_assert for C++ and _Static_assert for C
 #ifdef __cplusplus
@@ -359,6 +379,8 @@ ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32,
                      "AstralMemorySearchResult must be 32 bytes on 64-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 120,
                      "AstralMemoryStats must be 120 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySnapshotInfo) == 104,
+                     "AstralMemorySnapshotInfo must be 104 bytes on 64-bit");
 #else
 ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 8, "AstralSpanU8 must be 8 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 8, "AstralMutSpanU8 must be 8 bytes on 32-bit");
@@ -383,6 +405,8 @@ ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32,
                      "AstralMemorySearchResult must be 32 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 120,
                      "AstralMemoryStats must be 120 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySnapshotInfo) == 104,
+                     "AstralMemorySnapshotInfo must be 104 bytes on 32-bit");
 #endif
 
 // ============================================================================
@@ -1147,6 +1171,8 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_fetch(
 ASTRAL_API void ASTRAL_CALL astral_memory_search_end(AstralHandle cursor);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save_size(AstralHandle index, uint64_t* out_bytes);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save(AstralHandle index, AstralMutSpanU8 out_bytes, uint64_t* out_written);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_info(AstralSpanU8 bytes,
+                                                             AstralMemorySnapshotInfo* out_info);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
     const AstralMemoryIndexDesc* desc,
     AstralSpanU8 bytes,

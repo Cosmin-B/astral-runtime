@@ -27,7 +27,8 @@ constexpr uint32_t kSaveMagic = 0x414D454Du;
 constexpr uint32_t kSaveVersionF32 = 1;
 constexpr uint32_t kSaveVersionCompactStorage = 2;
 constexpr uint32_t kSaveVersionGraphTopology = 3;
-constexpr uint32_t kSaveVersion = 4;
+constexpr uint32_t kSaveVersionLegacyLayout = 4;
+constexpr uint32_t kSaveVersion = 5;
 constexpr uint32_t kSaveGraphTopologyFlag = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
@@ -129,6 +130,18 @@ struct SaveGraphHeaderV3 {
   uint32_t level_capacity;
   uint32_t max_level;
   uint32_t entry_active_pos;
+};
+
+struct SaveLayout {
+  uint64_t record_offset;
+  uint64_t record_stride;
+  uint64_t scale_offset;
+  uint64_t scale_stride;
+  uint64_t vector_offset;
+  uint64_t vector_stride;
+  uint64_t graph_offset;
+  uint64_t graph_bytes;
+  uint64_t total_bytes;
 };
 
 inline void prefetch_dense_q8_slot(const int8_t* vectors, const float* scales,
@@ -855,6 +868,61 @@ inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
     bytes += neighbor_slots * sizeof(uint32_t);
   }
   return bytes;
+}
+
+bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
+                        AstralMemoryStorageKind storage, uint32_t index_kind,
+                        uint32_t graph_base_neighbors, uint32_t graph_neighbors,
+                        uint32_t graph_levels, SaveLayout* out_layout) {
+  if (out_layout == nullptr || !storage_kind_valid(storage)) {
+    return false;
+  }
+  SaveLayout layout{};
+  const bool compact =
+      storage == ASTRAL_MEMORY_STORAGE_Q8 || storage == ASTRAL_MEMORY_STORAGE_F6_E2M3;
+  layout.record_offset = sizeof(SaveHeader);
+  layout.record_stride = sizeof(AstralMemoryRecord);
+  if (version >= kSaveVersion) {
+    uint64_t cursor =
+        layout.record_offset + static_cast<uint64_t>(count) * sizeof(AstralMemoryRecord);
+    if (compact) {
+      layout.scale_offset = cursor;
+      layout.scale_stride = sizeof(float);
+      cursor += static_cast<uint64_t>(count) * sizeof(float);
+      layout.vector_offset = cursor;
+      layout.vector_stride = static_cast<uint64_t>(dim) * sizeof(int8_t);
+      cursor += static_cast<uint64_t>(count) * layout.vector_stride;
+    } else {
+      layout.vector_offset = cursor;
+      layout.vector_stride = static_cast<uint64_t>(dim) * sizeof(float);
+      cursor += static_cast<uint64_t>(count) * layout.vector_stride;
+    }
+    layout.graph_offset = cursor;
+  } else {
+    layout.scale_offset = compact ? layout.record_offset + sizeof(AstralMemoryRecord) : 0;
+    layout.scale_stride =
+        compact ? sizeof(AstralMemoryRecord) + sizeof(float) + static_cast<uint64_t>(dim) : 0;
+    layout.vector_offset =
+        layout.record_offset + sizeof(AstralMemoryRecord) + (compact ? sizeof(float) : 0);
+    layout.vector_stride =
+        sizeof(AstralMemoryRecord) + (compact ? sizeof(float) + static_cast<uint64_t>(dim)
+                                              : static_cast<uint64_t>(dim) * sizeof(float));
+    layout.graph_offset =
+        layout.record_offset + static_cast<uint64_t>(count) * layout.vector_stride;
+  }
+  if (index_kind == ASTRAL_MEMORY_INDEX_GRAPH && graph_neighbors != 0 && graph_levels != 0) {
+    const uint64_t graph_header_bytes =
+        version >= kSaveVersionLegacyLayout ? sizeof(SaveGraphHeader) : sizeof(SaveGraphHeaderV3);
+    const uint64_t neighbor_slots =
+        static_cast<uint64_t>(count) * graph_base_neighbors +
+        static_cast<uint64_t>(count) * (graph_levels - 1u) * graph_neighbors;
+    layout.graph_bytes = graph_header_bytes + static_cast<uint64_t>(count) * sizeof(uint8_t) +
+                         static_cast<uint64_t>(count) * graph_levels * sizeof(uint32_t) +
+                         neighbor_slots * sizeof(uint32_t);
+  }
+  layout.total_bytes = layout.graph_offset + layout.graph_bytes;
+  *out_layout = layout;
+  return true;
 }
 
 } // namespace
@@ -3225,14 +3293,23 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
     const uint32_t slot = active_slot_at(index, active_pos);
     std::memcpy(cursor, &index->slots[slot].record, sizeof(AstralMemoryRecord));
     cursor += sizeof(AstralMemoryRecord);
-    if (compact_storage(index)) {
+  }
+  if (compact_storage(index)) {
+    for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+      const uint32_t slot = active_slot_at(index, active_pos);
       const float scale = index->q8_scales[slot];
       std::memcpy(cursor, &scale, sizeof(float));
       cursor += sizeof(float);
+    }
+    for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+      const uint32_t slot = active_slot_at(index, active_pos);
       std::memcpy(cursor, q8_vector_at(index, slot),
                   static_cast<size_t>(index->dim) * sizeof(int8_t));
       cursor += static_cast<size_t>(index->dim) * sizeof(int8_t);
-    } else {
+    }
+  } else {
+    for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+      const uint32_t slot = active_slot_at(index, active_pos);
       std::memcpy(cursor, vector_at(index, slot), sizeof(float) * index->dim);
       cursor += sizeof(float) * index->dim;
     }
@@ -3285,6 +3362,95 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
   return ASTRAL_OK;
 }
 
+AstralErr memory_snapshot_info(AstralSpanU8 bytes, AstralMemorySnapshotInfo* out_info) {
+  if (bytes.data == nullptr || bytes.len < sizeof(SaveHeader) || out_info == nullptr ||
+      out_info->size != sizeof(AstralMemorySnapshotInfo)) {
+    return ASTRAL_E_INVALID;
+  }
+
+  SaveHeader header{};
+  std::memcpy(&header, bytes.data, sizeof(header));
+  const bool version_valid =
+      header.version == kSaveVersionF32 || header.version == kSaveVersionCompactStorage ||
+      header.version == kSaveVersionGraphTopology || header.version == kSaveVersionLegacyLayout ||
+      header.version == kSaveVersion;
+  AstralMemoryStorageKind storage = static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
+  if (header.version >= kSaveVersionCompactStorage) {
+    storage = static_cast<AstralMemoryStorageKind>(header._reserved0);
+  }
+  if (header.magic != kSaveMagic || !version_valid || header.dim == 0 || header.dim > kMaxDim ||
+      !metric_valid(static_cast<AstralMemoryMetric>(header.metric)) ||
+      !index_kind_valid(static_cast<AstralMemoryIndexKind>(header.index_kind)) ||
+      !storage_kind_valid(storage)) {
+    return ASTRAL_E_INVALID;
+  }
+
+  SaveLayout layout{};
+  if (!memory_save_layout(header.version, header.dim, header.count, storage, header.index_kind, 0,
+                          0, 0, &layout) ||
+      bytes.len < layout.graph_offset) {
+    return ASTRAL_E_INVALID;
+  }
+
+  if (header.index_kind == ASTRAL_MEMORY_INDEX_GRAPH &&
+      header._reserved1 == kSaveGraphTopologyFlag) {
+    const uint32_t graph_header_bytes = header.version >= kSaveVersionLegacyLayout
+                                            ? sizeof(SaveGraphHeader)
+                                            : sizeof(SaveGraphHeaderV3);
+    if (bytes.len < layout.graph_offset + graph_header_bytes) {
+      return ASTRAL_E_INVALID;
+    }
+    SaveGraphHeader graph_header{};
+    if (header.version >= kSaveVersionLegacyLayout) {
+      std::memcpy(&graph_header, bytes.data + layout.graph_offset, sizeof(graph_header));
+    } else {
+      SaveGraphHeaderV3 graph_header_v3{};
+      std::memcpy(&graph_header_v3, bytes.data + layout.graph_offset, sizeof(graph_header_v3));
+      graph_header.flags = graph_header_v3.flags;
+      graph_header.neighbor_capacity = graph_header_v3.neighbor_capacity;
+      graph_header.base_neighbor_capacity = graph_header_v3.neighbor_capacity;
+      graph_header.search_capacity = graph_header_v3.search_capacity;
+      graph_header.level_capacity = graph_header_v3.level_capacity;
+      graph_header.max_level = graph_header_v3.max_level;
+      graph_header.entry_active_pos = graph_header_v3.entry_active_pos;
+    }
+    if (graph_header.flags != kSaveGraphTopologyFlag || graph_header.neighbor_capacity == 0 ||
+        graph_header.neighbor_capacity > kGraphMaxNeighbors ||
+        graph_header.base_neighbor_capacity == 0 ||
+        graph_header.base_neighbor_capacity > kGraphMaxNeighbors ||
+        graph_header.base_neighbor_capacity < graph_header.neighbor_capacity ||
+        graph_header.level_capacity == 0 || graph_header.level_capacity > kGraphMaxLevels) {
+      return ASTRAL_E_INVALID;
+    }
+    if (!memory_save_layout(header.version, header.dim, header.count, storage, header.index_kind,
+                            graph_header.base_neighbor_capacity, graph_header.neighbor_capacity,
+                            graph_header.level_capacity, &layout) ||
+        bytes.len < layout.total_bytes) {
+      return ASTRAL_E_INVALID;
+    }
+  } else if (bytes.len < layout.total_bytes) {
+    return ASTRAL_E_INVALID;
+  }
+
+  out_info->version = header.version;
+  out_info->dim = header.dim;
+  out_info->count = header.count;
+  out_info->metric = static_cast<AstralMemoryMetric>(header.metric);
+  out_info->index_kind = static_cast<AstralMemoryIndexKind>(header.index_kind);
+  out_info->storage_kind = storage;
+  out_info->flags = header._reserved1;
+  out_info->record_offset = layout.record_offset;
+  out_info->record_stride = layout.record_stride;
+  out_info->vector_offset = layout.vector_offset;
+  out_info->vector_stride = layout.vector_stride;
+  out_info->scale_offset = layout.scale_offset;
+  out_info->scale_stride = layout.scale_stride;
+  out_info->graph_offset = layout.graph_offset;
+  out_info->graph_bytes = layout.graph_bytes;
+  out_info->total_bytes = layout.total_bytes;
+  return ASTRAL_OK;
+}
+
 AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
                       MemoryIndex** out_index) {
   if (!desc_valid(desc) || bytes.data == nullptr || bytes.len < sizeof(SaveHeader) ||
@@ -3296,7 +3462,8 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
   std::memcpy(&header, bytes.data, sizeof(header));
   const bool version_valid =
       header.version == kSaveVersionF32 || header.version == kSaveVersionCompactStorage ||
-      header.version == kSaveVersionGraphTopology || header.version == kSaveVersion;
+      header.version == kSaveVersionGraphTopology || header.version == kSaveVersionLegacyLayout ||
+      header.version == kSaveVersion;
   AstralMemoryStorageKind saved_storage =
       static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version >= kSaveVersionCompactStorage) {
@@ -3308,15 +3475,10 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
     return ASTRAL_E_INVALID;
   }
 
-  const uint64_t saved_vector_bytes =
-      compact_storage_kind(saved_storage)
-          ? static_cast<uint64_t>(header.count) *
-                (sizeof(float) + static_cast<uint64_t>(header.dim) * sizeof(int8_t))
-          : static_cast<uint64_t>(header.count) * header.dim * sizeof(float);
-  const uint64_t need = sizeof(SaveHeader) +
-                        static_cast<uint64_t>(header.count) * sizeof(AstralMemoryRecord) +
-                        saved_vector_bytes;
-  if (bytes.len < need) {
+  SaveLayout layout{};
+  if (!memory_save_layout(header.version, header.dim, header.count, saved_storage,
+                          header.index_kind, 0, 0, 0, &layout) ||
+      bytes.len < layout.graph_offset) {
     return ASTRAL_E_INVALID;
   }
 
@@ -3326,12 +3488,12 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
     return err;
   }
 
-  const uint8_t* cursor = bytes.data + sizeof(SaveHeader);
   float vector[kMaxDim];
   for (uint32_t i = 0; i < header.count; ++i) {
     AstralMemoryRecord record{};
-    std::memcpy(&record, cursor, sizeof(record));
-    cursor += sizeof(record);
+    const uint8_t* record_src =
+        bytes.data + layout.record_offset + static_cast<uint64_t>(i) * layout.record_stride;
+    std::memcpy(&record, record_src, sizeof(record));
     if (record.size != sizeof(AstralMemoryRecord) || record.key == 0) {
       memory_destroy(index);
       return ASTRAL_E_INVALID;
@@ -3342,9 +3504,11 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
     const int8_t* saved_compact_vector = nullptr;
     if (saved_compact) {
       float scale = 1.0f;
-      std::memcpy(&scale, cursor, sizeof(float));
-      cursor += sizeof(float);
-      const int8_t* compact = reinterpret_cast<const int8_t*>(cursor);
+      const uint8_t* scale_src =
+          bytes.data + layout.scale_offset + static_cast<uint64_t>(i) * layout.scale_stride;
+      std::memcpy(&scale, scale_src, sizeof(float));
+      const int8_t* compact = reinterpret_cast<const int8_t*>(
+          bytes.data + layout.vector_offset + static_cast<uint64_t>(i) * layout.vector_stride);
       if (dst_compact && saved_storage == desc->storage_kind) {
         saved_compact_scale = scale;
         saved_compact_vector = compact;
@@ -3355,10 +3519,10 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
                               : static_cast<float>(compact[dim_i]) * scale;
         }
       }
-      cursor += static_cast<size_t>(header.dim) * sizeof(int8_t);
     } else {
-      std::memcpy(vector, cursor, sizeof(float) * header.dim);
-      cursor += sizeof(float) * header.dim;
+      const uint8_t* vector_src =
+          bytes.data + layout.vector_offset + static_cast<uint64_t>(i) * layout.vector_stride;
+      std::memcpy(vector, vector_src, sizeof(float) * header.dim);
     }
 
     const uint32_t slot = i;
@@ -3420,17 +3584,19 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
   index->free_slot_hint = header.count < index->capacity ? header.count : 0;
   index->dense_active = 1u;
 
+  const uint8_t* cursor = bytes.data + layout.graph_offset;
   bool graph_loaded = false;
   if (graph_enabled(index) && header.version >= kSaveVersionGraphTopology &&
       header._reserved1 == kSaveGraphTopologyFlag) {
-    const uint32_t saved_graph_header_bytes =
-        header.version >= kSaveVersion ? sizeof(SaveGraphHeader) : sizeof(SaveGraphHeaderV3);
+    const uint32_t saved_graph_header_bytes = header.version >= kSaveVersionLegacyLayout
+                                                  ? sizeof(SaveGraphHeader)
+                                                  : sizeof(SaveGraphHeaderV3);
     if (bytes.len < static_cast<uint64_t>(cursor - bytes.data) + saved_graph_header_bytes) {
       memory_destroy(index);
       return ASTRAL_E_INVALID;
     }
     SaveGraphHeader graph_header{};
-    if (header.version >= kSaveVersion) {
+    if (header.version >= kSaveVersionLegacyLayout) {
       std::memcpy(&graph_header, cursor, sizeof(graph_header));
       cursor += sizeof(graph_header);
     } else {
@@ -3463,7 +3629,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
     const uint64_t graph_bytes = saved_graph_header_bytes +
                                  static_cast<uint64_t>(header.count) * sizeof(uint8_t) +
                                  level_count * sizeof(uint32_t) + neighbor_slots * sizeof(uint32_t);
-    const uint64_t graph_begin = need;
+    const uint64_t graph_begin = layout.graph_offset;
     if (graph_header.flags != kSaveGraphTopologyFlag || bytes.len < graph_begin + graph_bytes) {
       memory_destroy(index);
       return ASTRAL_E_INVALID;

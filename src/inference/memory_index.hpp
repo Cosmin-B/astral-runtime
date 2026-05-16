@@ -37,6 +37,7 @@ AstralErr memory_search_cursor_remaining(MemorySearchCursor* cursor, uint32_t* o
 void memory_search_end(MemorySearchCursor* cursor);
 AstralErr memory_save_size(MemoryIndex* index, uint64_t* out_bytes);
 AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* out_written);
+AstralErr memory_snapshot_info(AstralSpanU8 bytes, AstralMemorySnapshotInfo* out_info);
 AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
                       MemoryIndex** out_index);
 
