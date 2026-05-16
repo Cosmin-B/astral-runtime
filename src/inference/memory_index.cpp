@@ -920,7 +920,10 @@ inline void prefetch_slot_vector(const MemoryIndex* index, uint32_t slot) {
 
 inline uint32_t graph_search_for_query(const MemoryIndex* index,
                                        const AstralMemorySearchDesc* desc) {
-  uint32_t requested = desc->graph_search != 0 ? desc->graph_search : index->graph_search_capacity;
+  uint32_t requested = desc->graph_search;
+  if (requested == 0) {
+    requested = index->graph_query_search_capacity;
+  }
   if (requested < kGraphMinSearch) {
     requested = kGraphMinSearch;
   }
