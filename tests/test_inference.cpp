@@ -2937,6 +2937,61 @@ TEST(inference_memory_index_q8_parallel_add_mock) {
   astral_shutdown();
 }
 
+TEST(inference_memory_index_graph_q8_parallel_preprocess_mock) {
+  constexpr uint32_t kDim = 8;
+  constexpr uint32_t kCapacity = 1024;
+  constexpr uint32_t kTopOne = 1;
+  constexpr uint32_t kGraphNeighbors = 8;
+  constexpr uint32_t kGraphSearch = 16;
+  constexpr uint64_t kFirstKey = 12001;
+  constexpr uint32_t kRuntimeThreads = 4;
+
+  AstralInit cfg{};
+  cfg.reserve_bytes = 64ull * 1024ull * 1024ull;
+  cfg.thread_count = kRuntimeThreads;
+  cfg.numa_node = 0xFFFFFFFFu;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = kCapacity;
+  desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+  desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
+  desc.graph_neighbors = kGraphNeighbors;
+  desc.graph_search = kGraphSearch;
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  std::vector<AstralMemoryRecord> records(kCapacity);
+  std::vector<float> vectors(static_cast<size_t>(kCapacity) * kDim);
+  for (uint32_t i = 0; i < kCapacity; ++i) {
+    records[i].size = sizeof(AstralMemoryRecord);
+    records[i].key = kFirstKey + i;
+    vectors[static_cast<size_t>(i) * kDim] = static_cast<float>(i + 1u);
+  }
+  err = astral_memory_add_batch(index, records.data(), vectors.data(), kCapacity);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  AstralMemorySearchDesc search{};
+  search.size = sizeof(AstralMemorySearchDesc);
+  search.top_k = kTopOne;
+  search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+  const float query[kDim] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  AstralMemorySearchResult result{};
+  uint32_t count = 0;
+  err = astral_memory_search(index, &search, query, &result, kTopOne, &count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(count, kTopOne);
+  ASSERT_EQ(result.key, kFirstKey + kCapacity - 1u);
+
+  astral_memory_destroy(index);
+  astral_shutdown();
+}
+
 TEST(inference_memory_index_f6_e2m3_storage_mock) {
   constexpr uint32_t kDim = 4;
   constexpr uint32_t kCapacity = 4;

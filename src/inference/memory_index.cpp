@@ -2607,7 +2607,7 @@ void memory_add_preprocess_work(void* user) {
 
 bool memory_add_preprocess_parallel(MemoryIndex* index, const float* vectors, const uint32_t* slots,
                                     uint32_t count) {
-  if (graph_enabled(index) || count < kMemoryAddParallelMinCount || !core::runtime_initialized()) {
+  if (count < kMemoryAddParallelMinCount || !core::runtime_initialized()) {
     return false;
   }
 
