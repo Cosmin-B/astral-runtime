@@ -1571,7 +1571,7 @@ void graph_search_layer_query(MemoryIndex* index, const float* query, float quer
   graph_mark_visited(index, entry);
   const float entry_score = score_slot(index, query, entry, query_scale);
   insert_graph_top_candidate(index, capacity, &top_count, entry, entry_score);
-  graph_add_candidate(index, capacity, entry, entry_score, &candidate_count);
+  graph_add_candidate(index, index->graph_candidate_capacity, entry, entry_score, &candidate_count);
 
   while (candidate_count != 0) {
     uint32_t slot = kU32Max;
@@ -1599,7 +1599,8 @@ void graph_search_layer_query(MemoryIndex* index, const float* query, float quer
       graph_mark_visited(index, neighbor);
       const float score = score_slot(index, query, neighbor, query_scale);
       if (insert_graph_top_candidate(index, capacity, &top_count, neighbor, score)) {
-        graph_add_candidate(index, capacity, neighbor, score, &candidate_count);
+        graph_add_candidate(index, index->graph_candidate_capacity, neighbor, score,
+                            &candidate_count);
       }
     }
   }
