@@ -25,8 +25,8 @@ Options:
   --query-search <N>    Per-query graph search budget (default: graph budget)
   --graph-neighbors <N> Graph neighbor budget (default: 32)
   --recall-queries <N>  Recall query count (default: 32)
-  --budget-sweep        Also capture graph_recall_search_sweep for f32 and q8
-  --recall-detail       Also capture graph_recall_detail for f32 and q8
+  --budget-sweep        Also capture graph_recall_search_sweep for f32, q8, and f6e2m3
+  --recall-detail       Also capture graph_recall_detail for f32, q8, and f6e2m3
   --level-stats         Also capture deterministic graph level distribution
   --edge-stats          Also capture stored graph edge counts
   --skip-flat-baseline  Skip flat baseline lanes when a caller already captured them
@@ -165,6 +165,8 @@ if [[ "${skip_flat_baseline}" != "1" ]]; then
   run_case "flat_f32_latency" "f32" "flat_search_latency"
   run_case "flat_q8_batch" "q8" "flat_search_batch"
   run_case "flat_q8_recall" "q8" "flat_q8_recall_search"
+  run_case "flat_f6e2m3_batch" "f6e2m3" "flat_search_batch"
+  run_case "flat_f6e2m3_recall" "f6e2m3" "flat_compact_recall_search"
 fi
 run_case "graph_f32_build" "f32" "graph_add_batch"
 run_case "graph_f32_load" "f32" "graph_load"
@@ -175,15 +177,21 @@ run_case "graph_q8_build" "q8" "graph_add_batch"
 run_case "graph_q8_load" "q8" "graph_load"
 run_case "graph_q8_recall" "q8" "graph_recall_search"
 run_case "graph_q8_top1_recall" "q8" "graph_recall_top1"
+run_case "graph_f6e2m3_build" "f6e2m3" "graph_add_batch"
+run_case "graph_f6e2m3_load" "f6e2m3" "graph_load"
+run_case "graph_f6e2m3_recall" "f6e2m3" "graph_recall_search"
+run_case "graph_f6e2m3_top1_recall" "f6e2m3" "graph_recall_top1"
 
 if [[ "${budget_sweep}" == "1" ]]; then
   run_case "graph_f32_budget_sweep" "f32" "graph_recall_search_sweep"
   run_case "graph_q8_budget_sweep" "q8" "graph_recall_search_sweep"
+  run_case "graph_f6e2m3_budget_sweep" "f6e2m3" "graph_recall_search_sweep"
 fi
 
 if [[ "${recall_detail}" == "1" ]]; then
   run_case "graph_f32_recall_detail" "f32" "graph_recall_detail"
   run_case "graph_q8_recall_detail" "q8" "graph_recall_detail"
+  run_case "graph_f6e2m3_recall_detail" "f6e2m3" "graph_recall_detail"
 fi
 
 if [[ "${level_stats}" == "1" ]]; then
@@ -193,6 +201,7 @@ fi
 if [[ "${edge_stats}" == "1" ]]; then
   run_case "graph_f32_edge_stats" "f32" "graph_edge_stats"
   run_case "graph_q8_edge_stats" "q8" "graph_edge_stats"
+  run_case "graph_f6e2m3_edge_stats" "f6e2m3" "graph_edge_stats"
 fi
 
 for file in "${out_dir}"/*.txt; do

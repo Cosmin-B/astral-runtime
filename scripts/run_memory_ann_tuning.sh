@@ -9,9 +9,9 @@ usage() {
 Usage: scripts/run_memory_ann_tuning.sh [options]
 
 Runs a repeatable ANN tuning sweep for Astral memory graph indexes. The runner
-captures f32 and q8 graph recall, top-1 recall, build cost, load cost, edge
-counts, and optional budget sweeps for each requested graph shape. Output goes
-outside the repository by default.
+captures f32, q8, and f6e2m3 graph recall, top-1 recall, build cost, load
+cost, edge counts, and optional budget sweeps for each requested graph shape.
+Output goes outside the repository by default.
 
 Options:
   --preset <name>          CMake preset / build dir to use (default: release-with-tests)
@@ -433,6 +433,7 @@ for neighbors in "${neighbor_values[@]}"; do
       fi
       append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f32"
       append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "q8"
+      append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f6e2m3"
     done
   done
 done
