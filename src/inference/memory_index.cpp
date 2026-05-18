@@ -1981,6 +1981,25 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
     fill_result(&candidate, s, score);
     insert_result(out_results, desc->top_k, &filled, candidate);
   }
+  if (q8_storage(index)) {
+    for (uint32_t i = 0; i < top_count; ++i) {
+      const uint32_t slot = index->graph_scratch_slots[i];
+      const uint32_t* neighbors = graph_neighbors_at_level(index, slot, 0);
+      const uint32_t neighbor_count = graph_neighbor_count_at_level(index, slot, 0);
+      for (uint32_t neighbor_i = 0; neighbor_i < neighbor_count; ++neighbor_i) {
+        const uint32_t neighbor = neighbors[neighbor_i];
+        if (graph_was_visited(index, neighbor) || index->slots[neighbor].occupied == 0) {
+          continue;
+        }
+        graph_mark_visited(index, neighbor);
+        const MemorySlot& s = index->slots[neighbor];
+        const float score = score_slot(index, query, neighbor, query_scale);
+        AstralMemorySearchResult candidate{};
+        fill_result(&candidate, s, score);
+        insert_result(out_results, desc->top_k, &filled, candidate);
+      }
+    }
+  }
   *out_count = filled;
 }
 
