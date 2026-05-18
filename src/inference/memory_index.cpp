@@ -1975,8 +1975,10 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
   for (uint32_t i = 0; i < top_count; ++i) {
     const uint32_t slot = index->graph_scratch_slots[i];
     const MemorySlot& s = index->slots[slot];
+    const float score = q8_storage(index) ? score_slot(index, query, slot, query_scale)
+                                          : index->graph_scratch_scores[i];
     AstralMemorySearchResult candidate{};
-    fill_result(&candidate, s, index->graph_scratch_scores[i]);
+    fill_result(&candidate, s, score);
     insert_result(out_results, desc->top_k, &filled, candidate);
   }
   *out_count = filled;
