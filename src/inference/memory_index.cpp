@@ -54,7 +54,7 @@ constexpr uint32_t kGraphLongLinkCount = 0;
 constexpr uint32_t kGraphNeighborPrefetchDistance = 2;
 constexpr uint64_t kBytesPerKiB = 1024;
 constexpr uint64_t kBytesPerMiB = kBytesPerKiB * kBytesPerKiB;
-constexpr uint64_t kGraphQ8ExactSearchMaxBytes = 16 * kBytesPerMiB;
+constexpr uint64_t kGraphCompactExactSearchMaxBytes = 16 * kBytesPerMiB;
 constexpr uint32_t kFlatQ8PrefetchDistance = 4;
 constexpr uint32_t kFlatQ8PrefetchMinCount = 32768;
 constexpr uint32_t kGraphMaxLevels = 16;
@@ -1012,10 +1012,10 @@ inline uint32_t graph_search_for_query(const MemoryIndex* index,
                                                         : index->graph_query_search_capacity;
 }
 
-inline bool q8_graph_exact_search_preferred(const MemoryIndex* index) {
-  return q8_storage(index) &&
+inline bool compact_graph_exact_search_preferred(const MemoryIndex* index) {
+  return compact_storage(index) &&
          static_cast<uint64_t>(index->count) * static_cast<uint64_t>(index->dim) <=
-             kGraphQ8ExactSearchMaxBytes;
+             kGraphCompactExactSearchMaxBytes;
 }
 
 inline uint32_t active_slot_at(const MemoryIndex* index, uint32_t active_pos) {
@@ -1960,7 +1960,7 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
     memory_search_flat(index, desc, query, out_results, out_count);
     return;
   }
-  if (q8_graph_exact_search_preferred(index)) {
+  if (compact_graph_exact_search_preferred(index)) {
     memory_search_flat(index, desc, query, out_results, out_count);
     return;
   }
