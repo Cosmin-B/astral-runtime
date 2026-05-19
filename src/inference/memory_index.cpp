@@ -976,6 +976,16 @@ inline float compact_value_scale(const MemoryIndex* index, float scale) {
   return e2m3_storage(index) ? scale * kE2M3InvScale : scale;
 }
 
+void quantize_compact_query(const MemoryIndex* index, int8_t* dst, float* out_scale,
+                            const float* src) {
+  if (e2m3_storage(index)) {
+    quantize_e2m3_vector(dst, out_scale, src, index->dim);
+    *out_scale *= kE2M3InvScale;
+    return;
+  }
+  quantize_q8_vector(dst, out_scale, src, index->dim);
+}
+
 inline void prefetch_slot_vector(const MemoryIndex* index, uint32_t slot) {
 #if defined(__GNUC__) || defined(__clang__)
   if (compact_storage(index)) {
@@ -1962,11 +1972,11 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
 
   uint32_t filled = 0;
   uint32_t top_count = 0;
-  if (q8_storage(index)) {
+  if (compact_storage(index)) {
     int8_t compact_query[kMaxDim];
     float compact_query_scale = 1.0f;
     float compact_cosine_query_scale = query_scale;
-    quantize_q8_vector(compact_query, &compact_query_scale, query, index->dim);
+    quantize_compact_query(index, compact_query, &compact_query_scale, query);
     const uint32_t entry =
         index->graph_max_level != 0
             ? graph_greedy_closest_compact_query(index, compact_query, compact_query_scale,
@@ -1988,13 +1998,13 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
   for (uint32_t i = 0; i < top_count; ++i) {
     const uint32_t slot = index->graph_scratch_slots[i];
     const MemorySlot& s = index->slots[slot];
-    const float score = q8_storage(index) ? score_slot(index, query, slot, query_scale)
-                                          : index->graph_scratch_scores[i];
+    const float score = compact_storage(index) ? score_slot(index, query, slot, query_scale)
+                                               : index->graph_scratch_scores[i];
     AstralMemorySearchResult candidate{};
     fill_result(&candidate, s, score);
     insert_result(out_results, desc->top_k, &filled, candidate);
   }
-  if (q8_storage(index)) {
+  if (compact_storage(index)) {
     for (uint32_t i = 0; i < top_count; ++i) {
       const uint32_t slot = index->graph_scratch_slots[i];
       const uint32_t* neighbors = graph_neighbors_at_level(index, slot, 0);
