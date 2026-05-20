@@ -1173,6 +1173,9 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save_size(AstralHandle index, uin
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save(AstralHandle index, AstralMutSpanU8 out_bytes, uint64_t* out_written);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_info(AstralSpanU8 bytes,
                                                              AstralMemorySnapshotInfo* out_info);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_search(
+    AstralSpanU8 bytes, const AstralMemorySearchDesc* desc, const float* query,
+    AstralMemorySearchResult* out_results, uint32_t max_results, uint32_t* out_count);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
     const AstralMemoryIndexDesc* desc,
     AstralSpanU8 bytes,

@@ -2487,6 +2487,24 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_info(AstralSpanU8 bytes,
   ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_search(
+    AstralSpanU8 bytes, const AstralMemorySearchDesc* desc, const float* query,
+    AstralMemorySearchResult* out_results, uint32_t max_results, uint32_t* out_count) {
+  ASTRAL_ABI_TRY_BEGIN
+  ASTRAL_ZONE_N("astral.abi.memory_snapshot_search");
+  if (bytes.data == nullptr || desc == nullptr || query == nullptr || out_count == nullptr) {
+    set_err_invalid("bytes/desc/query/out_count");
+    return ASTRAL_E_INVALID;
+  }
+  const AstralErr err = astral::inference::memory_snapshot_search(bytes, desc, query, out_results,
+                                                                  max_results, out_count);
+  if (err != ASTRAL_OK) {
+    set_err_code(err);
+  }
+  return err;
+  ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
     const AstralMemoryIndexDesc* desc,
     AstralSpanU8 bytes,

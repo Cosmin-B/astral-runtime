@@ -976,6 +976,10 @@ inline float compact_value_scale(const MemoryIndex* index, float scale) {
   return e2m3_storage(index) ? scale * kE2M3InvScale : scale;
 }
 
+inline float compact_value_scale_kind(AstralMemoryStorageKind kind, float scale) {
+  return kind == ASTRAL_MEMORY_STORAGE_F6_E2M3 ? scale * kE2M3InvScale : scale;
+}
+
 void quantize_compact_query(const MemoryIndex* index, int8_t* dst, float* out_scale,
                             const float* src) {
   if (e2m3_storage(index)) {
@@ -3601,6 +3605,82 @@ AstralErr memory_snapshot_info(AstralSpanU8 bytes, AstralMemorySnapshotInfo* out
   out_info->graph_offset = layout.graph_offset;
   out_info->graph_bytes = layout.graph_bytes;
   out_info->total_bytes = layout.total_bytes;
+  return ASTRAL_OK;
+}
+
+AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDesc* desc,
+                                 const float* query, AstralMemorySearchResult* out_results,
+                                 uint32_t max_results, uint32_t* out_count) {
+  if (bytes.data == nullptr || desc == nullptr || desc->size != sizeof(AstralMemorySearchDesc) ||
+      query == nullptr || out_count == nullptr || desc->top_k == 0) {
+    return ASTRAL_E_INVALID;
+  }
+  if (out_results == nullptr || max_results < desc->top_k) {
+    return ASTRAL_E_NOMEM;
+  }
+
+  AstralMemorySnapshotInfo info{};
+  info.size = sizeof(AstralMemorySnapshotInfo);
+  AstralErr err = memory_snapshot_info(bytes, &info);
+  if (err != ASTRAL_OK) {
+    return err;
+  }
+
+  const bool compact = compact_storage_kind(info.storage_kind);
+  const float query_scale =
+      info.metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, info.dim) : 1.0f;
+  uint32_t filled = 0;
+  for (uint32_t i = 0; i < info.count; ++i) {
+    const uint8_t* record_src =
+        bytes.data + info.record_offset + static_cast<uint64_t>(i) * info.record_stride;
+    AstralMemoryRecord record{};
+    std::memcpy(&record, record_src, sizeof(record));
+    if (record.size != sizeof(AstralMemoryRecord) || record.key == 0) {
+      return ASTRAL_E_INVALID;
+    }
+    if (desc->group_id != ASTRAL_MEMORY_GROUP_ANY && record.group_id != desc->group_id) {
+      continue;
+    }
+
+    float score = 0.0f;
+    if (compact) {
+      float stored_scale = 1.0f;
+      const uint8_t* scale_src =
+          bytes.data + info.scale_offset + static_cast<uint64_t>(i) * info.scale_stride;
+      std::memcpy(&stored_scale, scale_src, sizeof(stored_scale));
+      const float scale = compact_value_scale_kind(info.storage_kind, stored_scale);
+      const int8_t* vector = reinterpret_cast<const int8_t*>(
+          bytes.data + info.vector_offset + static_cast<uint64_t>(i) * info.vector_stride);
+      if (info.metric == ASTRAL_MEMORY_METRIC_DOT) {
+        score = dot_q8_f32(vector, query, info.dim) * scale;
+      } else if (info.metric == ASTRAL_MEMORY_METRIC_COSINE) {
+        const float vector_scale = info.storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3
+                                       ? 1.0f
+                                       : cosine_scale_q8(vector, stored_scale, info.dim);
+        score = dot_q8_f32(vector, query, info.dim) * scale * query_scale * vector_scale;
+      } else {
+        score = l2_score_q8_f32(vector, scale, query, info.dim);
+      }
+    } else {
+      const float* vector = reinterpret_cast<const float*>(
+          bytes.data + info.vector_offset + static_cast<uint64_t>(i) * info.vector_stride);
+      if (info.metric == ASTRAL_MEMORY_METRIC_DOT) {
+        score = dot_f32(query, vector, info.dim);
+      } else if (info.metric == ASTRAL_MEMORY_METRIC_COSINE) {
+        score = dot_f32(query, vector, info.dim) * query_scale * cosine_scale(vector, info.dim);
+      } else {
+        score = l2_score_f32(query, vector, info.dim);
+      }
+    }
+
+    MemorySlot slot{};
+    slot.record = record;
+    AstralMemorySearchResult candidate{};
+    fill_result(&candidate, slot, score);
+    insert_result(out_results, desc->top_k, &filled, candidate);
+  }
+
+  *out_count = filled;
   return ASTRAL_OK;
 }
 

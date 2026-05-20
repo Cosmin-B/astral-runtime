@@ -128,6 +128,13 @@ whether to load the full native index. Older snapshots still load through
 `astral_memory_load()`, but their reported strides describe the legacy
 interleaved layout.
 
+`astral_memory_snapshot_search()` runs an exact flat scan directly over a saved
+snapshot span. It is intended for read-only memory-mapped snapshots and oracle
+checks: callers can search staged f32, q8, or f6 snapshots without allocating a
+native index handle or copying vector storage first. Graph topology in the
+snapshot is ignored by this path; use `astral_memory_load()` when you need the
+saved graph routing structure.
+
 ## Metrics
 
 - `ASTRAL_MEMORY_METRIC_DOT`: higher dot product ranks first.

@@ -2824,6 +2824,14 @@ TEST(inference_memory_index_q8_storage_mock) {
     ASSERT_EQ(snapshot.graph_bytes, 0ull);
     ASSERT_EQ(snapshot.total_bytes, save_bytes);
 
+    AstralMemorySearchResult view_results[kTopK]{};
+    uint32_t view_count = 0;
+    err =
+        astral_memory_snapshot_search(blob_span, &search, query, view_results, kTopK, &view_count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(view_count, kTopK);
+    ASSERT_EQ(view_results[0].key, kKeyA);
+
     AstralHandle loaded = 0;
     err = astral_memory_load(&desc, blob_span, &loaded);
     ASSERT_EQ(err, ASTRAL_OK);
@@ -3061,6 +3069,13 @@ TEST(inference_memory_index_f6_e2m3_storage_mock) {
   AstralSpanU8 blob_span{};
   blob_span.data = reinterpret_cast<const uint8_t*>(blob.data());
   blob_span.len = static_cast<uint32_t>(blob.size());
+  AstralMemorySearchResult view_results[kTopK]{};
+  uint32_t view_count = 0;
+  err = astral_memory_snapshot_search(blob_span, &search, query, view_results, kTopK, &view_count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(view_count, kTopK);
+  ASSERT_EQ(view_results[0].key, kKeyA);
+
   AstralHandle loaded = 0;
   err = astral_memory_load(&desc, blob_span, &loaded);
   ASSERT_EQ(err, ASTRAL_OK);

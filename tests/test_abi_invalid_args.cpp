@@ -374,6 +374,12 @@ TEST(abi_invalid_args_model_surface) {
     memory_snapshot.size = sizeof(AstralMemorySnapshotInfo);
     ASSERT_EQ(astral_memory_snapshot_info(null_span(), &memory_snapshot), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_snapshot_info(null_span(), nullptr), ASTRAL_E_INVALID);
+    AstralErr snapshot_search_err = astral_memory_snapshot_search(
+        null_span(), &memory_search, nullptr, &memory_result, kMemoryTopK, &token_count);
+    ASSERT_EQ(snapshot_search_err, ASTRAL_E_INVALID);
+    snapshot_search_err = astral_memory_snapshot_search(null_span(), nullptr, nullptr,
+                                                        &memory_result, kMemoryTopK, &token_count);
+    ASSERT_EQ(snapshot_search_err, ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(nullptr, null_span(), &toolset), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_load(&memory_desc, null_span(), nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_memory_record_from_chunk(nullptr, kMemoryKey, 0, &memory_record), ASTRAL_E_INVALID);
