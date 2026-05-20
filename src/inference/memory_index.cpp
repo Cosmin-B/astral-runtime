@@ -3629,6 +3629,13 @@ AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDes
   const bool compact = compact_storage_kind(info.storage_kind);
   const float query_scale =
       info.metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, info.dim) : 1.0f;
+  int8_t compact_query[kMaxDim];
+  float compact_query_scale = 1.0f;
+  const bool use_f6_compact_query = info.storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
+  if (use_f6_compact_query) {
+    quantize_e2m3_vector(compact_query, &compact_query_scale, query, info.dim);
+    compact_query_scale *= kE2M3InvScale;
+  }
   uint32_t filled = 0;
   for (uint32_t i = 0; i < info.count; ++i) {
     const uint8_t* record_src =
@@ -3652,14 +3659,21 @@ AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDes
       const int8_t* vector = reinterpret_cast<const int8_t*>(
           bytes.data + info.vector_offset + static_cast<uint64_t>(i) * info.vector_stride);
       if (info.metric == ASTRAL_MEMORY_METRIC_DOT) {
-        score = dot_q8_f32(vector, query, info.dim) * scale;
+        score = use_f6_compact_query
+                    ? dot_q8_q8(vector, compact_query, info.dim) * scale * compact_query_scale
+                    : dot_q8_f32(vector, query, info.dim) * scale;
       } else if (info.metric == ASTRAL_MEMORY_METRIC_COSINE) {
-        const float vector_scale = info.storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3
-                                       ? 1.0f
-                                       : cosine_scale_q8(vector, stored_scale, info.dim);
-        score = dot_q8_f32(vector, query, info.dim) * scale * query_scale * vector_scale;
+        if (use_f6_compact_query) {
+          score = dot_q8_q8(vector, compact_query, info.dim) * scale * compact_query_scale *
+                  query_scale;
+        } else {
+          const float vector_scale = cosine_scale_q8(vector, stored_scale, info.dim);
+          score = dot_q8_f32(vector, query, info.dim) * scale * query_scale * vector_scale;
+        }
       } else {
-        score = l2_score_q8_f32(vector, scale, query, info.dim);
+        score = use_f6_compact_query
+                    ? l2_score_q8_q8(vector, scale, compact_query, compact_query_scale, info.dim)
+                    : l2_score_q8_f32(vector, scale, query, info.dim);
       }
     } else {
       const float* vector = reinterpret_cast<const float*>(
