@@ -115,6 +115,7 @@ static constexpr char kBenchMemoryStorageQ8[] = "q8";
 static constexpr char kBenchMemoryStorageF6E2M3[] = "f6e2m3";
 static constexpr char kBenchMemoryCaseAddBatch[] = "add_batch";
 static constexpr char kBenchMemoryCaseGraphAddBatch[] = "graph_add_batch";
+static constexpr char kBenchMemoryCaseGraphAddLatency[] = "graph_add_latency";
 static constexpr char kBenchMemoryCaseGraphLoad[] = "graph_load";
 static constexpr char kBenchMemoryCaseSnapshotSearch[] = "snapshot_search";
 static constexpr char kBenchMemoryCaseFlatSearchTop1[] = "flat_search_top1";
@@ -1358,6 +1359,65 @@ static BenchResult bench_memory_graph_add_batch(uint64_t iters) {
     r.ns = n1 - n0;
     astral_memory_destroy(index);
     return r;
+}
+
+static LatencyResult bench_memory_graph_add_latency(uint64_t iters) {
+  (void)iters;
+  LatencyResult r{};
+  r.name = "features.memory graph_add_latency";
+  r.tick_to_ns = clock_info().tick_to_ns;
+  const uint32_t dim = memory_bench_dim();
+  const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+  const AstralMemoryMetric metric = parse_memory_metric_env();
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = dim;
+  desc.capacity = capacity;
+  desc.metric = metric;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+  desc.graph_neighbors = memory_graph_neighbors();
+  desc.graph_search = memory_graph_search();
+  desc.storage_kind = parse_memory_storage_env();
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  if (err != ASTRAL_OK) {
+    return r;
+  }
+
+  std::vector<AstralMemoryRecord> records(capacity);
+  std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+  std::vector<uint64_t> samples;
+  samples.reserve(capacity);
+  fill_memory_fixture(records, vectors, capacity, dim);
+
+  for (uint32_t i = 0; i < capacity; ++i) {
+    const uint64_t t0 = ticks_now();
+    err = astral_memory_add_batch(index, &records[i], vectors.data() + static_cast<size_t>(i) * dim,
+                                  1);
+    const uint64_t t1 = ticks_now();
+    if (err != ASTRAL_OK) {
+      break;
+    }
+    samples.push_back(t1 - t0);
+  }
+
+  if (!samples.empty()) {
+    uint64_t max_ticks = 0;
+    for (uint64_t sample : samples) {
+      if (sample > max_ticks) {
+        max_ticks = sample;
+      }
+    }
+    r.max_ticks = max_ticks;
+    r.p50_ticks = percentile_ticks(samples, 50);
+    r.p95_ticks = percentile_ticks(samples, 95);
+    r.p99_ticks = percentile_ticks(samples, 99);
+  }
+
+  astral_memory_destroy(index);
+  return r;
 }
 
 static BenchResult bench_memory_graph_load(uint64_t iters) {
@@ -2881,6 +2941,9 @@ static void print_memory_benchmarks(uint64_t iters) {
         }
         if (memory_case_enabled(kBenchMemoryCaseGraphAddBatch)) {
             print_result(bench_memory_graph_add_batch(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphAddLatency)) {
+          print_latency_result(bench_memory_graph_add_latency(iters), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseGraphLoad)) {
           print_result(bench_memory_graph_load(iters), clock_info().name);
