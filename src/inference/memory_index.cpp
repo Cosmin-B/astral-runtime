@@ -1433,9 +1433,10 @@ bool graph_neighbor_diverse(MemoryIndex* index, uint32_t candidate_slot, float c
 }
 
 void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t level,
-                            uint32_t candidate_count, uint32_t* neighbors, uint32_t* out_count) {
+                            uint32_t candidate_count, uint32_t* neighbors, uint32_t* out_count,
+                            uint32_t selection_capacity) {
   uint32_t selected = 0;
-  const uint32_t capacity = graph_neighbor_capacity_at_level(index, level);
+  const uint32_t capacity = selection_capacity;
   for (uint32_t i = 0; i < candidate_count && selected < capacity; ++i) {
     const uint32_t candidate = index->graph_scratch_slots[i];
     const float candidate_score = index->graph_scratch_scores[i];
@@ -1457,6 +1458,12 @@ void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t le
     ++selected;
   }
   *out_count = selected;
+}
+
+void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t level,
+                            uint32_t candidate_count, uint32_t* neighbors, uint32_t* out_count) {
+  graph_select_neighbors(index, owner_slot, level, candidate_count, neighbors, out_count,
+                         graph_neighbor_capacity_at_level(index, level));
 }
 
 bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t* filled,
@@ -1779,7 +1786,8 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
     const uint32_t next_entry = candidate_count != 0 ? index->graph_scratch_slots[0] : entry;
     uint32_t* neighbors = graph_neighbors_at_level(index, slot, level);
     uint32_t filled = 0;
-    graph_select_neighbors(index, slot, level, candidate_count, neighbors, &filled);
+    graph_select_neighbors(index, slot, level, candidate_count, neighbors, &filled,
+                           index->graph_neighbor_capacity);
     graph_neighbor_count_ref(index, slot, level) = filled;
     for (uint32_t i = 0; i < filled; ++i) {
       refine_graph_neighbor_list(index, neighbors[i], slot, level);
