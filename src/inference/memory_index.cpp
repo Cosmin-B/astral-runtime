@@ -3638,6 +3638,14 @@ AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDes
   }
   uint32_t filled = 0;
   for (uint32_t i = 0; i < info.count; ++i) {
+#if defined(__GNUC__) || defined(__clang__)
+    if (compact && i + kFlatQ8PrefetchDistance < info.count) {
+      const uint64_t prefetch_i = static_cast<uint64_t>(i + kFlatQ8PrefetchDistance);
+      __builtin_prefetch(bytes.data + info.scale_offset + prefetch_i * info.scale_stride, 0, 1);
+      __builtin_prefetch(bytes.data + info.vector_offset + prefetch_i * info.vector_stride, 0, 1);
+      __builtin_prefetch(bytes.data + info.record_offset + prefetch_i * info.record_stride, 0, 1);
+    }
+#endif
     const uint8_t* record_src =
         bytes.data + info.record_offset + static_cast<uint64_t>(i) * info.record_stride;
     AstralMemoryRecord record{};
