@@ -784,6 +784,14 @@ inline float cosine_scale(const float* v, uint32_t dim) {
   return norm > 0.0f ? 1.0f / norm : 0.0f;
 }
 
+void normalize_f32_vector(float* dst, const float* src, uint32_t dim) {
+  const float norm = vector_norm(src, dim);
+  const float inv_norm = norm > 0.0f ? 1.0f / norm : 0.0f;
+  for (uint32_t i = 0; i < dim; ++i) {
+    dst[i] = src[i] * inv_norm;
+  }
+}
+
 inline float cosine_scale_q8(const int8_t* v, float scale, uint32_t dim) {
   const float sq = dot_q8_q8(v, v, dim) * scale * scale;
   return sq > 0.0f ? 1.0f / std::sqrt(sq) : 0.0f;
@@ -1312,17 +1320,7 @@ void store_f32_vector(MemoryIndex* index, uint32_t slot, const float* src) {
     return;
   }
 
-  const float norm = vector_norm(src, index->dim);
-  if (norm == 0.0f) {
-    std::memcpy(dst, src, sizeof(float) * index->dim);
-    index->slots[slot].score_scale = 0.0f;
-    return;
-  }
-
-  const float inv_norm = 1.0f / norm;
-  for (uint32_t i = 0; i < index->dim; ++i) {
-    dst[i] = src[i] * inv_norm;
-  }
+  normalize_f32_vector(dst, src, index->dim);
   index->slots[slot].score_scale = 1.0f;
 }
 
@@ -1997,8 +1995,14 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
     return;
   }
 
-  const float query_scale =
-      index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 1.0f;
+  float normalized_query[kMaxDim];
+  if (!compact_storage(index) && index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+    normalize_f32_vector(normalized_query, query, index->dim);
+    query = normalized_query;
+  }
+  const float query_scale = compact_storage(index) && index->metric == ASTRAL_MEMORY_METRIC_COSINE
+                                ? cosine_scale(query, index->dim)
+                                : 1.0f;
   graph_begin_visit(index);
   const uint32_t search_capacity = graph_search_for_query(index, desc);
 
@@ -2269,7 +2273,8 @@ void memory_search_cosine(MemoryIndex* index, const AstralMemorySearchDesc* desc
                           const float* query, AstralMemorySearchResult* out_results,
                           uint32_t* out_count) {
   uint32_t filled = 0;
-  const float query_scale = cosine_scale(query, index->dim);
+  float normalized_query[kMaxDim];
+  normalize_f32_vector(normalized_query, query, index->dim);
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
     const uint32_t slot = active_slot_at(index, active_pos);
     const MemorySlot& s = index->slots[slot];
@@ -2277,7 +2282,7 @@ void memory_search_cosine(MemoryIndex* index, const AstralMemorySearchDesc* desc
       continue;
     }
 
-    const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale;
+    const float score = dot_f32(normalized_query, vector_at(index, slot), index->dim);
     if (filled == desc->top_k &&
         !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
       continue;
@@ -2395,7 +2400,8 @@ void memory_search_dot_top1(MemoryIndex* index, const AstralMemorySearchDesc* de
 void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                                const float* query, AstralMemorySearchResult* out_results,
                                uint32_t* out_count) {
-  const float query_scale = cosine_scale(query, index->dim);
+  float normalized_query[kMaxDim];
+  normalize_f32_vector(normalized_query, query, index->dim);
   if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY) {
     if (index->count == 0) {
       *out_count = kNoResults;
@@ -2407,12 +2413,12 @@ void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc*
       const uint32_t dim = index->dim;
       const float* vectors = index->vectors;
       MemorySlot* best_slot = &slots[0];
-      float best_score = dot_f32(query, vectors, dim) * query_scale;
+      float best_score = dot_f32(normalized_query, vectors, dim);
       uint64_t best_key = best_slot->record.key;
       for (uint32_t slot = 1; slot < index->count; ++slot) {
         MemorySlot& s = slots[slot];
         const float score =
-            dot_f32(query, vectors + static_cast<size_t>(slot) * dim, dim) * query_scale;
+            dot_f32(normalized_query, vectors + static_cast<size_t>(slot) * dim, dim);
         if (score > best_score || (score == best_score && s.record.key < best_key)) {
           best_slot = &s;
           best_score = score;
@@ -2427,12 +2433,12 @@ void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc*
 
     const uint32_t first_slot = active_slot_at(index, 0);
     const MemorySlot* best_slot = &index->slots[first_slot];
-    float best_score = dot_f32(query, vector_at(index, first_slot), index->dim) * query_scale;
+    float best_score = dot_f32(normalized_query, vector_at(index, first_slot), index->dim);
     uint64_t best_key = best_slot->record.key;
     for (uint32_t active_pos = 1; active_pos < index->count; ++active_pos) {
       const uint32_t slot = active_slot_at(index, active_pos);
       const MemorySlot& s = index->slots[slot];
-      const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale;
+      const float score = dot_f32(normalized_query, vector_at(index, slot), index->dim);
       if (score > best_score || (score == best_score && s.record.key < best_key)) {
         best_slot = &s;
         best_score = score;
@@ -2455,7 +2461,7 @@ void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc*
       continue;
     }
 
-    const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale;
+    const float score = dot_f32(normalized_query, vector_at(index, slot), index->dim);
     if (best_slot == nullptr || score > best_score ||
         (score == best_score && s.record.key < best_key)) {
       best_slot = &s;
