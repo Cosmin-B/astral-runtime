@@ -1240,8 +1240,7 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
     return dot_f32(query, vector_at(index, slot), index->dim);
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-    return dot_f32(query, vector_at(index, slot), index->dim) * query_scale *
-           index->slots[slot].score_scale;
+    return dot_f32(query, vector_at(index, slot), index->dim) * query_scale;
   }
   return l2_score_f32(query, vector_at(index, slot), index->dim);
 }
@@ -1278,8 +1277,7 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
   }
   const float* va = vector_at(index, a);
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-    return dot_f32(va, vector_at(index, b), index->dim) * index->slots[a].score_scale *
-           index->slots[b].score_scale;
+    return dot_f32(va, vector_at(index, b), index->dim);
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
     return l2_score_f32(va, vector_at(index, b), index->dim);
@@ -1305,6 +1303,28 @@ bool graph_neighbor_diverse(MemoryIndex* index, uint32_t candidate_slot, float c
                             const uint32_t* neighbors, uint32_t count);
 void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t level,
                             uint32_t candidate_count, uint32_t* neighbors, uint32_t* out_count);
+
+void store_f32_vector(MemoryIndex* index, uint32_t slot, const float* src) {
+  float* dst = vector_at(index, slot);
+  if (index->metric != ASTRAL_MEMORY_METRIC_COSINE) {
+    std::memcpy(dst, src, sizeof(float) * index->dim);
+    index->slots[slot].score_scale = 0.0f;
+    return;
+  }
+
+  const float norm = vector_norm(src, index->dim);
+  if (norm == 0.0f) {
+    std::memcpy(dst, src, sizeof(float) * index->dim);
+    index->slots[slot].score_scale = 0.0f;
+    return;
+  }
+
+  const float inv_norm = 1.0f / norm;
+  for (uint32_t i = 0; i < index->dim; ++i) {
+    dst[i] = src[i] * inv_norm;
+  }
+  index->slots[slot].score_scale = 1.0f;
+}
 
 void insert_result(AstralMemorySearchResult* results, uint32_t top_k, uint32_t* filled,
                    const AstralMemorySearchResult& candidate) {
@@ -2257,8 +2277,7 @@ void memory_search_cosine(MemoryIndex* index, const AstralMemorySearchDesc* desc
       continue;
     }
 
-    const float score =
-        dot_f32(query, vector_at(index, slot), index->dim) * query_scale * s.score_scale;
+    const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale;
     if (filled == desc->top_k &&
         !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
       continue;
@@ -2388,12 +2407,12 @@ void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc*
       const uint32_t dim = index->dim;
       const float* vectors = index->vectors;
       MemorySlot* best_slot = &slots[0];
-      float best_score = dot_f32(query, vectors, dim) * query_scale * best_slot->score_scale;
+      float best_score = dot_f32(query, vectors, dim) * query_scale;
       uint64_t best_key = best_slot->record.key;
       for (uint32_t slot = 1; slot < index->count; ++slot) {
         MemorySlot& s = slots[slot];
-        const float score = dot_f32(query, vectors + static_cast<size_t>(slot) * dim, dim) *
-                            query_scale * s.score_scale;
+        const float score =
+            dot_f32(query, vectors + static_cast<size_t>(slot) * dim, dim) * query_scale;
         if (score > best_score || (score == best_score && s.record.key < best_key)) {
           best_slot = &s;
           best_score = score;
@@ -2408,14 +2427,12 @@ void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc*
 
     const uint32_t first_slot = active_slot_at(index, 0);
     const MemorySlot* best_slot = &index->slots[first_slot];
-    float best_score = dot_f32(query, vector_at(index, first_slot), index->dim) * query_scale *
-                       best_slot->score_scale;
+    float best_score = dot_f32(query, vector_at(index, first_slot), index->dim) * query_scale;
     uint64_t best_key = best_slot->record.key;
     for (uint32_t active_pos = 1; active_pos < index->count; ++active_pos) {
       const uint32_t slot = active_slot_at(index, active_pos);
       const MemorySlot& s = index->slots[slot];
-      const float score =
-          dot_f32(query, vector_at(index, slot), index->dim) * query_scale * s.score_scale;
+      const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale;
       if (score > best_score || (score == best_score && s.record.key < best_key)) {
         best_slot = &s;
         best_score = score;
@@ -2438,8 +2455,7 @@ void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc*
       continue;
     }
 
-    const float score =
-        dot_f32(query, vector_at(index, slot), index->dim) * query_scale * s.score_scale;
+    const float score = dot_f32(query, vector_at(index, slot), index->dim) * query_scale;
     if (best_slot == nullptr || score > best_score ||
         (score == best_score && s.record.key < best_key)) {
       best_slot = &s;
@@ -2754,12 +2770,14 @@ void memory_add_preprocess_range(MemoryIndex* index, const float* vectors, const
         quantize_e2m3_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
       }
     } else {
-      std::memcpy(vector_at(index, slot), src, sizeof(float) * index->dim);
+      store_f32_vector(index, slot, src);
     }
-    index->slots[slot].score_scale =
-        index->metric == ASTRAL_MEMORY_METRIC_COSINE
-            ? (e2m3_storage(index) ? 1.0f : cosine_scale(src, index->dim))
-            : 0.0f;
+    if (compact_storage(index)) {
+      index->slots[slot].score_scale =
+          index->metric == ASTRAL_MEMORY_METRIC_COSINE
+              ? (e2m3_storage(index) ? 1.0f : cosine_scale(src, index->dim))
+              : 0.0f;
+    }
   }
 }
 
@@ -3835,9 +3853,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
         }
       }
     } else {
-      index->slots[slot].score_scale =
-          index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(vector, index->dim) : 0.0f;
-      std::memcpy(vector_at(index, slot), vector, sizeof(float) * index->dim);
+      store_f32_vector(index, slot, vector);
     }
     if (graph_enabled(index)) {
       index->graph_levels[slot] = static_cast<uint8_t>(graph_level_for_key(index, record.key));
