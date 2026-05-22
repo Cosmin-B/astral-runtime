@@ -28,7 +28,9 @@ constexpr uint32_t kSaveVersionF32 = 1;
 constexpr uint32_t kSaveVersionCompactStorage = 2;
 constexpr uint32_t kSaveVersionGraphTopology = 3;
 constexpr uint32_t kSaveVersionLegacyLayout = 4;
-constexpr uint32_t kSaveVersion = 5;
+constexpr uint32_t kSaveVersionModernLayout = 5;
+constexpr uint32_t kSaveVersionNormalizedF32Cosine = 6;
+constexpr uint32_t kSaveVersion = kSaveVersionNormalizedF32Cosine;
 constexpr uint32_t kSaveGraphTopologyFlag = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
@@ -893,7 +895,7 @@ bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
       storage == ASTRAL_MEMORY_STORAGE_Q8 || storage == ASTRAL_MEMORY_STORAGE_F6_E2M3;
   layout.record_offset = sizeof(SaveHeader);
   layout.record_stride = sizeof(AstralMemoryRecord);
-  if (version >= kSaveVersion) {
+  if (version >= kSaveVersionModernLayout) {
     uint64_t cursor =
         layout.record_offset + static_cast<uint64_t>(count) * sizeof(AstralMemoryRecord);
     if (compact) {
@@ -3562,7 +3564,7 @@ AstralErr memory_snapshot_info(AstralSpanU8 bytes, AstralMemorySnapshotInfo* out
   const bool version_valid =
       header.version == kSaveVersionF32 || header.version == kSaveVersionCompactStorage ||
       header.version == kSaveVersionGraphTopology || header.version == kSaveVersionLegacyLayout ||
-      header.version == kSaveVersion;
+      header.version == kSaveVersionModernLayout || header.version == kSaveVersion;
   AstralMemoryStorageKind storage = static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version >= kSaveVersionCompactStorage) {
     storage = static_cast<AstralMemoryStorageKind>(header._reserved0);
@@ -3659,8 +3661,16 @@ AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDes
   }
 
   const bool compact = compact_storage_kind(info.storage_kind);
-  const float query_scale =
-      info.metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, info.dim) : 1.0f;
+  const bool normalized_f32_cosine = !compact && info.metric == ASTRAL_MEMORY_METRIC_COSINE &&
+                                     info.version >= kSaveVersionNormalizedF32Cosine;
+  float normalized_query[kMaxDim];
+  if (normalized_f32_cosine) {
+    normalize_f32_vector(normalized_query, query, info.dim);
+    query = normalized_query;
+  }
+  const float query_scale = info.metric == ASTRAL_MEMORY_METRIC_COSINE && !normalized_f32_cosine
+                                ? cosine_scale(query, info.dim)
+                                : 1.0f;
   int8_t compact_query[kMaxDim];
   float compact_query_scale = 1.0f;
   const bool use_f6_compact_query = info.storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
@@ -3671,9 +3681,11 @@ AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDes
   uint32_t filled = 0;
   for (uint32_t i = 0; i < info.count; ++i) {
 #if defined(__GNUC__) || defined(__clang__)
-    if (compact && i + kFlatQ8PrefetchDistance < info.count) {
+    if (i + kFlatQ8PrefetchDistance < info.count) {
       const uint64_t prefetch_i = static_cast<uint64_t>(i + kFlatQ8PrefetchDistance);
-      __builtin_prefetch(bytes.data + info.scale_offset + prefetch_i * info.scale_stride, 0, 1);
+      if (compact) {
+        __builtin_prefetch(bytes.data + info.scale_offset + prefetch_i * info.scale_stride, 0, 1);
+      }
       __builtin_prefetch(bytes.data + info.vector_offset + prefetch_i * info.vector_stride, 0, 1);
       __builtin_prefetch(bytes.data + info.record_offset + prefetch_i * info.record_stride, 0, 1);
     }
@@ -3721,7 +3733,9 @@ AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDes
       if (info.metric == ASTRAL_MEMORY_METRIC_DOT) {
         score = dot_f32(query, vector, info.dim);
       } else if (info.metric == ASTRAL_MEMORY_METRIC_COSINE) {
-        score = dot_f32(query, vector, info.dim) * query_scale * cosine_scale(vector, info.dim);
+        score = normalized_f32_cosine ? dot_f32(query, vector, info.dim)
+                                      : dot_f32(query, vector, info.dim) * query_scale *
+                                            cosine_scale(vector, info.dim);
       } else {
         score = l2_score_f32(query, vector, info.dim);
       }
@@ -3750,7 +3764,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
   const bool version_valid =
       header.version == kSaveVersionF32 || header.version == kSaveVersionCompactStorage ||
       header.version == kSaveVersionGraphTopology || header.version == kSaveVersionLegacyLayout ||
-      header.version == kSaveVersion;
+      header.version == kSaveVersionModernLayout || header.version == kSaveVersion;
   AstralMemoryStorageKind saved_storage =
       static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version >= kSaveVersionCompactStorage) {
