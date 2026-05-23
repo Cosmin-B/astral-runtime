@@ -52,6 +52,7 @@ constexpr uint32_t kGraphBaseNeighborMultiplier = 2;
 constexpr uint32_t kGraphDefaultEfConstruction = 68;
 constexpr uint32_t kGraphMinSearch = 4;
 constexpr uint32_t kGraphQueryReserveMultiplier = 16;
+constexpr uint32_t kGraphCandidateReserveMultiplier = 2;
 constexpr uint32_t kGraphLongLinkCount = 0;
 constexpr uint32_t kGraphNeighborPrefetchDistance = 2;
 constexpr uint64_t kBytesPerKiB = 1024;
@@ -1026,6 +1027,15 @@ inline uint32_t graph_search_for_query(const MemoryIndex* index,
                                                         : index->graph_query_search_capacity;
 }
 
+inline uint32_t graph_candidate_search_capacity(const MemoryIndex* index,
+                                                uint32_t search_capacity) {
+  uint32_t requested = search_capacity;
+  if (search_capacity <= kU32Max / kGraphCandidateReserveMultiplier) {
+    requested = search_capacity * kGraphCandidateReserveMultiplier;
+  }
+  return requested < index->graph_candidate_capacity ? requested : index->graph_candidate_capacity;
+}
+
 inline bool compact_graph_exact_search_preferred(const MemoryIndex* index) {
   return compact_storage(index) &&
          static_cast<uint64_t>(index->count) * static_cast<uint64_t>(index->dim) <=
@@ -1632,10 +1642,11 @@ void graph_search_layer_query(MemoryIndex* index, const float* query, float quer
                               uint32_t* out_top_count) {
   uint32_t candidate_count = 0;
   uint32_t top_count = 0;
+  const uint32_t candidate_capacity = graph_candidate_search_capacity(index, capacity);
   graph_mark_visited(index, entry);
   const float entry_score = score_slot(index, query, entry, query_scale);
   insert_graph_top_candidate(index, capacity, &top_count, entry, entry_score);
-  graph_add_candidate(index, index->graph_candidate_capacity, entry, entry_score, &candidate_count);
+  graph_add_candidate(index, candidate_capacity, entry, entry_score, &candidate_count);
 
   while (candidate_count != 0) {
     uint32_t slot = kU32Max;
@@ -1663,8 +1674,7 @@ void graph_search_layer_query(MemoryIndex* index, const float* query, float quer
       graph_mark_visited(index, neighbor);
       const float score = score_slot(index, query, neighbor, query_scale);
       if (insert_graph_top_candidate(index, capacity, &top_count, neighbor, score)) {
-        graph_add_candidate(index, index->graph_candidate_capacity, neighbor, score,
-                            &candidate_count);
+        graph_add_candidate(index, candidate_capacity, neighbor, score, &candidate_count);
       }
     }
   }
@@ -1677,11 +1687,12 @@ void graph_search_layer_compact_query(MemoryIndex* index, const int8_t* query, f
                                       uint32_t capacity, uint32_t* out_top_count) {
   uint32_t candidate_count = 0;
   uint32_t top_count = 0;
+  const uint32_t candidate_capacity = graph_candidate_search_capacity(index, capacity);
   graph_mark_visited(index, entry);
   const float entry_score =
       score_slot_compact_query(index, query, query_scale, entry, cosine_query_scale);
   insert_graph_top_candidate(index, capacity, &top_count, entry, entry_score);
-  graph_add_candidate(index, index->graph_candidate_capacity, entry, entry_score, &candidate_count);
+  graph_add_candidate(index, candidate_capacity, entry, entry_score, &candidate_count);
 
   while (candidate_count != 0) {
     uint32_t slot = kU32Max;
@@ -1710,8 +1721,7 @@ void graph_search_layer_compact_query(MemoryIndex* index, const int8_t* query, f
       const float score =
           score_slot_compact_query(index, query, query_scale, neighbor, cosine_query_scale);
       if (insert_graph_top_candidate(index, capacity, &top_count, neighbor, score)) {
-        graph_add_candidate(index, index->graph_candidate_capacity, neighbor, score,
-                            &candidate_count);
+        graph_add_candidate(index, candidate_capacity, neighbor, score, &candidate_count);
       }
     }
   }
@@ -2884,9 +2894,18 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   }
   const uint32_t graph_query_search_capacity =
       requested_query_search > desc->capacity ? desc->capacity : requested_query_search;
-  const uint32_t graph_candidate_capacity = graph_query_search_capacity > graph_search_capacity
-                                                ? graph_query_search_capacity
-                                                : graph_search_capacity;
+  uint32_t requested_candidate_capacity = graph_query_search_capacity > graph_search_capacity
+                                              ? graph_query_search_capacity
+                                              : graph_search_capacity;
+  if (requested_candidate_capacity <= kU32Max / kGraphCandidateReserveMultiplier) {
+    const uint32_t reserve_candidate_capacity =
+        requested_candidate_capacity * kGraphCandidateReserveMultiplier;
+    if (reserve_candidate_capacity > requested_candidate_capacity) {
+      requested_candidate_capacity = reserve_candidate_capacity;
+    }
+  }
+  const uint32_t graph_candidate_capacity =
+      requested_candidate_capacity > desc->capacity ? desc->capacity : requested_candidate_capacity;
   uint32_t graph_scratch_capacity = graph_candidate_capacity > graph_neighbor_capacity
                                         ? graph_candidate_capacity
                                         : graph_neighbor_capacity;
