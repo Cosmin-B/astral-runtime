@@ -655,6 +655,9 @@ struct ASTRALRT_API FAstralMemoryIndexDesc
     int32 GraphSearch = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
+    int32 GraphQuerySearch = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Memory")
     EAstralMemoryStorageKind StorageKind = EAstralMemoryStorageKind::F32;
 };
 
@@ -731,6 +734,9 @@ struct ASTRALRT_API FAstralMemoryStats
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
     int32 GraphSearch = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
+    int32 GraphQuerySearch = 0;
 
     UPROPERTY(BlueprintReadOnly, Category = "Astral|Memory")
     int32 GraphLevels = 0;

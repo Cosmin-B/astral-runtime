@@ -989,6 +989,7 @@ namespace Astral.Runtime
             public AstralMemoryIndexKind index_kind;
             public uint graph_neighbors;
             public uint graph_search;
+            public uint graph_query_search;
             public AstralMemoryStorageKind storage_kind;
         }
 
@@ -1037,6 +1038,7 @@ namespace Astral.Runtime
             public AstralMemoryIndexKind index_kind;
             public uint graph_neighbors;
             public uint graph_search;
+            public uint graph_query_search;
             public uint graph_levels;
             public AstralMemoryStorageKind storage_kind;
             public ulong vector_bytes;

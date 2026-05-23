@@ -272,6 +272,8 @@ typedef struct AstralMemoryIndexDesc {
     uint32_t graph_neighbors;
     /* Graph construction expansion for ASTRAL_MEMORY_INDEX_GRAPH; 0 selects the runtime default. */
     uint32_t graph_search;
+    /* Default query expansion for ASTRAL_MEMORY_INDEX_GRAPH; 0 selects graph_search. */
+    uint32_t graph_query_search;
     AstralMemoryStorageKind storage_kind;
 } AstralMemoryIndexDesc;
 
@@ -313,6 +315,7 @@ typedef struct AstralMemoryStats {
     AstralMemoryIndexKind index_kind;
     uint32_t graph_neighbors;
     uint32_t graph_search;
+    uint32_t graph_query_search;
     uint32_t graph_levels;
     AstralMemoryStorageKind storage_kind;
     uint64_t vector_bytes;
@@ -369,16 +372,16 @@ ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 48,
 ASTRAL_STATIC_ASSERT(sizeof(AstralChunkerDesc) == 48,
                      "AstralChunkerDesc must be 48 bytes on 64-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 64-bit");
-ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 32,
-                     "AstralMemoryIndexDesc must be 32 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 36,
+                     "AstralMemoryIndexDesc must be 36 bytes on 64-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryRecord) == 32,
                      "AstralMemoryRecord must be 32 bytes on 64-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 20,
                      "AstralMemorySearchDesc must be 20 bytes on 64-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32,
                      "AstralMemorySearchResult must be 32 bytes on 64-bit");
-ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 120,
-                     "AstralMemoryStats must be 120 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 128,
+                     "AstralMemoryStats must be 128 bytes on 64-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySnapshotInfo) == 104,
                      "AstralMemorySnapshotInfo must be 104 bytes on 64-bit");
 #else
@@ -395,16 +398,16 @@ ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 32,
 ASTRAL_STATIC_ASSERT(sizeof(AstralChunkerDesc) == 40,
                      "AstralChunkerDesc must be 40 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 32-bit");
-ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 32,
-                     "AstralMemoryIndexDesc must be 32 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 36,
+                     "AstralMemoryIndexDesc must be 36 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryRecord) == 32,
                      "AstralMemoryRecord must be 32 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 20,
                      "AstralMemorySearchDesc must be 20 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32,
                      "AstralMemorySearchResult must be 32 bytes on 32-bit");
-ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 120,
-                     "AstralMemoryStats must be 120 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 128,
+                     "AstralMemoryStats must be 128 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySnapshotInfo) == 104,
                      "AstralMemorySnapshotInfo must be 104 bytes on 32-bit");
 #endif

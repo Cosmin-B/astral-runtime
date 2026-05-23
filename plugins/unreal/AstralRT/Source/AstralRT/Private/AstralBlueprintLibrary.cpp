@@ -155,6 +155,8 @@ static AstralMemoryIndexDesc to_native_memory_desc(const FAstralMemoryIndexDesc&
     Native.index_kind = to_native_memory_index_kind(Desc.IndexKind);
     Native.graph_neighbors = Desc.GraphNeighbors > 0 ? static_cast<uint32_t>(Desc.GraphNeighbors) : 0u;
     Native.graph_search = Desc.GraphSearch > 0 ? static_cast<uint32_t>(Desc.GraphSearch) : 0u;
+    Native.graph_query_search =
+        Desc.GraphQuerySearch > 0 ? static_cast<uint32_t>(Desc.GraphQuerySearch) : 0u;
     Native.storage_kind = to_native_memory_storage_kind(Desc.StorageKind);
     return Native;
 }
@@ -398,6 +400,7 @@ static FAstralMemoryStats from_native_memory_stats(const AstralMemoryStats& Nati
     Stats.IndexKind = from_native_memory_index_kind(Native.index_kind);
     Stats.GraphNeighbors = static_cast<int32>(Native.graph_neighbors);
     Stats.GraphSearch = static_cast<int32>(Native.graph_search);
+    Stats.GraphQuerySearch = static_cast<int32>(Native.graph_query_search);
     Stats.GraphLevels = static_cast<int32>(Native.graph_levels);
     Stats.StorageKind = from_native_memory_storage_kind(Native.storage_kind);
     Stats.VectorBytes = static_cast<int64>(Native.vector_bytes);

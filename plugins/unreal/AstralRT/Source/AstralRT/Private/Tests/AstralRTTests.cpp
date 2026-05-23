@@ -910,6 +910,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     GraphMemoryDesc.IndexKind = EAstralMemoryIndexKind::Graph;
     GraphMemoryDesc.GraphNeighbors = 2;
     GraphMemoryDesc.GraphSearch = 4;
+    GraphMemoryDesc.GraphQuerySearch = 5;
     const FAstralOperationResult GraphMemoryCreate = UAstralBlueprintLibrary::CreateMemoryIndexResult(GraphMemoryDesc);
     TestTrue(TEXT("graph memory create result succeeds"), GraphMemoryCreate.bSuccess);
     const FAstralOperationResult GraphAddMemory =
@@ -925,6 +926,8 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
               GraphMemoryDesc.GraphNeighbors);
     TestEqual(TEXT("graph memory stats search"), GraphMemoryStats.GraphSearch,
               GraphMemoryDesc.GraphSearch);
+    TestEqual(TEXT("graph memory stats query search"), GraphMemoryStats.GraphQuerySearch,
+              GraphMemoryDesc.GraphQuerySearch);
     TestTrue(TEXT("graph memory stats graph bytes"), GraphMemoryStats.GraphBytes > EmptyByteCount);
     TestTrue(TEXT("graph memory stats graph edges"), GraphMemoryStats.GraphEdges > EmptyByteCount);
     TestTrue(TEXT("graph memory stats base edges"),

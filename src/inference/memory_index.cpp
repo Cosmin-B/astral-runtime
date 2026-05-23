@@ -51,7 +51,6 @@ constexpr uint32_t kGraphMaxNeighbors = 64;
 constexpr uint32_t kGraphBaseNeighborMultiplier = 2;
 constexpr uint32_t kGraphDefaultEfConstruction = 68;
 constexpr uint32_t kGraphMinSearch = 4;
-constexpr uint32_t kGraphQueryReserveMultiplier = 16;
 constexpr uint32_t kGraphCandidateReserveMultiplier = 2;
 constexpr uint32_t kGraphLongLinkCount = 0;
 constexpr uint32_t kGraphNeighborPrefetchDistance = 2;
@@ -198,6 +197,18 @@ inline uint32_t graph_search_from_desc(const AstralMemoryIndexDesc* desc) {
   const uint32_t requested =
       desc->graph_search != 0 ? desc->graph_search : kGraphDefaultEfConstruction;
   return requested < kGraphMinSearch ? kGraphMinSearch : requested;
+}
+
+inline uint32_t graph_query_search_from_desc(const AstralMemoryIndexDesc* desc,
+                                             uint32_t graph_search) {
+  if (desc->index_kind != ASTRAL_MEMORY_INDEX_GRAPH) {
+    return 0;
+  }
+  uint32_t requested = desc->graph_query_search != 0 ? desc->graph_query_search : graph_search;
+  if (requested < kGraphMinSearch) {
+    requested = kGraphMinSearch;
+  }
+  return requested;
 }
 
 uint32_t graph_level_capacity_for(uint32_t capacity, uint32_t neighbors) {
@@ -2883,15 +2894,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   const uint32_t requested_graph_search = graph_search_from_desc(desc);
   const uint32_t graph_search_capacity =
       requested_graph_search > desc->capacity ? desc->capacity : requested_graph_search;
-  uint32_t requested_query_search = kGraphDefaultEfConstruction > graph_search_capacity
-                                        ? kGraphDefaultEfConstruction
-                                        : graph_search_capacity;
-  if (graph_search_capacity <= kU32Max / kGraphQueryReserveMultiplier) {
-    const uint32_t reserve_query_search = graph_search_capacity * kGraphQueryReserveMultiplier;
-    if (reserve_query_search > requested_query_search) {
-      requested_query_search = reserve_query_search;
-    }
-  }
+  const uint32_t requested_query_search = graph_query_search_from_desc(desc, graph_search_capacity);
   const uint32_t graph_query_search_capacity =
       requested_query_search > desc->capacity ? desc->capacity : requested_query_search;
   uint32_t requested_candidate_capacity = graph_query_search_capacity > graph_search_capacity
@@ -3089,6 +3092,7 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
   out_stats->index_kind = index->index_kind;
   out_stats->graph_neighbors = index->graph_neighbor_capacity;
   out_stats->graph_search = index->graph_search_capacity;
+  out_stats->graph_query_search = index->graph_query_search_capacity;
   out_stats->graph_levels = index->graph_level_capacity;
   out_stats->storage_kind = index->storage_kind;
   out_stats->vector_bytes = vector_bytes;

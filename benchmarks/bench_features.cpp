@@ -1331,6 +1331,7 @@ static BenchResult bench_memory_graph_add_batch(uint64_t iters) {
     desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
     desc.graph_neighbors = memory_graph_neighbors();
     desc.graph_search = memory_graph_search();
+    desc.graph_query_search = memory_graph_query_search();
     desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle index = 0;
@@ -1378,6 +1379,7 @@ static LatencyResult bench_memory_graph_add_latency(uint64_t iters) {
   desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
   desc.graph_neighbors = memory_graph_neighbors();
   desc.graph_search = memory_graph_search();
+  desc.graph_query_search = memory_graph_query_search();
   desc.storage_kind = parse_memory_storage_env();
 
   AstralHandle index = 0;
@@ -1436,6 +1438,7 @@ static BenchResult bench_memory_graph_load(uint64_t iters) {
   desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
   desc.graph_neighbors = memory_graph_neighbors();
   desc.graph_search = memory_graph_search();
+  desc.graph_query_search = memory_graph_query_search();
   desc.storage_kind = parse_memory_storage_env();
 
   AstralHandle index = 0;
@@ -1728,6 +1731,7 @@ static BenchResult bench_memory_graph_search(uint64_t iters) {
     desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
     desc.graph_neighbors = memory_graph_neighbors();
     desc.graph_search = memory_graph_search();
+    desc.graph_query_search = memory_graph_query_search();
     desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle index = 0;
@@ -1791,6 +1795,7 @@ static LatencyResult bench_memory_search_latency(uint64_t iters, bool graph) {
   desc.index_kind = graph ? ASTRAL_MEMORY_INDEX_GRAPH : ASTRAL_MEMORY_INDEX_FLAT;
   desc.graph_neighbors = graph ? memory_graph_neighbors() : 0u;
   desc.graph_search = graph ? memory_graph_search() : 0u;
+  desc.graph_query_search = graph ? memory_graph_query_search() : 0u;
   desc.storage_kind = parse_memory_storage_env();
 
   AstralHandle index = 0;
@@ -1870,6 +1875,7 @@ static BenchResult bench_memory_graph_top1(uint64_t iters) {
     desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
     desc.graph_neighbors = memory_graph_neighbors();
     desc.graph_search = memory_graph_search();
+    desc.graph_query_search = memory_graph_query_search();
     desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle index = 0;
@@ -1937,6 +1943,7 @@ static BenchResult bench_memory_graph_recall(uint64_t iters) {
     graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
     graph_desc.graph_neighbors = memory_graph_neighbors();
     graph_desc.graph_search = memory_graph_search();
+    graph_desc.graph_query_search = memory_graph_query_search();
     graph_desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle flat_index = 0;
@@ -2169,6 +2176,7 @@ static BenchResult bench_memory_graph_recall_search(uint64_t iters) {
     graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
     graph_desc.graph_neighbors = memory_graph_neighbors();
     graph_desc.graph_search = memory_graph_search();
+    graph_desc.graph_query_search = memory_graph_query_search();
     graph_desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle flat_index = 0;
@@ -2289,6 +2297,7 @@ static BenchResult bench_memory_graph_recall_top1(uint64_t iters) {
     graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
     graph_desc.graph_neighbors = memory_graph_neighbors();
     graph_desc.graph_search = memory_graph_search();
+    graph_desc.graph_query_search = memory_graph_query_search();
     graph_desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle flat_index = 0;
@@ -2396,6 +2405,7 @@ static void print_memory_graph_recall_search_sweep(uint64_t iters) {
     graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
     graph_desc.graph_neighbors = memory_graph_neighbors();
     graph_desc.graph_search = max_graph_search;
+    graph_desc.graph_query_search = max_graph_search;
     graph_desc.storage_kind = parse_memory_storage_env();
 
     AstralHandle flat_index = 0;
@@ -2519,6 +2529,7 @@ static void print_memory_graph_recall_detail(uint64_t iters) {
   graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
   graph_desc.graph_neighbors = memory_graph_neighbors();
   graph_desc.graph_search = memory_graph_search();
+  graph_desc.graph_query_search = memory_graph_query_search();
   graph_desc.storage_kind = parse_memory_storage_env();
 
   AstralHandle flat_index = 0;
@@ -2662,6 +2673,7 @@ static void print_memory_graph_edge_stats() {
   desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
   desc.graph_neighbors = memory_graph_neighbors();
   desc.graph_search = memory_graph_search();
+  desc.graph_query_search = memory_graph_query_search();
   desc.storage_kind = parse_memory_storage_env();
 
   AstralHandle index = 0;

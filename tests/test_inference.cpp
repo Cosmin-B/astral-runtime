@@ -2476,6 +2476,7 @@ TEST(inference_memory_index_flat_mock) {
     ASSERT_EQ(stats.index_kind, ASTRAL_MEMORY_INDEX_FLAT);
     ASSERT_EQ(stats.graph_neighbors, 0u);
     ASSERT_EQ(stats.graph_search, 0u);
+    ASSERT_EQ(stats.graph_query_search, 0u);
     ASSERT_EQ(stats.graph_levels, 0u);
     ASSERT_EQ(stats.storage_kind, ASTRAL_MEMORY_STORAGE_F32);
     ASSERT_EQ(stats.vector_bytes, static_cast<uint64_t>(kCapacity) * kDim * sizeof(float));
@@ -2549,6 +2550,7 @@ TEST(inference_memory_index_graph_mock) {
     constexpr uint32_t kRecordCount = 6;
     constexpr uint32_t kGraphNeighbors = 3;
     constexpr uint32_t kGraphSearch = 6;
+    constexpr uint32_t kGraphQuerySearch = 5;
     constexpr uint32_t kTopK = 3;
     constexpr uint32_t kGroupA = 17;
     constexpr uint32_t kGroupB = 19;
@@ -2567,6 +2569,7 @@ TEST(inference_memory_index_graph_mock) {
     desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
     desc.graph_neighbors = kGraphNeighbors;
     desc.graph_search = kGraphSearch;
+    desc.graph_query_search = kGraphQuerySearch;
 
     AstralHandle index = 0;
     AstralErr err = astral_memory_create(&desc, &index);
@@ -2651,6 +2654,7 @@ TEST(inference_memory_index_graph_mock) {
     ASSERT_EQ(stats.index_kind, ASTRAL_MEMORY_INDEX_GRAPH);
     ASSERT_EQ(stats.graph_neighbors, kGraphNeighbors);
     ASSERT_EQ(stats.graph_search, kGraphSearch);
+    ASSERT_EQ(stats.graph_query_search, kGraphQuerySearch);
     ASSERT_GT(stats.graph_levels, 0u);
     ASSERT_EQ(stats.storage_kind, ASTRAL_MEMORY_STORAGE_F32);
     ASSERT_EQ(stats.vector_bytes, static_cast<uint64_t>(kCapacity) * kDim * sizeof(float));

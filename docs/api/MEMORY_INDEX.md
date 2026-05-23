@@ -54,14 +54,16 @@ re-running a full scan for every query.
 - `ASTRAL_MEMORY_INDEX_GRAPH` builds a bounded adjacency graph during ingest and
   uses fixed-size frontier and top-candidate pools for all-group top-1 and top-k
   search.
-  Set `graph_neighbors` and `graph_search` to tune recall/latency, or leave
-  them zero for the native 32-neighbor, 64-candidate default. Group-filtered
-  searches use the exact flat scanner. Use the graph recall benchmark before
-  choosing this path for retrieval. Graph construction assigns deterministic
-  upper levels from each record key, descends those levels before base-layer
-  expansion, selects a diverse bounded neighbor set from the construction
-  candidate pool, and keeps a few deterministic spread links at the base layer
-  to avoid purely local neighborhoods.
+  Set `graph_neighbors`, `graph_search`, and `graph_query_search` to tune
+  recall/latency, or leave them zero for the native defaults. `graph_search`
+  controls construction expansion. `graph_query_search` controls the index
+  default query expansion; zero uses `graph_search`. Group-filtered searches use
+  the exact flat scanner. Use the graph recall benchmark before choosing this
+  path for retrieval. Graph construction assigns deterministic upper levels from
+  each record key, descends those levels before base-layer expansion, selects a
+  diverse bounded neighbor set from the construction candidate pool, and keeps a
+  few deterministic spread links at the base layer to avoid purely local
+  neighborhoods.
 
 `AstralMemoryIndexDesc::storage_kind` selects vector storage:
 
@@ -82,10 +84,10 @@ when deciding whether to ship a prebuilt graph snapshot or rebuild at startup.
 
 Choose the flat index when exact ranking, filtered search, or small-to-medium
 corpora matter more than avoiding a full scan. Choose the graph index only after
-measuring recall on the target vectors. Higher `graph_neighbors` and
-`graph_search` values usually improve recall, but they also increase ingest
-cost, memory traffic, and query latency; high-recall graph settings can be
-slower than exact flat search on smaller collections.
+measuring recall on the target vectors. Higher `graph_neighbors`,
+`graph_search`, and `graph_query_search` values usually improve recall, but they
+also increase ingest cost, memory traffic, and query latency; high-recall graph
+settings can be slower than exact flat search on smaller collections.
 
 `astral_memory_record_from_chunk()` maps an `AstralChunkRange` into an
 `AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
@@ -144,10 +146,11 @@ saved graph routing structure.
 
 Use `ASTRAL_MEMORY_GROUP_ANY` to search all groups, or set
 `AstralMemorySearchDesc::group_id` to restrict results.
-For graph indexes, `AstralMemorySearchDesc::graph_search` can lower the search
-budget for one query without rebuilding the index. Leave it zero to use the
-index default. The value is clamped to the index allocation, so build the graph
-with the largest budget you plan to test.
+For graph indexes, `AstralMemorySearchDesc::graph_search` can override the
+search budget for one query without rebuilding the index. Leave it zero to use
+`AstralMemoryIndexDesc::graph_query_search`. The value is clamped to the index
+allocation, so set `graph_query_search` to the largest query budget you plan to
+test.
 
 ## Search Selection
 
@@ -159,7 +162,7 @@ the target corpus and latency budget justify the extra tuning work.
 | --- | --- | --- |
 | Flat f32 | Exact ranking matters, filtered search is common, or the corpus is small enough for full scans. | `flat_search_top1`, `flat_search`, memory bandwidth counters, and `astral_memory_stats()`. |
 | Flat q8 | The corpus is memory-bandwidth-bound and approximate scores are acceptable. | `flat_q8_recall_search` versus flat f32 on the target vectors, q8 ingest cost, `flat_search_top1`, and `vector_bytes`. |
-| Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, `graph_load`, and the chosen `graph_neighbors`/`graph_search` pair. |
+| Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, `graph_load`, and the chosen `graph_neighbors`/`graph_search`/`graph_query_search` settings. |
 | Graph q8 | Approximate graph search also needs lower vector footprint. | The graph f32 measurements above, plus q8 recall drop, graph build cost, and `graph_bytes`/`vector_bytes`. |
 
 Do not use the graph index for group-filtered retrieval unless the group is
@@ -353,6 +356,7 @@ desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
 desc.storage_kind = ASTRAL_MEMORY_STORAGE_F32;
 desc.graph_neighbors = 32;
 desc.graph_search = 64;
+desc.graph_query_search = 512;
 err = astral_memory_create(&desc, &index);
 ```
 
@@ -371,6 +375,7 @@ desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
 desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
 desc.graph_neighbors = 32;
 desc.graph_search = 64;
+desc.graph_query_search = 512;
 err = astral_memory_create(&desc, &index);
 ```
 

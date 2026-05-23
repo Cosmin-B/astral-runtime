@@ -356,6 +356,7 @@ namespace Astral.Runtime
         public AstralNative.AstralMemoryStorageKind storageKind = AstralNative.AstralMemoryStorageKind.F32;
         public uint graphNeighbors;
         public uint graphSearch;
+        public uint graphQuerySearch;
 
         internal AstralNative.AstralMemoryIndexDesc ToNativeDesc()
         {
@@ -368,6 +369,7 @@ namespace Astral.Runtime
                 index_kind = indexKind,
                 graph_neighbors = graphNeighbors,
                 graph_search = graphSearch,
+                graph_query_search = graphQuerySearch,
                 storage_kind = storageKind
             };
         }
