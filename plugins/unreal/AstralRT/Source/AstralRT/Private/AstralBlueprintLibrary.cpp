@@ -97,6 +97,8 @@ static AstralMemoryIndexKind to_native_memory_index_kind(EAstralMemoryIndexKind 
 
 static AstralMemoryStorageKind to_native_memory_storage_kind(EAstralMemoryStorageKind Kind) {
   switch (Kind) {
+  case EAstralMemoryStorageKind::F8_E5M2:
+    return ASTRAL_MEMORY_STORAGE_F8_E5M2;
   case EAstralMemoryStorageKind::F6_E2M3:
     return ASTRAL_MEMORY_STORAGE_F6_E2M3;
   case EAstralMemoryStorageKind::Q8:
@@ -135,6 +137,8 @@ static EAstralMemoryIndexKind from_native_memory_index_kind(AstralMemoryIndexKin
 
 static EAstralMemoryStorageKind from_native_memory_storage_kind(AstralMemoryStorageKind Kind) {
   switch (Kind) {
+  case ASTRAL_MEMORY_STORAGE_F8_E5M2:
+    return EAstralMemoryStorageKind::F8_E5M2;
   case ASTRAL_MEMORY_STORAGE_F6_E2M3:
     return EAstralMemoryStorageKind::F6_E2M3;
   case ASTRAL_MEMORY_STORAGE_Q8:

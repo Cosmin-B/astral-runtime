@@ -79,6 +79,9 @@ re-running a full scan for every query.
   uses the same compact integer dot path as q8, with Float6 scaling applied once
   at the score boundary. It is approximate; validate recall against flat f32 on
   the target embeddings before using it for retrieval.
+- `ASTRAL_MEMORY_STORAGE_F8_E5M2` stores scaled E5M2 bytes. It trades q8's
+  integer dot path for wider dynamic range and compact snapshot/search support;
+  validate recall and latency against flat f32 before choosing it for retrieval.
 
 Graph snapshots include the routing topology when the load descriptor matches
 the saved graph neighbor, search, and level capacities. If those knobs differ,
@@ -122,8 +125,8 @@ load. `graph_build_score_evals` and `graph_build_candidate_visits` report
 cold-path construction work since the current graph topology was built, which
 helps compare ANN tuning changes against build cost. `total_bytes` is the
 runtime footprint sum, while `save_bytes` matches the current serialized
-snapshot size returned by `astral_memory_save_size()`. For q8 indexes,
-`save_bytes` reflects the compact q8 snapshot rather than an expanded float32
+snapshot size returned by `astral_memory_save_size()`. For compact indexes,
+`save_bytes` reflects the compact snapshot rather than an expanded float32
 copy.
 
 `astral_memory_snapshot_info()` validates a saved snapshot without creating an
@@ -136,7 +139,7 @@ interleaved layout.
 
 `astral_memory_snapshot_search()` runs an exact flat scan directly over a saved
 snapshot span. It is intended for read-only memory-mapped snapshots and oracle
-checks: callers can search staged f32, q8, or f6 snapshots without allocating a
+checks: callers can search staged f32, q8, f6, or f8 snapshots without allocating a
 native index handle or copying vector storage first. Graph topology in the
 snapshot is ignored by this path; use `astral_memory_load()` when you need the
 saved graph routing structure.
@@ -174,9 +177,9 @@ the target corpus and latency budget justify the extra tuning work.
 | Mode | Use when | Measure before shipping |
 | --- | --- | --- |
 | Flat f32 | Exact ranking matters, filtered search is common, or the corpus is small enough for full scans. | `flat_search_top1`, `flat_search`, memory bandwidth counters, and `astral_memory_stats()`. |
-| Flat q8 | The corpus is memory-bandwidth-bound and approximate scores are acceptable. | `flat_q8_recall_search` versus flat f32 on the target vectors, q8 ingest cost, `flat_search_top1`, and `vector_bytes`. |
+| Flat compact | The corpus is memory-bandwidth-bound and approximate scores are acceptable. | `flat_compact_recall_search` versus flat f32 on the target vectors, compact ingest cost, `flat_search_top1`, and `vector_bytes`. |
 | Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, `graph_load`, and the chosen `graph_neighbors`/`graph_search`/`graph_query_search` settings. |
-| Graph q8 | Approximate graph search also needs lower vector footprint. | The graph f32 measurements above, plus q8 recall drop, graph build cost, and `graph_bytes`/`vector_bytes`. |
+| Graph compact | Approximate graph search also needs lower vector footprint. | The graph f32 measurements above, plus compact recall drop, graph build cost, and `graph_bytes`/`vector_bytes`. |
 
 Do not use the graph index for group-filtered retrieval unless the group is
 large enough to justify all-group search followed by application filtering.
@@ -184,7 +187,7 @@ Native group-filtered graph searches use the exact scanner because sparse group
 filters usually destroy graph locality.
 
 For release candidates, capture one exact flat run and one candidate run with
-the same dimension, metric, capacity, query set, and corpus. A graph or q8
+the same dimension, metric, capacity, query set, and corpus. A graph or compact
 configuration is ready only when it meets the product recall target and beats
 the exact baseline on the deployment hardware. Keep the exact flat path
 available in tooling and tests so recall can be rechecked when the embedding
@@ -227,7 +230,7 @@ otherwise dominate the profile.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
-`l2`), `ASTRAL_BENCH_MEMORY_STORAGE` (`f32` or `q8`),
+`l2`), `ASTRAL_BENCH_MEMORY_STORAGE` (`f32`, `q8`, `f6e2m3`, or `f8e5m2`),
 `ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS` up to the native graph-neighbor limit,
 and `ASTRAL_BENCH_MEMORY_GRAPH_SEARCH`. Set
 `ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH` to time a lower per-query budget

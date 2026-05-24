@@ -975,7 +975,8 @@ namespace Astral.Runtime
         {
             F32 = 0,
             Q8 = 1,
-            F6_E2M3 = 2
+            F6_E2M3 = 2,
+            F8_E5M2 = 3
         }
 
         public const uint ASTRAL_MEMORY_GROUP_ANY = 0xFFFFFFFFu;

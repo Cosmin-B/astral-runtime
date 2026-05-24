@@ -73,6 +73,24 @@ constexpr int32_t kE2M3Scale = 16;
 constexpr int32_t kE2M3MagnitudeMask = 0x1F;
 constexpr float kE2M3MaxFloat = 7.5f;
 constexpr float kE2M3InvScale = 1.0f / static_cast<float>(kE2M3Scale);
+constexpr uint32_t kF32SignShift = 31;
+constexpr uint32_t kF32ExponentShift = 23;
+constexpr uint32_t kF32ExponentMask = 0xFFu;
+constexpr uint32_t kF32MantissaMask = 0x7FFFFFu;
+constexpr int32_t kF32ExponentBias = 127;
+constexpr uint32_t kF32InfBits = 0x7F800000u;
+constexpr uint32_t kF32AbsMask = 0x7FFFFFFFu;
+constexpr uint32_t kE5M2SignShift = 7;
+constexpr uint32_t kE5M2ExponentShift = 2;
+constexpr uint32_t kE5M2ExponentMask = 0x1Fu;
+constexpr uint32_t kE5M2MantissaMask = 0x03u;
+constexpr int32_t kE5M2ExponentBias = 15;
+constexpr uint32_t kE5M2MantissaRoundBit = 1u << 20u;
+constexpr uint32_t kE5M2MantissaShift = 21;
+constexpr uint32_t kE5M2MantissaOverflow = 4;
+constexpr uint32_t kE5M2MaxFinite = 0x7Bu;
+constexpr float kE5M2MaxFloat = 57344.0f;
+constexpr float kE5M2SubnormalUnit = 1.0f / 65536.0f;
 constexpr float kL2CrossTermScale = 2.0f;
 constexpr float kWorstScore = -3.4028234663852886e38f;
 #if defined(__AVX2__)
@@ -169,7 +187,7 @@ inline bool index_kind_valid(AstralMemoryIndexKind kind) {
 
 inline bool storage_kind_valid(AstralMemoryStorageKind kind) {
   return kind == ASTRAL_MEMORY_STORAGE_F32 || kind == ASTRAL_MEMORY_STORAGE_Q8 ||
-         kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
+         kind == ASTRAL_MEMORY_STORAGE_F6_E2M3 || kind == ASTRAL_MEMORY_STORAGE_F8_E5M2;
 }
 
 inline bool desc_valid(const AstralMemoryIndexDesc* desc) {
@@ -566,6 +584,401 @@ float dot_q8_q8(const int8_t* a, const int8_t* b, uint32_t dim) {
 #endif
 }
 
+inline uint32_t f32_bits(float value) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  return bits;
+}
+
+inline float e5m2_to_f32(uint8_t raw) {
+  static constexpr float kE5M2ToF32[256] = {0.0f,
+                                            1.52587891e-05f,
+                                            3.05175781e-05f,
+                                            4.57763672e-05f,
+                                            6.10351562e-05f,
+                                            7.62939453e-05f,
+                                            9.15527344e-05f,
+                                            0.000106811523f,
+                                            0.000122070312f,
+                                            0.000152587891f,
+                                            0.000183105469f,
+                                            0.000213623047f,
+                                            0.000244140625f,
+                                            0.000305175781f,
+                                            0.000366210938f,
+                                            0.000427246094f,
+                                            0.00048828125f,
+                                            0.000610351562f,
+                                            0.000732421875f,
+                                            0.000854492188f,
+                                            0.0009765625f,
+                                            0.00122070312f,
+                                            0.00146484375f,
+                                            0.00170898438f,
+                                            0.001953125f,
+                                            0.00244140625f,
+                                            0.0029296875f,
+                                            0.00341796875f,
+                                            0.00390625f,
+                                            0.0048828125f,
+                                            0.005859375f,
+                                            0.0068359375f,
+                                            0.0078125f,
+                                            0.009765625f,
+                                            0.01171875f,
+                                            0.013671875f,
+                                            0.015625f,
+                                            0.01953125f,
+                                            0.0234375f,
+                                            0.02734375f,
+                                            0.03125f,
+                                            0.0390625f,
+                                            0.046875f,
+                                            0.0546875f,
+                                            0.0625f,
+                                            0.078125f,
+                                            0.09375f,
+                                            0.109375f,
+                                            0.125f,
+                                            0.15625f,
+                                            0.1875f,
+                                            0.21875f,
+                                            0.25f,
+                                            0.3125f,
+                                            0.375f,
+                                            0.4375f,
+                                            0.5f,
+                                            0.625f,
+                                            0.75f,
+                                            0.875f,
+                                            1.0f,
+                                            1.25f,
+                                            1.5f,
+                                            1.75f,
+                                            2.0f,
+                                            2.5f,
+                                            3.0f,
+                                            3.5f,
+                                            4.0f,
+                                            5.0f,
+                                            6.0f,
+                                            7.0f,
+                                            8.0f,
+                                            10.0f,
+                                            12.0f,
+                                            14.0f,
+                                            16.0f,
+                                            20.0f,
+                                            24.0f,
+                                            28.0f,
+                                            32.0f,
+                                            40.0f,
+                                            48.0f,
+                                            56.0f,
+                                            64.0f,
+                                            80.0f,
+                                            96.0f,
+                                            112.0f,
+                                            128.0f,
+                                            160.0f,
+                                            192.0f,
+                                            224.0f,
+                                            256.0f,
+                                            320.0f,
+                                            384.0f,
+                                            448.0f,
+                                            512.0f,
+                                            640.0f,
+                                            768.0f,
+                                            896.0f,
+                                            1024.0f,
+                                            1280.0f,
+                                            1536.0f,
+                                            1792.0f,
+                                            2048.0f,
+                                            2560.0f,
+                                            3072.0f,
+                                            3584.0f,
+                                            4096.0f,
+                                            5120.0f,
+                                            6144.0f,
+                                            7168.0f,
+                                            8192.0f,
+                                            10240.0f,
+                                            12288.0f,
+                                            14336.0f,
+                                            16384.0f,
+                                            20480.0f,
+                                            24576.0f,
+                                            28672.0f,
+                                            32768.0f,
+                                            40960.0f,
+                                            49152.0f,
+                                            57344.0f,
+                                            57344.0f,
+                                            57344.0f,
+                                            57344.0f,
+                                            57344.0f,
+                                            -0.0f,
+                                            -1.52587891e-05f,
+                                            -3.05175781e-05f,
+                                            -4.57763672e-05f,
+                                            -6.10351562e-05f,
+                                            -7.62939453e-05f,
+                                            -9.15527344e-05f,
+                                            -0.000106811523f,
+                                            -0.000122070312f,
+                                            -0.000152587891f,
+                                            -0.000183105469f,
+                                            -0.000213623047f,
+                                            -0.000244140625f,
+                                            -0.000305175781f,
+                                            -0.000366210938f,
+                                            -0.000427246094f,
+                                            -0.00048828125f,
+                                            -0.000610351562f,
+                                            -0.000732421875f,
+                                            -0.000854492188f,
+                                            -0.0009765625f,
+                                            -0.00122070312f,
+                                            -0.00146484375f,
+                                            -0.00170898438f,
+                                            -0.001953125f,
+                                            -0.00244140625f,
+                                            -0.0029296875f,
+                                            -0.00341796875f,
+                                            -0.00390625f,
+                                            -0.0048828125f,
+                                            -0.005859375f,
+                                            -0.0068359375f,
+                                            -0.0078125f,
+                                            -0.009765625f,
+                                            -0.01171875f,
+                                            -0.013671875f,
+                                            -0.015625f,
+                                            -0.01953125f,
+                                            -0.0234375f,
+                                            -0.02734375f,
+                                            -0.03125f,
+                                            -0.0390625f,
+                                            -0.046875f,
+                                            -0.0546875f,
+                                            -0.0625f,
+                                            -0.078125f,
+                                            -0.09375f,
+                                            -0.109375f,
+                                            -0.125f,
+                                            -0.15625f,
+                                            -0.1875f,
+                                            -0.21875f,
+                                            -0.25f,
+                                            -0.3125f,
+                                            -0.375f,
+                                            -0.4375f,
+                                            -0.5f,
+                                            -0.625f,
+                                            -0.75f,
+                                            -0.875f,
+                                            -1.0f,
+                                            -1.25f,
+                                            -1.5f,
+                                            -1.75f,
+                                            -2.0f,
+                                            -2.5f,
+                                            -3.0f,
+                                            -3.5f,
+                                            -4.0f,
+                                            -5.0f,
+                                            -6.0f,
+                                            -7.0f,
+                                            -8.0f,
+                                            -10.0f,
+                                            -12.0f,
+                                            -14.0f,
+                                            -16.0f,
+                                            -20.0f,
+                                            -24.0f,
+                                            -28.0f,
+                                            -32.0f,
+                                            -40.0f,
+                                            -48.0f,
+                                            -56.0f,
+                                            -64.0f,
+                                            -80.0f,
+                                            -96.0f,
+                                            -112.0f,
+                                            -128.0f,
+                                            -160.0f,
+                                            -192.0f,
+                                            -224.0f,
+                                            -256.0f,
+                                            -320.0f,
+                                            -384.0f,
+                                            -448.0f,
+                                            -512.0f,
+                                            -640.0f,
+                                            -768.0f,
+                                            -896.0f,
+                                            -1024.0f,
+                                            -1280.0f,
+                                            -1536.0f,
+                                            -1792.0f,
+                                            -2048.0f,
+                                            -2560.0f,
+                                            -3072.0f,
+                                            -3584.0f,
+                                            -4096.0f,
+                                            -5120.0f,
+                                            -6144.0f,
+                                            -7168.0f,
+                                            -8192.0f,
+                                            -10240.0f,
+                                            -12288.0f,
+                                            -14336.0f,
+                                            -16384.0f,
+                                            -20480.0f,
+                                            -24576.0f,
+                                            -28672.0f,
+                                            -32768.0f,
+                                            -40960.0f,
+                                            -49152.0f,
+                                            -57344.0f,
+                                            -57344.0f,
+                                            -57344.0f,
+                                            -57344.0f,
+                                            -57344.0f};
+  return kE5M2ToF32[raw];
+}
+
+uint8_t f32_to_e5m2(float value) {
+  const uint32_t bits = f32_bits(value);
+  const uint32_t sign = bits >> kF32SignShift;
+  const uint32_t abs_bits = bits & kF32AbsMask;
+  if (abs_bits == 0) {
+    return static_cast<uint8_t>(sign << kE5M2SignShift);
+  }
+  if (abs_bits >= kF32InfBits) {
+    return static_cast<uint8_t>((sign << kE5M2SignShift) | kE5M2MaxFinite);
+  }
+
+  const uint32_t exponent = (abs_bits >> kF32ExponentShift) & kF32ExponentMask;
+  const uint32_t mantissa = abs_bits & kF32MantissaMask;
+  int32_t e5_exponent = static_cast<int32_t>(exponent) - kF32ExponentBias + kE5M2ExponentBias;
+  if (e5_exponent <= 0) {
+    const float abs_value = std::fabs(value);
+    const uint32_t subnormal = static_cast<uint32_t>(abs_value / kE5M2SubnormalUnit + 0.5f);
+    const uint32_t clamped = subnormal < kE5M2MantissaOverflow ? subnormal : kE5M2MantissaMask;
+    return static_cast<uint8_t>((sign << kE5M2SignShift) | clamped);
+  }
+
+  uint32_t e5_mantissa = (mantissa + kE5M2MantissaRoundBit) >> kE5M2MantissaShift;
+  if (e5_mantissa == kE5M2MantissaOverflow) {
+    e5_mantissa = 0;
+    ++e5_exponent;
+  }
+  if (e5_exponent >= static_cast<int32_t>(kE5M2ExponentMask)) {
+    return static_cast<uint8_t>((sign << kE5M2SignShift) | kE5M2MaxFinite);
+  }
+  return static_cast<uint8_t>((sign << kE5M2SignShift) |
+                              (static_cast<uint32_t>(e5_exponent) << kE5M2ExponentShift) |
+                              e5_mantissa);
+}
+
+float dot_e5m2_f32(const int8_t* a, const float* b, uint32_t dim) {
+  float sum0 = 0.0f;
+  float sum1 = 0.0f;
+  float sum2 = 0.0f;
+  float sum3 = 0.0f;
+  uint32_t i = 0;
+  for (; i + 4u <= dim; i += 4u) {
+    sum0 += e5m2_to_f32(static_cast<uint8_t>(a[i])) * b[i];
+    sum1 += e5m2_to_f32(static_cast<uint8_t>(a[i + 1u])) * b[i + 1u];
+    sum2 += e5m2_to_f32(static_cast<uint8_t>(a[i + 2u])) * b[i + 2u];
+    sum3 += e5m2_to_f32(static_cast<uint8_t>(a[i + 3u])) * b[i + 3u];
+  }
+  float sum = (sum0 + sum1) + (sum2 + sum3);
+  for (; i < dim; ++i) {
+    sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * b[i];
+  }
+  return sum;
+}
+
+float dot_e5m2_e5m2(const int8_t* a, const int8_t* b, uint32_t dim) {
+  float sum0 = 0.0f;
+  float sum1 = 0.0f;
+  float sum2 = 0.0f;
+  float sum3 = 0.0f;
+  uint32_t i = 0;
+  for (; i + 4u <= dim; i += 4u) {
+    sum0 += e5m2_to_f32(static_cast<uint8_t>(a[i])) * e5m2_to_f32(static_cast<uint8_t>(b[i]));
+    sum1 +=
+        e5m2_to_f32(static_cast<uint8_t>(a[i + 1u])) * e5m2_to_f32(static_cast<uint8_t>(b[i + 1u]));
+    sum2 +=
+        e5m2_to_f32(static_cast<uint8_t>(a[i + 2u])) * e5m2_to_f32(static_cast<uint8_t>(b[i + 2u]));
+    sum3 +=
+        e5m2_to_f32(static_cast<uint8_t>(a[i + 3u])) * e5m2_to_f32(static_cast<uint8_t>(b[i + 3u]));
+  }
+  float sum = (sum0 + sum1) + (sum2 + sum3);
+  for (; i < dim; ++i) {
+    sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * e5m2_to_f32(static_cast<uint8_t>(b[i]));
+  }
+  return sum;
+}
+
+float l2_score_e5m2_f32(const int8_t* a, float scale, const float* b, uint32_t dim) {
+  float sum0 = 0.0f;
+  float sum1 = 0.0f;
+  float sum2 = 0.0f;
+  float sum3 = 0.0f;
+  uint32_t i = 0;
+  for (; i + 4u <= dim; i += 4u) {
+    const float d0 = e5m2_to_f32(static_cast<uint8_t>(a[i])) * scale - b[i];
+    const float d1 = e5m2_to_f32(static_cast<uint8_t>(a[i + 1u])) * scale - b[i + 1u];
+    const float d2 = e5m2_to_f32(static_cast<uint8_t>(a[i + 2u])) * scale - b[i + 2u];
+    const float d3 = e5m2_to_f32(static_cast<uint8_t>(a[i + 3u])) * scale - b[i + 3u];
+    sum0 += d0 * d0;
+    sum1 += d1 * d1;
+    sum2 += d2 * d2;
+    sum3 += d3 * d3;
+  }
+  float sum = (sum0 + sum1) + (sum2 + sum3);
+  for (; i < dim; ++i) {
+    const float d = e5m2_to_f32(static_cast<uint8_t>(a[i])) * scale - b[i];
+    sum += d * d;
+  }
+  return -sum;
+}
+
+float l2_score_e5m2_e5m2(const int8_t* a, float a_scale, const int8_t* b, float b_scale,
+                         uint32_t dim) {
+  float sum0 = 0.0f;
+  float sum1 = 0.0f;
+  float sum2 = 0.0f;
+  float sum3 = 0.0f;
+  uint32_t i = 0;
+  for (; i + 4u <= dim; i += 4u) {
+    const float d0 = e5m2_to_f32(static_cast<uint8_t>(a[i])) * a_scale -
+                     e5m2_to_f32(static_cast<uint8_t>(b[i])) * b_scale;
+    const float d1 = e5m2_to_f32(static_cast<uint8_t>(a[i + 1u])) * a_scale -
+                     e5m2_to_f32(static_cast<uint8_t>(b[i + 1u])) * b_scale;
+    const float d2 = e5m2_to_f32(static_cast<uint8_t>(a[i + 2u])) * a_scale -
+                     e5m2_to_f32(static_cast<uint8_t>(b[i + 2u])) * b_scale;
+    const float d3 = e5m2_to_f32(static_cast<uint8_t>(a[i + 3u])) * a_scale -
+                     e5m2_to_f32(static_cast<uint8_t>(b[i + 3u])) * b_scale;
+    sum0 += d0 * d0;
+    sum1 += d1 * d1;
+    sum2 += d2 * d2;
+    sum3 += d3 * d3;
+  }
+  float sum = (sum0 + sum1) + (sum2 + sum3);
+  for (; i < dim; ++i) {
+    const float d = e5m2_to_f32(static_cast<uint8_t>(a[i])) * a_scale -
+                    e5m2_to_f32(static_cast<uint8_t>(b[i])) * b_scale;
+    sum += d * d;
+  }
+  return -sum;
+}
+
 float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim) {
 #if defined(__AVX2__)
   const __m256 scale_v = _mm256_set1_ps(scale);
@@ -790,6 +1203,37 @@ void quantize_e2m3_cosine_vector(int8_t* dst, float* out_scale, const float* src
   quantize_e2m3_vector(dst, out_scale, normalized, dim);
 }
 
+void quantize_e5m2_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
+  float max_abs = 0.0f;
+  for (uint32_t i = 0; i < dim; ++i) {
+    const float abs_value = std::fabs(src[i]);
+    if (abs_value > max_abs) {
+      max_abs = abs_value;
+    }
+  }
+  const float scale = max_abs > 0.0f ? max_abs / kE5M2MaxFloat : 1.0f;
+  const float inv_scale = 1.0f / scale;
+  for (uint32_t i = 0; i < dim; ++i) {
+    dst[i] = static_cast<int8_t>(f32_to_e5m2(src[i] * inv_scale));
+  }
+  *out_scale = scale;
+}
+
+void quantize_e5m2_cosine_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
+  const float sq = dot_f32(src, src, dim);
+  const float norm = sq > 0.0f ? std::sqrt(sq) : 0.0f;
+  if (norm == 0.0f) {
+    quantize_e5m2_vector(dst, out_scale, src, dim);
+    return;
+  }
+  float normalized[kMaxDim];
+  const float inv_norm = 1.0f / norm;
+  for (uint32_t i = 0; i < dim; ++i) {
+    normalized[i] = src[i] * inv_norm;
+  }
+  quantize_e5m2_vector(dst, out_scale, normalized, dim);
+}
+
 inline float vector_norm(const float* v, uint32_t dim) {
   const float sq = dot_f32(v, v, dim);
   return sq > 0.0f ? std::sqrt(sq) : 0.0f;
@@ -884,7 +1328,8 @@ struct MemoryAddPreprocessJob {
 inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
   const uint64_t vector_bytes =
       (index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8 ||
-       index->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3)
+       index->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3 ||
+       index->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2)
           ? static_cast<uint64_t>(index->count) *
                 (sizeof(float) + static_cast<uint64_t>(index->dim) * sizeof(int8_t))
           : static_cast<uint64_t>(index->count) * index->dim * sizeof(float);
@@ -911,8 +1356,9 @@ bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
     return false;
   }
   SaveLayout layout{};
-  const bool compact =
-      storage == ASTRAL_MEMORY_STORAGE_Q8 || storage == ASTRAL_MEMORY_STORAGE_F6_E2M3;
+  const bool compact = storage == ASTRAL_MEMORY_STORAGE_Q8 ||
+                       storage == ASTRAL_MEMORY_STORAGE_F6_E2M3 ||
+                       storage == ASTRAL_MEMORY_STORAGE_F8_E5M2;
   layout.record_offset = sizeof(SaveHeader);
   layout.record_stride = sizeof(AstralMemoryRecord);
   if (version >= kSaveVersionModernLayout) {
@@ -998,8 +1444,13 @@ inline bool e2m3_storage(const MemoryIndex* index) {
   return index->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
 }
 
+inline bool e5m2_storage(const MemoryIndex* index) {
+  return index->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2;
+}
+
 inline bool compact_storage_kind(AstralMemoryStorageKind kind) {
-  return kind == ASTRAL_MEMORY_STORAGE_Q8 || kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
+  return kind == ASTRAL_MEMORY_STORAGE_Q8 || kind == ASTRAL_MEMORY_STORAGE_F6_E2M3 ||
+         kind == ASTRAL_MEMORY_STORAGE_F8_E5M2;
 }
 
 inline bool compact_storage(const MemoryIndex* index) {
@@ -1019,6 +1470,10 @@ void quantize_compact_query(const MemoryIndex* index, int8_t* dst, float* out_sc
   if (e2m3_storage(index)) {
     quantize_e2m3_vector(dst, out_scale, src, index->dim);
     *out_scale *= kE2M3InvScale;
+    return;
+  }
+  if (e5m2_storage(index)) {
+    quantize_e5m2_vector(dst, out_scale, src, index->dim);
     return;
   }
   quantize_q8_vector(dst, out_scale, src, index->dim);
@@ -1271,13 +1726,17 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
     const int8_t* q8 = q8_vector_at(index, slot);
     const float scale = compact_value_scale(index, index->q8_scales[slot]);
     if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
-      return dot_q8_f32(q8, query, index->dim) * scale;
+      return (e5m2_storage(index) ? dot_e5m2_f32(q8, query, index->dim)
+                                  : dot_q8_f32(q8, query, index->dim)) *
+             scale;
     }
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-      return dot_q8_f32(q8, query, index->dim) * scale * query_scale *
-             index->slots[slot].score_scale;
+      return (e5m2_storage(index) ? dot_e5m2_f32(q8, query, index->dim)
+                                  : dot_q8_f32(q8, query, index->dim)) *
+             scale * query_scale * index->slots[slot].score_scale;
     }
-    return l2_score_q8_f32(q8, scale, query, index->dim);
+    return e5m2_storage(index) ? l2_score_e5m2_f32(q8, scale, query, index->dim)
+                               : l2_score_q8_f32(q8, scale, query, index->dim);
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
     return dot_f32(query, vector_at(index, slot), index->dim);
@@ -1293,13 +1752,17 @@ inline float score_slot_compact_query(MemoryIndex* index, const int8_t* query, f
   const int8_t* q8 = q8_vector_at(index, slot);
   const float scale = compact_value_scale(index, index->q8_scales[slot]);
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
-    return dot_q8_q8(q8, query, index->dim) * scale * query_scale;
+    return (e5m2_storage(index) ? dot_e5m2_e5m2(q8, query, index->dim)
+                                : dot_q8_q8(q8, query, index->dim)) *
+           scale * query_scale;
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-    return dot_q8_q8(q8, query, index->dim) * scale * query_scale * cosine_query_scale *
-           index->slots[slot].score_scale;
+    return (e5m2_storage(index) ? dot_e5m2_e5m2(q8, query, index->dim)
+                                : dot_q8_q8(q8, query, index->dim)) *
+           scale * query_scale * cosine_query_scale * index->slots[slot].score_scale;
   }
-  return l2_score_q8_q8(q8, scale, query, query_scale, index->dim);
+  return e5m2_storage(index) ? l2_score_e5m2_e5m2(q8, scale, query, query_scale, index->dim)
+                             : l2_score_q8_q8(q8, scale, query, query_scale, index->dim);
 }
 
 inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
@@ -1310,13 +1773,17 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
     const float scale_a = compact_value_scale(index, index->q8_scales[a]);
     const float scale_b = compact_value_scale(index, index->q8_scales[b]);
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-      return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b * index->slots[a].score_scale *
-             index->slots[b].score_scale;
+      return (e5m2_storage(index) ? dot_e5m2_e5m2(va, vb, index->dim)
+                                  : dot_q8_q8(va, vb, index->dim)) *
+             scale_a * scale_b * index->slots[a].score_scale * index->slots[b].score_scale;
     }
     if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
-      return l2_score_q8_q8(va, scale_a, vb, scale_b, index->dim);
+      return e5m2_storage(index) ? l2_score_e5m2_e5m2(va, scale_a, vb, scale_b, index->dim)
+                                 : l2_score_q8_q8(va, scale_a, vb, scale_b, index->dim);
     }
-    return dot_q8_q8(va, vb, index->dim) * scale_a * scale_b;
+    return (e5m2_storage(index) ? dot_e5m2_e5m2(va, vb, index->dim)
+                                : dot_q8_q8(va, vb, index->dim)) *
+           scale_a * scale_b;
   }
   const float* va = vector_at(index, a);
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
@@ -2124,7 +2591,8 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
                       AstralMemorySearchResult* out_results, uint32_t* out_count) {
   const float query_scale =
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 0.0f;
-  if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY && index->dense_active != 0) {
+  if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY && index->dense_active != 0 &&
+      !e5m2_storage(index)) {
     uint32_t filled = 0;
     MemorySlot* slots = index->slots;
     const uint32_t dim = index->dim;
@@ -2216,7 +2684,7 @@ void memory_search_q8_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
       return;
     }
 
-    if (index->dense_active != 0) {
+    if (index->dense_active != 0 && !e5m2_storage(index)) {
       MemorySlot* slots = index->slots;
       const uint32_t dim = index->dim;
       const int8_t* vectors = index->q8_vectors;
@@ -2632,7 +3100,7 @@ void memory_search_flat_batch(MemoryIndex* index, const AstralMemorySearchDesc* 
   }
 
   if (compact_storage(index) && desc->group_id == ASTRAL_MEMORY_GROUP_ANY &&
-      index->dense_active != 0) {
+      index->dense_active != 0 && !e5m2_storage(index)) {
     MemorySlot* slots = index->slots;
     const uint32_t dim = index->dim;
     const int8_t* vectors = index->q8_vectors;
@@ -2810,13 +3278,20 @@ void memory_add_preprocess_range(MemoryIndex* index, const float* vectors, const
       } else {
         quantize_e2m3_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
       }
+    } else if (e5m2_storage(index)) {
+      if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+        quantize_e5m2_cosine_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src,
+                                    index->dim);
+      } else {
+        quantize_e5m2_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
+      }
     } else {
       store_f32_vector(index, slot, src);
     }
     if (compact_storage(index)) {
       index->slots[slot].score_scale =
           index->metric == ASTRAL_MEMORY_METRIC_COSINE
-              ? (e2m3_storage(index) ? 1.0f : cosine_scale(src, index->dim))
+              ? (q8_storage(index) ? cosine_scale(src, index->dim) : 1.0f)
               : 0.0f;
     }
   }
@@ -3716,9 +4191,12 @@ AstralErr memory_snapshot_search_bytes(SnapshotBytes bytes, const AstralMemorySe
   int8_t compact_query[kMaxDim];
   float compact_query_scale = 1.0f;
   const bool use_f6_compact_query = info.storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
+  const bool use_f8_compact_query = info.storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2;
   if (use_f6_compact_query) {
     quantize_e2m3_vector(compact_query, &compact_query_scale, query, info.dim);
     compact_query_scale *= kE2M3InvScale;
+  } else if (use_f8_compact_query) {
+    quantize_e5m2_vector(compact_query, &compact_query_scale, query, info.dim);
   }
   uint32_t filled = 0;
   for (uint32_t i = 0; i < info.count; ++i) {
@@ -3753,10 +4231,15 @@ AstralErr memory_snapshot_search_bytes(SnapshotBytes bytes, const AstralMemorySe
       if (info.metric == ASTRAL_MEMORY_METRIC_DOT) {
         score = use_f6_compact_query
                     ? dot_q8_q8(vector, compact_query, info.dim) * scale * compact_query_scale
+                : use_f8_compact_query
+                    ? dot_e5m2_e5m2(vector, compact_query, info.dim) * scale * compact_query_scale
                     : dot_q8_f32(vector, query, info.dim) * scale;
       } else if (info.metric == ASTRAL_MEMORY_METRIC_COSINE) {
         if (use_f6_compact_query) {
           score = dot_q8_q8(vector, compact_query, info.dim) * scale * compact_query_scale *
+                  query_scale;
+        } else if (use_f8_compact_query) {
+          score = dot_e5m2_e5m2(vector, compact_query, info.dim) * scale * compact_query_scale *
                   query_scale;
         } else {
           const float vector_scale = cosine_scale_q8(vector, stored_scale, info.dim);
@@ -3765,7 +4248,9 @@ AstralErr memory_snapshot_search_bytes(SnapshotBytes bytes, const AstralMemorySe
       } else {
         score = use_f6_compact_query
                     ? l2_score_q8_q8(vector, scale, compact_query, compact_query_scale, info.dim)
-                    : l2_score_q8_f32(vector, scale, query, info.dim);
+                : use_f8_compact_query ? l2_score_e5m2_e5m2(vector, scale, compact_query,
+                                                            compact_query_scale, info.dim)
+                                       : l2_score_q8_f32(vector, scale, query, info.dim);
       }
     } else {
       const float* vector = reinterpret_cast<const float*>(
@@ -3937,9 +4422,13 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
         saved_compact_vector = compact;
       } else {
         for (uint32_t dim_i = 0; dim_i < header.dim; ++dim_i) {
-          vector[dim_i] = saved_storage == ASTRAL_MEMORY_STORAGE_F6_E2M3
-                              ? e2m3_scaled_to_f32(compact[dim_i], scale)
-                              : static_cast<float>(compact[dim_i]) * scale;
+          if (saved_storage == ASTRAL_MEMORY_STORAGE_F6_E2M3) {
+            vector[dim_i] = e2m3_scaled_to_f32(compact[dim_i], scale);
+          } else if (saved_storage == ASTRAL_MEMORY_STORAGE_F8_E5M2) {
+            vector[dim_i] = e5m2_to_f32(static_cast<uint8_t>(compact[dim_i])) * scale;
+          } else {
+            vector[dim_i] = static_cast<float>(compact[dim_i]) * scale;
+          }
         }
       }
     } else {
@@ -3982,7 +4471,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
                                                : 0.0f;
           quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
                              index->dim);
-        } else {
+        } else if (e2m3_storage(index)) {
           index->slots[slot].score_scale =
               index->metric == ASTRAL_MEMORY_METRIC_COSINE ? 1.0f : 0.0f;
           if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
@@ -3990,6 +4479,16 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
                                         index->dim);
           } else {
             quantize_e2m3_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
+                                 index->dim);
+          }
+        } else {
+          index->slots[slot].score_scale =
+              index->metric == ASTRAL_MEMORY_METRIC_COSINE ? 1.0f : 0.0f;
+          if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+            quantize_e5m2_cosine_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
+                                        index->dim);
+          } else {
+            quantize_e5m2_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
                                  index->dim);
           }
         }

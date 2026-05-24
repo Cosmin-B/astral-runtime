@@ -3153,6 +3153,114 @@ TEST(inference_memory_index_f6_e2m3_storage_mock) {
   astral_memory_destroy(index);
 }
 
+TEST(inference_memory_index_f8_e5m2_storage_mock) {
+  constexpr uint32_t kDim = 4;
+  constexpr uint32_t kCapacity = 4;
+  constexpr uint32_t kRecordCount = 3;
+  constexpr uint32_t kTopK = 2;
+  constexpr uint64_t kKeyA = 9801;
+  constexpr uint64_t kKeyB = 9802;
+  constexpr uint64_t kKeyC = 9803;
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = kCapacity;
+  desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+  desc.storage_kind = ASTRAL_MEMORY_STORAGE_F8_E5M2;
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  AstralMemoryRecord records[kRecordCount]{};
+  records[0].size = sizeof(AstralMemoryRecord);
+  records[0].key = kKeyA;
+  records[1].size = sizeof(AstralMemoryRecord);
+  records[1].key = kKeyB;
+  records[2].size = sizeof(AstralMemoryRecord);
+  records[2].key = kKeyC;
+  const float vectors[kRecordCount * kDim] = {
+      1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
+  };
+  err = astral_memory_add_batch(index, records, vectors, kRecordCount);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  AstralMemoryStats stats{};
+  stats.size = sizeof(AstralMemoryStats);
+  err = astral_memory_stats(index, &stats);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(stats.storage_kind, ASTRAL_MEMORY_STORAGE_F8_E5M2);
+  ASSERT_LT(stats.vector_bytes, static_cast<uint64_t>(kCapacity) * kDim * sizeof(float));
+
+  AstralMemorySearchDesc search{};
+  search.size = sizeof(AstralMemorySearchDesc);
+  search.top_k = kTopK;
+  search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+  const float query[kDim] = {1.0f, 0.0f, 0.0f, 0.0f};
+  AstralMemorySearchResult results[kTopK]{};
+  uint32_t count = 0;
+  err = astral_memory_search(index, &search, query, results, kTopK, &count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(count, kTopK);
+  ASSERT_EQ(results[0].key, kKeyA);
+
+  uint64_t save_bytes = 0;
+  err = astral_memory_save_size(index, &save_bytes);
+  ASSERT_EQ(err, ASTRAL_OK);
+  std::string blob;
+  blob.resize(static_cast<size_t>(save_bytes));
+  AstralMutSpanU8 out_blob{};
+  out_blob.data = reinterpret_cast<uint8_t*>(&blob[0]);
+  out_blob.len = static_cast<uint32_t>(blob.size());
+  uint64_t written = 0;
+  err = astral_memory_save(index, out_blob, &written);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(written, save_bytes);
+
+  AstralSpanU8 blob_span{};
+  blob_span.data = reinterpret_cast<const uint8_t*>(blob.data());
+  blob_span.len = static_cast<uint32_t>(blob.size());
+  AstralMemorySnapshotInfo snapshot{};
+  snapshot.size = sizeof(AstralMemorySnapshotInfo);
+  err = astral_memory_snapshot_info(blob_span, &snapshot);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(snapshot.storage_kind, ASTRAL_MEMORY_STORAGE_F8_E5M2);
+  ASSERT_EQ(snapshot.vector_stride, static_cast<uint64_t>(kDim) * sizeof(int8_t));
+
+  AstralMemorySearchResult view_results[kTopK]{};
+  uint32_t view_count = 0;
+  err = astral_memory_snapshot_search(blob_span, &search, query, view_results, kTopK, &view_count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(view_count, kTopK);
+  ASSERT_EQ(view_results[0].key, kKeyA);
+
+  AstralHandle loaded = 0;
+  err = astral_memory_load(&desc, blob_span, &loaded);
+  ASSERT_EQ(err, ASTRAL_OK);
+  err = astral_memory_search(loaded, &search, query, results, kTopK, &count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(results[0].key, kKeyA);
+
+  AstralMemoryIndexDesc graph_desc = desc;
+  graph_desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+  graph_desc.graph_neighbors = 3;
+  graph_desc.graph_search = 6;
+  AstralHandle graph = 0;
+  err = astral_memory_create(&graph_desc, &graph);
+  ASSERT_EQ(err, ASTRAL_OK);
+  err = astral_memory_add_batch(graph, records, vectors, kRecordCount);
+  ASSERT_EQ(err, ASTRAL_OK);
+  err = astral_memory_search(graph, &search, query, results, kTopK, &count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(results[0].key, kKeyA);
+
+  astral_memory_destroy(graph);
+  astral_memory_destroy(loaded);
+  astral_memory_destroy(index);
+}
+
 TEST(inference_rag_ingest_chunk_search_mock) {
     constexpr uint32_t kDocId = 7001;
     constexpr uint32_t kGroupId = 42;
