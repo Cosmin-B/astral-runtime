@@ -5,11 +5,13 @@
 #include "../core/runtime_state.hpp"
 #include "../core/work_queue.hpp"
 #include "../platform/atomics.h"
+#include "../platform/file_map.h"
 
 #include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <string>
 
 #if defined(__AVX2__)
 #include <immintrin.h>
@@ -862,6 +864,12 @@ struct MemorySearchCursor {
   AstralMemorySearchResult* results;
 };
 
+struct MemorySnapshotView {
+  AstralHandle handle;
+  platform::ReadOnlyFileMap map;
+  AstralMemorySnapshotInfo info;
+};
+
 namespace {
 
 struct MemoryAddPreprocessJob {
@@ -958,6 +966,10 @@ AstralHandle memory_handle(MemoryIndex* index) {
 
 AstralHandle memory_search_cursor_handle(MemorySearchCursor* cursor) {
   return cursor != nullptr ? cursor->handle : 0;
+}
+
+AstralHandle memory_snapshot_view_handle(MemorySnapshotView* view) {
+  return view != nullptr ? view->handle : 0;
 }
 
 namespace {
@@ -3576,7 +3588,14 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
   return ASTRAL_OK;
 }
 
-AstralErr memory_snapshot_info(AstralSpanU8 bytes, AstralMemorySnapshotInfo* out_info) {
+namespace {
+
+struct SnapshotBytes {
+  const uint8_t* data;
+  uint64_t len;
+};
+
+AstralErr memory_snapshot_info_bytes(SnapshotBytes bytes, AstralMemorySnapshotInfo* out_info) {
   if (bytes.data == nullptr || bytes.len < sizeof(SaveHeader) || out_info == nullptr ||
       out_info->size != sizeof(AstralMemorySnapshotInfo)) {
     return ASTRAL_E_INVALID;
@@ -3665,9 +3684,9 @@ AstralErr memory_snapshot_info(AstralSpanU8 bytes, AstralMemorySnapshotInfo* out
   return ASTRAL_OK;
 }
 
-AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDesc* desc,
-                                 const float* query, AstralMemorySearchResult* out_results,
-                                 uint32_t max_results, uint32_t* out_count) {
+AstralErr memory_snapshot_search_bytes(SnapshotBytes bytes, const AstralMemorySearchDesc* desc,
+                                       const float* query, AstralMemorySearchResult* out_results,
+                                       uint32_t max_results, uint32_t* out_count) {
   if (bytes.data == nullptr || desc == nullptr || desc->size != sizeof(AstralMemorySearchDesc) ||
       query == nullptr || out_count == nullptr || desc->top_k == 0) {
     return ASTRAL_E_INVALID;
@@ -3678,7 +3697,7 @@ AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDes
 
   AstralMemorySnapshotInfo info{};
   info.size = sizeof(AstralMemorySnapshotInfo);
-  AstralErr err = memory_snapshot_info(bytes, &info);
+  AstralErr err = memory_snapshot_info_bytes(bytes, &info);
   if (err != ASTRAL_OK) {
     return err;
   }
@@ -3771,6 +3790,88 @@ AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDes
 
   *out_count = filled;
   return ASTRAL_OK;
+}
+
+} // namespace
+
+AstralErr memory_snapshot_info(AstralSpanU8 bytes, AstralMemorySnapshotInfo* out_info) {
+  return memory_snapshot_info_bytes(SnapshotBytes{bytes.data, bytes.len}, out_info);
+}
+
+AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDesc* desc,
+                                 const float* query, AstralMemorySearchResult* out_results,
+                                 uint32_t max_results, uint32_t* out_count) {
+  return memory_snapshot_search_bytes(SnapshotBytes{bytes.data, bytes.len}, desc, query,
+                                      out_results, max_results, out_count);
+}
+
+AstralErr memory_snapshot_map(AstralSpanU8 path, MemorySnapshotView** out_view,
+                              AstralMemorySnapshotInfo* out_info) {
+  if (path.data == nullptr || path.len == 0 || out_view == nullptr || out_info == nullptr ||
+      out_info->size != sizeof(AstralMemorySnapshotInfo)) {
+    return ASTRAL_E_INVALID;
+  }
+  *out_view = nullptr;
+
+  std::string path_string(reinterpret_cast<const char*>(path.data), path.len);
+  auto* view = core::runtime_new<MemorySnapshotView>();
+  if (view == nullptr) {
+    return ASTRAL_E_NOMEM;
+  }
+  *view = {};
+  if (!platform::file_map_readonly(path_string.c_str(), &view->map)) {
+    core::runtime_delete(view);
+    return ASTRAL_E_NOT_FOUND;
+  }
+
+  AstralMemorySnapshotInfo info{};
+  info.size = sizeof(AstralMemorySnapshotInfo);
+  AstralErr err = memory_snapshot_info_bytes(SnapshotBytes{view->map.data, view->map.size}, &info);
+  if (err != ASTRAL_OK) {
+    platform::file_unmap_readonly(&view->map);
+    core::runtime_delete(view);
+    return err;
+  }
+
+  const AstralHandle handle = core::register_handle(core::HandleKind::MemorySnapshot, view);
+  if (handle == 0) {
+    platform::file_unmap_readonly(&view->map);
+    core::runtime_delete(view);
+    return ASTRAL_E_NOMEM;
+  }
+  view->handle = handle;
+  view->info = info;
+  *out_info = info;
+  *out_view = view;
+  return ASTRAL_OK;
+}
+
+void memory_snapshot_unmap(MemorySnapshotView* view) {
+  if (view == nullptr) {
+    return;
+  }
+  core::unregister_handle(view->handle, core::HandleKind::MemorySnapshot);
+  platform::file_unmap_readonly(&view->map);
+  core::runtime_delete(view);
+}
+
+AstralErr memory_snapshot_view_info(MemorySnapshotView* view, AstralMemorySnapshotInfo* out_info) {
+  if (view == nullptr || out_info == nullptr ||
+      out_info->size != sizeof(AstralMemorySnapshotInfo)) {
+    return ASTRAL_E_INVALID;
+  }
+  *out_info = view->info;
+  return ASTRAL_OK;
+}
+
+AstralErr memory_snapshot_view_search(MemorySnapshotView* view, const AstralMemorySearchDesc* desc,
+                                      const float* query, AstralMemorySearchResult* out_results,
+                                      uint32_t max_results, uint32_t* out_count) {
+  if (view == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
+  return memory_snapshot_search_bytes(SnapshotBytes{view->map.data, view->map.size}, desc, query,
+                                      out_results, max_results, out_count);
 }
 
 AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,

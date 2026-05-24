@@ -68,6 +68,11 @@ inline astral::inference::MemorySearchCursor* lookup_memory_search_cursor(Astral
     );
 }
 
+inline astral::inference::MemorySnapshotView* lookup_memory_snapshot_view(AstralHandle view) {
+  return static_cast<astral::inference::MemorySnapshotView*>(
+      astral::core::lookup_handle(view, astral::core::HandleKind::MemorySnapshot));
+}
+
 inline astral::inference::Agent* lookup_agent(AstralHandle agent) {
     return static_cast<astral::inference::Agent*>(
         astral::core::lookup_handle(agent, astral::core::HandleKind::Agent)
@@ -2498,6 +2503,72 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_search(
   }
   const AstralErr err = astral::inference::memory_snapshot_search(bytes, desc, query, out_results,
                                                                   max_results, out_count);
+  if (err != ASTRAL_OK) {
+    set_err_code(err);
+  }
+  return err;
+  ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_map(AstralSpanU8 path,
+                                                            AstralMemorySnapshotInfo* out_info,
+                                                            AstralHandle* out_view) {
+  ASTRAL_ABI_TRY_BEGIN
+  ASTRAL_ZONE_N("astral.abi.memory_snapshot_map");
+  if (path.data == nullptr || path.len == 0 || out_info == nullptr || out_view == nullptr) {
+    set_err_invalid("path/out_info/out_view");
+    return ASTRAL_E_INVALID;
+  }
+  astral::inference::MemorySnapshotView* view = nullptr;
+  const AstralErr err = astral::inference::memory_snapshot_map(path, &view, out_info);
+  if (err == ASTRAL_OK) {
+    *out_view = astral::inference::memory_snapshot_view_handle(view);
+  } else {
+    set_err_code(err);
+  }
+  return err;
+  ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API void ASTRAL_CALL astral_memory_snapshot_unmap(AstralHandle view) {
+  ASTRAL_ABI_TRY_BEGIN
+  auto* snapshot = lookup_memory_snapshot_view(view);
+  if (snapshot == nullptr) {
+    set_err_invalid("view");
+    return;
+  }
+  astral::inference::memory_snapshot_unmap(snapshot);
+  ASTRAL_ABI_CATCH_END_VOID()
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL
+astral_memory_snapshot_view_info(AstralHandle view, AstralMemorySnapshotInfo* out_info) {
+  ASTRAL_ABI_TRY_BEGIN
+  auto* snapshot = lookup_memory_snapshot_view(view);
+  if (snapshot == nullptr || out_info == nullptr) {
+    set_err_invalid("view/out_info");
+    return ASTRAL_E_INVALID;
+  }
+  const AstralErr err = astral::inference::memory_snapshot_view_info(snapshot, out_info);
+  if (err != ASTRAL_OK) {
+    set_err_code(err);
+  }
+  return err;
+  ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
+}
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_view_search(
+    AstralHandle view, const AstralMemorySearchDesc* desc, const float* query,
+    AstralMemorySearchResult* out_results, uint32_t max_results, uint32_t* out_count) {
+  ASTRAL_ABI_TRY_BEGIN
+  ASTRAL_ZONE_N("astral.abi.memory_snapshot_view_search");
+  auto* snapshot = lookup_memory_snapshot_view(view);
+  if (snapshot == nullptr || desc == nullptr || query == nullptr || out_count == nullptr) {
+    set_err_invalid("view/desc/query/out_count");
+    return ASTRAL_E_INVALID;
+  }
+  const AstralErr err = astral::inference::memory_snapshot_view_search(
+      snapshot, desc, query, out_results, max_results, out_count);
   if (err != ASTRAL_OK) {
     set_err_code(err);
   }

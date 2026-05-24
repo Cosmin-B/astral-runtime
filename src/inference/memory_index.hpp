@@ -6,9 +6,11 @@ namespace astral::inference {
 
 struct MemoryIndex;
 struct MemorySearchCursor;
+struct MemorySnapshotView;
 
 AstralHandle memory_handle(MemoryIndex* index);
 AstralHandle memory_search_cursor_handle(MemorySearchCursor* cursor);
+AstralHandle memory_snapshot_view_handle(MemorySnapshotView* view);
 AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_index);
 void memory_destroy(MemoryIndex* index);
 AstralErr memory_count(MemoryIndex* index, uint32_t* out_count);
@@ -41,6 +43,13 @@ AstralErr memory_snapshot_info(AstralSpanU8 bytes, AstralMemorySnapshotInfo* out
 AstralErr memory_snapshot_search(AstralSpanU8 bytes, const AstralMemorySearchDesc* desc,
                                  const float* query, AstralMemorySearchResult* out_results,
                                  uint32_t max_results, uint32_t* out_count);
+AstralErr memory_snapshot_map(AstralSpanU8 path, MemorySnapshotView** out_view,
+                              AstralMemorySnapshotInfo* out_info);
+void memory_snapshot_unmap(MemorySnapshotView* view);
+AstralErr memory_snapshot_view_info(MemorySnapshotView* view, AstralMemorySnapshotInfo* out_info);
+AstralErr memory_snapshot_view_search(MemorySnapshotView* view, const AstralMemorySearchDesc* desc,
+                                      const float* query, AstralMemorySearchResult* out_results,
+                                      uint32_t max_results, uint32_t* out_count);
 AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
                       MemoryIndex** out_index);
 

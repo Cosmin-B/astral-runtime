@@ -141,6 +141,15 @@ native index handle or copying vector storage first. Graph topology in the
 snapshot is ignored by this path; use `astral_memory_load()` when you need the
 saved graph routing structure.
 
+`astral_memory_snapshot_map()` opens a snapshot file as a read-only mapped
+snapshot view, validates it, and returns an `AstralHandle`. Use
+`astral_memory_snapshot_view_search()` to search the mapped bytes repeatedly
+without copying them into a native index, `astral_memory_snapshot_view_info()`
+to read the validated layout, and `astral_memory_snapshot_unmap()` to close the
+view. The view path keeps the file mapping and page faults on the cold/storage
+side; the search loop still sees plain contiguous record, scale, and vector
+ranges.
+
 ## Metrics
 
 - `ASTRAL_MEMORY_METRIC_DOT`: higher dot product ranks first.

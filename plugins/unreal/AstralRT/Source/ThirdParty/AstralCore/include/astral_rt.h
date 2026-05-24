@@ -1179,11 +1179,18 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_info(AstralSpanU8 bytes,
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_search(
     AstralSpanU8 bytes, const AstralMemorySearchDesc* desc, const float* query,
     AstralMemorySearchResult* out_results, uint32_t max_results, uint32_t* out_count);
-ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(
-    const AstralMemoryIndexDesc* desc,
-    AstralSpanU8 bytes,
-    AstralHandle* out_index
-);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_map(AstralSpanU8 path,
+                                                            AstralMemorySnapshotInfo* out_info,
+                                                            AstralHandle* out_view);
+ASTRAL_API void ASTRAL_CALL astral_memory_snapshot_unmap(AstralHandle view);
+// clang-format off
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_view_info(AstralHandle view, AstralMemorySnapshotInfo* out_info);
+// clang-format on
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_view_search(
+    AstralHandle view, const AstralMemorySearchDesc* desc, const float* query,
+    AstralMemorySearchResult* out_results, uint32_t max_results, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(const AstralMemoryIndexDesc* desc,
+                                                    AstralSpanU8 bytes, AstralHandle* out_index);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_record_from_chunk(
     const AstralChunkRange* range,
     uint64_t key,

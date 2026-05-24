@@ -1570,6 +1570,18 @@ namespace Astral.Runtime
         public static extern int astral_memory_snapshot_info(AstralSpanU8 bytes, ref AstralMemorySnapshotInfo out_info);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_snapshot_map(AstralSpanU8 path, ref AstralMemorySnapshotInfo out_info, out AstralHandle out_view);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_memory_snapshot_unmap(AstralHandle view);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_snapshot_view_info(AstralHandle view, ref AstralMemorySnapshotInfo out_info);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_snapshot_view_search(AstralHandle view, ref AstralMemorySearchDesc desc, IntPtr query, IntPtr out_results, uint max_results, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_memory_load(ref AstralMemoryIndexDesc desc, AstralSpanU8 bytes, out AstralHandle out_index);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
