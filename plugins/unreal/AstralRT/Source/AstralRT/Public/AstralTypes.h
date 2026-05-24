@@ -273,11 +273,7 @@ enum class EAstralMemoryIndexKind : uint8
 
 /** Native memory index vector storage format. */
 UENUM(BlueprintType)
-enum class EAstralMemoryStorageKind : uint8
-{
-    F32 = 0,
-    Q8 = 1
-};
+enum class EAstralMemoryStorageKind : uint8 { F32 = 0, Q8 = 1, F6_E2M3 = 2 };
 
 /** Root used to resolve relative filesystem paths before they cross the C ABI. */
 UENUM(BlueprintType)

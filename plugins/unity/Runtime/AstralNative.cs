@@ -974,7 +974,8 @@ namespace Astral.Runtime
         public enum AstralMemoryStorageKind : uint
         {
             F32 = 0,
-            Q8 = 1
+            Q8 = 1,
+            F6_E2M3 = 2
         }
 
         public const uint ASTRAL_MEMORY_GROUP_ANY = 0xFFFFFFFFu;

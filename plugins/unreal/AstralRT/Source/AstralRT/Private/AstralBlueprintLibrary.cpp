@@ -95,16 +95,16 @@ static AstralMemoryIndexKind to_native_memory_index_kind(EAstralMemoryIndexKind 
     }
 }
 
-static AstralMemoryStorageKind to_native_memory_storage_kind(EAstralMemoryStorageKind Kind)
-{
-    switch (Kind)
-    {
-    case EAstralMemoryStorageKind::Q8:
-        return ASTRAL_MEMORY_STORAGE_Q8;
-    case EAstralMemoryStorageKind::F32:
-    default:
-        return ASTRAL_MEMORY_STORAGE_F32;
-    }
+static AstralMemoryStorageKind to_native_memory_storage_kind(EAstralMemoryStorageKind Kind) {
+  switch (Kind) {
+  case EAstralMemoryStorageKind::F6_E2M3:
+    return ASTRAL_MEMORY_STORAGE_F6_E2M3;
+  case EAstralMemoryStorageKind::Q8:
+    return ASTRAL_MEMORY_STORAGE_Q8;
+  case EAstralMemoryStorageKind::F32:
+  default:
+    return ASTRAL_MEMORY_STORAGE_F32;
+  }
 }
 
 static EAstralMemoryMetric from_native_memory_metric(AstralMemoryMetric Metric)
@@ -133,16 +133,16 @@ static EAstralMemoryIndexKind from_native_memory_index_kind(AstralMemoryIndexKin
     }
 }
 
-static EAstralMemoryStorageKind from_native_memory_storage_kind(AstralMemoryStorageKind Kind)
-{
-    switch (Kind)
-    {
-    case ASTRAL_MEMORY_STORAGE_Q8:
-        return EAstralMemoryStorageKind::Q8;
-    case ASTRAL_MEMORY_STORAGE_F32:
-    default:
-        return EAstralMemoryStorageKind::F32;
-    }
+static EAstralMemoryStorageKind from_native_memory_storage_kind(AstralMemoryStorageKind Kind) {
+  switch (Kind) {
+  case ASTRAL_MEMORY_STORAGE_F6_E2M3:
+    return EAstralMemoryStorageKind::F6_E2M3;
+  case ASTRAL_MEMORY_STORAGE_Q8:
+    return EAstralMemoryStorageKind::Q8;
+  case ASTRAL_MEMORY_STORAGE_F32:
+  default:
+    return EAstralMemoryStorageKind::F32;
+  }
 }
 
 static AstralMemoryIndexDesc to_native_memory_desc(const FAstralMemoryIndexDesc& Desc)

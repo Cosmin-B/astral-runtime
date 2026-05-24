@@ -75,6 +75,10 @@ re-running a full scan for every query.
   for memory-footprint-sensitive retrieval. Graph q8 uses q8 pair scoring
   during construction and q8-vs-f32 scoring for queries, so measure recall
   against the flat f32 oracle before using it for retrieval.
+- `ASTRAL_MEMORY_STORAGE_F6_E2M3` stores scaled E2M3 values in signed bytes and
+  uses the same compact integer dot path as q8, with Float6 scaling applied once
+  at the score boundary. It is approximate; validate recall against flat f32 on
+  the target embeddings before using it for retrieval.
 
 Graph snapshots include the routing topology when the load descriptor matches
 the saved graph neighbor, search, and level capacities. If those knobs differ,
