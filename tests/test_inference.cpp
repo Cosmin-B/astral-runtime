@@ -3236,10 +3236,49 @@ TEST(inference_memory_index_f8_e5m2_storage_mock) {
   ASSERT_EQ(view_count, kTopK);
   ASSERT_EQ(view_results[0].key, kKeyA);
 
+  char snapshot_path[128]{};
+  std::snprintf(snapshot_path, sizeof(snapshot_path), "/tmp/astral-memory-f8-view-%p.bin",
+                static_cast<const void*>(blob.data()));
+  FILE* snapshot_file = std::fopen(snapshot_path, "wb");
+  ASSERT_TRUE(snapshot_file != nullptr);
+  ASSERT_EQ(std::fwrite(blob.data(), 1, blob.size(), snapshot_file), blob.size());
+  ASSERT_EQ(std::fclose(snapshot_file), 0);
+
+  AstralMemorySnapshotInfo mapped_info{};
+  mapped_info.size = sizeof(AstralMemorySnapshotInfo);
+  AstralHandle mapped_view = 0;
+  AstralSpanU8 path_span{};
+  path_span.data = reinterpret_cast<const uint8_t*>(snapshot_path);
+  path_span.len = static_cast<uint32_t>(std::strlen(snapshot_path));
+  err = astral_memory_snapshot_map(path_span, &mapped_info, &mapped_view);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_TRUE(astral_handle_valid(mapped_view));
+  ASSERT_EQ(mapped_info.storage_kind, ASTRAL_MEMORY_STORAGE_F8_E5M2);
+
+  AstralMemorySearchResult mapped_results[kTopK]{};
+  uint32_t mapped_count = 0;
+  err = astral_memory_snapshot_view_search(mapped_view, &search, query, mapped_results, kTopK,
+                                           &mapped_count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(mapped_count, kTopK);
+  ASSERT_EQ(mapped_results[0].key, kKeyA);
+  astral_memory_snapshot_unmap(mapped_view);
+  ASSERT_FALSE(astral_handle_valid(mapped_view));
+  std::remove(snapshot_path);
+
   AstralHandle loaded = 0;
   err = astral_memory_load(&desc, blob_span, &loaded);
   ASSERT_EQ(err, ASTRAL_OK);
   err = astral_memory_search(loaded, &search, query, results, kTopK, &count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(results[0].key, kKeyA);
+
+  AstralMemoryIndexDesc f32_desc = desc;
+  f32_desc.storage_kind = ASTRAL_MEMORY_STORAGE_F32;
+  AstralHandle loaded_f32 = 0;
+  err = astral_memory_load(&f32_desc, blob_span, &loaded_f32);
+  ASSERT_EQ(err, ASTRAL_OK);
+  err = astral_memory_search(loaded_f32, &search, query, results, kTopK, &count);
   ASSERT_EQ(err, ASTRAL_OK);
   ASSERT_EQ(results[0].key, kKeyA);
 
@@ -3257,6 +3296,7 @@ TEST(inference_memory_index_f8_e5m2_storage_mock) {
   ASSERT_EQ(results[0].key, kKeyA);
 
   astral_memory_destroy(graph);
+  astral_memory_destroy(loaded_f32);
   astral_memory_destroy(loaded);
   astral_memory_destroy(index);
 }
