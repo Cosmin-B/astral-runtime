@@ -590,7 +590,7 @@ inline uint32_t f32_bits(float value) {
   return bits;
 }
 
-inline float e5m2_to_f32(uint8_t raw) {
+inline const float* e5m2_to_f32_table() {
   static constexpr float kE5M2ToF32[256] = {0.0f,
                                             1.52587891e-05f,
                                             3.05175781e-05f,
@@ -847,7 +847,11 @@ inline float e5m2_to_f32(uint8_t raw) {
                                             -57344.0f,
                                             -57344.0f,
                                             -57344.0f};
-  return kE5M2ToF32[raw];
+  return kE5M2ToF32;
+}
+
+inline float e5m2_to_f32(uint8_t raw) {
+  return e5m2_to_f32_table()[raw];
 }
 
 uint8_t f32_to_e5m2(float value) {
@@ -885,6 +889,30 @@ uint8_t f32_to_e5m2(float value) {
 }
 
 float dot_e5m2_f32(const int8_t* a, const float* b, uint32_t dim) {
+#if defined(__AVX2__)
+  const float* table = e5m2_to_f32_table();
+  __m256 acc0 = _mm256_setzero_ps();
+  __m256 acc1 = _mm256_setzero_ps();
+  uint32_t i = 0;
+  for (; i + kAvx2F32Lanes * 2u <= dim; i += kAvx2F32Lanes * 2u) {
+    const __m128i bytes0 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(a + i));
+    const __m128i bytes1 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(a + i + kAvx2F32Lanes));
+    const __m256 av0 = _mm256_i32gather_ps(table, _mm256_cvtepu8_epi32(bytes0), sizeof(float));
+    const __m256 av1 = _mm256_i32gather_ps(table, _mm256_cvtepu8_epi32(bytes1), sizeof(float));
+#if defined(__FMA__)
+    acc0 = _mm256_fmadd_ps(av0, _mm256_loadu_ps(b + i), acc0);
+    acc1 = _mm256_fmadd_ps(av1, _mm256_loadu_ps(b + i + kAvx2F32Lanes), acc1);
+#else
+    acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(av0, _mm256_loadu_ps(b + i)));
+    acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(av1, _mm256_loadu_ps(b + i + kAvx2F32Lanes)));
+#endif
+  }
+  float sum = reduce_avx2_f32(_mm256_add_ps(acc0, acc1));
+  for (; i < dim; ++i) {
+    sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * b[i];
+  }
+  return sum;
+#else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
   float sum2 = 0.0f;
@@ -901,9 +929,40 @@ float dot_e5m2_f32(const int8_t* a, const float* b, uint32_t dim) {
     sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * b[i];
   }
   return sum;
+#endif
 }
 
 float dot_e5m2_e5m2(const int8_t* a, const int8_t* b, uint32_t dim) {
+#if defined(__AVX2__)
+  const float* table = e5m2_to_f32_table();
+  __m256 acc0 = _mm256_setzero_ps();
+  __m256 acc1 = _mm256_setzero_ps();
+  uint32_t i = 0;
+  for (; i + kAvx2F32Lanes * 2u <= dim; i += kAvx2F32Lanes * 2u) {
+    const __m128i a_bytes0 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(a + i));
+    const __m128i a_bytes1 =
+        _mm_loadl_epi64(reinterpret_cast<const __m128i*>(a + i + kAvx2F32Lanes));
+    const __m128i b_bytes0 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(b + i));
+    const __m128i b_bytes1 =
+        _mm_loadl_epi64(reinterpret_cast<const __m128i*>(b + i + kAvx2F32Lanes));
+    const __m256 av0 = _mm256_i32gather_ps(table, _mm256_cvtepu8_epi32(a_bytes0), sizeof(float));
+    const __m256 av1 = _mm256_i32gather_ps(table, _mm256_cvtepu8_epi32(a_bytes1), sizeof(float));
+    const __m256 bv0 = _mm256_i32gather_ps(table, _mm256_cvtepu8_epi32(b_bytes0), sizeof(float));
+    const __m256 bv1 = _mm256_i32gather_ps(table, _mm256_cvtepu8_epi32(b_bytes1), sizeof(float));
+#if defined(__FMA__)
+    acc0 = _mm256_fmadd_ps(av0, bv0, acc0);
+    acc1 = _mm256_fmadd_ps(av1, bv1, acc1);
+#else
+    acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(av0, bv0));
+    acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(av1, bv1));
+#endif
+  }
+  float sum = reduce_avx2_f32(_mm256_add_ps(acc0, acc1));
+  for (; i < dim; ++i) {
+    sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * e5m2_to_f32(static_cast<uint8_t>(b[i]));
+  }
+  return sum;
+#else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
   float sum2 = 0.0f;
@@ -923,6 +982,7 @@ float dot_e5m2_e5m2(const int8_t* a, const int8_t* b, uint32_t dim) {
     sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * e5m2_to_f32(static_cast<uint8_t>(b[i]));
   }
   return sum;
+#endif
 }
 
 float l2_score_e5m2_f32(const int8_t* a, float scale, const float* b, uint32_t dim) {
