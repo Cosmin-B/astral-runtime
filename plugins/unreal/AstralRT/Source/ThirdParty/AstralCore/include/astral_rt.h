@@ -293,7 +293,7 @@ typedef struct AstralMemorySearchDesc {
     uint32_t top_k;
     uint32_t group_id;
     uint32_t flags;
-    /* Per-query graph expansion; 0 uses the index construction expansion. */
+    /* Per-query graph expansion; 0 uses the index query expansion. */
     uint32_t graph_search;
 } AstralMemorySearchDesc;
 
