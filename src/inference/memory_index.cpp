@@ -1592,8 +1592,7 @@ inline uint32_t graph_search_for_query(const MemoryIndex* index,
   if (requested < kGraphMinSearch) {
     requested = kGraphMinSearch;
   }
-  return requested < index->graph_query_search_capacity ? requested
-                                                        : index->graph_query_search_capacity;
+  return requested < index->graph_scratch_capacity ? requested : index->graph_scratch_capacity;
 }
 
 inline uint32_t graph_candidate_search_capacity(const MemoryIndex* index,
