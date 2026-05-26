@@ -71,8 +71,25 @@ constexpr int32_t kQ8MaxValue = 127;
 constexpr float kQ8MaxFloat = 127.0f;
 constexpr int32_t kE2M3Scale = 16;
 constexpr int32_t kE2M3MagnitudeMask = 0x1F;
+constexpr uint32_t kE2M3CodeCount = 32;
 constexpr float kE2M3MaxFloat = 7.5f;
 constexpr float kE2M3InvScale = 1.0f / static_cast<float>(kE2M3Scale);
+constexpr float kE2M3LinearMinThreshold = 1.0f;
+constexpr float kE2M3LinearMaxThreshold = 31.0f;
+constexpr float kE2M3MidMinThreshold = 34.0f;
+constexpr float kE2M3MidMaxThreshold = 62.0f;
+constexpr float kE2M3HighMinThreshold = 68.0f;
+constexpr float kE2M3HighMaxThreshold = 116.0f;
+constexpr uint32_t kE2M3LinearStep = 2;
+constexpr uint32_t kE2M3MidStep = 4;
+constexpr uint32_t kE2M3HighStep = 8;
+constexpr uint32_t kE2M3LinearBase = 0;
+constexpr uint32_t kE2M3MidBase = 32;
+constexpr uint32_t kE2M3HighBase = 64;
+constexpr uint32_t kE2M3MaxScaled = 120;
+constexpr float kE2M3LinearStepInv = 1.0f / static_cast<float>(kE2M3LinearStep);
+constexpr float kE2M3MidStepInv = 1.0f / static_cast<float>(kE2M3MidStep);
+constexpr float kE2M3HighStepInv = 1.0f / static_cast<float>(kE2M3HighStep);
 constexpr uint32_t kF32SignShift = 31;
 constexpr uint32_t kF32ExponentShift = 23;
 constexpr uint32_t kF32ExponentMask = 0xFFu;
@@ -1207,9 +1224,9 @@ void quantize_q8_vector(int8_t* dst, float* out_scale, const float* src, uint32_
 }
 
 inline int8_t e2m3_magnitude_scaled(uint32_t magnitude) {
-  static constexpr int8_t kScaledMagnitudes[32] = {0,  2,  4,  6,  8,  10, 12, 14,  16,  18, 20,
-                                                   22, 24, 26, 28, 30, 32, 36, 40,  44,  48, 52,
-                                                   56, 60, 64, 72, 80, 88, 96, 104, 112, 120};
+  static constexpr int8_t kScaledMagnitudes[kE2M3CodeCount] = {
+      0,  2,  4,  6,  8,  10, 12, 14, 16, 18, 20, 22, 24, 26,  28,  30,
+      32, 36, 40, 44, 48, 52, 56, 60, 64, 72, 80, 88, 96, 104, 112, 120};
   return kScaledMagnitudes[magnitude & kE2M3MagnitudeMask];
 }
 
@@ -1217,17 +1234,31 @@ inline float e2m3_scaled_to_f32(int8_t scaled, float scale) {
   return static_cast<float>(scaled) * scale * kE2M3InvScale;
 }
 
+inline uint32_t ceil_positive_to_u32(float value) {
+  const uint32_t truncated = static_cast<uint32_t>(value);
+  return truncated + (value > static_cast<float>(truncated) ? 1u : 0u);
+}
+
 int8_t round_scaled_e2m3(float value) {
   const float abs_value = std::fabs(value);
-  int32_t best = 0;
-  float best_error = abs_value;
-  for (uint32_t i = 1; i < 32u; ++i) {
-    const int32_t candidate = e2m3_magnitude_scaled(i);
-    const float error = std::fabs(abs_value - static_cast<float>(candidate));
-    if (error < best_error) {
-      best = candidate;
-      best_error = error;
-    }
+  uint32_t best = kE2M3MaxScaled;
+  if (abs_value <= kE2M3LinearMinThreshold) {
+    best = 0;
+  } else if (abs_value <= kE2M3LinearMaxThreshold) {
+    best = kE2M3LinearBase +
+           kE2M3LinearStep *
+               ceil_positive_to_u32((abs_value - kE2M3LinearMinThreshold) * kE2M3LinearStepInv);
+  } else if (abs_value <= kE2M3MidMinThreshold) {
+    best = kE2M3MidBase;
+  } else if (abs_value <= kE2M3MidMaxThreshold) {
+    best = kE2M3MidBase + kE2M3MidStep * ceil_positive_to_u32((abs_value - kE2M3MidMinThreshold) *
+                                                              kE2M3MidStepInv);
+  } else if (abs_value <= kE2M3HighMinThreshold) {
+    best = kE2M3HighBase;
+  } else if (abs_value <= kE2M3HighMaxThreshold) {
+    best = kE2M3HighBase +
+           kE2M3HighStep *
+               ceil_positive_to_u32((abs_value - kE2M3HighMinThreshold) * kE2M3HighStepInv);
   }
   return value < 0.0f ? static_cast<int8_t>(-best) : static_cast<int8_t>(best);
 }
