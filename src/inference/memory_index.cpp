@@ -69,6 +69,7 @@ constexpr uint32_t kMemoryAddParallelMaxWorkers = 8;
 constexpr uint32_t kMemorySearchBatchParallelMinQueries = 8;
 constexpr uint32_t kMemorySearchBatchParallelMaxRecords = 32768;
 constexpr uint32_t kMemorySearchBatchParallelMaxWorkers = 8;
+constexpr uint32_t kMemorySearchBatchParallelMaxTopK = 8;
 constexpr int32_t kQ8MinValue = -127;
 constexpr int32_t kQ8MaxValue = 127;
 constexpr float kQ8MaxFloat = 127.0f;
@@ -1428,6 +1429,19 @@ struct MemorySearchBatchJob {
   uint32_t begin;
   uint32_t end;
   std::atomic<uint32_t>* remaining;
+};
+
+struct MemorySearchRecordShardJob {
+  MemoryIndex* index;
+  const AstralMemorySearchDesc* desc;
+  const float* queries;
+  uint32_t query_count;
+  uint32_t begin;
+  uint32_t end;
+  std::atomic<uint32_t>* remaining;
+  AstralMemorySearchResult
+      local_results[kMemoryBatchStackQueries * kMemorySearchBatchParallelMaxTopK];
+  uint32_t local_counts[kMemoryBatchStackQueries];
 };
 
 inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
@@ -3309,6 +3323,124 @@ void memory_search_flat_batch_chunked(MemoryIndex* index, const AstralMemorySear
   }
 }
 
+void memory_search_flat_batch_range(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                    const float* queries, uint32_t query_count,
+                                    uint32_t begin_active, uint32_t end_active,
+                                    AstralMemorySearchResult* out_results, uint32_t* out_counts) {
+  float query_scales[kMemoryBatchStackQueries];
+  for (uint32_t query_i = 0; query_i < query_count; ++query_i) {
+    const float* query = queries + static_cast<size_t>(query_i) * index->dim;
+    query_scales[query_i] =
+        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 1.0f;
+    out_counts[query_i] = kNoResults;
+  }
+
+  for (uint32_t active_pos = begin_active; active_pos < end_active; ++active_pos) {
+    const uint32_t slot = active_slot_at(index, active_pos);
+    const MemorySlot& s = index->slots[slot];
+    if (!record_matches_group(desc, s)) {
+      continue;
+    }
+
+    for (uint32_t query_i = 0; query_i < query_count; ++query_i) {
+      AstralMemorySearchResult* results = out_results + static_cast<size_t>(query_i) * desc->top_k;
+      uint32_t* filled = out_counts + query_i;
+      const float* query = queries + static_cast<size_t>(query_i) * index->dim;
+      const float score = score_slot(index, query, slot, query_scales[query_i]);
+      if (*filled == desc->top_k &&
+          !result_better_values(score, s.record.key, results[desc->top_k - 1u])) {
+        continue;
+      }
+      AstralMemorySearchResult candidate{};
+      fill_result(&candidate, s, score);
+      insert_result(results, desc->top_k, filled, candidate);
+    }
+  }
+}
+
+void memory_search_record_shard_work(void* user) {
+  MemorySearchRecordShardJob* job = static_cast<MemorySearchRecordShardJob*>(user);
+  memory_search_flat_batch_range(job->index, job->desc, job->queries, job->query_count, job->begin,
+                                 job->end, job->local_results, job->local_counts);
+  job->remaining->fetch_sub(1, std::memory_order_release);
+  astral::platform::cpu_signal_event();
+}
+
+bool memory_search_flat_batch_record_parallel(MemoryIndex* index,
+                                              const AstralMemorySearchDesc* desc,
+                                              const float* queries, uint32_t query_count,
+                                              AstralMemorySearchResult* out_results,
+                                              uint32_t* out_counts) {
+  if (compact_storage(index) || index->count <= kMemorySearchBatchParallelMaxRecords ||
+      query_count > kMemoryBatchStackQueries || desc->top_k > kMemorySearchBatchParallelMaxTopK ||
+      !core::runtime_initialized()) {
+    return false;
+  }
+
+  const uint32_t runtime_threads = core::runtime_thread_count();
+  const bool on_worker = core::runtime_on_worker_thread();
+  if (runtime_threads < 2u || index->count < runtime_threads) {
+    return false;
+  }
+
+  uint32_t worker_count = on_worker ? runtime_threads - 1u : runtime_threads;
+  if (worker_count > kMemorySearchBatchParallelMaxWorkers) {
+    worker_count = kMemorySearchBatchParallelMaxWorkers;
+  }
+  if (worker_count < 2u) {
+    return false;
+  }
+  if (worker_count > index->count) {
+    worker_count = index->count;
+  }
+
+  MemorySearchRecordShardJob jobs[kMemorySearchBatchParallelMaxWorkers]{};
+  std::atomic<uint32_t> remaining(worker_count);
+  const uint32_t current_worker = on_worker ? core::runtime_worker_id() : kU32Max;
+  for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
+    const uint32_t begin =
+        static_cast<uint32_t>((static_cast<uint64_t>(index->count) * worker_i) / worker_count);
+    const uint32_t end = static_cast<uint32_t>(
+        (static_cast<uint64_t>(index->count) * (worker_i + 1u)) / worker_count);
+    jobs[worker_i].index = index;
+    jobs[worker_i].desc = desc;
+    jobs[worker_i].queries = queries;
+    jobs[worker_i].query_count = query_count;
+    jobs[worker_i].begin = begin;
+    jobs[worker_i].end = end;
+    jobs[worker_i].remaining = &remaining;
+
+    uint32_t target_worker = worker_i;
+    if (on_worker && target_worker >= current_worker) {
+      ++target_worker;
+    }
+    const AstralErr err =
+        core::submit_work_affine(target_worker, memory_search_record_shard_work, &jobs[worker_i]);
+    if (err != ASTRAL_OK) {
+      memory_search_record_shard_work(&jobs[worker_i]);
+    }
+  }
+
+  while (remaining.load(std::memory_order_acquire) != 0) {
+    astral::platform::cpu_wait_for_event();
+  }
+
+  for (uint32_t query_i = 0; query_i < query_count; ++query_i) {
+    AstralMemorySearchResult* results = out_results + static_cast<size_t>(query_i) * desc->top_k;
+    uint32_t filled = 0;
+    for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
+      const AstralMemorySearchResult* local =
+          jobs[worker_i].local_results + static_cast<size_t>(query_i) * desc->top_k;
+      const uint32_t local_count = jobs[worker_i].local_counts[query_i];
+      for (uint32_t result_i = 0; result_i < local_count; ++result_i) {
+        insert_result(results, desc->top_k, &filled, local[result_i]);
+      }
+    }
+    out_counts[query_i] = filled;
+  }
+  return true;
+}
+
 void memory_search_flat_batch_work(void* user) {
   MemorySearchBatchJob* job = static_cast<MemorySearchBatchJob*>(user);
   const uint32_t count = job->end - job->begin;
@@ -4006,7 +4138,9 @@ AstralErr memory_search_batch(MemoryIndex* index, const AstralMemorySearchDesc* 
   }
 
   if (index->index_kind == ASTRAL_MEMORY_INDEX_FLAT) {
-    if (!memory_search_flat_batch_parallel(index, desc, queries, query_count, out_results,
+    if (!memory_search_flat_batch_record_parallel(index, desc, queries, query_count, out_results,
+                                                  out_counts) &&
+        !memory_search_flat_batch_parallel(index, desc, queries, query_count, out_results,
                                            out_counts)) {
       memory_search_flat_batch_chunked(index, desc, queries, query_count, out_results, out_counts);
     }
