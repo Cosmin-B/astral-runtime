@@ -2628,6 +2628,13 @@ TEST(inference_memory_index_graph_mock) {
     ASSERT_EQ(results[0].key, kKeyA);
     search.graph_search = 0;
 
+    search.graph_search = kCapacity;
+    err = astral_memory_search(index, &search, query, results, kTopK, &count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(count, kTopK);
+    ASSERT_EQ(results[0].key, kKeyA);
+    search.graph_search = 0;
+
     search.top_k = 1;
     err = astral_memory_search(index, &search, query, results, 1, &count);
     ASSERT_EQ(err, ASTRAL_OK);
@@ -3036,6 +3043,64 @@ TEST(inference_memory_index_graph_q8_parallel_preprocess_mock) {
   ASSERT_EQ(err, ASTRAL_OK);
   ASSERT_EQ(count, kTopOne);
   ASSERT_EQ(result.key, kFirstKey + kCapacity - 1u);
+
+  astral_memory_destroy(index);
+  astral_shutdown();
+}
+
+TEST(inference_memory_index_flat_batch_parallel_mock) {
+  constexpr uint32_t kDim = 8;
+  constexpr uint32_t kCapacity = 1024;
+  constexpr uint32_t kQueryCount = 9;
+  constexpr uint32_t kTopOne = 1;
+  constexpr uint64_t kFirstKey = 13001;
+  constexpr uint32_t kRuntimeThreads = 8;
+
+  AstralInit cfg{};
+  cfg.reserve_bytes = 64ull * 1024ull * 1024ull;
+  cfg.thread_count = kRuntimeThreads;
+  cfg.numa_node = 0xFFFFFFFFu;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = kCapacity;
+  desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  std::vector<AstralMemoryRecord> records(kCapacity);
+  std::vector<float> vectors(static_cast<size_t>(kCapacity) * kDim);
+  for (uint32_t i = 0; i < kCapacity; ++i) {
+    records[i].size = sizeof(AstralMemoryRecord);
+    records[i].key = kFirstKey + i;
+    vectors[static_cast<size_t>(i) * kDim] = static_cast<float>(i + 1u);
+  }
+  err = astral_memory_add_batch(index, records.data(), vectors.data(), kCapacity);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  float queries[kQueryCount * kDim]{};
+  for (uint32_t query_i = 0; query_i < kQueryCount; ++query_i) {
+    queries[static_cast<size_t>(query_i) * kDim] = 1.0f;
+  }
+
+  AstralMemorySearchDesc search{};
+  search.size = sizeof(AstralMemorySearchDesc);
+  search.top_k = kTopOne;
+  search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+  AstralMemorySearchResult results[kQueryCount]{};
+  uint32_t counts[kQueryCount]{};
+  err = astral_memory_search_batch(index, &search, queries, kQueryCount, results, kQueryCount,
+                                   counts);
+  ASSERT_EQ(err, ASTRAL_OK);
+  for (uint32_t query_i = 0; query_i < kQueryCount; ++query_i) {
+    ASSERT_EQ(counts[query_i], kTopOne);
+    ASSERT_EQ(results[query_i].key, kFirstKey + kCapacity - 1u);
+  }
 
   astral_memory_destroy(index);
   astral_shutdown();
