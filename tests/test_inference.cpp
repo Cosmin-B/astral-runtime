@@ -3102,6 +3102,13 @@ TEST(inference_memory_index_flat_batch_parallel_mock) {
     ASSERT_EQ(results[query_i].key, kFirstKey + kCapacity - 1u);
   }
 
+  AstralMemorySearchResult result{};
+  uint32_t count = 0;
+  err = astral_memory_search(index, &search, queries, &result, kTopOne, &count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(count, kTopOne);
+  ASSERT_EQ(result.key, kFirstKey + kCapacity - 1u);
+
   astral_memory_destroy(index);
   astral_shutdown();
 }

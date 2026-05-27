@@ -1918,6 +1918,11 @@ void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
 void memory_search_flat_batch(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                               const float* queries, uint32_t query_count,
                               AstralMemorySearchResult* out_results, uint32_t* out_counts);
+bool memory_search_flat_batch_record_parallel(MemoryIndex* index,
+                                              const AstralMemorySearchDesc* desc,
+                                              const float* queries, uint32_t query_count,
+                                              AstralMemorySearchResult* out_results,
+                                              uint32_t* out_counts);
 void graph_begin_visit(MemoryIndex* index);
 void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, float score,
                          uint32_t* candidate_count);
@@ -3187,6 +3192,9 @@ void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
     } else {
       memory_search_q8(index, desc, query, out_results, out_count);
     }
+    return;
+  }
+  if (memory_search_flat_batch_record_parallel(index, desc, query, 1, out_results, out_count)) {
     return;
   }
   if (desc->top_k == kTopOne) {

@@ -284,13 +284,14 @@ baseline only depends on the dataset shape, metric, and storage. Flat batch
 search can split query rows across the runtime worker pool for cache-resident
 corpora when it is already initialized with multiple workers; larger corpora
 use record-range sharding for f32 batches with small top-k, followed by a local
-top-k merge. Graph batch search stays serial until graph query scratch and visit
-state are per-query. The summary also includes compact best-row sections sorted
-by recall first and latency second, including a high-recall section for rows at
-or above 95% recall. Use `--summary-only` with `--out-dir <existing-dir>` to
-write `summary_best.txt` from an existing `results.csv` without rerunning
-benchmark lanes or overwriting the full per-shape summary. The default output
-directory is under `/tmp`; pass
+top-k merge. Large single-query f32 searches use the same record-range sharding
+when the runtime worker pool is available. Graph batch search stays serial until
+graph query scratch and visit state are per-query. The summary also includes
+compact best-row sections sorted by recall first and latency second, including a
+high-recall section for rows at or above 95% recall. Use `--summary-only` with
+`--out-dir <existing-dir>` to write `summary_best.txt` from an existing
+`results.csv` without rerunning benchmark lanes or overwriting the full
+per-shape summary. The default output directory is under `/tmp`; pass
 `--out-dir` to place the capture in a sidecar evidence folder.
 Use `--min-recall-pct` and `--max-recall-ns` when a tuning run should fail
 unless at least one row meets the chosen recall and latency envelope. The same
