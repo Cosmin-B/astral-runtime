@@ -2473,9 +2473,13 @@ void graph_rebuild(MemoryIndex* index) {
   index->graph_max_level = 0;
   index->graph_build_score_evals = 0;
   index->graph_build_candidate_visits = 0;
-  for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+  const uint32_t final_count = index->count;
+  index->count = 0;
+  for (uint32_t active_pos = 0; active_pos < final_count; ++active_pos) {
+    ++index->count;
     graph_connect_slot(index, active_slot_at(index, active_pos));
   }
+  index->count = final_count;
 }
 
 inline void graph_mark_visited(MemoryIndex* index, uint32_t slot) {
