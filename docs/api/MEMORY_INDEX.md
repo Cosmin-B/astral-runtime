@@ -226,7 +226,11 @@ flat oracle, which is useful when tuning search that only needs the best hit.
 `features.memory graph_recall_search` precomputes the exact flat oracle outside
 the timed region, then reports graph-only query latency with the same recall
 percentage. Use that marker for ANN perf counters when exact-search work would
-otherwise dominate the profile.
+otherwise dominate the profile. Aggregate recall lanes must sample the full
+deterministic query set before their percentage is meaningful. The matrix
+runner records both requested `iters` and `effective_iters`; for aggregate recall
+cases it raises `effective_iters` to at least
+`ASTRAL_BENCH_MEMORY_RECALL_QUERIES`.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
@@ -251,7 +255,9 @@ memory-only benchmark across multiple metrics, dimensions, and capacities in one
 log. Use `scripts/run_memory_search_acceptance.sh` to capture the common exact
 flat, exact flat latency, reduced flat, q8 recall, graph build cost, graph
 snapshot load cost, latency, f32/q8 graph recall, and f32/q8 graph top-1 recall lanes into one
-output directory for a single dataset shape. Add `--budget-sweep` when tuning
+output directory for a single dataset shape. Recall lanes run with an effective
+iteration count no smaller than the requested recall-query count, even when the
+requested iteration count is lower. Add `--budget-sweep` when tuning
 graph recall/latency so the runner also captures `graph_recall_search_sweep`
 for f32 and q8 graph indexes using one build and multiple per-query budgets.
 Add `--recall-detail` when aggregate recall hides hard queries; it captures one

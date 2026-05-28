@@ -14,7 +14,8 @@ capacity combinations and writes one log file.
 Options:
   --preset <name>       CMake preset / build dir to use (default: dev)
   --out <file>          Output log file (required)
-  --iters <N>           ASTRAL_BENCH_FEATURE_ITERS (default: 10)
+  --iters <N>           ASTRAL_BENCH_FEATURE_ITERS (default: 10);
+                        aggregate recall cases use at least --recall-queries
   --dims <list>         Comma-separated dimensions (default: 128,384,768)
   --capacities <list>   Comma-separated capacities (default: 10000)
   --metrics <list>      Comma-separated metrics: cosine,dot,l2 (default: cosine,dot,l2)
@@ -122,6 +123,22 @@ IFS=',' read -r -a dim_values <<< "${dims}"
 IFS=',' read -r -a capacity_values <<< "${capacities}"
 IFS=',' read -r -a metric_values <<< "${metrics}"
 
+recall_case_requires_full_query_set() {
+  case "$1" in
+    flat_q8_recall_search|flat_compact_recall_search|graph_recall|graph_recall_top1|graph_recall_search|graph_recall_search_sweep)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+effective_iters="${iters}"
+if recall_case_requires_full_query_set "${memory_case}" && (( iters < recall_queries )); then
+  effective_iters="${recall_queries}"
+fi
+
 mkdir -p "$(dirname "${out_file}")"
 perf_dir="$(dirname "${out_file}")/$(basename "${out_file}" .txt)-perf"
 if [[ "${perf_enabled}" == "1" ]]; then
@@ -132,6 +149,7 @@ fi
   echo "# date: $(date -Iseconds)"
   echo "# preset: ${preset}"
   echo "# iters: ${iters}"
+  echo "# effective_iters: ${effective_iters}"
   echo "# dims: ${dims}"
   echo "# capacities: ${capacities}"
   echo "# metrics: ${metrics}"
@@ -163,7 +181,7 @@ for metric in "${metric_values[@]}"; do
       bench_cmd=(
         env
         "ASTRAL_BENCH_MEMORY_ONLY=1"
-        "ASTRAL_BENCH_FEATURE_ITERS=${iters}"
+        "ASTRAL_BENCH_FEATURE_ITERS=${effective_iters}"
         "ASTRAL_BENCH_MEMORY_METRIC=${metric}"
         "ASTRAL_BENCH_MEMORY_STORAGE=${storage}"
         "ASTRAL_BENCH_MEMORY_CASE=${memory_case}"
