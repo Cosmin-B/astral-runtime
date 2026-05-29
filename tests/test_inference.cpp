@@ -2670,6 +2670,8 @@ TEST(inference_memory_index_graph_mock) {
     ASSERT_GT(stats.graph_bytes, 0ull);
     ASSERT_GT(stats.graph_edges, 0ull);
     ASSERT_GT(stats.graph_base_edges, 0ull);
+    ASSERT_GT(stats.graph_base_edges,
+              static_cast<uint64_t>(kRecordCount) * static_cast<uint64_t>(kGraphNeighbors));
     ASSERT_EQ(stats.graph_edges, stats.graph_base_edges + stats.graph_upper_edges);
     ASSERT_GT(stats.graph_build_score_evals, 0ull);
     ASSERT_GT(stats.graph_build_candidate_visits, 0ull);

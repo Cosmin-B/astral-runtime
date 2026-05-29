@@ -2429,13 +2429,12 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
     const uint32_t next_entry = candidate_count != 0 ? index->graph_scratch_slots[0] : entry;
     uint32_t* neighbors = graph_neighbors_at_level(index, slot, level);
     uint32_t filled = 0;
-    graph_select_neighbors(index, slot, level, candidate_count, neighbors, &filled,
-                           index->graph_neighbor_capacity);
+    const uint32_t level_capacity = graph_neighbor_capacity_at_level(index, level);
+    graph_select_neighbors(index, slot, level, candidate_count, neighbors, &filled, level_capacity);
     graph_neighbor_count_ref(index, slot, level) = filled;
     for (uint32_t i = 0; i < filled; ++i) {
       refine_graph_neighbor_list(index, neighbors[i], slot, level);
     }
-    const uint32_t level_capacity = graph_neighbor_capacity_at_level(index, level);
     if (level == 0 && kGraphLongLinkCount != 0 &&
         level_capacity == index->graph_neighbor_capacity && index->count > level_capacity &&
         level_capacity > kGraphLongLinkCount) {
