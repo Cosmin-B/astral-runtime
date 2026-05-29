@@ -4488,57 +4488,53 @@ AstralErr memory_snapshot_info_bytes(SnapshotBytes bytes, AstralMemorySnapshotIn
   return ASTRAL_OK;
 }
 
-AstralErr memory_snapshot_search_bytes(SnapshotBytes bytes, const AstralMemorySearchDesc* desc,
-                                       const float* query, AstralMemorySearchResult* out_results,
-                                       uint32_t max_results, uint32_t* out_count) {
-  if (bytes.data == nullptr || desc == nullptr || desc->size != sizeof(AstralMemorySearchDesc) ||
-      query == nullptr || out_count == nullptr || desc->top_k == 0) {
+AstralErr memory_snapshot_search_with_info(SnapshotBytes bytes,
+                                           const AstralMemorySnapshotInfo* info,
+                                           const AstralMemorySearchDesc* desc, const float* query,
+                                           AstralMemorySearchResult* out_results,
+                                           uint32_t max_results, uint32_t* out_count) {
+  if (bytes.data == nullptr || info == nullptr || desc == nullptr ||
+      desc->size != sizeof(AstralMemorySearchDesc) || query == nullptr || out_count == nullptr ||
+      desc->top_k == 0) {
     return ASTRAL_E_INVALID;
   }
   if (out_results == nullptr || max_results < desc->top_k) {
     return ASTRAL_E_NOMEM;
   }
 
-  AstralMemorySnapshotInfo info{};
-  info.size = sizeof(AstralMemorySnapshotInfo);
-  AstralErr err = memory_snapshot_info_bytes(bytes, &info);
-  if (err != ASTRAL_OK) {
-    return err;
-  }
-
-  const bool compact = compact_storage_kind(info.storage_kind);
-  const bool normalized_f32_cosine = !compact && info.metric == ASTRAL_MEMORY_METRIC_COSINE &&
-                                     info.version >= kSaveVersionNormalizedF32Cosine;
+  const bool compact = compact_storage_kind(info->storage_kind);
+  const bool normalized_f32_cosine = !compact && info->metric == ASTRAL_MEMORY_METRIC_COSINE &&
+                                     info->version >= kSaveVersionNormalizedF32Cosine;
   float normalized_query[kMaxDim];
   if (normalized_f32_cosine) {
-    normalize_f32_vector(normalized_query, query, info.dim);
+    normalize_f32_vector(normalized_query, query, info->dim);
     query = normalized_query;
   }
-  const float query_scale = info.metric == ASTRAL_MEMORY_METRIC_COSINE && !normalized_f32_cosine
-                                ? cosine_scale(query, info.dim)
+  const float query_scale = info->metric == ASTRAL_MEMORY_METRIC_COSINE && !normalized_f32_cosine
+                                ? cosine_scale(query, info->dim)
                                 : 1.0f;
   int8_t compact_query[kMaxDim];
   float compact_query_scale = 1.0f;
-  const bool use_f6_compact_query = info.storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
-  const bool use_f8_compact_query = info.storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2;
+  const bool use_f6_compact_query = info->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3;
+  const bool use_f8_compact_query = info->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2;
   if (use_f6_compact_query) {
-    quantize_e2m3_vector(compact_query, &compact_query_scale, query, info.dim);
+    quantize_e2m3_vector(compact_query, &compact_query_scale, query, info->dim);
     compact_query_scale *= kE2M3InvScale;
   } else if (use_f8_compact_query) {
-    quantize_e5m2_vector(compact_query, &compact_query_scale, query, info.dim);
+    quantize_e5m2_vector(compact_query, &compact_query_scale, query, info->dim);
   }
   uint32_t filled = 0;
-  for (uint32_t i = 0; i < info.count; ++i) {
+  for (uint32_t i = 0; i < info->count; ++i) {
 #if defined(__GNUC__) || defined(__clang__)
-    if (compact && i + kFlatQ8PrefetchDistance < info.count) {
+    if (compact && i + kFlatQ8PrefetchDistance < info->count) {
       const uint64_t prefetch_i = static_cast<uint64_t>(i + kFlatQ8PrefetchDistance);
-      __builtin_prefetch(bytes.data + info.scale_offset + prefetch_i * info.scale_stride, 0, 1);
-      __builtin_prefetch(bytes.data + info.vector_offset + prefetch_i * info.vector_stride, 0, 1);
-      __builtin_prefetch(bytes.data + info.record_offset + prefetch_i * info.record_stride, 0, 1);
+      __builtin_prefetch(bytes.data + info->scale_offset + prefetch_i * info->scale_stride, 0, 1);
+      __builtin_prefetch(bytes.data + info->vector_offset + prefetch_i * info->vector_stride, 0, 1);
+      __builtin_prefetch(bytes.data + info->record_offset + prefetch_i * info->record_stride, 0, 1);
     }
 #endif
     const uint8_t* record_src =
-        bytes.data + info.record_offset + static_cast<uint64_t>(i) * info.record_stride;
+        bytes.data + info->record_offset + static_cast<uint64_t>(i) * info->record_stride;
     AstralMemoryRecord record{};
     std::memcpy(&record, record_src, sizeof(record));
     if (record.size != sizeof(AstralMemoryRecord) || record.key == 0) {
@@ -4552,46 +4548,46 @@ AstralErr memory_snapshot_search_bytes(SnapshotBytes bytes, const AstralMemorySe
     if (compact) {
       float stored_scale = 1.0f;
       const uint8_t* scale_src =
-          bytes.data + info.scale_offset + static_cast<uint64_t>(i) * info.scale_stride;
+          bytes.data + info->scale_offset + static_cast<uint64_t>(i) * info->scale_stride;
       std::memcpy(&stored_scale, scale_src, sizeof(stored_scale));
-      const float scale = compact_value_scale_kind(info.storage_kind, stored_scale);
+      const float scale = compact_value_scale_kind(info->storage_kind, stored_scale);
       const int8_t* vector = reinterpret_cast<const int8_t*>(
-          bytes.data + info.vector_offset + static_cast<uint64_t>(i) * info.vector_stride);
-      if (info.metric == ASTRAL_MEMORY_METRIC_DOT) {
+          bytes.data + info->vector_offset + static_cast<uint64_t>(i) * info->vector_stride);
+      if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
         score = use_f6_compact_query
-                    ? dot_q8_q8(vector, compact_query, info.dim) * scale * compact_query_scale
+                    ? dot_q8_q8(vector, compact_query, info->dim) * scale * compact_query_scale
                 : use_f8_compact_query
-                    ? dot_e5m2_e5m2(vector, compact_query, info.dim) * scale * compact_query_scale
-                    : dot_q8_f32(vector, query, info.dim) * scale;
-      } else if (info.metric == ASTRAL_MEMORY_METRIC_COSINE) {
+                    ? dot_e5m2_e5m2(vector, compact_query, info->dim) * scale * compact_query_scale
+                    : dot_q8_f32(vector, query, info->dim) * scale;
+      } else if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
         if (use_f6_compact_query) {
-          score = dot_q8_q8(vector, compact_query, info.dim) * scale * compact_query_scale *
+          score = dot_q8_q8(vector, compact_query, info->dim) * scale * compact_query_scale *
                   query_scale;
         } else if (use_f8_compact_query) {
-          score = dot_e5m2_e5m2(vector, compact_query, info.dim) * scale * compact_query_scale *
+          score = dot_e5m2_e5m2(vector, compact_query, info->dim) * scale * compact_query_scale *
                   query_scale;
         } else {
-          const float vector_scale = cosine_scale_q8(vector, stored_scale, info.dim);
-          score = dot_q8_f32(vector, query, info.dim) * scale * query_scale * vector_scale;
+          const float vector_scale = cosine_scale_q8(vector, stored_scale, info->dim);
+          score = dot_q8_f32(vector, query, info->dim) * scale * query_scale * vector_scale;
         }
       } else {
         score = use_f6_compact_query
-                    ? l2_score_q8_q8(vector, scale, compact_query, compact_query_scale, info.dim)
+                    ? l2_score_q8_q8(vector, scale, compact_query, compact_query_scale, info->dim)
                 : use_f8_compact_query ? l2_score_e5m2_e5m2(vector, scale, compact_query,
-                                                            compact_query_scale, info.dim)
-                                       : l2_score_q8_f32(vector, scale, query, info.dim);
+                                                            compact_query_scale, info->dim)
+                                       : l2_score_q8_f32(vector, scale, query, info->dim);
       }
     } else {
       const float* vector = reinterpret_cast<const float*>(
-          bytes.data + info.vector_offset + static_cast<uint64_t>(i) * info.vector_stride);
-      if (info.metric == ASTRAL_MEMORY_METRIC_DOT) {
-        score = dot_f32(query, vector, info.dim);
-      } else if (info.metric == ASTRAL_MEMORY_METRIC_COSINE) {
-        score = normalized_f32_cosine ? dot_f32(query, vector, info.dim)
-                                      : dot_f32(query, vector, info.dim) * query_scale *
-                                            cosine_scale(vector, info.dim);
+          bytes.data + info->vector_offset + static_cast<uint64_t>(i) * info->vector_stride);
+      if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
+        score = dot_f32(query, vector, info->dim);
+      } else if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+        score = normalized_f32_cosine ? dot_f32(query, vector, info->dim)
+                                      : dot_f32(query, vector, info->dim) * query_scale *
+                                            cosine_scale(vector, info->dim);
       } else {
-        score = l2_score_f32(query, vector, info.dim);
+        score = l2_score_f32(query, vector, info->dim);
       }
     }
 
@@ -4604,6 +4600,20 @@ AstralErr memory_snapshot_search_bytes(SnapshotBytes bytes, const AstralMemorySe
 
   *out_count = filled;
   return ASTRAL_OK;
+}
+
+AstralErr memory_snapshot_search_bytes(SnapshotBytes bytes, const AstralMemorySearchDesc* desc,
+                                       const float* query, AstralMemorySearchResult* out_results,
+                                       uint32_t max_results, uint32_t* out_count) {
+  AstralMemorySnapshotInfo info{};
+  info.size = sizeof(AstralMemorySnapshotInfo);
+  AstralErr err = memory_snapshot_info_bytes(bytes, &info);
+  if (err != ASTRAL_OK) {
+    return err;
+  }
+
+  return memory_snapshot_search_with_info(bytes, &info, desc, query, out_results, max_results,
+                                          out_count);
 }
 
 } // namespace
@@ -4684,8 +4694,9 @@ AstralErr memory_snapshot_view_search(MemorySnapshotView* view, const AstralMemo
   if (view == nullptr) {
     return ASTRAL_E_INVALID;
   }
-  return memory_snapshot_search_bytes(SnapshotBytes{view->map.data, view->map.size}, desc, query,
-                                      out_results, max_results, out_count);
+  return memory_snapshot_search_with_info(SnapshotBytes{view->map.data, view->map.size},
+                                          &view->info, desc, query, out_results, max_results,
+                                          out_count);
 }
 
 AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,

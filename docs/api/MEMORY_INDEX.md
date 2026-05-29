@@ -149,9 +149,9 @@ snapshot view, validates it, and returns an `AstralHandle`. Use
 `astral_memory_snapshot_view_search()` to search the mapped bytes repeatedly
 without copying them into a native index, `astral_memory_snapshot_view_info()`
 to read the validated layout, and `astral_memory_snapshot_unmap()` to close the
-view. The view path keeps the file mapping and page faults on the cold/storage
-side; the search loop still sees plain contiguous record, scale, and vector
-ranges.
+view. The view path reuses the layout validated when the file was mapped, so
+repeated searches avoid reparsing the snapshot header while still scanning
+plain contiguous record, scale, and vector ranges.
 
 ## Metrics
 
@@ -308,7 +308,8 @@ captures can be checked without rerunning the benchmark lanes.
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,
 `features.memory flat_q8_recall_search`, `features.memory graph_add_batch`,
-`features.memory graph_load`, `features.memory graph_search_latency`,
+`features.memory graph_load`, `features.memory snapshot_search`,
+`features.memory snapshot_view_search`, `features.memory graph_search_latency`,
 `features.memory graph_recall_search`, and `features.memory graph_recall_top1`
 for the same dimension, metric,
 capacity, neighbor count, and search budget. A graph run is useful only when its
