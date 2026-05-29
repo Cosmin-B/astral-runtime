@@ -1934,9 +1934,9 @@ void insert_graph_build_candidate(MemoryIndex* index, uint32_t capacity, uint32_
                                   uint32_t slot, float score);
 bool graph_neighbor_diverse(MemoryIndex* index, uint32_t candidate_slot, float candidate_score,
                             const uint32_t* neighbors, uint32_t count);
-void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t level,
-                            uint32_t candidate_count, uint32_t* neighbors, uint32_t* out_count);
-
+bool graph_neighbor_diverse_except(MemoryIndex* index, uint32_t candidate_slot,
+                                   float candidate_score, const uint32_t* neighbors, uint32_t count,
+                                   uint32_t except_slot);
 void store_f32_vector(MemoryIndex* index, uint32_t slot, const float* src) {
   float* dst = vector_at(index, slot);
   if (index->metric != ASTRAL_MEMORY_METRIC_COSINE) {
@@ -1987,18 +1987,14 @@ void refine_graph_neighbor_list(MemoryIndex* index, uint32_t owner_slot, uint32_
     return;
   }
 
-  uint32_t filled = 0;
-  const uint32_t refine_capacity = capacity + 1u;
   const float candidate_score = score_pair(index, owner_slot, candidate_slot);
   uint32_t weakest_slot = neighbors[0];
   float weakest_score = score_pair(index, owner_slot, weakest_slot);
-  insert_graph_build_candidate(index, refine_capacity, &filled, weakest_slot, weakest_score);
   for (uint32_t i = 0; i < count; ++i) {
     if (i == 0) {
       continue;
     }
     const float score = score_pair(index, owner_slot, neighbors[i]);
-    insert_graph_build_candidate(index, refine_capacity, &filled, neighbors[i], score);
     if (graph_candidate_worse(index, score, neighbors[i], weakest_score, weakest_slot)) {
       weakest_score = score;
       weakest_slot = neighbors[i];
@@ -2008,12 +2004,16 @@ void refine_graph_neighbor_list(MemoryIndex* index, uint32_t owner_slot, uint32_
                               weakest_slot)) {
     return;
   }
-
-  insert_graph_build_candidate(index, refine_capacity, &filled, candidate_slot, candidate_score);
-
-  uint32_t selected = 0;
-  graph_select_neighbors(index, owner_slot, level, filled, neighbors, &selected);
-  count = selected;
+  if (!graph_neighbor_diverse_except(index, candidate_slot, candidate_score, neighbors, count,
+                                     weakest_slot)) {
+    return;
+  }
+  for (uint32_t i = 0; i < count; ++i) {
+    if (neighbors[i] == weakest_slot) {
+      neighbors[i] = candidate_slot;
+      return;
+    }
+  }
 }
 
 void force_graph_neighbor(MemoryIndex* index, uint32_t owner_slot, uint32_t neighbor_slot,
@@ -2075,6 +2075,20 @@ bool graph_neighbor_diverse(MemoryIndex* index, uint32_t candidate_slot, float c
   return true;
 }
 
+bool graph_neighbor_diverse_except(MemoryIndex* index, uint32_t candidate_slot,
+                                   float candidate_score, const uint32_t* neighbors, uint32_t count,
+                                   uint32_t except_slot) {
+  for (uint32_t i = 0; i < count; ++i) {
+    if (neighbors[i] == except_slot) {
+      continue;
+    }
+    if (score_pair(index, candidate_slot, neighbors[i]) > candidate_score) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t level,
                             uint32_t candidate_count, uint32_t* neighbors, uint32_t* out_count,
                             uint32_t selection_capacity) {
@@ -2101,12 +2115,6 @@ void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t le
     ++selected;
   }
   *out_count = selected;
-}
-
-void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t level,
-                            uint32_t candidate_count, uint32_t* neighbors, uint32_t* out_count) {
-  graph_select_neighbors(index, owner_slot, level, candidate_count, neighbors, out_count,
-                         graph_neighbor_capacity_at_level(index, level));
 }
 
 bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t* filled,
