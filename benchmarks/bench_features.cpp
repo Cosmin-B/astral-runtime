@@ -2744,6 +2744,15 @@ static void print_memory_graph_recall_detail(uint64_t iters) {
                               static_cast<double>(expected_count)
                         : 0.0;
     print_result(r, clock_info().name);
+    BenchResult match_result{};
+    char match_name[kBenchMemoryRecallNameBytes];
+    std::snprintf(match_name, sizeof(match_name),
+                  "features.memory graph_recall_match_q%03u_row%06u", qi, query_row);
+    match_result.name = match_name;
+    match_result.ops = expected_count;
+    match_result.extra_label = "matched_count";
+    match_result.extra_value = static_cast<double>(matched);
+    print_result(match_result, clock_info().name);
   }
 
   astral_memory_destroy(graph_index);
