@@ -261,11 +261,11 @@ requested iteration count is lower. Add `--budget-sweep` when tuning
 graph recall/latency so the runner also captures `graph_recall_search_sweep`
 for f32 and q8 graph indexes using one build and multiple per-query budgets.
 Add `--recall-detail` when aggregate recall hides hard queries; it captures one
-`features.memory graph_recall_qNNN` lane per deterministic query row with the
-same graph and oracle setup. Add `--level-stats` to capture deterministic upper
-level node counts for the same capacity and neighbor budget. Add `--edge-stats`
-to capture stored total, base-layer, upper-layer, and graph construction-work
-counts through the public memory stats API. Both runners can wrap each
+`features.memory graph_recall_qNNN_rowMMMMMM` lane per deterministic query row
+with the same graph and oracle setup. Add `--level-stats` to capture
+deterministic upper level node counts for the same capacity and neighbor budget.
+Add `--edge-stats` to capture stored total, base-layer, upper-layer, and graph
+construction-work counts through the public memory stats API. Both runners can wrap each
 benchmark lane in `perf stat` with `--perf`, `--perf-bin`, `--perf-events`, and
 `--require-perf`.
 Perf CSV and stderr files are written beside the runner logs, so hardware

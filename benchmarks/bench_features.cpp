@@ -2707,7 +2707,9 @@ static void print_memory_graph_recall_detail(uint64_t iters) {
   for (uint32_t qi = 0; qi < recall_queries; ++qi) {
     BenchResult r{};
     char name[kBenchMemoryRecallNameBytes];
-    std::snprintf(name, sizeof(name), "features.memory graph_recall_q%03u", qi);
+    const uint32_t query_row = static_cast<uint32_t>((static_cast<uint64_t>(qi) * capacity) /
+                                                     static_cast<uint64_t>(recall_queries));
+    std::snprintf(name, sizeof(name), "features.memory graph_recall_q%03u_row%06u", qi, query_row);
     r.name = name;
     r.ops = iters;
     const float* query = queries.data() + static_cast<size_t>(qi) * dim;
