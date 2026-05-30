@@ -130,12 +130,15 @@ constexpr uint32_t kAvx2I8Offset3 = kAvx2I8Lanes * 3u;
 #endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
 constexpr uint32_t kNeonF32Lanes = 4;
+constexpr uint32_t kNeonI8Lanes = 16;
+constexpr uint32_t kNeonI8HalfLanes = 8;
 constexpr size_t kVectorStorageAlign = 16;
 constexpr uint32_t kNeonUnrollVectors = 4;
 constexpr uint32_t kNeonUnrollF32 = kNeonF32Lanes * kNeonUnrollVectors;
 constexpr uint32_t kNeonOffset1 = kNeonF32Lanes;
 constexpr uint32_t kNeonOffset2 = kNeonF32Lanes * 2u;
 constexpr uint32_t kNeonOffset3 = kNeonF32Lanes * 3u;
+constexpr uint32_t kNeonI8Offset1 = kNeonI8HalfLanes;
 #endif
 #if !defined(__AVX2__) && !(defined(__aarch64__) && defined(__ARM_NEON))
 constexpr size_t kVectorStorageAlign = alignof(float);
@@ -309,6 +312,19 @@ inline __m256i dot_i8x16_avx2(const int8_t* a, const int8_t* b, __m256i ones) {
   const __m256i a16 = _mm256_cvtepi8_epi16(av);
   const __m256i b16 = _mm256_cvtepi8_epi16(bv);
   return _mm256_madd_epi16(_mm256_mullo_epi16(a16, b16), ones);
+}
+#endif
+#if defined(__aarch64__) && defined(__ARM_NEON)
+inline float32x4_t neon_i8_low_to_f32(int8x8_t bytes) {
+  return vcvtq_f32_s32(vmovl_s16(vget_low_s16(vmovl_s8(bytes))));
+}
+
+inline float32x4_t neon_i8_high_to_f32(int8x8_t bytes) {
+  return vcvtq_f32_s32(vmovl_s16(vget_high_s16(vmovl_s8(bytes))));
+}
+
+inline int32x4_t dot_i8x8_neon(const int8_t* a, const int8_t* b) {
+  return vpaddlq_s16(vmull_s8(vld1_s8(a), vld1_s8(b)));
 }
 #endif
 
@@ -539,6 +555,31 @@ float dot_q8_f32(const int8_t* a, const float* b, uint32_t dim) {
     sum += static_cast<float>(a[i]) * b[i];
   }
   return sum;
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+  float32x4_t acc0 = vdupq_n_f32(0.0f);
+  float32x4_t acc1 = vdupq_n_f32(0.0f);
+  float32x4_t acc2 = vdupq_n_f32(0.0f);
+  float32x4_t acc3 = vdupq_n_f32(0.0f);
+  uint32_t i = 0;
+  for (; i + kNeonI8Lanes <= dim; i += kNeonI8Lanes) {
+    const int8x8_t a0 = vld1_s8(a + i);
+    const int8x8_t a1 = vld1_s8(a + i + kNeonI8Offset1);
+    acc0 = vfmaq_f32(acc0, neon_i8_low_to_f32(a0), vld1q_f32(b + i));
+    acc1 = vfmaq_f32(acc1, neon_i8_high_to_f32(a0), vld1q_f32(b + i + kNeonF32Lanes));
+    acc2 = vfmaq_f32(acc2, neon_i8_low_to_f32(a1), vld1q_f32(b + i + kNeonI8Offset1));
+    acc3 =
+        vfmaq_f32(acc3, neon_i8_high_to_f32(a1), vld1q_f32(b + i + kNeonI8Offset1 + kNeonF32Lanes));
+  }
+  float32x4_t acc = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+  for (; i + kNeonF32Lanes <= dim; i += kNeonF32Lanes) {
+    const int8x8_t av = vld1_s8(a + i);
+    acc = vfmaq_f32(acc, neon_i8_low_to_f32(av), vld1q_f32(b + i));
+  }
+  float sum = vaddvq_f32(acc);
+  for (; i < dim; ++i) {
+    sum += static_cast<float>(a[i]) * b[i];
+  }
+  return sum;
 #else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
@@ -581,6 +622,19 @@ float dot_q8_q8(const int8_t* a, const int8_t* b, uint32_t dim) {
   }
   acc0 = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
   int32_t sum = reduce_avx2_i32(acc0);
+  for (; i < dim; ++i) {
+    sum += static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
+  }
+  return static_cast<float>(sum);
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+  int32x4_t acc0 = vdupq_n_s32(0);
+  int32x4_t acc1 = vdupq_n_s32(0);
+  uint32_t i = 0;
+  for (; i + kNeonI8Lanes <= dim; i += kNeonI8Lanes) {
+    acc0 = vaddq_s32(acc0, dot_i8x8_neon(a + i, b + i));
+    acc1 = vaddq_s32(acc1, dot_i8x8_neon(a + i + kNeonI8HalfLanes, b + i + kNeonI8HalfLanes));
+  }
+  int32_t sum = vaddvq_s32(vaddq_s32(acc0, acc1));
   for (; i < dim; ++i) {
     sum += static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
   }
@@ -1115,6 +1169,40 @@ float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim
     sum += d * d;
   }
   return -sum;
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+  const float32x4_t scale_v = vdupq_n_f32(scale);
+  float32x4_t acc0 = vdupq_n_f32(0.0f);
+  float32x4_t acc1 = vdupq_n_f32(0.0f);
+  float32x4_t acc2 = vdupq_n_f32(0.0f);
+  float32x4_t acc3 = vdupq_n_f32(0.0f);
+  uint32_t i = 0;
+  for (; i + kNeonI8Lanes <= dim; i += kNeonI8Lanes) {
+    const int8x8_t a0 = vld1_s8(a + i);
+    const int8x8_t a1 = vld1_s8(a + i + kNeonI8Offset1);
+    const float32x4_t d0 = vsubq_f32(vmulq_f32(neon_i8_low_to_f32(a0), scale_v), vld1q_f32(b + i));
+    const float32x4_t d1 =
+        vsubq_f32(vmulq_f32(neon_i8_high_to_f32(a0), scale_v), vld1q_f32(b + i + kNeonF32Lanes));
+    const float32x4_t d2 =
+        vsubq_f32(vmulq_f32(neon_i8_low_to_f32(a1), scale_v), vld1q_f32(b + i + kNeonI8Offset1));
+    const float32x4_t d3 = vsubq_f32(vmulq_f32(neon_i8_high_to_f32(a1), scale_v),
+                                     vld1q_f32(b + i + kNeonI8Offset1 + kNeonF32Lanes));
+    acc0 = vfmaq_f32(acc0, d0, d0);
+    acc1 = vfmaq_f32(acc1, d1, d1);
+    acc2 = vfmaq_f32(acc2, d2, d2);
+    acc3 = vfmaq_f32(acc3, d3, d3);
+  }
+  float32x4_t acc = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+  for (; i + kNeonF32Lanes <= dim; i += kNeonF32Lanes) {
+    const int8x8_t av = vld1_s8(a + i);
+    const float32x4_t d = vsubq_f32(vmulq_f32(neon_i8_low_to_f32(av), scale_v), vld1q_f32(b + i));
+    acc = vfmaq_f32(acc, d, d);
+  }
+  float sum = vaddvq_f32(acc);
+  for (; i < dim; ++i) {
+    const float d = static_cast<float>(a[i]) * scale - b[i];
+    sum += d * d;
+  }
+  return -sum;
 #else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
@@ -1160,6 +1248,31 @@ float l2_score_q8_q8(const int8_t* a, float a_scale, const int8_t* b, float b_sc
   int32_t sum_a = reduce_avx2_i32(acc_a);
   int32_t sum_b = reduce_avx2_i32(acc_b);
   int32_t sum_ab = reduce_avx2_i32(acc_ab);
+  for (; i < dim; ++i) {
+    const int32_t ai = static_cast<int32_t>(a[i]);
+    const int32_t bi = static_cast<int32_t>(b[i]);
+    sum_a += ai * ai;
+    sum_b += bi * bi;
+    sum_ab += ai * bi;
+  }
+
+  const float scaled_a = a_scale * a_scale * static_cast<float>(sum_a);
+  const float scaled_b = b_scale * b_scale * static_cast<float>(sum_b);
+  const float scaled_cross = kL2CrossTermScale * a_scale * b_scale * static_cast<float>(sum_ab);
+  return -(scaled_a + scaled_b - scaled_cross);
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+  int32x4_t acc_a = vdupq_n_s32(0);
+  int32x4_t acc_b = vdupq_n_s32(0);
+  int32x4_t acc_ab = vdupq_n_s32(0);
+  uint32_t i = 0;
+  for (; i + kNeonI8HalfLanes <= dim; i += kNeonI8HalfLanes) {
+    acc_a = vaddq_s32(acc_a, dot_i8x8_neon(a + i, a + i));
+    acc_b = vaddq_s32(acc_b, dot_i8x8_neon(b + i, b + i));
+    acc_ab = vaddq_s32(acc_ab, dot_i8x8_neon(a + i, b + i));
+  }
+  int32_t sum_a = vaddvq_s32(acc_a);
+  int32_t sum_b = vaddvq_s32(acc_b);
+  int32_t sum_ab = vaddvq_s32(acc_ab);
   for (; i < dim; ++i) {
     const int32_t ai = static_cast<int32_t>(a[i]);
     const int32_t bi = static_cast<int32_t>(b[i]);
