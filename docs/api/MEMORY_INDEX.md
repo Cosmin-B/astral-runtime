@@ -129,6 +129,11 @@ snapshot size returned by `astral_memory_save_size()`. For compact indexes,
 `save_bytes` reflects the compact snapshot rather than an expanded float32
 copy.
 
+Graph indexes store up to `graph_neighbors` links on upper layers and up to
+`2 * graph_neighbors` links on the base layer, capped by the native graph
+limits. Use higher neighbor counts only when recall data justifies the extra
+base-layer memory and search cost.
+
 `astral_memory_snapshot_info()` validates a saved snapshot without creating an
 index and reports the record, scale, vector, and graph byte ranges. New
 snapshots store records, compact scales, and vectors in separate contiguous

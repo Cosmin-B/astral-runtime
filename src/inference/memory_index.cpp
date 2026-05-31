@@ -51,6 +51,7 @@ constexpr uint32_t kKeyHashMixShift2 = 31;
 constexpr uint32_t kGraphDefaultNeighbors = 64;
 constexpr uint32_t kGraphMaxNeighbors = 64;
 constexpr uint32_t kGraphBaseNeighborMultiplier = 2;
+constexpr uint32_t kGraphMaxBaseNeighbors = kGraphMaxNeighbors * kGraphBaseNeighborMultiplier;
 constexpr uint32_t kGraphDefaultEfConstruction = 68;
 constexpr uint32_t kGraphMinSearch = 4;
 constexpr uint32_t kGraphCandidateReserveMultiplier = 8;
@@ -231,7 +232,7 @@ inline uint32_t graph_neighbors_from_desc(const AstralMemoryIndexDesc* desc) {
 
 inline uint32_t graph_base_neighbors_from_graph_neighbors(uint32_t neighbors) {
   const uint32_t doubled = neighbors * kGraphBaseNeighborMultiplier;
-  return doubled < kGraphMaxNeighbors ? doubled : kGraphMaxNeighbors;
+  return doubled < kGraphMaxBaseNeighbors ? doubled : kGraphMaxBaseNeighbors;
 }
 
 inline uint32_t graph_search_from_desc(const AstralMemoryIndexDesc* desc) {
@@ -4892,7 +4893,7 @@ AstralErr memory_snapshot_info_bytes(SnapshotBytes bytes, AstralMemorySnapshotIn
     if (graph_header.flags != kSaveGraphTopologyFlag || graph_header.neighbor_capacity == 0 ||
         graph_header.neighbor_capacity > kGraphMaxNeighbors ||
         graph_header.base_neighbor_capacity == 0 ||
-        graph_header.base_neighbor_capacity > kGraphMaxNeighbors ||
+        graph_header.base_neighbor_capacity > kGraphMaxBaseNeighbors ||
         graph_header.base_neighbor_capacity < graph_header.neighbor_capacity ||
         graph_header.level_capacity == 0 || graph_header.level_capacity > kGraphMaxLevels) {
       return ASTRAL_E_INVALID;
@@ -5312,7 +5313,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
     if (graph_header.neighbor_capacity == 0 ||
         graph_header.neighbor_capacity > kGraphMaxNeighbors ||
         graph_header.base_neighbor_capacity == 0 ||
-        graph_header.base_neighbor_capacity > kGraphMaxNeighbors ||
+        graph_header.base_neighbor_capacity > kGraphMaxBaseNeighbors ||
         graph_header.base_neighbor_capacity < graph_header.neighbor_capacity ||
         graph_header.level_capacity == 0 || graph_header.level_capacity > kGraphMaxLevels ||
         graph_header.search_capacity > desc->capacity) {

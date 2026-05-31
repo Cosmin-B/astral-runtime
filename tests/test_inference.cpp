@@ -3056,6 +3056,50 @@ TEST(inference_memory_index_graph_q8_parallel_preprocess_mock) {
   astral_shutdown();
 }
 
+TEST(inference_memory_index_graph_base_layer_expands_for_high_connectivity_mock) {
+  constexpr uint32_t kDim = 8;
+  constexpr uint32_t kCapacity = 160;
+  constexpr uint32_t kGraphNeighbors = 64;
+  constexpr uint32_t kGraphSearch = 64;
+  constexpr uint64_t kFirstKey = 12501;
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = kCapacity;
+  desc.metric = ASTRAL_MEMORY_METRIC_COSINE;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+  desc.graph_neighbors = kGraphNeighbors;
+  desc.graph_search = kGraphSearch;
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  std::vector<AstralMemoryRecord> records(kCapacity);
+  std::vector<float> vectors(static_cast<size_t>(kCapacity) * kDim);
+  for (uint32_t row = 0; row < kCapacity; ++row) {
+    records[row].size = sizeof(AstralMemoryRecord);
+    records[row].key = kFirstKey + row;
+    for (uint32_t col = 0; col < kDim; ++col) {
+      vectors[static_cast<size_t>(row) * kDim + col] =
+          static_cast<float>(((row + 1u) * (col + 3u)) & 15u);
+    }
+  }
+  err = astral_memory_add_batch(index, records.data(), vectors.data(), kCapacity);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  AstralMemoryStats stats{};
+  stats.size = sizeof(AstralMemoryStats);
+  err = astral_memory_stats(index, &stats);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(stats.graph_neighbors, kGraphNeighbors);
+  ASSERT_GT(stats.graph_base_edges,
+            static_cast<uint64_t>(kCapacity) * static_cast<uint64_t>(kGraphNeighbors));
+
+  astral_memory_destroy(index);
+}
+
 TEST(inference_memory_index_flat_batch_parallel_mock) {
   constexpr uint32_t kDim = 8;
   constexpr uint32_t kCapacity = 1024;
