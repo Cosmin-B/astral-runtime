@@ -1468,6 +1468,15 @@ inline float cosine_scale_q8(const int8_t* v, float scale, uint32_t dim) {
 
 } // namespace
 
+struct GraphSearchScratch {
+  uint32_t* candidates;
+  float* candidate_scores;
+  uint32_t* top_slots;
+  float* top_scores;
+  uint32_t* visited;
+  uint32_t visit_generation;
+};
+
 struct MemoryIndex {
   AstralHandle handle;
   uint32_t dim;
@@ -1490,6 +1499,7 @@ struct MemoryIndex {
   uint32_t* graph_scratch_slots;
   float* graph_scratch_scores;
   uint32_t* graph_visited;
+  GraphSearchScratch graph_batch_scratch[kMemorySearchBatchParallelMaxWorkers];
   uint32_t key_table_capacity;
   uint32_t key_table_mask;
   uint32_t graph_neighbor_capacity;
@@ -1505,6 +1515,8 @@ struct MemoryIndex {
   uint64_t graph_build_score_evals;
   uint64_t graph_build_candidate_visits;
   uint32_t free_slot_hint;
+  std::atomic<uint32_t> graph_batch_scratch_claimed;
+  uint8_t graph_batch_scratch_count;
   uint8_t dense_active;
 };
 
@@ -1558,15 +1570,6 @@ struct MemorySearchRecordShardJob {
   uint32_t local_counts[kMemoryBatchStackQueries];
 };
 
-struct GraphSearchScratch {
-  uint32_t* candidates;
-  float* candidate_scores;
-  uint32_t* top_slots;
-  float* top_scores;
-  uint32_t* visited;
-  uint32_t visit_generation;
-};
-
 struct MemoryGraphSearchBatchJob {
   MemoryIndex* index;
   const AstralMemorySearchDesc* desc;
@@ -1576,7 +1579,7 @@ struct MemoryGraphSearchBatchJob {
   uint32_t begin;
   uint32_t end;
   std::atomic<uint32_t>* remaining;
-  GraphSearchScratch scratch;
+  GraphSearchScratch* scratch;
 };
 
 inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
@@ -3044,7 +3047,7 @@ void memory_search_graph_batch_work(void* user) {
     const float* query = job->queries + static_cast<size_t>(i) * job->index->dim;
     AstralMemorySearchResult* results =
         job->out_results + static_cast<size_t>(i) * job->desc->top_k;
-    memory_search_graph_with_scratch(job->index, job->desc, query, results, &count, &job->scratch);
+    memory_search_graph_with_scratch(job->index, job->desc, query, results, &count, job->scratch);
     job->out_counts[i] = count;
   }
   job->remaining->fetch_sub(1, std::memory_order_release);
@@ -3078,13 +3081,24 @@ bool memory_search_graph_batch_parallel(MemoryIndex* index, const AstralMemorySe
   }
 
   MemoryGraphSearchBatchJob jobs[kMemorySearchBatchParallelMaxWorkers]{};
-  uint32_t allocated = 0;
-  for (; allocated < worker_count; ++allocated) {
-    if (!graph_search_scratch_alloc(index, &jobs[allocated].scratch)) {
-      for (uint32_t i = 0; i < allocated; ++i) {
-        graph_search_scratch_free(index, &jobs[i].scratch);
+  GraphSearchScratch fallback_scratch[kMemorySearchBatchParallelMaxWorkers]{};
+  bool claimed_index_scratch = false;
+  if (index->graph_batch_scratch_count >= worker_count &&
+      index->graph_batch_scratch_claimed.exchange(1u, std::memory_order_acquire) == 0u) {
+    claimed_index_scratch = true;
+    for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
+      jobs[worker_i].scratch = &index->graph_batch_scratch[worker_i];
+    }
+  } else {
+    uint32_t allocated = 0;
+    for (; allocated < worker_count; ++allocated) {
+      if (!graph_search_scratch_alloc(index, &fallback_scratch[allocated])) {
+        for (uint32_t i = 0; i < allocated; ++i) {
+          graph_search_scratch_free(index, &fallback_scratch[i]);
+        }
+        return false;
       }
-      return false;
+      jobs[allocated].scratch = &fallback_scratch[allocated];
     }
   }
 
@@ -3120,7 +3134,12 @@ bool memory_search_graph_batch_parallel(MemoryIndex* index, const AstralMemorySe
   }
 
   for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
-    graph_search_scratch_free(index, &jobs[worker_i].scratch);
+    if (!claimed_index_scratch) {
+      graph_search_scratch_free(index, jobs[worker_i].scratch);
+    }
+  }
+  if (claimed_index_scratch) {
+    index->graph_batch_scratch_claimed.store(0u, std::memory_order_release);
   }
   return true;
 }
@@ -4017,6 +4036,10 @@ void destroy_allocations(MemoryIndex* index) {
     core::runtime_free_array(index->graph_visited, index->capacity);
     index->graph_visited = nullptr;
   }
+  for (uint32_t i = 0; i < index->graph_batch_scratch_count; ++i) {
+    graph_search_scratch_free(index, &index->graph_batch_scratch[i]);
+  }
+  index->graph_batch_scratch_count = 0;
 }
 
 void destroy_search_cursor(MemorySearchCursor* cursor) {
@@ -4201,6 +4224,9 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->graph_scratch_slots = nullptr;
   index->graph_scratch_scores = nullptr;
   index->graph_visited = nullptr;
+  for (uint32_t i = 0; i < kMemorySearchBatchParallelMaxWorkers; ++i) {
+    index->graph_batch_scratch[i] = GraphSearchScratch{};
+  }
   index->key_table_capacity = key_table_capacity;
   index->key_table_mask = key_table_capacity - 1u;
   index->graph_neighbor_capacity = graph_neighbor_capacity;
@@ -4215,6 +4241,8 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->graph_visit_generation = 0;
   index->graph_build_score_evals = 0;
   index->graph_build_candidate_visits = 0;
+  index->graph_batch_scratch_claimed.store(0u, std::memory_order_relaxed);
+  index->graph_batch_scratch_count = 0;
   index->dense_active = 1u;
   if (graph_neighbor_capacity != 0) {
     const uint64_t graph_neighbor_slots =
@@ -4239,6 +4267,25 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     index->graph_scratch_slots = core::runtime_alloc_array<uint32_t>(graph_scratch_capacity);
     index->graph_scratch_scores = core::runtime_alloc_array<float>(graph_scratch_capacity);
     index->graph_visited = core::runtime_alloc_array<uint32_t>(desc->capacity);
+    if (core::runtime_initialized()) {
+      uint32_t scratch_count = core::runtime_thread_count();
+      if (scratch_count > kMemorySearchBatchParallelMaxWorkers) {
+        scratch_count = kMemorySearchBatchParallelMaxWorkers;
+      }
+      if (scratch_count > 1u) {
+        uint32_t allocated = 0;
+        for (; allocated < scratch_count; ++allocated) {
+          if (!graph_search_scratch_alloc(index, &index->graph_batch_scratch[allocated])) {
+            for (uint32_t i = 0; i < allocated; ++i) {
+              graph_search_scratch_free(index, &index->graph_batch_scratch[i]);
+            }
+            allocated = 0;
+            break;
+          }
+        }
+        index->graph_batch_scratch_count = static_cast<uint8_t>(allocated);
+      }
+    }
   }
   if (index->slots == nullptr || index->active_slots == nullptr || index->key_table == nullptr ||
       (desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32 && index->vectors == nullptr) ||
