@@ -260,6 +260,9 @@ iteration count no smaller than the requested recall-query count, even when the
 requested iteration count is lower. Add `--budget-sweep` when tuning
 graph recall/latency so the runner also captures `graph_recall_search_sweep`
 for f32 and q8 graph indexes using one build and multiple per-query budgets.
+Use the `graph_search_batch` benchmark case with
+`ASTRAL_BENCH_RUNTIME_THREADS` greater than 1 to measure the per-worker graph
+scratch search path.
 Add `--recall-detail` when aggregate recall hides hard queries; it captures one
 `features.memory graph_recall_qNNN_rowMMMMMM` lane per deterministic query row
 with the same graph and oracle setup, followed by a

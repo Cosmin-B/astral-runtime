@@ -1557,6 +1557,27 @@ struct MemorySearchRecordShardJob {
   uint32_t local_counts[kMemoryBatchStackQueries];
 };
 
+struct GraphSearchScratch {
+  uint32_t* candidates;
+  float* candidate_scores;
+  uint32_t* top_slots;
+  float* top_scores;
+  uint32_t* visited;
+  uint32_t visit_generation;
+};
+
+struct MemoryGraphSearchBatchJob {
+  MemoryIndex* index;
+  const AstralMemorySearchDesc* desc;
+  const float* queries;
+  AstralMemorySearchResult* out_results;
+  uint32_t* out_counts;
+  uint32_t begin;
+  uint32_t end;
+  std::atomic<uint32_t>* remaining;
+  GraphSearchScratch scratch;
+};
+
 inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
   const uint64_t vector_bytes =
       (index->storage_kind == ASTRAL_MEMORY_STORAGE_Q8 ||
@@ -2031,6 +2052,13 @@ void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
 void memory_search_flat_batch(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                               const float* queries, uint32_t query_count,
                               AstralMemorySearchResult* out_results, uint32_t* out_counts);
+void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                      const float* query, AstralMemorySearchResult* out_results,
+                                      uint32_t* out_count, GraphSearchScratch* scratch);
+bool memory_search_graph_batch_parallel(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                        const float* queries, uint32_t query_count,
+                                        AstralMemorySearchResult* out_results,
+                                        uint32_t* out_counts);
 bool memory_search_flat_batch_record_parallel(MemoryIndex* index,
                                               const AstralMemorySearchDesc* desc,
                                               const float* queries, uint32_t query_count,
@@ -2043,8 +2071,18 @@ bool graph_pop_candidate(MemoryIndex* index, uint32_t* candidate_count, uint32_t
                          float* out_score);
 inline void graph_mark_visited(MemoryIndex* index, uint32_t slot);
 inline bool graph_was_visited(const MemoryIndex* index, uint32_t slot);
+void graph_query_begin_visit(const MemoryIndex* index, GraphSearchScratch* scratch);
+void graph_query_add_candidate(MemoryIndex* index, GraphSearchScratch* scratch, uint32_t capacity,
+                               uint32_t slot, float score, uint32_t* candidate_count);
+bool graph_query_pop_candidate(MemoryIndex* index, GraphSearchScratch* scratch,
+                               uint32_t* candidate_count, uint32_t* out_slot, float* out_score);
+inline void graph_query_mark_visited(GraphSearchScratch* scratch, uint32_t slot);
+inline bool graph_query_was_visited(const GraphSearchScratch* scratch, uint32_t slot);
 void insert_graph_build_candidate(MemoryIndex* index, uint32_t capacity, uint32_t* filled,
                                   uint32_t slot, float score);
+bool insert_graph_query_top_candidate(MemoryIndex* index, GraphSearchScratch* scratch,
+                                      uint32_t capacity, uint32_t* filled, uint32_t slot,
+                                      float score);
 bool graph_neighbor_diverse(MemoryIndex* index, uint32_t candidate_slot, float candidate_score,
                             const uint32_t* neighbors, uint32_t count);
 bool graph_neighbor_diverse_except(MemoryIndex* index, uint32_t candidate_slot,
@@ -2230,29 +2268,29 @@ void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t le
   *out_count = selected;
 }
 
-bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t* filled,
-                                uint32_t slot, float score) {
+bool insert_graph_query_top_candidate(MemoryIndex* index, GraphSearchScratch* scratch,
+                                      uint32_t capacity, uint32_t* filled, uint32_t slot,
+                                      float score) {
   uint32_t count = *filled;
   if (count < capacity) {
     uint32_t pos = count;
     while (pos > 0) {
       const uint32_t parent = (pos - 1u) >> 1u;
-      if (!graph_candidate_better(index, index->graph_scratch_scores[parent],
-                                  index->graph_scratch_slots[parent], score, slot)) {
+      if (!graph_candidate_better(index, scratch->top_scores[parent], scratch->top_slots[parent],
+                                  score, slot)) {
         break;
       }
-      index->graph_scratch_scores[pos] = index->graph_scratch_scores[parent];
-      index->graph_scratch_slots[pos] = index->graph_scratch_slots[parent];
+      scratch->top_scores[pos] = scratch->top_scores[parent];
+      scratch->top_slots[pos] = scratch->top_slots[parent];
       pos = parent;
     }
-    index->graph_scratch_scores[pos] = score;
-    index->graph_scratch_slots[pos] = slot;
+    scratch->top_scores[pos] = score;
+    scratch->top_slots[pos] = slot;
     *filled = count + 1u;
     return true;
   }
 
-  if (!graph_candidate_better(index, score, slot, index->graph_scratch_scores[0],
-                              index->graph_scratch_slots[0])) {
+  if (!graph_candidate_better(index, score, slot, scratch->top_scores[0], scratch->top_slots[0])) {
     return false;
   }
 
@@ -2265,21 +2303,20 @@ bool insert_graph_top_candidate(MemoryIndex* index, uint32_t capacity, uint32_t*
     const uint32_t right = left + 1u;
     uint32_t child = left;
     if (right < count &&
-        graph_candidate_worse(index, index->graph_scratch_scores[right],
-                              index->graph_scratch_slots[right], index->graph_scratch_scores[left],
-                              index->graph_scratch_slots[left])) {
+        graph_candidate_worse(index, scratch->top_scores[right], scratch->top_slots[right],
+                              scratch->top_scores[left], scratch->top_slots[left])) {
       child = right;
     }
-    if (!graph_candidate_worse(index, index->graph_scratch_scores[child],
-                               index->graph_scratch_slots[child], score, slot)) {
+    if (!graph_candidate_worse(index, scratch->top_scores[child], scratch->top_slots[child], score,
+                               slot)) {
       break;
     }
-    index->graph_scratch_scores[pos] = index->graph_scratch_scores[child];
-    index->graph_scratch_slots[pos] = index->graph_scratch_slots[child];
+    scratch->top_scores[pos] = scratch->top_scores[child];
+    scratch->top_slots[pos] = scratch->top_slots[child];
     pos = child;
   }
-  index->graph_scratch_scores[pos] = score;
-  index->graph_scratch_slots[pos] = slot;
+  scratch->top_scores[pos] = score;
+  scratch->top_slots[pos] = slot;
   return true;
 }
 
@@ -2371,26 +2408,27 @@ uint32_t graph_greedy_closest_pair(MemoryIndex* index, uint32_t slot, uint32_t e
   return closest;
 }
 
-void graph_search_layer_query(MemoryIndex* index, const float* query, float query_scale,
-                              uint32_t entry, uint32_t level, uint32_t capacity,
+void graph_search_layer_query(MemoryIndex* index, GraphSearchScratch* scratch, const float* query,
+                              float query_scale, uint32_t entry, uint32_t level, uint32_t capacity,
                               uint32_t* out_top_count) {
   uint32_t candidate_count = 0;
   uint32_t top_count = 0;
   const uint32_t candidate_capacity = graph_candidate_search_capacity(index, capacity);
-  graph_mark_visited(index, entry);
+  graph_query_mark_visited(scratch, entry);
   const float entry_score = score_slot(index, query, entry, query_scale);
-  insert_graph_top_candidate(index, capacity, &top_count, entry, entry_score);
-  graph_add_candidate(index, candidate_capacity, entry, entry_score, &candidate_count);
+  insert_graph_query_top_candidate(index, scratch, capacity, &top_count, entry, entry_score);
+  graph_query_add_candidate(index, scratch, candidate_capacity, entry, entry_score,
+                            &candidate_count);
 
   while (candidate_count != 0) {
     uint32_t slot = kU32Max;
     float slot_score = kWorstScore;
-    if (!graph_pop_candidate(index, &candidate_count, &slot, &slot_score)) {
+    if (!graph_query_pop_candidate(index, scratch, &candidate_count, &slot, &slot_score)) {
       break;
     }
     if (top_count == capacity &&
-        !graph_candidate_better(index, slot_score, slot, index->graph_scratch_scores[0],
-                                index->graph_scratch_slots[0])) {
+        !graph_candidate_better(index, slot_score, slot, scratch->top_scores[0],
+                                scratch->top_slots[0])) {
       break;
     }
 
@@ -2401,14 +2439,15 @@ void graph_search_layer_query(MemoryIndex* index, const float* query, float quer
       if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
         prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
       }
-      if (graph_was_visited(index, neighbor) || index->slots[neighbor].occupied == 0 ||
+      if (graph_query_was_visited(scratch, neighbor) || index->slots[neighbor].occupied == 0 ||
           index->graph_levels[neighbor] < level) {
         continue;
       }
-      graph_mark_visited(index, neighbor);
+      graph_query_mark_visited(scratch, neighbor);
       const float score = score_slot(index, query, neighbor, query_scale);
-      if (insert_graph_top_candidate(index, capacity, &top_count, neighbor, score)) {
-        graph_add_candidate(index, candidate_capacity, neighbor, score, &candidate_count);
+      if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor, score)) {
+        graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
+                                  &candidate_count);
       }
     }
   }
@@ -2416,27 +2455,29 @@ void graph_search_layer_query(MemoryIndex* index, const float* query, float quer
   *out_top_count = top_count;
 }
 
-void graph_search_layer_compact_query(MemoryIndex* index, const int8_t* query, float query_scale,
+void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* scratch,
+                                      const int8_t* query, float query_scale,
                                       float cosine_query_scale, uint32_t entry, uint32_t level,
                                       uint32_t capacity, uint32_t* out_top_count) {
   uint32_t candidate_count = 0;
   uint32_t top_count = 0;
   const uint32_t candidate_capacity = graph_candidate_search_capacity(index, capacity);
-  graph_mark_visited(index, entry);
+  graph_query_mark_visited(scratch, entry);
   const float entry_score =
       score_slot_compact_query(index, query, query_scale, entry, cosine_query_scale);
-  insert_graph_top_candidate(index, capacity, &top_count, entry, entry_score);
-  graph_add_candidate(index, candidate_capacity, entry, entry_score, &candidate_count);
+  insert_graph_query_top_candidate(index, scratch, capacity, &top_count, entry, entry_score);
+  graph_query_add_candidate(index, scratch, candidate_capacity, entry, entry_score,
+                            &candidate_count);
 
   while (candidate_count != 0) {
     uint32_t slot = kU32Max;
     float slot_score = kWorstScore;
-    if (!graph_pop_candidate(index, &candidate_count, &slot, &slot_score)) {
+    if (!graph_query_pop_candidate(index, scratch, &candidate_count, &slot, &slot_score)) {
       break;
     }
     if (top_count == capacity &&
-        !graph_candidate_better(index, slot_score, slot, index->graph_scratch_scores[0],
-                                index->graph_scratch_slots[0])) {
+        !graph_candidate_better(index, slot_score, slot, scratch->top_scores[0],
+                                scratch->top_slots[0])) {
       break;
     }
 
@@ -2447,15 +2488,16 @@ void graph_search_layer_compact_query(MemoryIndex* index, const int8_t* query, f
       if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
         prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
       }
-      if (graph_was_visited(index, neighbor) || index->slots[neighbor].occupied == 0 ||
+      if (graph_query_was_visited(scratch, neighbor) || index->slots[neighbor].occupied == 0 ||
           index->graph_levels[neighbor] < level) {
         continue;
       }
-      graph_mark_visited(index, neighbor);
+      graph_query_mark_visited(scratch, neighbor);
       const float score =
           score_slot_compact_query(index, query, query_scale, neighbor, cosine_query_scale);
-      if (insert_graph_top_candidate(index, capacity, &top_count, neighbor, score)) {
-        graph_add_candidate(index, candidate_capacity, neighbor, score, &candidate_count);
+      if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor, score)) {
+        graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
+                                  &candidate_count);
       }
     }
   }
@@ -2732,8 +2774,138 @@ bool graph_pop_candidate(MemoryIndex* index, uint32_t* candidate_count, uint32_t
   return true;
 }
 
-void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
-                         AstralMemorySearchResult* out_results, uint32_t* out_count) {
+inline void graph_query_mark_visited(GraphSearchScratch* scratch, uint32_t slot) {
+  scratch->visited[slot] = scratch->visit_generation;
+}
+
+inline bool graph_query_was_visited(const GraphSearchScratch* scratch, uint32_t slot) {
+  return scratch->visited[slot] == scratch->visit_generation;
+}
+
+void graph_query_begin_visit(const MemoryIndex* index, GraphSearchScratch* scratch) {
+  ++scratch->visit_generation;
+  if (scratch->visit_generation == 0) {
+    std::memset(scratch->visited, 0, sizeof(uint32_t) * index->capacity);
+    scratch->visit_generation = 1;
+  }
+}
+
+void graph_query_add_candidate(MemoryIndex* index, GraphSearchScratch* scratch, uint32_t capacity,
+                               uint32_t slot, float score, uint32_t* candidate_count) {
+  uint32_t count = *candidate_count;
+  if (count < capacity) {
+    uint32_t pos = count;
+    while (pos > 0) {
+      const uint32_t parent = (pos - 1u) >> 1u;
+      if (!graph_candidate_better(index, score, slot, scratch->candidate_scores[parent],
+                                  scratch->candidates[parent])) {
+        break;
+      }
+      scratch->candidates[pos] = scratch->candidates[parent];
+      scratch->candidate_scores[pos] = scratch->candidate_scores[parent];
+      pos = parent;
+    }
+    scratch->candidates[pos] = slot;
+    scratch->candidate_scores[pos] = score;
+    *candidate_count = count + 1u;
+    return;
+  }
+
+  uint32_t worst_pos = 0;
+  float worst_score = scratch->candidate_scores[0];
+  for (uint32_t i = 1; i < count; ++i) {
+    if (graph_candidate_worse(index, scratch->candidate_scores[i], scratch->candidates[i],
+                              worst_score, scratch->candidates[worst_pos])) {
+      worst_score = scratch->candidate_scores[i];
+      worst_pos = i;
+    }
+  }
+  if (graph_candidate_better(index, score, slot, worst_score, scratch->candidates[worst_pos])) {
+    uint32_t pos = worst_pos;
+    bool moved_up = false;
+    while (pos > 0) {
+      const uint32_t parent = (pos - 1u) >> 1u;
+      if (!graph_candidate_better(index, score, slot, scratch->candidate_scores[parent],
+                                  scratch->candidates[parent])) {
+        break;
+      }
+      scratch->candidates[pos] = scratch->candidates[parent];
+      scratch->candidate_scores[pos] = scratch->candidate_scores[parent];
+      pos = parent;
+      moved_up = true;
+    }
+    if (!moved_up) {
+      for (;;) {
+        const uint32_t left = (pos << 1u) + 1u;
+        if (left >= count) {
+          break;
+        }
+        const uint32_t right = left + 1u;
+        uint32_t child = left;
+        if (right < count &&
+            graph_candidate_better(index, scratch->candidate_scores[right],
+                                   scratch->candidates[right], scratch->candidate_scores[left],
+                                   scratch->candidates[left])) {
+          child = right;
+        }
+        if (!graph_candidate_better(index, scratch->candidate_scores[child],
+                                    scratch->candidates[child], score, slot)) {
+          break;
+        }
+        scratch->candidates[pos] = scratch->candidates[child];
+        scratch->candidate_scores[pos] = scratch->candidate_scores[child];
+        pos = child;
+      }
+    }
+    scratch->candidates[pos] = slot;
+    scratch->candidate_scores[pos] = score;
+  }
+}
+
+bool graph_query_pop_candidate(MemoryIndex* index, GraphSearchScratch* scratch,
+                               uint32_t* candidate_count, uint32_t* out_slot, float* out_score) {
+  uint32_t count = *candidate_count;
+  if (count == 0) {
+    return false;
+  }
+
+  *out_slot = scratch->candidates[0];
+  *out_score = scratch->candidate_scores[0];
+  --count;
+  if (count != 0) {
+    const uint32_t slot = scratch->candidates[count];
+    const float score = scratch->candidate_scores[count];
+    uint32_t pos = 0;
+    for (;;) {
+      const uint32_t left = (pos << 1u) + 1u;
+      if (left >= count) {
+        break;
+      }
+      const uint32_t right = left + 1u;
+      uint32_t child = left;
+      if (right < count && graph_candidate_better(
+                               index, scratch->candidate_scores[right], scratch->candidates[right],
+                               scratch->candidate_scores[left], scratch->candidates[left])) {
+        child = right;
+      }
+      if (!graph_candidate_better(index, scratch->candidate_scores[child],
+                                  scratch->candidates[child], score, slot)) {
+        break;
+      }
+      scratch->candidates[pos] = scratch->candidates[child];
+      scratch->candidate_scores[pos] = scratch->candidate_scores[child];
+      pos = child;
+    }
+    scratch->candidates[pos] = slot;
+    scratch->candidate_scores[pos] = score;
+  }
+  *candidate_count = count;
+  return true;
+}
+
+void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                      const float* query, AstralMemorySearchResult* out_results,
+                                      uint32_t* out_count, GraphSearchScratch* scratch) {
   if (!graph_enabled(index) || index->count == 0 || desc->group_id != ASTRAL_MEMORY_GROUP_ANY ||
       index->graph_entry_slot == kU32Max || index->slots[index->graph_entry_slot].occupied == 0) {
     memory_search_flat(index, desc, query, out_results, out_count);
@@ -2752,7 +2924,10 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
   const float query_scale = compact_storage(index) && index->metric == ASTRAL_MEMORY_METRIC_COSINE
                                 ? cosine_scale(query, index->dim)
                                 : 1.0f;
-  graph_begin_visit(index);
+  graph_query_begin_visit(index, scratch);
+  if (scratch->visited == index->graph_visited) {
+    index->graph_visit_generation = scratch->visit_generation;
+  }
   const uint32_t search_capacity = graph_search_for_query(index, desc);
 
   uint32_t filled = 0;
@@ -2768,7 +2943,7 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                                                  compact_cosine_query_scale,
                                                  index->graph_entry_slot, index->graph_max_level, 0)
             : index->graph_entry_slot;
-    graph_search_layer_compact_query(index, compact_query, compact_query_scale,
+    graph_search_layer_compact_query(index, scratch, compact_query, compact_query_scale,
                                      compact_cosine_query_scale, entry, 0, search_capacity,
                                      &top_count);
   } else {
@@ -2777,29 +2952,30 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
             ? graph_greedy_closest_query(index, query, query_scale, index->graph_entry_slot,
                                          index->graph_max_level, 0)
             : index->graph_entry_slot;
-    graph_search_layer_query(index, query, query_scale, entry, 0, search_capacity, &top_count);
+    graph_search_layer_query(index, scratch, query, query_scale, entry, 0, search_capacity,
+                             &top_count);
   }
 
   for (uint32_t i = 0; i < top_count; ++i) {
-    const uint32_t slot = index->graph_scratch_slots[i];
+    const uint32_t slot = scratch->top_slots[i];
     const MemorySlot& s = index->slots[slot];
     const float score = compact_storage(index) ? score_slot(index, query, slot, query_scale)
-                                               : index->graph_scratch_scores[i];
+                                               : scratch->top_scores[i];
     AstralMemorySearchResult candidate{};
     fill_result(&candidate, s, score);
     insert_result(out_results, desc->top_k, &filled, candidate);
   }
   if (compact_storage(index)) {
     for (uint32_t i = 0; i < top_count; ++i) {
-      const uint32_t slot = index->graph_scratch_slots[i];
+      const uint32_t slot = scratch->top_slots[i];
       const uint32_t* neighbors = graph_neighbors_at_level(index, slot, 0);
       const uint32_t neighbor_count = graph_neighbor_count_at_level(index, slot, 0);
       for (uint32_t neighbor_i = 0; neighbor_i < neighbor_count; ++neighbor_i) {
         const uint32_t neighbor = neighbors[neighbor_i];
-        if (graph_was_visited(index, neighbor) || index->slots[neighbor].occupied == 0) {
+        if (graph_query_was_visited(scratch, neighbor) || index->slots[neighbor].occupied == 0) {
           continue;
         }
-        graph_mark_visited(index, neighbor);
+        graph_query_mark_visited(scratch, neighbor);
         const MemorySlot& s = index->slots[neighbor];
         const float score = score_slot(index, query, neighbor, query_scale);
         AstralMemorySearchResult candidate{};
@@ -2809,6 +2985,143 @@ void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc,
     }
   }
   *out_count = filled;
+}
+
+void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
+                         AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  GraphSearchScratch scratch{index->graph_candidates,    index->graph_candidate_scores,
+                             index->graph_scratch_slots, index->graph_scratch_scores,
+                             index->graph_visited,       index->graph_visit_generation};
+  memory_search_graph_with_scratch(index, desc, query, out_results, out_count, &scratch);
+}
+
+void graph_search_scratch_free(const MemoryIndex* index, GraphSearchScratch* scratch) {
+  if (scratch->candidates != nullptr) {
+    core::runtime_free_array(scratch->candidates, index->graph_candidate_capacity);
+    scratch->candidates = nullptr;
+  }
+  if (scratch->candidate_scores != nullptr) {
+    core::runtime_free_array(scratch->candidate_scores, index->graph_candidate_capacity);
+    scratch->candidate_scores = nullptr;
+  }
+  if (scratch->top_slots != nullptr) {
+    core::runtime_free_array(scratch->top_slots, index->graph_scratch_capacity);
+    scratch->top_slots = nullptr;
+  }
+  if (scratch->top_scores != nullptr) {
+    core::runtime_free_array(scratch->top_scores, index->graph_scratch_capacity);
+    scratch->top_scores = nullptr;
+  }
+  if (scratch->visited != nullptr) {
+    core::runtime_free_array(scratch->visited, index->capacity);
+    scratch->visited = nullptr;
+  }
+  scratch->visit_generation = 0;
+}
+
+bool graph_search_scratch_alloc(const MemoryIndex* index, GraphSearchScratch* scratch) {
+  *scratch = GraphSearchScratch{};
+  scratch->candidates = core::runtime_alloc_array<uint32_t>(index->graph_candidate_capacity);
+  scratch->candidate_scores = core::runtime_alloc_array<float>(index->graph_candidate_capacity);
+  scratch->top_slots = core::runtime_alloc_array<uint32_t>(index->graph_scratch_capacity);
+  scratch->top_scores = core::runtime_alloc_array<float>(index->graph_scratch_capacity);
+  scratch->visited = core::runtime_alloc_array<uint32_t>(index->capacity);
+  if (scratch->candidates == nullptr || scratch->candidate_scores == nullptr ||
+      scratch->top_slots == nullptr || scratch->top_scores == nullptr ||
+      scratch->visited == nullptr) {
+    graph_search_scratch_free(index, scratch);
+    return false;
+  }
+  std::memset(scratch->visited, 0, sizeof(uint32_t) * index->capacity);
+  return true;
+}
+
+void memory_search_graph_batch_work(void* user) {
+  MemoryGraphSearchBatchJob* job = static_cast<MemoryGraphSearchBatchJob*>(user);
+  for (uint32_t i = job->begin; i < job->end; ++i) {
+    uint32_t count = 0;
+    const float* query = job->queries + static_cast<size_t>(i) * job->index->dim;
+    AstralMemorySearchResult* results =
+        job->out_results + static_cast<size_t>(i) * job->desc->top_k;
+    memory_search_graph_with_scratch(job->index, job->desc, query, results, &count, &job->scratch);
+    job->out_counts[i] = count;
+  }
+  job->remaining->fetch_sub(1, std::memory_order_release);
+  astral::platform::cpu_signal_event();
+}
+
+bool memory_search_graph_batch_parallel(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                        const float* queries, uint32_t query_count,
+                                        AstralMemorySearchResult* out_results,
+                                        uint32_t* out_counts) {
+  if (!graph_enabled(index) || desc->group_id != ASTRAL_MEMORY_GROUP_ANY ||
+      query_count < kMemorySearchBatchParallelMinQueries || !core::runtime_initialized()) {
+    return false;
+  }
+
+  const uint32_t runtime_threads = core::runtime_thread_count();
+  const bool on_worker = core::runtime_on_worker_thread();
+  if (runtime_threads < 2u) {
+    return false;
+  }
+
+  uint32_t worker_count = on_worker ? runtime_threads - 1u : runtime_threads;
+  if (worker_count > kMemorySearchBatchParallelMaxWorkers) {
+    worker_count = kMemorySearchBatchParallelMaxWorkers;
+  }
+  if (worker_count < 2u) {
+    return false;
+  }
+  if (worker_count > query_count) {
+    worker_count = query_count;
+  }
+
+  MemoryGraphSearchBatchJob jobs[kMemorySearchBatchParallelMaxWorkers]{};
+  uint32_t allocated = 0;
+  for (; allocated < worker_count; ++allocated) {
+    if (!graph_search_scratch_alloc(index, &jobs[allocated].scratch)) {
+      for (uint32_t i = 0; i < allocated; ++i) {
+        graph_search_scratch_free(index, &jobs[i].scratch);
+      }
+      return false;
+    }
+  }
+
+  std::atomic<uint32_t> remaining(worker_count);
+  const uint32_t current_worker = on_worker ? core::runtime_worker_id() : kU32Max;
+  for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
+    const uint32_t begin =
+        static_cast<uint32_t>((static_cast<uint64_t>(query_count) * worker_i) / worker_count);
+    const uint32_t end = static_cast<uint32_t>(
+        (static_cast<uint64_t>(query_count) * (worker_i + 1u)) / worker_count);
+    jobs[worker_i].index = index;
+    jobs[worker_i].desc = desc;
+    jobs[worker_i].queries = queries;
+    jobs[worker_i].out_results = out_results;
+    jobs[worker_i].out_counts = out_counts;
+    jobs[worker_i].begin = begin;
+    jobs[worker_i].end = end;
+    jobs[worker_i].remaining = &remaining;
+
+    uint32_t target_worker = worker_i;
+    if (on_worker && target_worker >= current_worker) {
+      ++target_worker;
+    }
+    const AstralErr err =
+        core::submit_work_affine(target_worker, memory_search_graph_batch_work, &jobs[worker_i]);
+    if (err != ASTRAL_OK) {
+      memory_search_graph_batch_work(&jobs[worker_i]);
+    }
+  }
+
+  while (remaining.load(std::memory_order_acquire) != 0) {
+    astral::platform::cpu_wait_for_event();
+  }
+
+  for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
+    graph_search_scratch_free(index, &jobs[worker_i].scratch);
+  }
+  return true;
 }
 
 void memory_search_dot(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
@@ -4276,6 +4589,11 @@ AstralErr memory_search_batch(MemoryIndex* index, const AstralMemorySearchDesc* 
                                            out_counts)) {
       memory_search_flat_batch_chunked(index, desc, queries, query_count, out_results, out_counts);
     }
+    return ASTRAL_OK;
+  }
+
+  if (memory_search_graph_batch_parallel(index, desc, queries, query_count, out_results,
+                                         out_counts)) {
     return ASTRAL_OK;
   }
 
