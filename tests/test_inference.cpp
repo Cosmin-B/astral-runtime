@@ -2937,6 +2937,35 @@ TEST(inference_memory_index_q8_storage_mock) {
     ASSERT_EQ(snapshot.storage_kind, ASTRAL_MEMORY_STORAGE_Q8);
     ASSERT_GT(snapshot.graph_bytes, 0ull);
     ASSERT_EQ(snapshot.total_bytes, save_bytes);
+    char graph_snapshot_path[128]{};
+    std::snprintf(graph_snapshot_path, sizeof(graph_snapshot_path),
+                  "/tmp/astral-memory-graph-view-%p.bin", static_cast<const void*>(blob.data()));
+    snapshot_file = std::fopen(graph_snapshot_path, "wb");
+    ASSERT_TRUE(snapshot_file != nullptr);
+    ASSERT_EQ(std::fwrite(blob.data(), 1, blob.size(), snapshot_file), blob.size());
+    ASSERT_EQ(std::fclose(snapshot_file), 0);
+
+    AstralMemorySnapshotInfo mapped_graph_info{};
+    mapped_graph_info.size = sizeof(AstralMemorySnapshotInfo);
+    AstralHandle mapped_graph_view = 0;
+    path_span.data = reinterpret_cast<const uint8_t*>(graph_snapshot_path);
+    path_span.len = static_cast<uint32_t>(std::strlen(graph_snapshot_path));
+    err = astral_memory_snapshot_map(path_span, &mapped_graph_info, &mapped_graph_view);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(mapped_graph_view));
+    ASSERT_EQ(mapped_graph_info.index_kind, ASTRAL_MEMORY_INDEX_GRAPH);
+    ASSERT_GT(mapped_graph_info.graph_bytes, 0ull);
+    AstralMemorySearchResult mapped_graph_results[kTopK]{};
+    uint32_t mapped_graph_count = 0;
+    err = astral_memory_snapshot_view_search(mapped_graph_view, &search, query,
+                                             mapped_graph_results, kTopK, &mapped_graph_count);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(mapped_graph_count, kTopK);
+    ASSERT_EQ(mapped_graph_results[0].key, kKeyA);
+    astral_memory_snapshot_unmap(mapped_graph_view);
+    ASSERT_FALSE(astral_handle_valid(mapped_graph_view));
+    std::remove(graph_snapshot_path);
+
     AstralHandle loaded_graph = 0;
     err = astral_memory_load(&graph_desc, graph_blob_span, &loaded_graph);
     ASSERT_EQ(err, ASTRAL_OK);

@@ -154,9 +154,10 @@ snapshot view, validates it, and returns an `AstralHandle`. Use
 `astral_memory_snapshot_view_search()` to search the mapped bytes repeatedly
 without copying them into a native index, `astral_memory_snapshot_view_info()`
 to read the validated layout, and `astral_memory_snapshot_unmap()` to close the
-view. The view path reuses the layout validated when the file was mapped, so
-repeated searches avoid reparsing the snapshot header while still scanning
-plain contiguous record, scale, and vector ranges.
+view. The view path reuses the layout validated when the file was mapped.
+Mapped graph snapshots also reuse the saved topology for all-group searches;
+group-filtered searches fall back to exact mapped flat scan because the saved
+graph is built across the full corpus.
 
 ## Metrics
 
