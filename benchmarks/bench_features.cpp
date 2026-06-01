@@ -121,6 +121,7 @@ static constexpr char kBenchMemoryCaseGraphAddLatency[] = "graph_add_latency";
 static constexpr char kBenchMemoryCaseGraphLoad[] = "graph_load";
 static constexpr char kBenchMemoryCaseSnapshotSearch[] = "snapshot_search";
 static constexpr char kBenchMemoryCaseSnapshotViewSearch[] = "snapshot_view_search";
+static constexpr char kBenchMemoryCaseGraphSnapshotViewSearch[] = "graph_snapshot_view_search";
 static constexpr char kBenchMemoryCaseFlatSearchTop1[] = "flat_search_top1";
 static constexpr char kBenchMemoryCaseFlatSearch[] = "flat_search";
 static constexpr char kBenchMemoryCaseFlatSearchLatency[] = "flat_search_latency";
@@ -1697,6 +1698,123 @@ static BenchResult bench_memory_snapshot_view_search(uint64_t iters) {
   return r;
 }
 
+static BenchResult bench_memory_graph_snapshot_view_search(uint64_t iters) {
+  BenchResult r{};
+  r.name = "features.memory graph_snapshot_view_search";
+  r.ops = iters;
+  const uint32_t dim = memory_bench_dim();
+  const uint32_t capacity = memory_bench_capacity(kBenchMemoryCapacity, dim);
+  const AstralMemoryMetric metric = parse_memory_metric_env();
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = dim;
+  desc.capacity = capacity;
+  desc.metric = metric;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+  desc.graph_neighbors = memory_graph_neighbors();
+  desc.graph_search = memory_graph_search();
+  desc.graph_query_search = memory_graph_query_search();
+  desc.storage_kind = parse_memory_storage_env();
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  if (err != ASTRAL_OK) {
+    r.ops = 0;
+    return r;
+  }
+
+  std::vector<AstralMemoryRecord> records(capacity);
+  std::vector<float> vectors(static_cast<size_t>(capacity) * dim);
+  fill_memory_fixture(records, vectors, capacity, dim);
+  err = astral_memory_add_batch(index, records.data(), vectors.data(), capacity);
+  if (err != ASTRAL_OK) {
+    astral_memory_destroy(index);
+    r.ops = 0;
+    return r;
+  }
+
+  uint64_t save_bytes = 0;
+  err = astral_memory_save_size(index, &save_bytes);
+  if (err != ASTRAL_OK || save_bytes > UINT32_MAX) {
+    astral_memory_destroy(index);
+    r.ops = 0;
+    return r;
+  }
+  std::vector<uint8_t> blob(static_cast<size_t>(save_bytes));
+  AstralMutSpanU8 out{};
+  out.data = blob.data();
+  out.len = static_cast<uint32_t>(blob.size());
+  uint64_t written = 0;
+  err = astral_memory_save(index, out, &written);
+  astral_memory_destroy(index);
+  if (err != ASTRAL_OK || written != save_bytes) {
+    r.ops = 0;
+    return r;
+  }
+
+  char snapshot_path[kBenchMemorySnapshotPathBytes]{};
+  std::snprintf(snapshot_path, sizeof(snapshot_path), "/tmp/astral-bench-memory-graph-view-%p.bin",
+                static_cast<const void*>(blob.data()));
+  FILE* snapshot_file = std::fopen(snapshot_path, "wb");
+  if (snapshot_file == nullptr) {
+    r.ops = 0;
+    return r;
+  }
+  const size_t bytes_written = std::fwrite(blob.data(), 1, blob.size(), snapshot_file);
+  const int close_result = std::fclose(snapshot_file);
+  if (bytes_written != blob.size() || close_result != 0) {
+    std::remove(snapshot_path);
+    r.ops = 0;
+    return r;
+  }
+
+  AstralMemorySnapshotInfo mapped_info{};
+  mapped_info.size = sizeof(AstralMemorySnapshotInfo);
+  AstralHandle mapped_view = 0;
+  AstralSpanU8 path_span{};
+  path_span.data = reinterpret_cast<const uint8_t*>(snapshot_path);
+  path_span.len = static_cast<uint32_t>(std::strlen(snapshot_path));
+  err = astral_memory_snapshot_map(path_span, &mapped_info, &mapped_view);
+  if (err != ASTRAL_OK || mapped_info.index_kind != ASTRAL_MEMORY_INDEX_GRAPH) {
+    if (astral_handle_valid(mapped_view)) {
+      astral_memory_snapshot_unmap(mapped_view);
+    }
+    std::remove(snapshot_path);
+    r.ops = 0;
+    return r;
+  }
+
+  std::vector<float> query(dim);
+  fill_memory_query(query);
+  AstralMemorySearchDesc search{};
+  search.size = sizeof(AstralMemorySearchDesc);
+  search.top_k = kBenchMemoryTopK;
+  search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+  search.graph_search = memory_graph_query_search();
+  AstralMemorySearchResult results[kBenchMemoryTopK]{};
+  uint32_t result_count = 0;
+
+  const uint64_t t0 = ticks_now();
+  const uint64_t n0 = ns_now();
+  for (uint64_t i = 0; i < iters; ++i) {
+    err = astral_memory_snapshot_view_search(mapped_view, &search, query.data(), results,
+                                             kBenchMemoryTopK, &result_count);
+    if (err != ASTRAL_OK || result_count == 0) {
+      r.ops = i;
+      break;
+    }
+  }
+  const uint64_t t1 = ticks_now();
+  const uint64_t n1 = ns_now();
+
+  astral_memory_snapshot_unmap(mapped_view);
+  std::remove(snapshot_path);
+  r.ticks = t1 - t0;
+  r.ns = n1 - n0;
+  return r;
+}
+
 static BenchResult bench_memory_flat_search_impl(uint64_t iters, uint32_t capacity, const char* name) {
     BenchResult r{};
     r.name = name;
@@ -3160,6 +3278,9 @@ static void print_memory_benchmarks(uint64_t iters) {
         }
         if (memory_case_enabled(kBenchMemoryCaseSnapshotViewSearch)) {
           print_result(bench_memory_snapshot_view_search(iters), clock_info().name);
+        }
+        if (memory_case_enabled(kBenchMemoryCaseGraphSnapshotViewSearch)) {
+          print_result(bench_memory_graph_snapshot_view_search(iters), clock_info().name);
         }
         if (memory_case_enabled(kBenchMemoryCaseFlatSearchTop1)) {
           print_result(bench_memory_flat_search_top1(iters), clock_info().name);
