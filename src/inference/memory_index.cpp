@@ -5084,6 +5084,44 @@ bool snapshot_graph_layout(SnapshotBytes bytes, const AstralMemorySnapshotInfo* 
   graph.levels_offset = info->graph_offset + graph_header_bytes;
   graph.counts_offset = graph.levels_offset + static_cast<uint64_t>(info->count);
   graph.neighbors_offset = graph.counts_offset + level_count * sizeof(uint32_t);
+  for (uint32_t active_pos = 0; active_pos < info->count; ++active_pos) {
+    if (bytes.data[graph.levels_offset + active_pos] >= graph_header.level_capacity) {
+      return false;
+    }
+  }
+  for (uint32_t level = 0; level < graph_header.level_capacity; ++level) {
+    const uint32_t level_capacity =
+        level == 0 ? graph_header.base_neighbor_capacity : graph_header.neighbor_capacity;
+    for (uint32_t active_pos = 0; active_pos < info->count; ++active_pos) {
+      uint32_t count = 0;
+      std::memcpy(&count,
+                  bytes.data + graph.counts_offset +
+                      (static_cast<uint64_t>(level) * info->count + active_pos) * sizeof(uint32_t),
+                  sizeof(count));
+      if (count > level_capacity) {
+        return false;
+      }
+      const uint64_t neighbor_base =
+          level == 0
+              ? graph.neighbors_offset + static_cast<uint64_t>(active_pos) *
+                                             graph_header.base_neighbor_capacity * sizeof(uint32_t)
+              : graph.neighbors_offset +
+                    (static_cast<uint64_t>(info->count) * graph_header.base_neighbor_capacity +
+                     (static_cast<uint64_t>(level - 1u) * info->count + active_pos) *
+                         graph_header.neighbor_capacity) *
+                        sizeof(uint32_t);
+      for (uint32_t neighbor_i = 0; neighbor_i < level_capacity; ++neighbor_i) {
+        uint32_t neighbor = kU32Max;
+        std::memcpy(&neighbor,
+                    bytes.data + neighbor_base +
+                        static_cast<uint64_t>(neighbor_i) * sizeof(uint32_t),
+                    sizeof(neighbor));
+        if (neighbor != kU32Max && neighbor >= info->count) {
+          return false;
+        }
+      }
+    }
+  }
   uint32_t scratch_capacity = graph_header.search_capacity;
   if (scratch_capacity < kGraphMinSearch) {
     scratch_capacity = kGraphMinSearch;
