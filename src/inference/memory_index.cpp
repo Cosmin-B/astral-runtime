@@ -5275,44 +5275,182 @@ bool snapshot_graph_better(SnapshotBytes bytes, const AstralMemorySnapshotInfo* 
   return candidate.key < existing.key;
 }
 
-bool snapshot_graph_insert_sorted(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
-                                  uint32_t* slots, float* scores, uint32_t capacity,
-                                  uint32_t* filled, uint32_t slot, float score) {
+inline bool snapshot_graph_worse(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
+                                 float candidate_score, uint32_t candidate_slot,
+                                 float existing_score, uint32_t existing_slot) {
+  return snapshot_graph_better(bytes, info, existing_score, existing_slot, candidate_score,
+                               candidate_slot);
+}
+
+bool snapshot_graph_insert_top(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
+                               GraphSearchScratch* scratch, uint32_t capacity, uint32_t* filled,
+                               uint32_t slot, float score) {
   uint32_t count = *filled;
-  if (count == capacity &&
-      !snapshot_graph_better(bytes, info, score, slot, scores[count - 1u], slots[count - 1u])) {
+  if (count < capacity) {
+    uint32_t pos = count;
+    while (pos > 0) {
+      const uint32_t parent = (pos - 1u) >> 1u;
+      if (!snapshot_graph_better(bytes, info, scratch->top_scores[parent],
+                                 scratch->top_slots[parent], score, slot)) {
+        break;
+      }
+      scratch->top_scores[pos] = scratch->top_scores[parent];
+      scratch->top_slots[pos] = scratch->top_slots[parent];
+      pos = parent;
+    }
+    scratch->top_scores[pos] = score;
+    scratch->top_slots[pos] = slot;
+    *filled = count + 1u;
+    return true;
+  }
+
+  if (!snapshot_graph_better(bytes, info, score, slot, scratch->top_scores[0],
+                             scratch->top_slots[0])) {
     return false;
   }
-  uint32_t pos = count < capacity ? count : capacity - 1u;
-  if (count < capacity) {
-    ++count;
+
+  uint32_t pos = 0;
+  for (;;) {
+    const uint32_t left = (pos << 1u) + 1u;
+    if (left >= count) {
+      break;
+    }
+    const uint32_t right = left + 1u;
+    uint32_t child = left;
+    if (right < count &&
+        snapshot_graph_worse(bytes, info, scratch->top_scores[right], scratch->top_slots[right],
+                             scratch->top_scores[left], scratch->top_slots[left])) {
+      child = right;
+    }
+    if (!snapshot_graph_worse(bytes, info, scratch->top_scores[child], scratch->top_slots[child],
+                              score, slot)) {
+      break;
+    }
+    scratch->top_scores[pos] = scratch->top_scores[child];
+    scratch->top_slots[pos] = scratch->top_slots[child];
+    pos = child;
   }
-  while (pos > 0 &&
-         snapshot_graph_better(bytes, info, score, slot, scores[pos - 1u], slots[pos - 1u])) {
-    slots[pos] = slots[pos - 1u];
-    scores[pos] = scores[pos - 1u];
-    --pos;
-  }
-  slots[pos] = slot;
-  scores[pos] = score;
-  *filled = count;
+  scratch->top_scores[pos] = score;
+  scratch->top_slots[pos] = slot;
   return true;
 }
 
-bool snapshot_graph_pop_best(uint32_t* slots, float* scores, uint32_t* filled, uint32_t* out_slot,
-                             float* out_score) {
-  uint32_t count = *filled;
+void snapshot_graph_add_candidate(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
+                                  GraphSearchScratch* scratch, uint32_t capacity, uint32_t slot,
+                                  float score, uint32_t* candidate_count) {
+  uint32_t count = *candidate_count;
+  if (count < capacity) {
+    uint32_t pos = count;
+    while (pos > 0) {
+      const uint32_t parent = (pos - 1u) >> 1u;
+      if (!snapshot_graph_better(bytes, info, score, slot, scratch->candidate_scores[parent],
+                                 scratch->candidates[parent])) {
+        break;
+      }
+      scratch->candidates[pos] = scratch->candidates[parent];
+      scratch->candidate_scores[pos] = scratch->candidate_scores[parent];
+      pos = parent;
+    }
+    scratch->candidates[pos] = slot;
+    scratch->candidate_scores[pos] = score;
+    *candidate_count = count + 1u;
+    return;
+  }
+
+  uint32_t worst_pos = 0;
+  float worst_score = scratch->candidate_scores[0];
+  for (uint32_t i = 1; i < count; ++i) {
+    if (snapshot_graph_worse(bytes, info, scratch->candidate_scores[i], scratch->candidates[i],
+                             worst_score, scratch->candidates[worst_pos])) {
+      worst_score = scratch->candidate_scores[i];
+      worst_pos = i;
+    }
+  }
+  if (!snapshot_graph_better(bytes, info, score, slot, worst_score,
+                             scratch->candidates[worst_pos])) {
+    return;
+  }
+
+  uint32_t pos = worst_pos;
+  bool moved_up = false;
+  while (pos > 0) {
+    const uint32_t parent = (pos - 1u) >> 1u;
+    if (!snapshot_graph_better(bytes, info, score, slot, scratch->candidate_scores[parent],
+                               scratch->candidates[parent])) {
+      break;
+    }
+    scratch->candidates[pos] = scratch->candidates[parent];
+    scratch->candidate_scores[pos] = scratch->candidate_scores[parent];
+    pos = parent;
+    moved_up = true;
+  }
+  if (!moved_up) {
+    for (;;) {
+      const uint32_t left = (pos << 1u) + 1u;
+      if (left >= count) {
+        break;
+      }
+      const uint32_t right = left + 1u;
+      uint32_t child = left;
+      if (right < count &&
+          snapshot_graph_better(bytes, info, scratch->candidate_scores[right],
+                                scratch->candidates[right], scratch->candidate_scores[left],
+                                scratch->candidates[left])) {
+        child = right;
+      }
+      if (!snapshot_graph_better(bytes, info, scratch->candidate_scores[child],
+                                 scratch->candidates[child], score, slot)) {
+        break;
+      }
+      scratch->candidates[pos] = scratch->candidates[child];
+      scratch->candidate_scores[pos] = scratch->candidate_scores[child];
+      pos = child;
+    }
+  }
+  scratch->candidates[pos] = slot;
+  scratch->candidate_scores[pos] = score;
+}
+
+bool snapshot_graph_pop_candidate(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
+                                  GraphSearchScratch* scratch, uint32_t* candidate_count,
+                                  uint32_t* out_slot, float* out_score) {
+  uint32_t count = *candidate_count;
   if (count == 0) {
     return false;
   }
-  *out_slot = slots[0];
-  *out_score = scores[0];
+
+  *out_slot = scratch->candidates[0];
+  *out_score = scratch->candidate_scores[0];
   --count;
-  for (uint32_t i = 0; i < count; ++i) {
-    slots[i] = slots[i + 1u];
-    scores[i] = scores[i + 1u];
+  if (count != 0) {
+    const uint32_t slot = scratch->candidates[count];
+    const float score = scratch->candidate_scores[count];
+    uint32_t pos = 0;
+    for (;;) {
+      const uint32_t left = (pos << 1u) + 1u;
+      if (left >= count) {
+        break;
+      }
+      const uint32_t right = left + 1u;
+      uint32_t child = left;
+      if (right < count &&
+          snapshot_graph_better(bytes, info, scratch->candidate_scores[right],
+                                scratch->candidates[right], scratch->candidate_scores[left],
+                                scratch->candidates[left])) {
+        child = right;
+      }
+      if (!snapshot_graph_better(bytes, info, scratch->candidate_scores[child],
+                                 scratch->candidates[child], score, slot)) {
+        break;
+      }
+      scratch->candidates[pos] = scratch->candidates[child];
+      scratch->candidate_scores[pos] = scratch->candidate_scores[child];
+      pos = child;
+    }
+    scratch->candidates[pos] = slot;
+    scratch->candidate_scores[pos] = score;
   }
-  *filled = count;
+  *candidate_count = count;
   return true;
 }
 
@@ -5385,21 +5523,19 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
   const uint32_t candidate_capacity = graph->candidate_capacity;
   snapshot_graph_mark_visited(scratch, entry);
   const float entry_score = snapshot_score_active(bytes, info, prepared, entry);
-  snapshot_graph_insert_sorted(bytes, info, scratch->top_slots, scratch->top_scores,
-                               search_capacity, &top_count, entry, entry_score);
-  snapshot_graph_insert_sorted(bytes, info, scratch->candidates, scratch->candidate_scores,
-                               candidate_capacity, &candidate_count, entry, entry_score);
+  snapshot_graph_insert_top(bytes, info, scratch, search_capacity, &top_count, entry, entry_score);
+  snapshot_graph_add_candidate(bytes, info, scratch, candidate_capacity, entry, entry_score,
+                               &candidate_count);
 
   while (candidate_count != 0) {
     uint32_t slot = kU32Max;
     float slot_score = kWorstScore;
-    if (!snapshot_graph_pop_best(scratch->candidates, scratch->candidate_scores, &candidate_count,
-                                 &slot, &slot_score)) {
+    if (!snapshot_graph_pop_candidate(bytes, info, scratch, &candidate_count, &slot, &slot_score)) {
       break;
     }
     if (top_count == search_capacity &&
-        !snapshot_graph_better(bytes, info, slot_score, slot, scratch->top_scores[top_count - 1u],
-                               scratch->top_slots[top_count - 1u])) {
+        !snapshot_graph_better(bytes, info, slot_score, slot, scratch->top_scores[0],
+                               scratch->top_slots[0])) {
       break;
     }
     const uint32_t neighbor_count =
@@ -5422,10 +5558,10 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
       }
       snapshot_graph_mark_visited(scratch, neighbor);
       const float score = snapshot_score_active(bytes, info, prepared, neighbor);
-      if (snapshot_graph_insert_sorted(bytes, info, scratch->top_slots, scratch->top_scores,
-                                       search_capacity, &top_count, neighbor, score)) {
-        snapshot_graph_insert_sorted(bytes, info, scratch->candidates, scratch->candidate_scores,
-                                     candidate_capacity, &candidate_count, neighbor, score);
+      if (snapshot_graph_insert_top(bytes, info, scratch, search_capacity, &top_count, neighbor,
+                                    score)) {
+        snapshot_graph_add_candidate(bytes, info, scratch, candidate_capacity, neighbor, score,
+                                     &candidate_count);
       }
     }
   }
