@@ -157,7 +157,9 @@ to read the validated layout, and `astral_memory_snapshot_unmap()` to close the
 view. The view path reuses the layout validated when the file was mapped.
 Mapped graph snapshots also reuse the saved topology for all-group searches;
 group-filtered searches fall back to exact mapped flat scan because the saved
-graph is built across the full corpus.
+graph is built across the full corpus. Graph snapshots persist construction and
+default query expansion separately; mapped graph views use the saved query
+expansion unless `AstralMemorySearchDesc::graph_search` overrides it.
 
 ## Metrics
 

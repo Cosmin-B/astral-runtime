@@ -32,7 +32,8 @@ constexpr uint32_t kSaveVersionGraphTopology = 3;
 constexpr uint32_t kSaveVersionLegacyLayout = 4;
 constexpr uint32_t kSaveVersionModernLayout = 5;
 constexpr uint32_t kSaveVersionNormalizedF32Cosine = 6;
-constexpr uint32_t kSaveVersion = kSaveVersionNormalizedF32Cosine;
+constexpr uint32_t kSaveVersionGraphQuerySearch = 7;
+constexpr uint32_t kSaveVersion = kSaveVersionGraphQuerySearch;
 constexpr uint32_t kSaveGraphTopologyFlag = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
@@ -164,6 +165,17 @@ struct SaveHeader {
 };
 
 struct SaveGraphHeader {
+  uint32_t flags;
+  uint32_t neighbor_capacity;
+  uint32_t base_neighbor_capacity;
+  uint32_t search_capacity;
+  uint32_t query_search_capacity;
+  uint32_t level_capacity;
+  uint32_t max_level;
+  uint32_t entry_active_pos;
+};
+
+struct SaveGraphHeaderV6 {
   uint32_t flags;
   uint32_t neighbor_capacity;
   uint32_t base_neighbor_capacity;
@@ -1660,7 +1672,9 @@ bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
   }
   if (index_kind == ASTRAL_MEMORY_INDEX_GRAPH && graph_neighbors != 0 && graph_levels != 0) {
     const uint64_t graph_header_bytes =
-        version >= kSaveVersionLegacyLayout ? sizeof(SaveGraphHeader) : sizeof(SaveGraphHeaderV3);
+        version >= kSaveVersionGraphQuerySearch ? sizeof(SaveGraphHeader)
+        : version >= kSaveVersionLegacyLayout   ? sizeof(SaveGraphHeaderV6)
+                                                : sizeof(SaveGraphHeaderV3);
     const uint64_t neighbor_slots =
         static_cast<uint64_t>(count) * graph_base_neighbors +
         static_cast<uint64_t>(count) * (graph_levels - 1u) * graph_neighbors;
@@ -1671,6 +1685,43 @@ bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
   layout.total_bytes = layout.graph_offset + layout.graph_bytes;
   *out_layout = layout;
   return true;
+}
+
+inline uint32_t save_graph_header_bytes(uint32_t version) {
+  return version >= kSaveVersionGraphQuerySearch ? sizeof(SaveGraphHeader)
+         : version >= kSaveVersionLegacyLayout   ? sizeof(SaveGraphHeaderV6)
+                                                 : sizeof(SaveGraphHeaderV3);
+}
+
+void read_save_graph_header(uint32_t version, const uint8_t* bytes, SaveGraphHeader* out_header) {
+  *out_header = {};
+  if (version >= kSaveVersionGraphQuerySearch) {
+    std::memcpy(out_header, bytes, sizeof(SaveGraphHeader));
+    return;
+  }
+  if (version >= kSaveVersionLegacyLayout) {
+    SaveGraphHeaderV6 header_v6{};
+    std::memcpy(&header_v6, bytes, sizeof(header_v6));
+    out_header->flags = header_v6.flags;
+    out_header->neighbor_capacity = header_v6.neighbor_capacity;
+    out_header->base_neighbor_capacity = header_v6.base_neighbor_capacity;
+    out_header->search_capacity = header_v6.search_capacity;
+    out_header->query_search_capacity = header_v6.search_capacity;
+    out_header->level_capacity = header_v6.level_capacity;
+    out_header->max_level = header_v6.max_level;
+    out_header->entry_active_pos = header_v6.entry_active_pos;
+    return;
+  }
+  SaveGraphHeaderV3 header_v3{};
+  std::memcpy(&header_v3, bytes, sizeof(header_v3));
+  out_header->flags = header_v3.flags;
+  out_header->neighbor_capacity = header_v3.neighbor_capacity;
+  out_header->base_neighbor_capacity = header_v3.neighbor_capacity;
+  out_header->search_capacity = header_v3.search_capacity;
+  out_header->query_search_capacity = header_v3.search_capacity;
+  out_header->level_capacity = header_v3.level_capacity;
+  out_header->max_level = header_v3.max_level;
+  out_header->entry_active_pos = header_v3.entry_active_pos;
 }
 
 } // namespace
@@ -4892,6 +4943,7 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
     graph_header.neighbor_capacity = index->graph_neighbor_capacity;
     graph_header.base_neighbor_capacity = index->graph_base_neighbor_capacity;
     graph_header.search_capacity = index->graph_search_capacity;
+    graph_header.query_search_capacity = index->graph_query_search_capacity;
     graph_header.level_capacity = index->graph_level_capacity;
     graph_header.max_level = index->graph_max_level;
     graph_header.entry_active_pos = index->graph_entry_slot != kU32Max
@@ -4972,32 +5024,19 @@ AstralErr memory_snapshot_info_bytes(SnapshotBytes bytes, AstralMemorySnapshotIn
 
   if (header.index_kind == ASTRAL_MEMORY_INDEX_GRAPH &&
       header._reserved1 == kSaveGraphTopologyFlag) {
-    const uint32_t graph_header_bytes = header.version >= kSaveVersionLegacyLayout
-                                            ? sizeof(SaveGraphHeader)
-                                            : sizeof(SaveGraphHeaderV3);
+    const uint32_t graph_header_bytes = save_graph_header_bytes(header.version);
     if (bytes.len < layout.graph_offset + graph_header_bytes) {
       return ASTRAL_E_INVALID;
     }
     SaveGraphHeader graph_header{};
-    if (header.version >= kSaveVersionLegacyLayout) {
-      std::memcpy(&graph_header, bytes.data + layout.graph_offset, sizeof(graph_header));
-    } else {
-      SaveGraphHeaderV3 graph_header_v3{};
-      std::memcpy(&graph_header_v3, bytes.data + layout.graph_offset, sizeof(graph_header_v3));
-      graph_header.flags = graph_header_v3.flags;
-      graph_header.neighbor_capacity = graph_header_v3.neighbor_capacity;
-      graph_header.base_neighbor_capacity = graph_header_v3.neighbor_capacity;
-      graph_header.search_capacity = graph_header_v3.search_capacity;
-      graph_header.level_capacity = graph_header_v3.level_capacity;
-      graph_header.max_level = graph_header_v3.max_level;
-      graph_header.entry_active_pos = graph_header_v3.entry_active_pos;
-    }
+    read_save_graph_header(header.version, bytes.data + layout.graph_offset, &graph_header);
     if (graph_header.flags != kSaveGraphTopologyFlag || graph_header.neighbor_capacity == 0 ||
         graph_header.neighbor_capacity > kGraphMaxNeighbors ||
         graph_header.base_neighbor_capacity == 0 ||
         graph_header.base_neighbor_capacity > kGraphMaxBaseNeighbors ||
         graph_header.base_neighbor_capacity < graph_header.neighbor_capacity ||
-        graph_header.level_capacity == 0 || graph_header.level_capacity > kGraphMaxLevels) {
+        graph_header.query_search_capacity == 0 || graph_header.level_capacity == 0 ||
+        graph_header.level_capacity > kGraphMaxLevels) {
       return ASTRAL_E_INVALID;
     }
     if (!memory_save_layout(header.version, header.dim, header.count, storage, header.index_kind,
@@ -5036,33 +5075,20 @@ bool snapshot_graph_layout(SnapshotBytes bytes, const AstralMemorySnapshotInfo* 
       info->graph_bytes == 0) {
     return false;
   }
-  const uint32_t graph_header_bytes = info->version >= kSaveVersionLegacyLayout
-                                          ? sizeof(SaveGraphHeader)
-                                          : sizeof(SaveGraphHeaderV3);
+  const uint32_t graph_header_bytes = save_graph_header_bytes(info->version);
   if (bytes.len < info->graph_offset + graph_header_bytes) {
     return false;
   }
 
   SaveGraphHeader graph_header{};
-  if (info->version >= kSaveVersionLegacyLayout) {
-    std::memcpy(&graph_header, bytes.data + info->graph_offset, sizeof(graph_header));
-  } else {
-    SaveGraphHeaderV3 graph_header_v3{};
-    std::memcpy(&graph_header_v3, bytes.data + info->graph_offset, sizeof(graph_header_v3));
-    graph_header.flags = graph_header_v3.flags;
-    graph_header.neighbor_capacity = graph_header_v3.neighbor_capacity;
-    graph_header.base_neighbor_capacity = graph_header_v3.neighbor_capacity;
-    graph_header.search_capacity = graph_header_v3.search_capacity;
-    graph_header.level_capacity = graph_header_v3.level_capacity;
-    graph_header.max_level = graph_header_v3.max_level;
-    graph_header.entry_active_pos = graph_header_v3.entry_active_pos;
-  }
+  read_save_graph_header(info->version, bytes.data + info->graph_offset, &graph_header);
   if (graph_header.flags != kSaveGraphTopologyFlag || graph_header.neighbor_capacity == 0 ||
       graph_header.neighbor_capacity > kGraphMaxNeighbors ||
       graph_header.base_neighbor_capacity == 0 ||
       graph_header.base_neighbor_capacity > kGraphMaxBaseNeighbors ||
       graph_header.base_neighbor_capacity < graph_header.neighbor_capacity ||
-      graph_header.level_capacity == 0 || graph_header.level_capacity > kGraphMaxLevels ||
+      graph_header.query_search_capacity == 0 || graph_header.level_capacity == 0 ||
+      graph_header.level_capacity > kGraphMaxLevels ||
       graph_header.max_level >= graph_header.level_capacity ||
       graph_header.entry_active_pos >= info->count) {
     return false;
@@ -5122,7 +5148,9 @@ bool snapshot_graph_layout(SnapshotBytes bytes, const AstralMemorySnapshotInfo* 
       }
     }
   }
-  uint32_t scratch_capacity = graph_header.search_capacity;
+  uint32_t scratch_capacity = graph_header.query_search_capacity > graph_header.search_capacity
+                                  ? graph_header.query_search_capacity
+                                  : graph_header.search_capacity;
   if (scratch_capacity < kGraphMinSearch) {
     scratch_capacity = kGraphMinSearch;
   }
@@ -5510,7 +5538,8 @@ inline bool snapshot_graph_was_visited(const GraphSearchScratch* scratch, uint32
 
 uint32_t snapshot_graph_search_capacity(const MemorySnapshotView* view,
                                         const AstralMemorySearchDesc* desc) {
-  uint32_t requested = desc->graph_search != 0 ? desc->graph_search : view->graph.scratch_capacity;
+  uint32_t requested =
+      desc->graph_search != 0 ? desc->graph_search : view->graph.header.query_search_capacity;
   if (requested < kGraphMinSearch) {
     requested = kGraphMinSearch;
   }
@@ -5970,36 +5999,23 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
   bool graph_loaded = false;
   if (graph_enabled(index) && header.version >= kSaveVersionGraphTopology &&
       header._reserved1 == kSaveGraphTopologyFlag) {
-    const uint32_t saved_graph_header_bytes = header.version >= kSaveVersionLegacyLayout
-                                                  ? sizeof(SaveGraphHeader)
-                                                  : sizeof(SaveGraphHeaderV3);
+    const uint32_t saved_graph_header_bytes = save_graph_header_bytes(header.version);
     if (bytes.len < static_cast<uint64_t>(cursor - bytes.data) + saved_graph_header_bytes) {
       memory_destroy(index);
       return ASTRAL_E_INVALID;
     }
     SaveGraphHeader graph_header{};
-    if (header.version >= kSaveVersionLegacyLayout) {
-      std::memcpy(&graph_header, cursor, sizeof(graph_header));
-      cursor += sizeof(graph_header);
-    } else {
-      SaveGraphHeaderV3 graph_header_v3{};
-      std::memcpy(&graph_header_v3, cursor, sizeof(graph_header_v3));
-      cursor += sizeof(graph_header_v3);
-      graph_header.flags = graph_header_v3.flags;
-      graph_header.neighbor_capacity = graph_header_v3.neighbor_capacity;
-      graph_header.base_neighbor_capacity = graph_header_v3.neighbor_capacity;
-      graph_header.search_capacity = graph_header_v3.search_capacity;
-      graph_header.level_capacity = graph_header_v3.level_capacity;
-      graph_header.max_level = graph_header_v3.max_level;
-      graph_header.entry_active_pos = graph_header_v3.entry_active_pos;
-    }
+    read_save_graph_header(header.version, cursor, &graph_header);
+    cursor += saved_graph_header_bytes;
     if (graph_header.neighbor_capacity == 0 ||
         graph_header.neighbor_capacity > kGraphMaxNeighbors ||
         graph_header.base_neighbor_capacity == 0 ||
         graph_header.base_neighbor_capacity > kGraphMaxBaseNeighbors ||
         graph_header.base_neighbor_capacity < graph_header.neighbor_capacity ||
-        graph_header.level_capacity == 0 || graph_header.level_capacity > kGraphMaxLevels ||
-        graph_header.search_capacity > desc->capacity) {
+        graph_header.query_search_capacity == 0 || graph_header.level_capacity == 0 ||
+        graph_header.level_capacity > kGraphMaxLevels ||
+        graph_header.search_capacity > desc->capacity ||
+        graph_header.query_search_capacity > desc->capacity) {
       memory_destroy(index);
       return ASTRAL_E_INVALID;
     }
