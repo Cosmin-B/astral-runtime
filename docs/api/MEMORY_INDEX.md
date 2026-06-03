@@ -247,7 +247,8 @@ cases it raises `effective_iters` to at least
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
-`l2`), `ASTRAL_BENCH_MEMORY_STORAGE` (`f32`, `q8`, `f6e2m3`, or `f8e5m2`),
+`l2`), `ASTRAL_BENCH_MEMORY_STORAGE` (`f32`, `q8`, `f6e2m3`, `f6e3m2`, or
+`f8e5m2`),
 `ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS` up to the native graph-neighbor limit,
 and `ASTRAL_BENCH_MEMORY_GRAPH_SEARCH`. Set
 `ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH` to time a lower per-query budget
