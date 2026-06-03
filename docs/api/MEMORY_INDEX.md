@@ -79,6 +79,11 @@ re-running a full scan for every query.
   uses the same compact integer dot path as q8, with Float6 scaling applied once
   at the score boundary. It is approximate; validate recall against flat f32 on
   the target embeddings before using it for retrieval.
+- `ASTRAL_MEMORY_STORAGE_F6_E3M2` stores scaled E3M2 values in 16-bit lanes.
+  It keeps a wider Float6 dynamic range than E2M3 while still using contiguous
+  compact storage and integer dot paths. It is approximate; validate recall and
+  latency against flat f32 on the target embeddings before using it for
+  retrieval.
 - `ASTRAL_MEMORY_STORAGE_F8_E5M2` stores scaled E5M2 bytes. It trades q8's
   integer dot path for wider dynamic range and compact snapshot/search support;
   validate recall and latency against flat f32 before choosing it for retrieval.
