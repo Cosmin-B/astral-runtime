@@ -2239,6 +2239,10 @@ inline uint32_t graph_neighbor_capacity_at_level(const MemoryIndex* index, uint3
   return level == 0 ? index->graph_base_neighbor_capacity : index->graph_neighbor_capacity;
 }
 
+inline uint32_t graph_outgoing_capacity_at_level(const MemoryIndex* index, uint32_t) {
+  return index->graph_neighbor_capacity;
+}
+
 inline size_t graph_neighbor_storage_count(const MemoryIndex* index) {
   return static_cast<size_t>(index->capacity) * index->graph_base_neighbor_capacity +
          static_cast<size_t>(index->capacity) * (index->graph_level_capacity - 1u) *
@@ -3071,7 +3075,9 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
     uint32_t* neighbors = graph_neighbors_at_level(index, slot, level);
     uint32_t filled = 0;
     const uint32_t level_capacity = graph_neighbor_capacity_at_level(index, level);
-    graph_select_neighbors(index, slot, level, candidate_count, neighbors, &filled, level_capacity);
+    const uint32_t outgoing_capacity = graph_outgoing_capacity_at_level(index, level);
+    graph_select_neighbors(index, slot, level, candidate_count, neighbors, &filled,
+                           outgoing_capacity);
     graph_neighbor_count_ref(index, slot, level) = filled;
     for (uint32_t i = 0; i < filled; ++i) {
       refine_graph_neighbor_list(index, neighbors[i], slot, level);

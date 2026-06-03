@@ -3125,6 +3125,8 @@ TEST(inference_memory_index_graph_base_layer_expands_for_high_connectivity_mock)
   ASSERT_EQ(stats.graph_neighbors, kGraphNeighbors);
   ASSERT_GT(stats.graph_base_edges,
             static_cast<uint64_t>(kCapacity) * static_cast<uint64_t>(kGraphNeighbors));
+  ASSERT_LT(stats.graph_base_edges,
+            static_cast<uint64_t>(kCapacity) * static_cast<uint64_t>(kGraphNeighbors) * 2u);
 
   astral_memory_destroy(index);
 }
