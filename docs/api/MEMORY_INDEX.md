@@ -75,6 +75,11 @@ re-running a full scan for every query.
   for memory-footprint-sensitive retrieval. Graph q8 uses q8 pair scoring
   during construction and q8-vs-f32 scoring for queries, so measure recall
   against the flat f32 oracle before using it for retrieval.
+- `ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK` stores the q8 vector block plus a hidden
+  float32 rerank block. Graph construction keeps q8 routing behavior; result
+  scoring uses the float32 block so the final ordering is exact within the
+  candidate set. Use it when compact routing helps memory locality but the
+  returned scores need f32 fidelity.
 - `ASTRAL_MEMORY_STORAGE_F6_E2M3` stores scaled E2M3 values in signed bytes and
   uses the same compact integer dot path as q8, with Float6 scaling applied once
   at the score boundary. It is approximate; validate recall against flat f32 on
@@ -472,8 +477,10 @@ ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_level_stats ASTRAL_BEN
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_edge_stats ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=32 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8f32 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
 scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage q8 --out /tmp/astral-memory-graph-q8.txt
+scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage q8f32 --out /tmp/astral-memory-graph-q8f32.txt
 scripts/run_memory_search_acceptance.sh --preset dev --capacity 100000 --dim 384 --metric cosine --out-dir /tmp/astral-memory-search
 scripts/run_memory_search_acceptance.sh --preset dev --capacity 10000 --dim 384 --metric cosine --perf --perf-bin /path/to/linux-6.13/tools/perf/perf --out-dir /tmp/astral-memory-search-perf
 ```
