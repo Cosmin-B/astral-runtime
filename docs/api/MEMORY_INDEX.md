@@ -198,6 +198,7 @@ the target corpus and latency budget justify the extra tuning work.
 | Flat compact | The corpus is memory-bandwidth-bound and approximate scores are acceptable. | `flat_compact_recall_search` versus flat f32 on the target vectors, compact ingest cost, `flat_search_top1`, and `vector_bytes`. |
 | Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, `graph_load`, and the chosen `graph_neighbors`/`graph_search`/`graph_query_search` settings. |
 | Graph compact | Approximate graph search also needs lower vector footprint. | The graph f32 measurements above, plus compact recall drop, graph build cost, and `graph_bytes`/`vector_bytes`. |
+| Graph q8+f32 rerank | Compact graph routing is useful but final score ordering needs f32 fidelity. | The graph compact measurements above, plus q8+f32 `graph_recall_search` and `graph_add_batch` at the target capacity. For 100k x 384 cosine vectors, `graph_neighbors=32`, `graph_search=64`, and `graph_query_search=4096` is the current high-recall starting point. |
 
 Do not use the graph index for group-filtered retrieval unless the group is
 large enough to justify all-group search followed by application filtering.
@@ -478,6 +479,8 @@ ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_edge_stats ASTRAL_BENC
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=64 ASTRAL_BENCH_MEMORY_CAPACITY=10000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=256 ASTRAL_BENCH_MEMORY_RECALL_QUERIES=64 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_STORAGE=q8f32 ASTRAL_BENCH_FEATURE_ITERS=10 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_BENCH_FEATURE_ITERS=32 ASTRAL_BENCH_MEMORY_STORAGE=q8f32 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=32 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=64 ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=4096 ./build/dev/benchmarks/astral_benchmarks --only features
+ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_add_batch ASTRAL_BENCH_FEATURE_ITERS=1 ASTRAL_BENCH_MEMORY_STORAGE=q8f32 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=32 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=64 ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=4096 ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
 scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage q8 --out /tmp/astral-memory-graph-q8.txt
 scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage q8f32 --out /tmp/astral-memory-graph-q8f32.txt
