@@ -2853,10 +2853,11 @@ void graph_search_layer_pair(MemoryIndex* index, uint32_t slot, uint32_t level, 
 
   graph_begin_visit(index);
   uint32_t candidate_count = 0;
+  const uint32_t candidate_capacity = graph_candidate_search_capacity(index, capacity);
   graph_mark_visited(index, entry);
   const float entry_score = score_pair(index, slot, entry);
   insert_graph_build_candidate(index, capacity, filled, entry, entry_score);
-  graph_add_candidate(index, capacity, entry, entry_score, &candidate_count);
+  graph_add_candidate(index, candidate_capacity, entry, entry_score, &candidate_count);
 
   while (candidate_count != 0) {
     uint32_t current = kU32Max;
@@ -2885,7 +2886,7 @@ void graph_search_layer_pair(MemoryIndex* index, uint32_t slot, uint32_t level, 
       if (*filled < capacity ||
           graph_candidate_better(index, score, neighbor, index->graph_scratch_scores[capacity - 1u],
                                  index->graph_scratch_slots[capacity - 1u])) {
-        graph_add_candidate(index, capacity, neighbor, score, &candidate_count);
+        graph_add_candidate(index, candidate_capacity, neighbor, score, &candidate_count);
         insert_graph_build_candidate(index, capacity, filled, neighbor, score);
       }
     }
