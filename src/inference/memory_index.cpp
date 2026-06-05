@@ -2247,6 +2247,12 @@ inline bool compact_graph_exact_search_preferred(const MemoryIndex* index) {
              kGraphCompactExactSearchMaxBytes;
 }
 
+inline bool snapshot_compact_graph_exact_search_preferred(const AstralMemorySnapshotInfo* info) {
+  return compact_storage_kind(info->storage_kind) &&
+         static_cast<uint64_t>(info->count) * static_cast<uint64_t>(info->dim) <=
+             kGraphCompactExactSearchMaxBytes;
+}
+
 inline uint32_t active_slot_at(const MemoryIndex* index, uint32_t active_pos) {
   return index->dense_active != 0 ? active_pos : index->active_slots[active_pos];
 }
@@ -5781,6 +5787,14 @@ inline const uint8_t* snapshot_rerank_vector_ptr(SnapshotBytes bytes,
          static_cast<uint64_t>(active_pos) * layout.rerank_vector_stride;
 }
 
+inline const uint8_t* snapshot_score_vector_ptr(SnapshotBytes bytes,
+                                                const AstralMemorySnapshotInfo* info,
+                                                uint32_t active_pos) {
+  return info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK
+             ? snapshot_rerank_vector_ptr(bytes, info, active_pos)
+             : snapshot_vector_ptr(bytes, info, active_pos);
+}
+
 inline float snapshot_stored_scale(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
                                    uint32_t active_pos) {
   float stored_scale = 1.0f;
@@ -6148,7 +6162,7 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
             bytes.data, info, graph, slot, level, i + kGraphNeighborPrefetchDistance);
         if (prefetch_neighbor != kU32Max && prefetch_neighbor < info->count) {
 #if defined(__GNUC__) || defined(__clang__)
-          __builtin_prefetch(snapshot_vector_ptr(bytes, info, prefetch_neighbor), 0, 1);
+          __builtin_prefetch(snapshot_score_vector_ptr(bytes, info, prefetch_neighbor), 0, 1);
 #endif
         }
       }
@@ -6184,6 +6198,11 @@ AstralErr memory_snapshot_view_search_graph(MemorySnapshotView* view,
     return ASTRAL_E_INVALID;
   }
   if (view->graph_ready == 0 || desc->group_id != ASTRAL_MEMORY_GROUP_ANY) {
+    return memory_snapshot_search_with_info(SnapshotBytes{view->map.data, view->map.size},
+                                            &view->info, desc, query, out_results, max_results,
+                                            out_count);
+  }
+  if (snapshot_compact_graph_exact_search_preferred(&view->info)) {
     return memory_snapshot_search_with_info(SnapshotBytes{view->map.data, view->map.size},
                                             &view->info, desc, query, out_results, max_results,
                                             out_count);
@@ -6247,7 +6266,8 @@ AstralErr memory_snapshot_search_with_info(SnapshotBytes bytes,
     if (prepared.compact != 0 && i + kFlatQ8PrefetchDistance < info->count) {
       const uint64_t prefetch_i = static_cast<uint64_t>(i + kFlatQ8PrefetchDistance);
       __builtin_prefetch(bytes.data + info->scale_offset + prefetch_i * info->scale_stride, 0, 1);
-      __builtin_prefetch(bytes.data + info->vector_offset + prefetch_i * info->vector_stride, 0, 1);
+      __builtin_prefetch(snapshot_score_vector_ptr(bytes, info, static_cast<uint32_t>(prefetch_i)),
+                         0, 1);
       __builtin_prefetch(bytes.data + info->record_offset + prefetch_i * info->record_stride, 0, 1);
     }
 #endif
