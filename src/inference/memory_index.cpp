@@ -3485,7 +3485,7 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
     fill_result(&candidate, s, score);
     insert_result(out_results, desc->top_k, &filled, candidate);
   }
-  if (compact_storage(index)) {
+  if (compact_storage(index) && !q8_f32_rerank_storage(index)) {
     for (uint32_t i = 0; i < top_count; ++i) {
       const uint32_t slot = scratch->top_slots[i];
       const uint32_t* neighbors = graph_neighbors_at_level(index, slot, 0);
