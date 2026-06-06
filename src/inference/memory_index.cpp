@@ -6083,8 +6083,8 @@ inline bool snapshot_graph_was_visited(const GraphSearchScratch* scratch, uint32
   return scratch->visited[active_pos] == scratch->visit_generation;
 }
 
-uint32_t snapshot_graph_search_capacity(const MemorySnapshotView* view,
-                                        const AstralMemorySearchDesc* desc) {
+inline uint32_t snapshot_graph_search_capacity(const MemorySnapshotView* view,
+                                               const AstralMemorySearchDesc* desc) {
   uint32_t requested =
       desc->graph_search != 0 ? desc->graph_search : view->graph.header.query_search_capacity;
   if (requested < kGraphMinSearch) {
@@ -6094,6 +6094,15 @@ uint32_t snapshot_graph_search_capacity(const MemorySnapshotView* view,
     requested = view->graph.scratch_capacity;
   }
   return requested;
+}
+
+inline uint32_t snapshot_graph_candidate_search_capacity(const SnapshotGraphLayout* graph,
+                                                         uint32_t search_capacity) {
+  uint32_t requested = search_capacity;
+  if (search_capacity <= kU32Max / kGraphCandidateReserveMultiplier) {
+    requested = search_capacity * kGraphCandidateReserveMultiplier;
+  }
+  return requested < graph->candidate_capacity ? requested : graph->candidate_capacity;
 }
 
 uint32_t snapshot_graph_greedy_closest(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
@@ -6134,7 +6143,8 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
                                  uint32_t* out_top_count) {
   uint32_t candidate_count = 0;
   uint32_t top_count = 0;
-  const uint32_t candidate_capacity = graph->candidate_capacity;
+  const uint32_t candidate_capacity =
+      snapshot_graph_candidate_search_capacity(graph, search_capacity);
   snapshot_graph_mark_visited(scratch, entry);
   const float entry_score = snapshot_score_active(bytes, info, prepared, entry);
   snapshot_graph_insert_top(bytes, info, scratch, search_capacity, &top_count, entry, entry_score);
