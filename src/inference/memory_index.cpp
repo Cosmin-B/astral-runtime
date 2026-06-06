@@ -5720,6 +5720,8 @@ struct SnapshotPreparedQuery {
   float query[kMaxDim];
   int8_t compact_query[kMaxDim];
   int16_t compact_query_i16[kMaxDim];
+  uint64_t score_vector_offset;
+  uint64_t score_vector_stride;
   float query_scale;
   float compact_query_scale;
   uint8_t compact;
@@ -5732,6 +5734,16 @@ struct SnapshotPreparedQuery {
 void snapshot_prepare_query(const AstralMemorySnapshotInfo* info, const float* query,
                             SnapshotPreparedQuery* prepared) {
   *prepared = {};
+  prepared->score_vector_offset = info->vector_offset;
+  prepared->score_vector_stride = info->vector_stride;
+  if (info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK) {
+    SaveLayout layout{};
+    if (memory_save_layout(info->version, info->dim, info->count, info->storage_kind,
+                           info->index_kind, 0, 0, 0, &layout)) {
+      prepared->score_vector_offset = layout.rerank_vector_offset;
+      prepared->score_vector_stride = layout.rerank_vector_stride;
+    }
+  }
   prepared->compact = compact_storage_kind(info->storage_kind) ? 1u : 0u;
   prepared->normalized_f32_cosine = !prepared->compact &&
                                             info->metric == ASTRAL_MEMORY_METRIC_COSINE &&
@@ -5775,24 +5787,11 @@ inline const uint8_t* snapshot_vector_ptr(SnapshotBytes bytes, const AstralMemor
   return bytes.data + info->vector_offset + static_cast<uint64_t>(active_pos) * info->vector_stride;
 }
 
-inline const uint8_t* snapshot_rerank_vector_ptr(SnapshotBytes bytes,
-                                                 const AstralMemorySnapshotInfo* info,
-                                                 uint32_t active_pos) {
-  SaveLayout layout{};
-  if (!memory_save_layout(info->version, info->dim, info->count, info->storage_kind,
-                          info->index_kind, 0, 0, 0, &layout)) {
-    return nullptr;
-  }
-  return bytes.data + layout.rerank_vector_offset +
-         static_cast<uint64_t>(active_pos) * layout.rerank_vector_stride;
-}
-
 inline const uint8_t* snapshot_score_vector_ptr(SnapshotBytes bytes,
-                                                const AstralMemorySnapshotInfo* info,
+                                                const SnapshotPreparedQuery* prepared,
                                                 uint32_t active_pos) {
-  return info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK
-             ? snapshot_rerank_vector_ptr(bytes, info, active_pos)
-             : snapshot_vector_ptr(bytes, info, active_pos);
+  return bytes.data + prepared->score_vector_offset +
+         static_cast<uint64_t>(active_pos) * prepared->score_vector_stride;
 }
 
 inline float snapshot_stored_scale(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
@@ -5809,7 +5808,7 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
                             const SnapshotPreparedQuery* prepared, uint32_t active_pos) {
   if (info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK) {
     const float* vector =
-        reinterpret_cast<const float*>(snapshot_rerank_vector_ptr(bytes, info, active_pos));
+        reinterpret_cast<const float*>(snapshot_score_vector_ptr(bytes, prepared, active_pos));
     if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
       return dot_f32(prepared->query, vector, info->dim);
     }
@@ -6162,7 +6161,7 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
             bytes.data, info, graph, slot, level, i + kGraphNeighborPrefetchDistance);
         if (prefetch_neighbor != kU32Max && prefetch_neighbor < info->count) {
 #if defined(__GNUC__) || defined(__clang__)
-          __builtin_prefetch(snapshot_score_vector_ptr(bytes, info, prefetch_neighbor), 0, 1);
+          __builtin_prefetch(snapshot_score_vector_ptr(bytes, prepared, prefetch_neighbor), 0, 1);
 #endif
         }
       }
@@ -6266,8 +6265,8 @@ AstralErr memory_snapshot_search_with_info(SnapshotBytes bytes,
     if (prepared.compact != 0 && i + kFlatQ8PrefetchDistance < info->count) {
       const uint64_t prefetch_i = static_cast<uint64_t>(i + kFlatQ8PrefetchDistance);
       __builtin_prefetch(bytes.data + info->scale_offset + prefetch_i * info->scale_stride, 0, 1);
-      __builtin_prefetch(snapshot_score_vector_ptr(bytes, info, static_cast<uint32_t>(prefetch_i)),
-                         0, 1);
+      __builtin_prefetch(
+          snapshot_score_vector_ptr(bytes, &prepared, static_cast<uint32_t>(prefetch_i)), 0, 1);
       __builtin_prefetch(bytes.data + info->record_offset + prefetch_i * info->record_stride, 0, 1);
     }
 #endif
