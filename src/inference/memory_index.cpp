@@ -5716,6 +5716,15 @@ inline uint32_t snapshot_graph_neighbor_at(const uint8_t* bytes,
   return neighbor;
 }
 
+inline uint32_t snapshot_graph_neighbor_at_base(const uint8_t* bytes, uint64_t neighbor_base,
+                                                uint32_t neighbor_i) {
+  uint32_t neighbor = kU32Max;
+  std::memcpy(&neighbor,
+              bytes + neighbor_base + static_cast<uint64_t>(neighbor_i) * sizeof(uint32_t),
+              sizeof(neighbor));
+  return neighbor;
+}
+
 struct SnapshotPreparedQuery {
   float query[kMaxDim];
   int8_t compact_query[kMaxDim];
@@ -6117,9 +6126,9 @@ uint32_t snapshot_graph_greedy_closest(SnapshotBytes bytes, const AstralMemorySn
       changed = false;
       const uint32_t neighbor_count =
           snapshot_graph_neighbor_count(bytes.data, info, graph, closest, level);
+      const uint64_t neighbor_base = snapshot_graph_level_offset(info, graph, closest, level);
       for (uint32_t i = 0; i < neighbor_count; ++i) {
-        const uint32_t candidate =
-            snapshot_graph_neighbor_at(bytes.data, info, graph, closest, level, i);
+        const uint32_t candidate = snapshot_graph_neighbor_at_base(bytes.data, neighbor_base, i);
         if (candidate == kU32Max || candidate >= info->count ||
             snapshot_graph_level(bytes.data, graph, candidate) < level) {
           continue;
@@ -6164,11 +6173,12 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
     }
     const uint32_t neighbor_count =
         snapshot_graph_neighbor_count(bytes.data, info, graph, slot, level);
+    const uint64_t neighbor_base = snapshot_graph_level_offset(info, graph, slot, level);
     for (uint32_t i = 0; i < neighbor_count; ++i) {
-      const uint32_t neighbor = snapshot_graph_neighbor_at(bytes.data, info, graph, slot, level, i);
+      const uint32_t neighbor = snapshot_graph_neighbor_at_base(bytes.data, neighbor_base, i);
       if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
-        const uint32_t prefetch_neighbor = snapshot_graph_neighbor_at(
-            bytes.data, info, graph, slot, level, i + kGraphNeighborPrefetchDistance);
+        const uint32_t prefetch_neighbor = snapshot_graph_neighbor_at_base(
+            bytes.data, neighbor_base, i + kGraphNeighborPrefetchDistance);
         if (prefetch_neighbor != kU32Max && prefetch_neighbor < info->count) {
 #if defined(__GNUC__) || defined(__clang__)
           __builtin_prefetch(snapshot_score_vector_ptr(bytes, prepared, prefetch_neighbor), 0, 1);
