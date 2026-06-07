@@ -25,8 +25,8 @@ Options:
   --query-search <N>    Per-query graph search budget (default: graph budget)
   --graph-neighbors <N> Graph neighbor budget (default: 32)
   --recall-queries <N>  Recall query count (default: 32)
-  --budget-sweep        Also capture graph_recall_search_sweep for f32, q8, and f6e2m3
-  --recall-detail       Also capture graph_recall_detail for f32, q8, and f6e2m3
+  --budget-sweep        Also capture graph_recall_search_sweep for graph storage lanes
+  --recall-detail       Also capture graph_recall_detail for graph storage lanes
   --level-stats         Also capture deterministic graph level distribution
   --edge-stats          Also capture stored graph edge counts
   --skip-flat-baseline  Skip flat baseline lanes when a caller already captured them
@@ -187,12 +187,18 @@ run_case "graph_f8e5m2_build" "f8e5m2" "graph_add_batch"
 run_case "graph_f8e5m2_load" "f8e5m2" "graph_load"
 run_case "graph_f8e5m2_recall" "f8e5m2" "graph_recall_search"
 run_case "graph_f8e5m2_top1_recall" "f8e5m2" "graph_recall_top1"
+run_case "graph_f8e5m2f32_build" "f8e5m2f32" "graph_add_batch"
+run_case "graph_f8e5m2f32_load" "f8e5m2f32" "graph_load"
+run_case "graph_f8e5m2f32_recall" "f8e5m2f32" "graph_recall_search"
+run_case "graph_f8e5m2f32_view_recall" "f8e5m2f32" "graph_snapshot_view_recall_search"
+run_case "graph_f8e5m2f32_top1_recall" "f8e5m2f32" "graph_recall_top1"
 
 if [[ "${budget_sweep}" == "1" ]]; then
   run_case "graph_f32_budget_sweep" "f32" "graph_recall_search_sweep"
   run_case "graph_q8_budget_sweep" "q8" "graph_recall_search_sweep"
   run_case "graph_f6e2m3_budget_sweep" "f6e2m3" "graph_recall_search_sweep"
   run_case "graph_f8e5m2_budget_sweep" "f8e5m2" "graph_recall_search_sweep"
+  run_case "graph_f8e5m2f32_budget_sweep" "f8e5m2f32" "graph_recall_search_sweep"
 fi
 
 if [[ "${recall_detail}" == "1" ]]; then
@@ -200,6 +206,7 @@ if [[ "${recall_detail}" == "1" ]]; then
   run_case "graph_q8_recall_detail" "q8" "graph_recall_detail"
   run_case "graph_f6e2m3_recall_detail" "f6e2m3" "graph_recall_detail"
   run_case "graph_f8e5m2_recall_detail" "f8e5m2" "graph_recall_detail"
+  run_case "graph_f8e5m2f32_recall_detail" "f8e5m2f32" "graph_recall_detail"
 fi
 
 if [[ "${level_stats}" == "1" ]]; then
@@ -211,6 +218,7 @@ if [[ "${edge_stats}" == "1" ]]; then
   run_case "graph_q8_edge_stats" "q8" "graph_edge_stats"
   run_case "graph_f6e2m3_edge_stats" "f6e2m3" "graph_edge_stats"
   run_case "graph_f8e5m2_edge_stats" "f8e5m2" "graph_edge_stats"
+  run_case "graph_f8e5m2f32_edge_stats" "f8e5m2f32" "graph_edge_stats"
 fi
 
 for file in "${out_dir}"/*.txt; do

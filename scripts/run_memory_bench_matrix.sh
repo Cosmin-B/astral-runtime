@@ -19,7 +19,7 @@ Options:
   --dims <list>         Comma-separated dimensions (default: 128,384,768)
   --capacities <list>   Comma-separated capacities (default: 10000)
   --metrics <list>      Comma-separated metrics: cosine,dot,l2 (default: cosine,dot,l2)
-  --storage <kind>      Vector storage: f32, q8, or f6e2m3 (default: f32)
+  --storage <kind>      Vector storage: f32, q8, q8f32, f6e2m3, f6e3m2, f8e5m2, or f8e5m2f32 (default: f32)
   --case <name>         One ASTRAL_BENCH_MEMORY_CASE value, such as flat_q8_recall_search
   --graph-search <N>    Graph search budget (default: 64)
   --query-search <N>    Per-query graph search budget (default: index budget)
@@ -125,7 +125,7 @@ IFS=',' read -r -a metric_values <<< "${metrics}"
 
 recall_case_requires_full_query_set() {
   case "$1" in
-    flat_q8_recall_search|flat_compact_recall_search|graph_recall|graph_recall_top1|graph_recall_search|graph_recall_search_sweep)
+    flat_q8_recall_search|flat_compact_recall_search|graph_recall|graph_recall_top1|graph_recall_search|graph_snapshot_view_recall_search|graph_recall_search_sweep)
       return 0
       ;;
     *)
