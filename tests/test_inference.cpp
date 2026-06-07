@@ -3740,6 +3740,45 @@ TEST(inference_memory_index_f8_e5m2_f32_rerank_storage_mock) {
   ASSERT_EQ(err, ASTRAL_OK);
   ASSERT_EQ(results[0].key, kKeyA);
 
+  uint64_t graph_save_bytes = 0;
+  err = astral_memory_save_size(graph, &graph_save_bytes);
+  ASSERT_EQ(err, ASTRAL_OK);
+  std::string graph_blob;
+  graph_blob.resize(static_cast<size_t>(graph_save_bytes));
+  AstralMutSpanU8 graph_out_blob{};
+  graph_out_blob.data = reinterpret_cast<uint8_t*>(&graph_blob[0]);
+  graph_out_blob.len = static_cast<uint32_t>(graph_blob.size());
+  uint64_t graph_written = 0;
+  err = astral_memory_save(graph, graph_out_blob, &graph_written);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(graph_written, graph_save_bytes);
+
+  char graph_snapshot_path[128]{};
+  std::snprintf(graph_snapshot_path, sizeof(graph_snapshot_path),
+                "/tmp/astral-memory-f8f32-graph-view-%p.bin",
+                static_cast<const void*>(graph_blob.data()));
+  FILE* graph_snapshot_file = std::fopen(graph_snapshot_path, "wb");
+  ASSERT_TRUE(graph_snapshot_file != nullptr);
+  ASSERT_EQ(std::fwrite(graph_blob.data(), 1, graph_blob.size(), graph_snapshot_file),
+            graph_blob.size());
+  ASSERT_EQ(std::fclose(graph_snapshot_file), 0);
+  AstralSpanU8 graph_path_span{};
+  graph_path_span.data = reinterpret_cast<const uint8_t*>(graph_snapshot_path);
+  graph_path_span.len = static_cast<uint32_t>(std::strlen(graph_snapshot_path));
+  AstralMemorySnapshotInfo mapped_graph_info{};
+  mapped_graph_info.size = sizeof(AstralMemorySnapshotInfo);
+  AstralHandle mapped_graph_view = 0;
+  err = astral_memory_snapshot_map(graph_path_span, &mapped_graph_info, &mapped_graph_view);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(mapped_graph_info.storage_kind, ASTRAL_MEMORY_STORAGE_F8_E5M2_F32_RERANK);
+  err = astral_memory_snapshot_view_search(mapped_graph_view, &search, query, view_results, kTopK,
+                                           &view_count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(view_count, kTopK);
+  ASSERT_EQ(view_results[0].key, kKeyA);
+  astral_memory_snapshot_unmap(mapped_graph_view);
+  std::remove(graph_snapshot_path);
+
   astral_memory_destroy(graph);
   astral_memory_destroy(loaded);
   astral_memory_destroy(index);
