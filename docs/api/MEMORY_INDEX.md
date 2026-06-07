@@ -92,6 +92,10 @@ re-running a full scan for every query.
 - `ASTRAL_MEMORY_STORAGE_F8_E5M2` stores scaled E5M2 bytes. It trades q8's
   integer dot path for wider dynamic range and compact snapshot/search support;
   validate recall and latency against flat f32 before choosing it for retrieval.
+- `ASTRAL_MEMORY_STORAGE_F8_E5M2_F32_RERANK` stores the E5M2 byte block plus a
+  hidden float32 rerank block. Graph construction, graph routing, final result
+  ordering, and snapshot scoring use the f32 block; the E5M2 block is retained
+  for compact snapshot payloads and storage inspection.
 
 Graph snapshots include the routing topology when the load descriptor matches
 the saved graph neighbor, search, and level capacities. If those knobs differ,
