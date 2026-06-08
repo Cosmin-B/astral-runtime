@@ -203,6 +203,7 @@ the target corpus and latency budget justify the extra tuning work.
 | Graph f32 | All-group approximate search needs lower latency than a full scan. | `graph_recall_search` against flat f32, `graph_top1`, `graph_add_batch`, `graph_load`, and the chosen `graph_neighbors`/`graph_search`/`graph_query_search` settings. |
 | Graph compact | Approximate graph search also needs lower vector footprint. | The graph f32 measurements above, plus compact recall drop, graph build cost, and `graph_bytes`/`vector_bytes`. |
 | Graph q8+f32 rerank | Compact graph routing is useful but final score ordering needs f32 fidelity. | The graph compact measurements above, plus q8+f32 `graph_recall_search` and `graph_add_batch` at the target capacity. For 100k x 384 cosine vectors, `graph_neighbors=32`, `graph_search=64`, and `graph_query_search=4096` is the current high-recall starting point. |
+| Graph E5M2+f32 rerank | E5M2 snapshot payloads are useful but graph quality and final ordering need f32 fidelity. | `graph_recall_search`, `graph_snapshot_view_recall_search`, `graph_add_batch`, and `graph_load` with `ASTRAL_BENCH_MEMORY_STORAGE=f8e5m2f32` at the target capacity. Compare against q8+f32 before making it the default. |
 
 Do not use the graph index for group-filtered retrieval unless the group is
 large enough to justify all-group search followed by application filtering.
