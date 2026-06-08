@@ -488,6 +488,7 @@ ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_recall_search ASTRAL_B
 ASTRAL_BENCH_MEMORY_ONLY=1 ASTRAL_BENCH_MEMORY_CASE=graph_add_batch ASTRAL_BENCH_FEATURE_ITERS=1 ASTRAL_BENCH_MEMORY_STORAGE=q8f32 ASTRAL_BENCH_MEMORY_CAPACITY=100000 ASTRAL_BENCH_MEMORY_DIM=384 ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=32 ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=64 ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=4096 ./build/dev/benchmarks/astral_benchmarks --only features
 scripts/run_memory_bench_matrix.sh --preset dev --dims 128,384,768 --capacities 10000 --metrics cosine,dot,l2 --out /tmp/astral-memory-matrix.txt
 scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage q8 --out /tmp/astral-memory-graph-q8.txt
+scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage f6e3m2 --out /tmp/astral-memory-graph-f6e3m2.txt
 scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage q8f32 --out /tmp/astral-memory-graph-q8f32.txt
 scripts/run_memory_bench_matrix.sh --preset dev --case graph_recall_search --dims 384 --capacities 10000,100000 --metrics cosine --storage f8e5m2f32 --out /tmp/astral-memory-graph-f8e5m2f32.txt
 scripts/run_memory_search_acceptance.sh --preset dev --capacity 100000 --dim 384 --metric cosine --out-dir /tmp/astral-memory-search
