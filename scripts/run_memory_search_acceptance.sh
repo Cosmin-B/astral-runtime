@@ -169,6 +169,8 @@ if [[ "${skip_flat_baseline}" != "1" ]]; then
   run_case "flat_f6e2m3_recall" "f6e2m3" "flat_compact_recall_search"
   run_case "flat_f8e5m2_batch" "f8e5m2" "flat_search_batch"
   run_case "flat_f8e5m2_recall" "f8e5m2" "flat_compact_recall_search"
+  run_case "flat_f8e5m2f32_batch" "f8e5m2f32" "flat_search_batch"
+  run_case "flat_f8e5m2f32_recall" "f8e5m2f32" "flat_compact_recall_search"
 fi
 run_case "graph_f32_build" "f32" "graph_add_batch"
 run_case "graph_f32_load" "f32" "graph_load"
