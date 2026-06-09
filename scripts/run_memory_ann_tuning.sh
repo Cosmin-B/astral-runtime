@@ -10,7 +10,7 @@ Usage: scripts/run_memory_ann_tuning.sh [options]
 
 Runs a repeatable ANN tuning sweep for Astral memory graph indexes. The runner
 captures f32, q8, and f6e2m3 graph recall, top-1 recall, build cost, load
-cost, edge counts, and optional budget sweeps for each requested graph shape.
+cost, edge counts, and optional insert-latency/budget sweeps for each requested graph shape.
 Output goes outside the repository by default.
 
 Options:
@@ -26,6 +26,7 @@ Options:
   --recall-queries <N>     Recall query count (default: 32)
   --budget-sweep           Capture per-query graph budget sweep lanes
   --recall-detail          Capture per-query recall detail lanes
+  --add-latency            Capture graph add p50/p95/p99 lanes
   --summary-only           Rebuild summary best-row sections from an existing results.csv
   --min-recall-pct <pct>   Fail unless one row reaches this recall percentage
   --max-recall-ns <N>      With --min-recall-pct, fail unless one passing row is this fast
@@ -54,6 +55,7 @@ query_search_csv="64,128"
 recall_queries="32"
 budget_sweep="0"
 recall_detail="0"
+add_latency="0"
 summary_only="0"
 min_recall_pct=""
 max_recall_ns=""
@@ -77,6 +79,7 @@ while [[ $# -gt 0 ]]; do
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
     --budget-sweep) budget_sweep="1"; shift ;;
     --recall-detail) recall_detail="1"; shift ;;
+    --add-latency) add_latency="1"; shift ;;
     --summary-only) summary_only="1"; shift ;;
     --min-recall-pct) min_recall_pct="${2:-}"; shift 2 ;;
     --max-recall-ns) max_recall_ns="${2:-}"; shift 2 ;;
@@ -122,6 +125,9 @@ fi
 if [[ "${recall_detail}" == "1" ]]; then
   common_args+=(--recall-detail)
 fi
+if [[ "${add_latency}" == "1" ]]; then
+  common_args+=(--add-latency)
+fi
 if [[ "${perf_enabled}" == "1" ]]; then
   common_args+=(--perf)
 fi
@@ -157,6 +163,7 @@ fi
     echo "# recall_queries: ${recall_queries}"
     echo "# budget_sweep: ${budget_sweep}"
     echo "# recall_detail: ${recall_detail}"
+    echo "# add_latency: ${add_latency}"
     echo "# min_recall_pct: ${min_recall_pct:-none}"
     echo "# max_recall_ns: ${max_recall_ns:-none}"
     echo "# min_speedup_vs_flat: ${min_speedup_vs_flat:-none}"
@@ -166,7 +173,7 @@ fi
 } > "${summary_file}"
 
 if [[ "${summary_only}" != "1" ]]; then
-  echo "neighbors,build_search,query_search,effective_query_search,storage,build_ns,load_ns,recall_ns,recall_pct,top1_ns,top1_recall_pct,edge_count,base_edges,upper_edges,build_score_evals,build_candidate_visits,flat_f32_latency_ns,speedup_vs_flat_f32" > "${csv_file}"
+  echo "neighbors,build_search,query_search,effective_query_search,storage,build_ns,add_p50_ns,add_p95_ns,add_p99_ns,load_ns,recall_ns,recall_pct,top1_ns,top1_recall_pct,edge_count,base_edges,upper_edges,build_score_evals,build_candidate_visits,flat_f32_latency_ns,speedup_vs_flat_f32" > "${csv_file}"
 fi
 
 metric_value() {
@@ -213,6 +220,33 @@ metric_ns() {
   ' "${file}"
 }
 
+latency_metric_ns() {
+  local file="$1"
+  local key="$2"
+  [[ -f "${file}" ]] || return 0
+  awk -v key="${key}=" '
+    /features\.memory/ {
+      for (i = 1; i <= NF; ++i) {
+        if (index($i, key) == 1) {
+          value = substr($i, length(key) + 1)
+          if (value != "") {
+            print value
+            exit
+          }
+          if ((i + 1) <= NF) {
+            print $(i + 1)
+            exit
+          }
+        }
+        if ($i == key && (i + 1) <= NF) {
+          print $(i + 1)
+          exit
+        }
+      }
+    }
+  ' "${file}"
+}
+
 edge_metric_value() {
   local file="$1"
   local metric="$2"
@@ -243,8 +277,11 @@ append_csv_row() {
   local effective_query_search
   effective_query_search="$(effective_query_search_for "${build_search}" "${query_search}")"
   local prefix="graph_${storage}"
-  local build_ns load_ns recall_ns recall_pct top1_ns top1_recall edge_count base_edges upper_edges build_score_evals build_candidate_visits speedup_vs_flat
+  local build_ns add_p50_ns add_p95_ns add_p99_ns load_ns recall_ns recall_pct top1_ns top1_recall edge_count base_edges upper_edges build_score_evals build_candidate_visits speedup_vs_flat
   build_ns="$(metric_ns "${shape_dir}/${prefix}_build.txt")"
+  add_p50_ns="$(latency_metric_ns "${shape_dir}/${prefix}_add_latency.txt" "p50")"
+  add_p95_ns="$(latency_metric_ns "${shape_dir}/${prefix}_add_latency.txt" "p95")"
+  add_p99_ns="$(latency_metric_ns "${shape_dir}/${prefix}_add_latency.txt" "p99")"
   load_ns="$(metric_ns "${shape_dir}/${prefix}_load.txt")"
   recall_ns="$(metric_ns "${shape_dir}/${prefix}_recall.txt")"
   recall_pct="$(metric_value "${shape_dir}/${prefix}_recall.txt" "recall_pct=")"
@@ -262,7 +299,7 @@ append_csv_row() {
       printf "%.4f", (flat + 0.0) / (graph + 0.0)
     }
   }')"
-  echo "${neighbors},${build_search},${query_search},${effective_query_search},${storage},${build_ns},${load_ns},${recall_ns},${recall_pct},${top1_ns},${top1_recall},${edge_count},${base_edges},${upper_edges},${build_score_evals},${build_candidate_visits},${flat_f32_latency_ns:-},${speedup_vs_flat}" >> "${csv_file}"
+  echo "${neighbors},${build_search},${query_search},${effective_query_search},${storage},${build_ns},${add_p50_ns},${add_p95_ns},${add_p99_ns},${load_ns},${recall_ns},${recall_pct},${top1_ns},${top1_recall},${edge_count},${base_edges},${upper_edges},${build_score_evals},${build_candidate_visits},${flat_f32_latency_ns:-},${speedup_vs_flat}" >> "${csv_file}"
 }
 
 append_recall_rows() {
@@ -271,8 +308,8 @@ append_recall_rows() {
   local title="$3"
   awk -F, -v threshold="${threshold}" -v limit="${limit}" -v title="${title}" '
     NR == 1 { next }
-    threshold == "" || ($9 + 0.0) >= (threshold + 0.0) {
-      printf "%012.3f,%012.3f,%s\n", -($9 + 0.0), ($8 + 0.0), $0
+    threshold == "" || ($12 + 0.0) >= (threshold + 0.0) {
+      printf "%012.3f,%012.3f,%s\n", -($12 + 0.0), ($11 + 0.0), $0
     }
   ' "${csv_file}" | sort -t, -k1,1n -k2,2n | head -n "${limit}" | awk -F, -v title="${title}" '
     BEGIN {
@@ -301,8 +338,8 @@ append_fast_rows() {
   local title="$3"
   awk -F, -v threshold="${threshold}" -v limit="${limit}" -v title="${title}" '
     NR == 1 { next }
-    threshold == "" || ($9 + 0.0) >= (threshold + 0.0) {
-      printf "%012.3f,%s\n", ($8 + 0.0), $0
+    threshold == "" || ($12 + 0.0) >= (threshold + 0.0) {
+      printf "%012.3f,%s\n", ($11 + 0.0), $0
     }
   ' "${csv_file}" | sort -t, -k1,1n | head -n "${limit}" | awk -F, -v title="${title}" '
     BEGIN {
@@ -335,10 +372,10 @@ validate_thresholds() {
       next
     }
     {
-      recall = $9 + 0.0
-      ns = $8 + 0.0
-      speedup = $18 + 0.0
-      has_speedup = $18 != ""
+      recall = $12 + 0.0
+      ns = $11 + 0.0
+      speedup = $21 + 0.0
+      has_speedup = $21 != ""
       if (recall >= (min_recall + 0.0) && (max_ns == "" || ns <= (max_ns + 0.0)) &&
           (min_speedup == "" || (has_speedup && speedup >= (min_speedup + 0.0)))) {
         print $0

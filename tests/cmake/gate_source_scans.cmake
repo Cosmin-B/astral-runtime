@@ -765,6 +765,7 @@ foreach(required_feature_benchmark_marker
     "features.toolset parse"
     "features.chunk word_ranges"
     "features.memory add_batch"
+    "features.memory graph_add_latency"
     "features.memory graph_load"
     "features.memory flat_search_top1"
     "features.memory flat_search"
@@ -824,6 +825,7 @@ foreach(required_chunking_doc_marker
 endforeach()
 foreach(required_memory_index_doc_marker
     "features.memory add_batch"
+    "features.memory graph_add_latency"
     "features.memory graph_load"
     "features.memory flat_search_top1"
     "features.memory flat_search"

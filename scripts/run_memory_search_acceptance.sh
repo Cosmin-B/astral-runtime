@@ -27,6 +27,7 @@ Options:
   --recall-queries <N>  Recall query count (default: 32)
   --budget-sweep        Also capture graph_recall_search_sweep for graph storage lanes
   --recall-detail       Also capture graph_recall_detail for graph storage lanes
+  --add-latency         Also capture graph_add_latency p50/p95/p99 lanes
   --level-stats         Also capture deterministic graph level distribution
   --edge-stats          Also capture stored graph edge counts
   --skip-flat-baseline  Skip flat baseline lanes when a caller already captured them
@@ -55,6 +56,7 @@ graph_neighbors="32"
 recall_queries="32"
 budget_sweep="0"
 recall_detail="0"
+add_latency="0"
 level_stats="0"
 edge_stats="0"
 skip_flat_baseline="0"
@@ -77,6 +79,7 @@ while [[ $# -gt 0 ]]; do
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
     --budget-sweep) budget_sweep="1"; shift ;;
     --recall-detail) recall_detail="1"; shift ;;
+    --add-latency) add_latency="1"; shift ;;
     --level-stats) level_stats="1"; shift ;;
     --edge-stats) edge_stats="1"; shift ;;
     --skip-flat-baseline) skip_flat_baseline="1"; shift ;;
@@ -151,6 +154,7 @@ run_case() {
   echo "# recall_queries: ${recall_queries}"
   echo "# budget_sweep: ${budget_sweep}"
   echo "# recall_detail: ${recall_detail}"
+  echo "# add_latency: ${add_latency}"
   echo "# level_stats: ${level_stats}"
   echo "# edge_stats: ${edge_stats}"
   echo "# skip_flat_baseline: ${skip_flat_baseline}"
@@ -205,6 +209,15 @@ run_case "graph_f8e5m2f32_load" "f8e5m2f32" "graph_load"
 run_case "graph_f8e5m2f32_recall" "f8e5m2f32" "graph_recall_search"
 run_case "graph_f8e5m2f32_view_recall" "f8e5m2f32" "graph_snapshot_view_recall_search"
 run_case "graph_f8e5m2f32_top1_recall" "f8e5m2f32" "graph_recall_top1"
+
+if [[ "${add_latency}" == "1" ]]; then
+  run_case "graph_f32_add_latency" "f32" "graph_add_latency"
+  run_case "graph_q8_add_latency" "q8" "graph_add_latency"
+  run_case "graph_f6e2m3_add_latency" "f6e2m3" "graph_add_latency"
+  run_case "graph_f6e3m2_add_latency" "f6e3m2" "graph_add_latency"
+  run_case "graph_f8e5m2_add_latency" "f8e5m2" "graph_add_latency"
+  run_case "graph_f8e5m2f32_add_latency" "f8e5m2f32" "graph_add_latency"
+fi
 
 if [[ "${budget_sweep}" == "1" ]]; then
   run_case "graph_f32_budget_sweep" "f32" "graph_recall_search_sweep"

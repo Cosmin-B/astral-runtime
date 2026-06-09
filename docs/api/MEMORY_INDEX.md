@@ -285,6 +285,9 @@ iteration count no smaller than the requested recall-query count, even when the
 requested iteration count is lower. Add `--budget-sweep` when tuning
 graph recall/latency so the runner also captures `graph_recall_search_sweep`
 for f32 and q8 graph indexes using one build and multiple per-query budgets.
+Add `--add-latency` when tuning insertion so it also captures
+`features.memory graph_add_latency` p50/p95/p99 lanes for graph storage
+profiles.
 Use the `graph_search_batch` benchmark case with
 `ASTRAL_BENCH_RUNTIME_THREADS` greater than 1 to measure the per-worker graph
 scratch search path.
@@ -304,8 +307,8 @@ repository.
 Use `scripts/run_memory_ann_tuning.sh` when comparing several graph shapes. It
 wraps the acceptance runner across neighbor, build-search, and per-query search
 budgets, then writes one roll-up summary with f32/q8 recall, top-1 recall,
-build, load, level, and edge-count markers for every shape. It also writes
-`results.csv` with one f32 and one q8 row per graph shape so large sweeps can be
+build, optional insert-latency, load, level, and edge-count markers for every
+shape. It also writes `results.csv` with one f32 and one q8 row per graph shape so large sweeps can be
 sorted without manually parsing each lane log. The CSV records both the
 requested per-query budget and the effective budget after clamping to the graph
 build/search capacity, plus edge counts and graph construction-work counts, so
@@ -338,7 +341,8 @@ captures can be checked without rerunning the benchmark lanes.
 For release tuning, capture `features.memory flat_search_top1`,
 `features.memory flat_search_batch`, `features.memory flat_search_latency`,
 `features.memory flat_q8_recall_search`, `features.memory graph_add_batch`,
-`features.memory graph_load`, `features.memory snapshot_search`,
+`features.memory graph_add_latency`, `features.memory graph_load`,
+`features.memory snapshot_search`,
 `features.memory snapshot_view_search`,
 `features.memory graph_snapshot_view_search`, `features.memory graph_search_latency`,
 `features.memory graph_recall_search`,
@@ -499,7 +503,7 @@ Native tests include `inference_memory_index_graph_mock` for graph search,
 filtered exact fallback, save/load, and remove/rebuild behavior.
 
 Expected markers include `features.memory add_batch`,
-`features.memory graph_add_batch`,
+`features.memory graph_add_batch`, `features.memory graph_add_latency`,
 `features.memory graph_load`,
 `features.memory flat_search_top1`, `features.memory flat_search`,
 `features.memory flat_search_latency`, `features.memory flat_search_batch`,
