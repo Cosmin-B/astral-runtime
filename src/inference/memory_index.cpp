@@ -58,6 +58,8 @@ constexpr uint32_t kGraphMinSearch = 4;
 constexpr uint32_t kGraphCandidateReserveMultiplier = 8;
 constexpr uint32_t kGraphLongLinkCount = 0;
 constexpr uint32_t kGraphNeighborPrefetchDistance = 2;
+constexpr uint32_t kGraphF32RerankMinCandidates = 256;
+constexpr uint32_t kGraphF32RerankTopKMultiplier = 64;
 constexpr uint64_t kBytesPerKiB = 1024;
 constexpr uint64_t kBytesPerMiB = kBytesPerKiB * kBytesPerKiB;
 constexpr uint64_t kGraphCompactExactSearchMaxBytes = 16 * kBytesPerMiB;
@@ -2863,6 +2865,62 @@ bool insert_graph_query_top_candidate(MemoryIndex* index, GraphSearchScratch* sc
   return true;
 }
 
+void remove_graph_query_worst_candidate(MemoryIndex* index, GraphSearchScratch* scratch,
+                                        uint32_t* filled) {
+  uint32_t count = *filled;
+  if (count == 0) {
+    return;
+  }
+
+  --count;
+  if (count != 0) {
+    const uint32_t slot = scratch->top_slots[count];
+    const float score = scratch->top_scores[count];
+    uint32_t pos = 0;
+    for (;;) {
+      const uint32_t left = (pos << 1u) + 1u;
+      if (left >= count) {
+        break;
+      }
+      const uint32_t right = left + 1u;
+      uint32_t child = left;
+      if (right < count &&
+          graph_candidate_worse(index, scratch->top_scores[right], scratch->top_slots[right],
+                                scratch->top_scores[left], scratch->top_slots[left])) {
+        child = right;
+      }
+      if (!graph_candidate_worse(index, scratch->top_scores[child], scratch->top_slots[child],
+                                 score, slot)) {
+        break;
+      }
+      scratch->top_scores[pos] = scratch->top_scores[child];
+      scratch->top_slots[pos] = scratch->top_slots[child];
+      pos = child;
+    }
+    scratch->top_scores[pos] = score;
+    scratch->top_slots[pos] = slot;
+  }
+  *filled = count;
+}
+
+uint32_t graph_f32_rerank_capacity(uint32_t top_k, uint32_t top_count) {
+  uint32_t requested = kGraphF32RerankMinCandidates;
+  if (top_k <= kU32Max / kGraphF32RerankTopKMultiplier) {
+    const uint32_t top_k_capacity = top_k * kGraphF32RerankTopKMultiplier;
+    if (top_k_capacity > requested) {
+      requested = top_k_capacity;
+    }
+  }
+  return requested < top_count ? requested : top_count;
+}
+
+void trim_graph_query_top_candidates(MemoryIndex* index, GraphSearchScratch* scratch,
+                                     uint32_t* top_count, uint32_t target_count) {
+  while (*top_count > target_count) {
+    remove_graph_query_worst_candidate(index, scratch, top_count);
+  }
+}
+
 void graph_collect_neighbors_exact(MemoryIndex* index, uint32_t slot, uint32_t level,
                                    uint32_t* filled) {
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
@@ -3500,6 +3558,11 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
             : index->graph_entry_slot;
     graph_search_layer_query(index, scratch, query, query_scale, entry, 0, search_capacity,
                              &top_count);
+  }
+
+  if (q8_f32_rerank_storage(index)) {
+    const uint32_t rerank_capacity = graph_f32_rerank_capacity(desc->top_k, top_count);
+    trim_graph_query_top_candidates(index, scratch, &top_count, rerank_capacity);
   }
 
   for (uint32_t i = 0; i < top_count; ++i) {
