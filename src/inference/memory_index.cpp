@@ -843,6 +843,116 @@ float dot_i16_i16(const int16_t* a, const int16_t* b, uint32_t dim) {
 #endif
 }
 
+float max_abs_f32(const float* v, uint32_t dim) {
+#if defined(__AVX2__)
+  const __m256 sign_mask = _mm256_set1_ps(-0.0f);
+  __m256 acc0 = _mm256_setzero_ps();
+  __m256 acc1 = _mm256_setzero_ps();
+  __m256 acc2 = _mm256_setzero_ps();
+  __m256 acc3 = _mm256_setzero_ps();
+  uint32_t i = 0;
+  for (; i + kAvx2UnrollF32 <= dim; i += kAvx2UnrollF32) {
+    acc0 = _mm256_max_ps(acc0, _mm256_andnot_ps(sign_mask, _mm256_loadu_ps(v + i)));
+    acc1 = _mm256_max_ps(acc1, _mm256_andnot_ps(sign_mask, _mm256_loadu_ps(v + i + kAvx2Offset1)));
+    acc2 = _mm256_max_ps(acc2, _mm256_andnot_ps(sign_mask, _mm256_loadu_ps(v + i + kAvx2Offset2)));
+    acc3 = _mm256_max_ps(acc3, _mm256_andnot_ps(sign_mask, _mm256_loadu_ps(v + i + kAvx2Offset3)));
+  }
+  acc0 = _mm256_max_ps(_mm256_max_ps(acc0, acc1), _mm256_max_ps(acc2, acc3));
+  for (; i + kAvx2F32Lanes <= dim; i += kAvx2F32Lanes) {
+    acc0 = _mm256_max_ps(acc0, _mm256_andnot_ps(sign_mask, _mm256_loadu_ps(v + i)));
+  }
+  alignas(kVectorStorageAlign) float lanes[kAvx2F32Lanes];
+  _mm256_store_ps(lanes, acc0);
+  float max_abs = lanes[0];
+  for (uint32_t lane = 1; lane < kAvx2F32Lanes; ++lane) {
+    if (lanes[lane] > max_abs) {
+      max_abs = lanes[lane];
+    }
+  }
+  for (; i < dim; ++i) {
+    const float abs_value = std::fabs(v[i]);
+    if (abs_value > max_abs) {
+      max_abs = abs_value;
+    }
+  }
+  return max_abs;
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+  float32x4_t acc0 = vdupq_n_f32(0.0f);
+  float32x4_t acc1 = vdupq_n_f32(0.0f);
+  float32x4_t acc2 = vdupq_n_f32(0.0f);
+  float32x4_t acc3 = vdupq_n_f32(0.0f);
+  uint32_t i = 0;
+  for (; i + kNeonUnrollF32 <= dim; i += kNeonUnrollF32) {
+    acc0 = vmaxq_f32(acc0, vabsq_f32(vld1q_f32(v + i)));
+    acc1 = vmaxq_f32(acc1, vabsq_f32(vld1q_f32(v + i + kNeonOffset1)));
+    acc2 = vmaxq_f32(acc2, vabsq_f32(vld1q_f32(v + i + kNeonOffset2)));
+    acc3 = vmaxq_f32(acc3, vabsq_f32(vld1q_f32(v + i + kNeonOffset3)));
+  }
+  acc0 = vmaxq_f32(vmaxq_f32(acc0, acc1), vmaxq_f32(acc2, acc3));
+  for (; i + kNeonF32Lanes <= dim; i += kNeonF32Lanes) {
+    acc0 = vmaxq_f32(acc0, vabsq_f32(vld1q_f32(v + i)));
+  }
+  float max_abs = vmaxvq_f32(acc0);
+  for (; i < dim; ++i) {
+    const float abs_value = std::fabs(v[i]);
+    if (abs_value > max_abs) {
+      max_abs = abs_value;
+    }
+  }
+  return max_abs;
+#else
+  float max_abs = 0.0f;
+  for (uint32_t i = 0; i < dim; ++i) {
+    const float abs_value = std::fabs(v[i]);
+    if (abs_value > max_abs) {
+      max_abs = abs_value;
+    }
+  }
+  return max_abs;
+#endif
+}
+
+void scale_f32_vector(float* dst, const float* src, float scale, uint32_t dim) {
+#if defined(__AVX2__)
+  const __m256 scale_v = _mm256_set1_ps(scale);
+  uint32_t i = 0;
+  for (; i + kAvx2UnrollF32 <= dim; i += kAvx2UnrollF32) {
+    _mm256_storeu_ps(dst + i, _mm256_mul_ps(_mm256_loadu_ps(src + i), scale_v));
+    _mm256_storeu_ps(dst + i + kAvx2Offset1,
+                     _mm256_mul_ps(_mm256_loadu_ps(src + i + kAvx2Offset1), scale_v));
+    _mm256_storeu_ps(dst + i + kAvx2Offset2,
+                     _mm256_mul_ps(_mm256_loadu_ps(src + i + kAvx2Offset2), scale_v));
+    _mm256_storeu_ps(dst + i + kAvx2Offset3,
+                     _mm256_mul_ps(_mm256_loadu_ps(src + i + kAvx2Offset3), scale_v));
+  }
+  for (; i + kAvx2F32Lanes <= dim; i += kAvx2F32Lanes) {
+    _mm256_storeu_ps(dst + i, _mm256_mul_ps(_mm256_loadu_ps(src + i), scale_v));
+  }
+  for (; i < dim; ++i) {
+    dst[i] = src[i] * scale;
+  }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+  const float32x4_t scale_v = vdupq_n_f32(scale);
+  uint32_t i = 0;
+  for (; i + kNeonUnrollF32 <= dim; i += kNeonUnrollF32) {
+    vst1q_f32(dst + i, vmulq_f32(vld1q_f32(src + i), scale_v));
+    vst1q_f32(dst + i + kNeonOffset1, vmulq_f32(vld1q_f32(src + i + kNeonOffset1), scale_v));
+    vst1q_f32(dst + i + kNeonOffset2, vmulq_f32(vld1q_f32(src + i + kNeonOffset2), scale_v));
+    vst1q_f32(dst + i + kNeonOffset3, vmulq_f32(vld1q_f32(src + i + kNeonOffset3), scale_v));
+  }
+  for (; i + kNeonF32Lanes <= dim; i += kNeonF32Lanes) {
+    vst1q_f32(dst + i, vmulq_f32(vld1q_f32(src + i), scale_v));
+  }
+  for (; i < dim; ++i) {
+    dst[i] = src[i] * scale;
+  }
+#else
+  for (uint32_t i = 0; i < dim; ++i) {
+    dst[i] = src[i] * scale;
+  }
+#endif
+}
+
 inline uint32_t f32_bits(float value) {
   uint32_t bits = 0;
   std::memcpy(&bits, &value, sizeof(bits));
@@ -1664,13 +1774,7 @@ inline int32_t round_scaled_q8(float value) {
 }
 
 void quantize_q8_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
-  float max_abs = 0.0f;
-  for (uint32_t i = 0; i < dim; ++i) {
-    const float abs_value = std::fabs(src[i]);
-    if (abs_value > max_abs) {
-      max_abs = abs_value;
-    }
-  }
+  const float max_abs = max_abs_f32(src, dim);
   const float scale = max_abs > 0.0f ? max_abs / kQ8MaxFloat : 1.0f;
   const float inv_scale = 1.0f / scale;
   for (uint32_t i = 0; i < dim; ++i) {
@@ -1726,13 +1830,7 @@ int8_t round_scaled_e2m3(float value) {
 }
 
 void quantize_e2m3_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
-  float max_abs = 0.0f;
-  for (uint32_t i = 0; i < dim; ++i) {
-    const float abs_value = std::fabs(src[i]);
-    if (abs_value > max_abs) {
-      max_abs = abs_value;
-    }
-  }
+  const float max_abs = max_abs_f32(src, dim);
   const float scale = max_abs > 0.0f ? max_abs / kE2M3MaxFloat : 1.0f;
   const float inv_scale = static_cast<float>(kE2M3Scale) / scale;
   for (uint32_t i = 0; i < dim; ++i) {
@@ -1764,13 +1862,7 @@ inline float e3m2_scaled_to_f32(int16_t scaled, float scale) {
 }
 
 void quantize_e3m2_vector(int16_t* dst, float* out_scale, const float* src, uint32_t dim) {
-  float max_abs = 0.0f;
-  for (uint32_t i = 0; i < dim; ++i) {
-    const float abs_value = std::fabs(src[i]);
-    if (abs_value > max_abs) {
-      max_abs = abs_value;
-    }
-  }
+  const float max_abs = max_abs_f32(src, dim);
   const float scale = max_abs > 0.0f ? max_abs / kE3M2MaxFloat : 1.0f;
   const float inv_scale = static_cast<float>(kE3M2Scale) / scale;
   for (uint32_t i = 0; i < dim; ++i) {
@@ -1788,9 +1880,7 @@ void quantize_e3m2_cosine_vector(int16_t* dst, float* out_scale, const float* sr
   }
   float normalized[kMaxDim];
   const float inv_norm = 1.0f / norm;
-  for (uint32_t i = 0; i < dim; ++i) {
-    normalized[i] = src[i] * inv_norm;
-  }
+  scale_f32_vector(normalized, src, inv_norm, dim);
   quantize_e3m2_vector(dst, out_scale, normalized, dim);
 }
 
@@ -1803,20 +1893,12 @@ void quantize_e2m3_cosine_vector(int8_t* dst, float* out_scale, const float* src
   }
   float normalized[kMaxDim];
   const float inv_norm = 1.0f / norm;
-  for (uint32_t i = 0; i < dim; ++i) {
-    normalized[i] = src[i] * inv_norm;
-  }
+  scale_f32_vector(normalized, src, inv_norm, dim);
   quantize_e2m3_vector(dst, out_scale, normalized, dim);
 }
 
 void quantize_e5m2_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
-  float max_abs = 0.0f;
-  for (uint32_t i = 0; i < dim; ++i) {
-    const float abs_value = std::fabs(src[i]);
-    if (abs_value > max_abs) {
-      max_abs = abs_value;
-    }
-  }
+  const float max_abs = max_abs_f32(src, dim);
   const float scale = max_abs > 0.0f ? max_abs / kE5M2MaxFloat : 1.0f;
   const float inv_scale = 1.0f / scale;
   for (uint32_t i = 0; i < dim; ++i) {
@@ -1834,9 +1916,7 @@ void quantize_e5m2_cosine_vector(int8_t* dst, float* out_scale, const float* src
   }
   float normalized[kMaxDim];
   const float inv_norm = 1.0f / norm;
-  for (uint32_t i = 0; i < dim; ++i) {
-    normalized[i] = src[i] * inv_norm;
-  }
+  scale_f32_vector(normalized, src, inv_norm, dim);
   quantize_e5m2_vector(dst, out_scale, normalized, dim);
 }
 
@@ -1853,9 +1933,7 @@ inline float cosine_scale(const float* v, uint32_t dim) {
 void normalize_f32_vector(float* dst, const float* src, uint32_t dim) {
   const float norm = vector_norm(src, dim);
   const float inv_norm = norm > 0.0f ? 1.0f / norm : 0.0f;
-  for (uint32_t i = 0; i < dim; ++i) {
-    dst[i] = src[i] * inv_norm;
-  }
+  scale_f32_vector(dst, src, inv_norm, dim);
 }
 
 inline float cosine_scale_q8(const int8_t* v, float scale, uint32_t dim) {
