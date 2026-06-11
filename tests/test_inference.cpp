@@ -2979,6 +2979,61 @@ TEST(inference_memory_index_q8_storage_mock) {
     astral_memory_destroy(index);
 }
 
+TEST(inference_memory_index_q8_quantizes_eight_lane_mock) {
+  constexpr uint32_t kDim = 8;
+  constexpr uint32_t kCapacity = 1;
+  constexpr uint32_t kRecordCount = 1;
+  constexpr uint64_t kKey = 1701;
+  const int8_t expected[kDim] = {127, 64, -127, -64, 62, -62, 0, 0};
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = kCapacity;
+  desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+  desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  AstralMemoryRecord record{};
+  record.size = sizeof(AstralMemoryRecord);
+  record.key = kKey;
+  const float vector[kDim] = {1.0f, 0.5f, -1.0f, -0.5f, 0.49f, -0.49f, 0.003f, -0.003f};
+  err = astral_memory_add_batch(index, &record, vector, kRecordCount);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  uint64_t save_bytes = 0;
+  err = astral_memory_save_size(index, &save_bytes);
+  ASSERT_EQ(err, ASTRAL_OK);
+  std::string blob;
+  blob.resize(static_cast<size_t>(save_bytes));
+  AstralMutSpanU8 out_blob{};
+  out_blob.data = reinterpret_cast<uint8_t*>(&blob[0]);
+  out_blob.len = static_cast<uint32_t>(blob.size());
+  uint64_t written = 0;
+  err = astral_memory_save(index, out_blob, &written);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(written, save_bytes);
+
+  AstralSpanU8 blob_span{};
+  blob_span.data = reinterpret_cast<const uint8_t*>(blob.data());
+  blob_span.len = static_cast<uint32_t>(blob.size());
+  AstralMemorySnapshotInfo snapshot{};
+  snapshot.size = sizeof(AstralMemorySnapshotInfo);
+  err = astral_memory_snapshot_info(blob_span, &snapshot);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(snapshot.vector_stride, static_cast<uint64_t>(kDim) * sizeof(int8_t));
+  const int8_t* saved = reinterpret_cast<const int8_t*>(blob.data() + snapshot.vector_offset);
+  for (uint32_t i = 0; i < kDim; ++i) {
+    ASSERT_EQ(saved[i], expected[i]);
+  }
+
+  astral_memory_destroy(index);
+}
+
 TEST(inference_memory_index_q8_f32_rerank_storage_mock) {
   constexpr uint32_t kDim = 4;
   constexpr uint32_t kCapacity = 4;

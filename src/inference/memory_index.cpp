@@ -366,6 +366,21 @@ inline __m256i dot_i8x16_avx2(const int8_t* a, const int8_t* b, __m256i ones) {
   const __m256i b16 = _mm256_cvtepi8_epi16(bv);
   return _mm256_madd_epi16(_mm256_mullo_epi16(a16, b16), ones);
 }
+
+inline void quantize_q8_store8_avx2(int8_t* dst, const float* src, __m256 inv_scale,
+                                    __m256 positive_bias, __m256 negative_bias, __m256 zero,
+                                    __m256i min_value, __m256i max_value) {
+  const __m256 scaled = _mm256_mul_ps(_mm256_loadu_ps(src), inv_scale);
+  const __m256 bias =
+      _mm256_blendv_ps(negative_bias, positive_bias, _mm256_cmp_ps(scaled, zero, _CMP_GE_OQ));
+  __m256i rounded = _mm256_cvttps_epi32(_mm256_add_ps(scaled, bias));
+  rounded = _mm256_max_epi32(min_value, _mm256_min_epi32(max_value, rounded));
+  const __m128i lo = _mm256_castsi256_si128(rounded);
+  const __m128i hi = _mm256_extracti128_si256(rounded, 1);
+  const __m128i packed16 = _mm_packs_epi32(lo, hi);
+  const __m128i packed8 = _mm_packs_epi16(packed16, _mm_setzero_si128());
+  _mm_storel_epi64(reinterpret_cast<__m128i*>(dst), packed8);
+}
 #endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
 inline float32x4_t neon_i8_low_to_f32(int8x8_t bytes) {
@@ -1777,7 +1792,20 @@ void quantize_q8_vector(int8_t* dst, float* out_scale, const float* src, uint32_
   const float max_abs = max_abs_f32(src, dim);
   const float scale = max_abs > 0.0f ? max_abs / kQ8MaxFloat : 1.0f;
   const float inv_scale = 1.0f / scale;
-  for (uint32_t i = 0; i < dim; ++i) {
+  uint32_t i = 0;
+#if defined(__AVX2__)
+  const __m256 inv_scale_v = _mm256_set1_ps(inv_scale);
+  const __m256 positive_bias = _mm256_set1_ps(0.5f);
+  const __m256 negative_bias = _mm256_set1_ps(-0.5f);
+  const __m256 zero = _mm256_setzero_ps();
+  const __m256i min_value = _mm256_set1_epi32(kQ8MinValue);
+  const __m256i max_value = _mm256_set1_epi32(kQ8MaxValue);
+  for (; i + kAvx2F32Lanes <= dim; i += kAvx2F32Lanes) {
+    quantize_q8_store8_avx2(dst + i, src + i, inv_scale_v, positive_bias, negative_bias, zero,
+                            min_value, max_value);
+  }
+#endif
+  for (; i < dim; ++i) {
     int32_t v = round_scaled_q8(src[i] * inv_scale);
     if (v < kQ8MinValue) {
       v = kQ8MinValue;
