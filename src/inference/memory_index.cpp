@@ -1996,6 +1996,10 @@ struct GraphSearchScratch {
   float* top_scores;
   uint32_t* visited;
   uint32_t visit_generation;
+  uint32_t candidate_worst_pos;
+  uint32_t candidate_worst_slot;
+  float candidate_worst_score;
+  uint8_t candidate_worst_valid;
 };
 
 struct MemoryIndex {
@@ -3512,10 +3516,28 @@ inline bool graph_query_was_visited(const GraphSearchScratch* scratch, uint32_t 
 
 void graph_query_begin_visit(const MemoryIndex* index, GraphSearchScratch* scratch) {
   ++scratch->visit_generation;
+  scratch->candidate_worst_valid = 0;
   if (scratch->visit_generation == 0) {
     std::memset(scratch->visited, 0, sizeof(uint32_t) * index->capacity);
     scratch->visit_generation = 1;
   }
+}
+
+void graph_query_refresh_worst_candidate(MemoryIndex* index, GraphSearchScratch* scratch,
+                                         uint32_t count) {
+  uint32_t worst_pos = 0;
+  float worst_score = scratch->candidate_scores[0];
+  for (uint32_t i = 1; i < count; ++i) {
+    if (graph_candidate_worse(index, scratch->candidate_scores[i], scratch->candidates[i],
+                              worst_score, scratch->candidates[worst_pos])) {
+      worst_score = scratch->candidate_scores[i];
+      worst_pos = i;
+    }
+  }
+  scratch->candidate_worst_pos = worst_pos;
+  scratch->candidate_worst_slot = scratch->candidates[worst_pos];
+  scratch->candidate_worst_score = worst_score;
+  scratch->candidate_worst_valid = 1;
 }
 
 void graph_query_add_candidate(MemoryIndex* index, GraphSearchScratch* scratch, uint32_t capacity,
@@ -3539,16 +3561,12 @@ void graph_query_add_candidate(MemoryIndex* index, GraphSearchScratch* scratch, 
     return;
   }
 
-  uint32_t worst_pos = 0;
-  float worst_score = scratch->candidate_scores[0];
-  for (uint32_t i = 1; i < count; ++i) {
-    if (graph_candidate_worse(index, scratch->candidate_scores[i], scratch->candidates[i],
-                              worst_score, scratch->candidates[worst_pos])) {
-      worst_score = scratch->candidate_scores[i];
-      worst_pos = i;
-    }
+  if (scratch->candidate_worst_valid == 0) {
+    graph_query_refresh_worst_candidate(index, scratch, count);
   }
-  if (graph_candidate_better(index, score, slot, worst_score, scratch->candidates[worst_pos])) {
+  if (graph_candidate_better(index, score, slot, scratch->candidate_worst_score,
+                             scratch->candidate_worst_slot)) {
+    const uint32_t worst_pos = scratch->candidate_worst_pos;
     uint32_t pos = worst_pos;
     bool moved_up = false;
     while (pos > 0) {
@@ -3587,6 +3605,7 @@ void graph_query_add_candidate(MemoryIndex* index, GraphSearchScratch* scratch, 
     }
     scratch->candidates[pos] = slot;
     scratch->candidate_scores[pos] = score;
+    scratch->candidate_worst_valid = 0;
   }
 }
 
@@ -3628,6 +3647,7 @@ bool graph_query_pop_candidate(MemoryIndex* index, GraphSearchScratch* scratch,
     scratch->candidate_scores[pos] = score;
   }
   *candidate_count = count;
+  scratch->candidate_worst_valid = 0;
   return true;
 }
 
@@ -3722,9 +3742,16 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
 
 void memory_search_graph(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                          AstralMemorySearchResult* out_results, uint32_t* out_count) {
-  GraphSearchScratch scratch{index->graph_candidates,    index->graph_candidate_scores,
-                             index->graph_scratch_slots, index->graph_scratch_scores,
-                             index->graph_visited,       index->graph_visit_generation};
+  GraphSearchScratch scratch{index->graph_candidates,
+                             index->graph_candidate_scores,
+                             index->graph_scratch_slots,
+                             index->graph_scratch_scores,
+                             index->graph_visited,
+                             index->graph_visit_generation,
+                             0u,
+                             kU32Max,
+                             kWorstScore,
+                             0u};
   memory_search_graph_with_scratch(index, desc, query, out_results, out_count, &scratch);
 }
 
@@ -6195,21 +6222,27 @@ void snapshot_graph_add_candidate(SnapshotBytes bytes, const AstralMemorySnapsho
     return;
   }
 
-  uint32_t worst_pos = 0;
-  float worst_score = scratch->candidate_scores[0];
-  for (uint32_t i = 1; i < count; ++i) {
-    if (snapshot_graph_worse(bytes, info, scratch->candidate_scores[i], scratch->candidates[i],
-                             worst_score, scratch->candidates[worst_pos])) {
-      worst_score = scratch->candidate_scores[i];
-      worst_pos = i;
+  if (scratch->candidate_worst_valid == 0) {
+    uint32_t worst_pos = 0;
+    float worst_score = scratch->candidate_scores[0];
+    for (uint32_t i = 1; i < count; ++i) {
+      if (snapshot_graph_worse(bytes, info, scratch->candidate_scores[i], scratch->candidates[i],
+                               worst_score, scratch->candidates[worst_pos])) {
+        worst_score = scratch->candidate_scores[i];
+        worst_pos = i;
+      }
     }
+    scratch->candidate_worst_pos = worst_pos;
+    scratch->candidate_worst_slot = scratch->candidates[worst_pos];
+    scratch->candidate_worst_score = worst_score;
+    scratch->candidate_worst_valid = 1;
   }
-  if (!snapshot_graph_better(bytes, info, score, slot, worst_score,
-                             scratch->candidates[worst_pos])) {
+  if (!snapshot_graph_better(bytes, info, score, slot, scratch->candidate_worst_score,
+                             scratch->candidate_worst_slot)) {
     return;
   }
 
-  uint32_t pos = worst_pos;
+  uint32_t pos = scratch->candidate_worst_pos;
   bool moved_up = false;
   while (pos > 0) {
     const uint32_t parent = (pos - 1u) >> 1u;
@@ -6247,6 +6280,7 @@ void snapshot_graph_add_candidate(SnapshotBytes bytes, const AstralMemorySnapsho
   }
   scratch->candidates[pos] = slot;
   scratch->candidate_scores[pos] = score;
+  scratch->candidate_worst_valid = 0;
 }
 
 bool snapshot_graph_pop_candidate(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
@@ -6289,11 +6323,13 @@ bool snapshot_graph_pop_candidate(SnapshotBytes bytes, const AstralMemorySnapsho
     scratch->candidate_scores[pos] = score;
   }
   *candidate_count = count;
+  scratch->candidate_worst_valid = 0;
   return true;
 }
 
 void snapshot_graph_begin_visit(const AstralMemorySnapshotInfo* info, GraphSearchScratch* scratch) {
   ++scratch->visit_generation;
+  scratch->candidate_worst_valid = 0;
   if (scratch->visit_generation == 0) {
     std::memset(scratch->visited, 0, sizeof(uint32_t) * info->count);
     scratch->visit_generation = 1;
