@@ -102,6 +102,11 @@ constexpr uint32_t kE3M2CodeCount = 32;
 constexpr float kE3M2MaxFloat = 28.0f;
 constexpr int32_t kE3M2Scale = 16;
 constexpr float kE3M2InvScale = 1.0f / static_cast<float>(kE3M2Scale);
+constexpr uint32_t kE3M2MaxScaled = 448;
+constexpr float kE3M2TieBias = 0.5f;
+constexpr float kE3M2UnitBandMaxThreshold = 7.5f;
+constexpr uint32_t kE3M2UnitBandMaxScaled = 8;
+constexpr uint32_t kE3M2StepBandCount = 6;
 constexpr uint32_t kF32SignShift = 31;
 constexpr uint32_t kF32ExponentShift = 23;
 constexpr uint32_t kF32ExponentMask = 0xFFu;
@@ -1868,21 +1873,34 @@ void quantize_e2m3_vector(int8_t* dst, float* out_scale, const float* src, uint3
 }
 
 inline int16_t e3m2_nearest_scaled(float value) {
-  static constexpr int16_t kScaledMagnitudes[kE3M2CodeCount] = {
-      0,  1,  2,  3,  4,  5,  6,  7,   8,   10,  12,  14,  16,  20,  24,  28,
-      32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448};
+  static constexpr uint32_t kBandBase[kE3M2StepBandCount] = {8, 16, 32, 64, 128, 256};
+  static constexpr float kBandHoldThreshold[kE3M2StepBandCount] = {9.0f,  18.0f,  36.0f,
+                                                                   72.0f, 144.0f, 288.0f};
+  static constexpr float kBandStepEndThreshold[kE3M2StepBandCount] = {15.0f,  30.0f,  60.0f,
+                                                                      120.0f, 240.0f, 416.0f};
+  static constexpr uint32_t kBandStep[kE3M2StepBandCount] = {2, 4, 8, 16, 32, 64};
+  static constexpr float kBandInvStep[kE3M2StepBandCount] = {0.5f,    0.25f,    0.125f,
+                                                             0.0625f, 0.03125f, 0.015625f};
   const float abs_value = std::fabs(value);
-  uint32_t best_i = 0;
-  float best_delta = std::fabs(abs_value - static_cast<float>(kScaledMagnitudes[0]));
-  for (uint32_t i = 1; i < kE3M2CodeCount; ++i) {
-    const float delta = std::fabs(abs_value - static_cast<float>(kScaledMagnitudes[i]));
-    if (delta < best_delta) {
-      best_delta = delta;
-      best_i = i;
+  uint32_t scaled = kE3M2MaxScaled;
+  if (abs_value <= kE3M2UnitBandMaxThreshold) {
+    scaled = abs_value <= kE3M2TieBias ? 0u : ceil_positive_to_u32(abs_value - kE3M2TieBias);
+  } else {
+    for (uint32_t band = 0; band < kE3M2StepBandCount; ++band) {
+      if (abs_value <= kBandHoldThreshold[band]) {
+        scaled = kBandBase[band];
+        break;
+      }
+      if (abs_value <= kBandStepEndThreshold[band]) {
+        scaled = kBandBase[band] +
+                 kBandStep[band] * ceil_positive_to_u32((abs_value - kBandHoldThreshold[band]) *
+                                                        kBandInvStep[band]);
+        break;
+      }
     }
   }
-  const int16_t scaled = kScaledMagnitudes[best_i];
-  return value < 0.0f ? static_cast<int16_t>(-scaled) : scaled;
+  return value < 0.0f ? static_cast<int16_t>(-static_cast<int16_t>(scaled))
+                      : static_cast<int16_t>(scaled);
 }
 
 inline float e3m2_scaled_to_f32(int16_t scaled, float scale) {
