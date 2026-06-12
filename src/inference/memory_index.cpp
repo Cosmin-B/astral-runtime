@@ -2810,7 +2810,7 @@ void insert_result(AstralMemorySearchResult* results, uint32_t top_k, uint32_t* 
 }
 
 void refine_graph_neighbor_list(MemoryIndex* index, uint32_t owner_slot, uint32_t candidate_slot,
-                                uint32_t level) {
+                                float candidate_score, uint32_t level) {
   if (owner_slot == candidate_slot) {
     return;
   }
@@ -2829,7 +2829,6 @@ void refine_graph_neighbor_list(MemoryIndex* index, uint32_t owner_slot, uint32_
     return;
   }
 
-  const float candidate_score = score_pair(index, owner_slot, candidate_slot);
   uint32_t weakest_slot = neighbors[0];
   float weakest_score = score_pair(index, owner_slot, weakest_slot);
   for (uint32_t i = 0; i < count; ++i) {
@@ -2932,8 +2931,8 @@ bool graph_neighbor_diverse_except(MemoryIndex* index, uint32_t candidate_slot,
 }
 
 void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t level,
-                            uint32_t candidate_count, uint32_t* neighbors, uint32_t* out_count,
-                            uint32_t selection_capacity) {
+                            uint32_t candidate_count, uint32_t* neighbors, float* neighbor_scores,
+                            uint32_t* out_count, uint32_t selection_capacity) {
   uint32_t selected = 0;
   const uint32_t capacity = selection_capacity;
   for (uint32_t i = 0; i < candidate_count && selected < capacity; ++i) {
@@ -2944,6 +2943,7 @@ void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t le
     }
     if (graph_neighbor_diverse(index, candidate, candidate_score, neighbors, selected)) {
       neighbors[selected] = candidate;
+      neighbor_scores[selected] = candidate_score;
       ++selected;
     }
   }
@@ -2954,6 +2954,7 @@ void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t le
       continue;
     }
     neighbors[selected] = candidate;
+    neighbor_scores[selected] = index->graph_scratch_scores[i];
     ++selected;
   }
   *out_count = selected;
@@ -3342,11 +3343,12 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
     uint32_t filled = 0;
     const uint32_t level_capacity = graph_neighbor_capacity_at_level(index, level);
     const uint32_t outgoing_capacity = graph_outgoing_capacity_at_level(index, level);
-    graph_select_neighbors(index, slot, level, candidate_count, neighbors, &filled,
+    float neighbor_scores[kGraphMaxBaseNeighbors];
+    graph_select_neighbors(index, slot, level, candidate_count, neighbors, neighbor_scores, &filled,
                            outgoing_capacity);
     graph_neighbor_count_ref(index, slot, level) = filled;
     for (uint32_t i = 0; i < filled; ++i) {
-      refine_graph_neighbor_list(index, neighbors[i], slot, level);
+      refine_graph_neighbor_list(index, neighbors[i], slot, neighbor_scores[i], level);
     }
     if (level == 0 && kGraphLongLinkCount != 0 &&
         level_capacity == index->graph_neighbor_capacity && index->count > level_capacity &&
