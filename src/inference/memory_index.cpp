@@ -2015,6 +2015,7 @@ struct MemoryIndex {
   int8_t* q8_vectors;
   int16_t* i16_vectors;
   float* q8_scales;
+  float* compact_score_scales;
   uint32_t* active_slots;
   uint32_t* key_table;
   uint32_t* graph_neighbors;
@@ -2337,6 +2338,14 @@ inline float compact_value_scale_kind(AstralMemoryStorageKind kind, float scale)
                                                  : scale;
 }
 
+inline void update_compact_score_scale(MemoryIndex* index, uint32_t slot) {
+  float scale = compact_value_scale(index, index->q8_scales[slot]);
+  if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+    scale *= index->slots[slot].score_scale;
+  }
+  index->compact_score_scales[slot] = scale;
+}
+
 void quantize_compact_query(const MemoryIndex* index, int8_t* dst, float* out_scale,
                             const float* src) {
   if (e2m3_storage(index)) {
@@ -2615,17 +2624,17 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
     return l2_score_f32(query, vector_at(index, slot), index->dim);
   }
   if (compact_storage(index)) {
-    const float scale = compact_value_scale(index, index->q8_scales[slot]);
+    const float scale = index->compact_score_scales[slot];
     if (i16_storage(index)) {
       const int16_t* v = i16_vector_at(index, slot);
       if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
         return dot_i16_f32(v, query, index->dim) * scale;
       }
       if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-        return dot_i16_f32(v, query, index->dim) * scale * query_scale *
-               index->slots[slot].score_scale;
+        return dot_i16_f32(v, query, index->dim) * scale * query_scale;
       }
-      return l2_score_i16_f32(v, scale, query, index->dim);
+      return l2_score_i16_f32(v, compact_value_scale(index, index->q8_scales[slot]), query,
+                              index->dim);
     }
     const int8_t* q8 = q8_vector_at(index, slot);
     if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
@@ -2636,10 +2645,13 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       return (e5m2_storage(index) ? dot_e5m2_f32(q8, query, index->dim)
                                   : dot_q8_f32(q8, query, index->dim)) *
-             scale * query_scale * index->slots[slot].score_scale;
+             scale * query_scale;
     }
-    return e5m2_storage(index) ? l2_score_e5m2_f32(q8, scale, query, index->dim)
-                               : l2_score_q8_f32(q8, scale, query, index->dim);
+    return e5m2_storage(index)
+               ? l2_score_e5m2_f32(q8, compact_value_scale(index, index->q8_scales[slot]), query,
+                                   index->dim)
+               : l2_score_q8_f32(q8, compact_value_scale(index, index->q8_scales[slot]), query,
+                                 index->dim);
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
     return dot_f32(query, vector_at(index, slot), index->dim);
@@ -2653,7 +2665,7 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
 inline float score_slot_compact_query(MemoryIndex* index, const int8_t* query, float query_scale,
                                       uint32_t slot, float cosine_query_scale) {
   const int8_t* q8 = q8_vector_at(index, slot);
-  const float scale = compact_value_scale(index, index->q8_scales[slot]);
+  const float scale = index->compact_score_scales[slot];
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
     return (e5m2_storage(index) ? dot_e5m2_e5m2(q8, query, index->dim)
                                 : dot_q8_q8(q8, query, index->dim)) *
@@ -2662,10 +2674,13 @@ inline float score_slot_compact_query(MemoryIndex* index, const int8_t* query, f
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
     return (e5m2_storage(index) ? dot_e5m2_e5m2(q8, query, index->dim)
                                 : dot_q8_q8(q8, query, index->dim)) *
-           scale * query_scale * cosine_query_scale * index->slots[slot].score_scale;
+           scale * query_scale * cosine_query_scale;
   }
-  return e5m2_storage(index) ? l2_score_e5m2_e5m2(q8, scale, query, query_scale, index->dim)
-                             : l2_score_q8_q8(q8, scale, query, query_scale, index->dim);
+  return e5m2_storage(index)
+             ? l2_score_e5m2_e5m2(q8, compact_value_scale(index, index->q8_scales[slot]), query,
+                                  query_scale, index->dim)
+             : l2_score_q8_q8(q8, compact_value_scale(index, index->q8_scales[slot]), query,
+                              query_scale, index->dim);
 }
 
 inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
@@ -2681,17 +2696,17 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
     return dot_f32(va, vector_at(index, b), index->dim);
   }
   if (compact_storage(index)) {
-    const float scale_a = compact_value_scale(index, index->q8_scales[a]);
-    const float scale_b = compact_value_scale(index, index->q8_scales[b]);
+    const float scale_a = index->compact_score_scales[a];
+    const float scale_b = index->compact_score_scales[b];
     if (i16_storage(index)) {
       const int16_t* va = i16_vector_at(index, a);
       const int16_t* vb = i16_vector_at(index, b);
       if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-        return dot_i16_i16(va, vb, index->dim) * scale_a * scale_b * index->slots[a].score_scale *
-               index->slots[b].score_scale;
+        return dot_i16_i16(va, vb, index->dim) * scale_a * scale_b;
       }
       if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
-        return l2_score_i16_i16(va, scale_a, vb, scale_b, index->dim);
+        return l2_score_i16_i16(va, compact_value_scale(index, index->q8_scales[a]), vb,
+                                compact_value_scale(index, index->q8_scales[b]), index->dim);
       }
       return dot_i16_i16(va, vb, index->dim) * scale_a * scale_b;
     }
@@ -2700,11 +2715,14 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       return (e5m2_storage(index) ? dot_e5m2_e5m2(va, vb, index->dim)
                                   : dot_q8_q8(va, vb, index->dim)) *
-             scale_a * scale_b * index->slots[a].score_scale * index->slots[b].score_scale;
+             scale_a * scale_b;
     }
     if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
-      return e5m2_storage(index) ? l2_score_e5m2_e5m2(va, scale_a, vb, scale_b, index->dim)
-                                 : l2_score_q8_q8(va, scale_a, vb, scale_b, index->dim);
+      return e5m2_storage(index)
+                 ? l2_score_e5m2_e5m2(va, compact_value_scale(index, index->q8_scales[a]), vb,
+                                      compact_value_scale(index, index->q8_scales[b]), index->dim)
+                 : l2_score_q8_q8(va, compact_value_scale(index, index->q8_scales[a]), vb,
+                                  compact_value_scale(index, index->q8_scales[b]), index->dim);
     }
     return (e5m2_storage(index) ? dot_e5m2_e5m2(va, vb, index->dim)
                                 : dot_q8_q8(va, vb, index->dim)) *
@@ -4799,6 +4817,10 @@ void destroy_allocations(MemoryIndex* index) {
     core::runtime_free_array(index->q8_scales, index->capacity);
     index->q8_scales = nullptr;
   }
+  if (index->compact_score_scales != nullptr) {
+    core::runtime_free_array(index->compact_score_scales, index->capacity);
+    index->compact_score_scales = nullptr;
+  }
   if (index->active_slots != nullptr) {
     core::runtime_free_array(index->active_slots, index->capacity);
     index->active_slots = nullptr;
@@ -4900,6 +4922,7 @@ void memory_add_preprocess_range(MemoryIndex* index, const float* vectors, const
           index->metric == ASTRAL_MEMORY_METRIC_COSINE
               ? (q8_storage(index) ? cosine_scale(src, index->dim) : 1.0f)
               : 0.0f;
+      update_compact_score_scale(index, slot);
     }
   }
 }
@@ -5037,6 +5060,9 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->q8_scales = compact_storage_kind(desc->storage_kind)
                          ? core::runtime_alloc_array<float>(desc->capacity)
                          : nullptr;
+  index->compact_score_scales = compact_storage_kind(desc->storage_kind)
+                                    ? core::runtime_alloc_array<float>(desc->capacity)
+                                    : nullptr;
   index->active_slots = core::runtime_alloc_array<uint32_t>(desc->capacity);
   index->key_table = core::runtime_alloc_array<uint32_t>(key_table_capacity);
   index->graph_neighbors = nullptr;
@@ -5114,7 +5140,8 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
       ((desc->storage_kind == ASTRAL_MEMORY_STORAGE_F32 ||
         f32_rerank_storage_kind(desc->storage_kind)) &&
        index->vectors == nullptr) ||
-      (compact_storage_kind(desc->storage_kind) && index->q8_scales == nullptr) ||
+      (compact_storage_kind(desc->storage_kind) &&
+       (index->q8_scales == nullptr || index->compact_score_scales == nullptr)) ||
       (compact_storage_kind(desc->storage_kind) && !i16_storage_kind(desc->storage_kind) &&
        index->q8_vectors == nullptr) ||
       (i16_storage_kind(desc->storage_kind) && index->i16_vectors == nullptr) ||
@@ -5140,6 +5167,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
                   static_cast<size_t>(desc->capacity) * desc->dim * sizeof(int8_t));
     }
     std::memset(index->q8_scales, 0, sizeof(float) * desc->capacity);
+    std::memset(index->compact_score_scales, 0, sizeof(float) * desc->capacity);
   }
   if (graph_neighbor_capacity != 0) {
     std::memset(index->graph_neighbors, 0, sizeof(uint32_t) * graph_neighbor_storage_count(index));
@@ -6852,6 +6880,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
           }
         }
       }
+      update_compact_score_scale(index, slot);
     } else {
       store_f32_vector(index, slot, vector);
     }
