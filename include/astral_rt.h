@@ -276,7 +276,7 @@ typedef struct AstralMemoryIndexDesc {
     uint32_t graph_neighbors;
     /* Graph construction expansion for ASTRAL_MEMORY_INDEX_GRAPH; 0 selects the runtime default. */
     uint32_t graph_search;
-    /* Default query expansion for ASTRAL_MEMORY_INDEX_GRAPH; 0 selects graph_search. */
+    /* Default query expansion for ASTRAL_MEMORY_INDEX_GRAPH; 0 selects the runtime default. */
     uint32_t graph_query_search;
     AstralMemoryStorageKind storage_kind;
 } AstralMemoryIndexDesc;

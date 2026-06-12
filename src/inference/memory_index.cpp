@@ -53,7 +53,8 @@ constexpr uint32_t kGraphDefaultNeighbors = 64;
 constexpr uint32_t kGraphMaxNeighbors = 64;
 constexpr uint32_t kGraphBaseNeighborMultiplier = 2;
 constexpr uint32_t kGraphMaxBaseNeighbors = kGraphMaxNeighbors * kGraphBaseNeighborMultiplier;
-constexpr uint32_t kGraphDefaultEfConstruction = 68;
+constexpr uint32_t kGraphDefaultEfConstruction = 128;
+constexpr uint32_t kGraphDefaultEfSearch = 64;
 constexpr uint32_t kGraphMinSearch = 4;
 constexpr uint32_t kGraphCandidateReserveMultiplier = 4;
 constexpr uint32_t kGraphLongLinkCount = 0;
@@ -291,12 +292,12 @@ inline uint32_t graph_search_from_desc(const AstralMemoryIndexDesc* desc) {
   return requested < kGraphMinSearch ? kGraphMinSearch : requested;
 }
 
-inline uint32_t graph_query_search_from_desc(const AstralMemoryIndexDesc* desc,
-                                             uint32_t graph_search) {
+inline uint32_t graph_query_search_from_desc(const AstralMemoryIndexDesc* desc) {
   if (desc->index_kind != ASTRAL_MEMORY_INDEX_GRAPH) {
     return 0;
   }
-  uint32_t requested = desc->graph_query_search != 0 ? desc->graph_query_search : graph_search;
+  uint32_t requested =
+      desc->graph_query_search != 0 ? desc->graph_query_search : kGraphDefaultEfSearch;
   if (requested < kGraphMinSearch) {
     requested = kGraphMinSearch;
   }
@@ -5013,7 +5014,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   const uint32_t requested_graph_search = graph_search_from_desc(desc);
   const uint32_t graph_search_capacity =
       requested_graph_search > desc->capacity ? desc->capacity : requested_graph_search;
-  const uint32_t requested_query_search = graph_query_search_from_desc(desc, graph_search_capacity);
+  const uint32_t requested_query_search = graph_query_search_from_desc(desc);
   const uint32_t graph_query_search_capacity =
       requested_query_search > desc->capacity ? desc->capacity : requested_query_search;
   uint32_t requested_candidate_capacity = graph_query_search_capacity > graph_search_capacity

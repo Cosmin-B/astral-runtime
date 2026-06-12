@@ -2729,6 +2729,35 @@ TEST(inference_memory_index_graph_mock) {
     astral_memory_destroy(index);
 }
 
+TEST(inference_memory_index_graph_defaults_split_query_from_build_mock) {
+  constexpr uint32_t kDim = 4;
+  constexpr uint32_t kCapacity = 256;
+  constexpr uint32_t kDefaultGraphNeighbors = 64;
+  constexpr uint32_t kDefaultGraphBuildSearch = 128;
+  constexpr uint32_t kDefaultGraphQuerySearch = 64;
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = kCapacity;
+  desc.metric = ASTRAL_MEMORY_METRIC_COSINE;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_GRAPH;
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  AstralMemoryStats stats{};
+  stats.size = sizeof(AstralMemoryStats);
+  err = astral_memory_stats(index, &stats);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(stats.graph_neighbors, kDefaultGraphNeighbors);
+  ASSERT_EQ(stats.graph_search, kDefaultGraphBuildSearch);
+  ASSERT_EQ(stats.graph_query_search, kDefaultGraphQuerySearch);
+
+  astral_memory_destroy(index);
+}
+
 TEST(inference_memory_index_q8_storage_mock) {
     constexpr uint32_t kDim = 4;
     constexpr uint32_t kCapacity = 4;
