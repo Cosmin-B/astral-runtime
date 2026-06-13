@@ -3112,6 +3112,7 @@ static void print_memory_graph_recall_detail(uint64_t iters) {
     const uint64_t t1 = ticks_now();
     const uint64_t n1 = ns_now();
     uint32_t matched = 0;
+    bool missing = false;
     const uint32_t expected_count = oracle_counts[qi];
     for (uint32_t fi = 0; fi < expected_count; ++fi) {
       const uint64_t key = oracle_keys[static_cast<size_t>(qi) * kBenchMemoryTopK + fi];
@@ -3124,10 +3125,18 @@ static void print_memory_graph_recall_detail(uint64_t iters) {
         }
       }
       if (!found) {
+        missing = true;
         const float score = oracle_scores[static_cast<size_t>(qi) * kBenchMemoryTopK + fi];
         std::printf("# graph_recall_missing query=%u row=%u rank=%u key=%llu score=%.9g\n", qi,
                     query_row, fi, static_cast<unsigned long long>(key),
                     static_cast<double>(score));
+      }
+    }
+    if (missing) {
+      for (uint32_t gi = 0; gi < graph_count; ++gi) {
+        std::printf("# graph_recall_returned query=%u row=%u rank=%u key=%llu score=%.9g\n", qi,
+                    query_row, gi, static_cast<unsigned long long>(graph_results[gi].key),
+                    static_cast<double>(graph_results[gi].score));
       }
     }
     r.ticks = t1 - t0;
