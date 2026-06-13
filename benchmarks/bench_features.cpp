@@ -3059,6 +3059,7 @@ static void print_memory_graph_recall_detail(uint64_t iters) {
 
   std::vector<float> queries(static_cast<size_t>(recall_queries) * dim);
   std::vector<uint64_t> oracle_keys(static_cast<size_t>(recall_queries) * kBenchMemoryTopK);
+  std::vector<float> oracle_scores(static_cast<size_t>(recall_queries) * kBenchMemoryTopK);
   std::vector<uint32_t> oracle_counts(recall_queries);
   AstralMemorySearchDesc search{};
   search.size = sizeof(AstralMemorySearchDesc);
@@ -3085,6 +3086,7 @@ static void print_memory_graph_recall_detail(uint64_t iters) {
     oracle_counts[qi] = flat_count;
     for (uint32_t fi = 0; fi < flat_count; ++fi) {
       oracle_keys[static_cast<size_t>(qi) * kBenchMemoryTopK + fi] = flat_results[fi].key;
+      oracle_scores[static_cast<size_t>(qi) * kBenchMemoryTopK + fi] = flat_results[fi].score;
     }
   }
 
@@ -3113,11 +3115,19 @@ static void print_memory_graph_recall_detail(uint64_t iters) {
     const uint32_t expected_count = oracle_counts[qi];
     for (uint32_t fi = 0; fi < expected_count; ++fi) {
       const uint64_t key = oracle_keys[static_cast<size_t>(qi) * kBenchMemoryTopK + fi];
+      bool found = false;
       for (uint32_t gi = 0; gi < graph_count; ++gi) {
         if (key == graph_results[gi].key) {
           ++matched;
+          found = true;
           break;
         }
+      }
+      if (!found) {
+        const float score = oracle_scores[static_cast<size_t>(qi) * kBenchMemoryTopK + fi];
+        std::printf("# graph_recall_missing query=%u row=%u rank=%u key=%llu score=%.9g\n", qi,
+                    query_row, fi, static_cast<unsigned long long>(key),
+                    static_cast<double>(score));
       }
     }
     r.ticks = t1 - t0;
