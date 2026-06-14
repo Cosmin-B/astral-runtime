@@ -20,6 +20,7 @@ Options:
   --capacities <list>   Comma-separated capacities (default: 10000)
   --metrics <list>      Comma-separated metrics: cosine,dot,l2 (default: cosine,dot,l2)
   --storage <kind>      Vector storage: f32, q8, q8f32, f6e2m3, f6e3m2, f8e5m2, or f8e5m2f32 (default: f32)
+  --storages <list>     Comma-separated vector storage kinds
   --case <name>         One ASTRAL_BENCH_MEMORY_CASE value, such as flat_q8_recall_search
   --graph-search <N>    Graph search budget (default: 64)
   --query-search <N>    Per-query graph search budget (default: index budget)
@@ -47,6 +48,7 @@ dims="128,384,768"
 capacities="10000"
 metrics="cosine,dot,l2"
 storage="f32"
+storages=""
 memory_case=""
 graph_search="64"
 query_search=""
@@ -67,6 +69,7 @@ while [[ $# -gt 0 ]]; do
     --capacities) capacities="${2:-}"; shift 2 ;;
     --metrics) metrics="${2:-}"; shift 2 ;;
     --storage) storage="${2:-}"; shift 2 ;;
+    --storages) storages="${2:-}"; shift 2 ;;
     --case) memory_case="${2:-}"; shift 2 ;;
     --graph-search) graph_search="${2:-}"; shift 2 ;;
     --query-search) query_search="${2:-}"; shift 2 ;;
@@ -126,6 +129,11 @@ fi
 IFS=',' read -r -a dim_values <<< "${dims}"
 IFS=',' read -r -a capacity_values <<< "${capacities}"
 IFS=',' read -r -a metric_values <<< "${metrics}"
+if [[ -n "${storages}" ]]; then
+  IFS=',' read -r -a storage_values <<< "${storages}"
+else
+  storage_values=("${storage}")
+fi
 if [[ -n "${query_searches}" ]]; then
   IFS=',' read -r -a query_search_values <<< "${query_searches}"
 else
@@ -163,6 +171,7 @@ fi
   echo "# capacities: ${capacities}"
   echo "# metrics: ${metrics}"
   echo "# storage: ${storage}"
+  echo "# storages: ${storages}"
   echo "# case: ${memory_case}"
   echo "# graph_search: ${graph_search}"
   echo "# query_search: ${query_search}"
@@ -177,54 +186,56 @@ fi
 
 ran=0
 for metric in "${metric_values[@]}"; do
-  for dim in "${dim_values[@]}"; do
-    for capacity in "${capacity_values[@]}"; do
-      for query_search_value in "${query_search_values[@]}"; do
-        {
-          echo
-          echo "## metric=${metric} dim=${dim} capacity=${capacity} query_search=${query_search_value}"
-          if [[ "${perf_enabled}" == "1" ]]; then
-            echo "# perf_stat: ${perf_dir}/${metric}-d${dim}-n${capacity}-q${query_search_value}.csv"
-          fi
-          echo
-        } >> "${out_file}"
-
-        bench_cmd=(
-          env
-          "ASTRAL_BENCH_MEMORY_ONLY=1"
-          "ASTRAL_BENCH_FEATURE_ITERS=${effective_iters}"
-          "ASTRAL_BENCH_MEMORY_METRIC=${metric}"
-          "ASTRAL_BENCH_MEMORY_STORAGE=${storage}"
-          "ASTRAL_BENCH_MEMORY_CASE=${memory_case}"
-          "ASTRAL_BENCH_MEMORY_DIM=${dim}"
-          "ASTRAL_BENCH_MEMORY_CAPACITY=${capacity}"
-          "ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=${graph_search}"
-          "ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=${query_search_value}"
-          "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=${graph_neighbors}"
-          "ASTRAL_BENCH_MEMORY_RECALL_QUERIES=${recall_queries}"
-          "${bench_bin}"
-          --only
-          features
-        )
-        if [[ "${perf_enabled}" == "1" ]]; then
-          perf_prefix="${perf_dir}/${metric}-d${dim}-n${capacity}-q${query_search_value}"
-          if ! "${perf_bin}" stat -x, -e "${perf_events}" -o "${perf_prefix}.csv" -- "${bench_cmd[@]}" \
-            >> "${out_file}" 2> "${perf_prefix}.stderr"; then
-            if [[ "${require_perf}" == "1" ]]; then
-              cat "${perf_prefix}.stderr" >&2
-              exit 1
+  for storage_value in "${storage_values[@]}"; do
+    for dim in "${dim_values[@]}"; do
+      for capacity in "${capacity_values[@]}"; do
+        for query_search_value in "${query_search_values[@]}"; do
+          {
+            echo
+            echo "## metric=${metric} storage=${storage_value} dim=${dim} capacity=${capacity} query_search=${query_search_value}"
+            if [[ "${perf_enabled}" == "1" ]]; then
+              echo "# perf_stat: ${perf_dir}/${metric}-${storage_value}-d${dim}-n${capacity}-q${query_search_value}.csv"
             fi
-            {
-              echo "# perf unavailable for metric=${metric} dim=${dim} capacity=${capacity} query_search=${query_search_value}"
-              cat "${perf_prefix}.stderr"
-            } >> "${out_file}"
+            echo
+          } >> "${out_file}"
+
+          bench_cmd=(
+            env
+            "ASTRAL_BENCH_MEMORY_ONLY=1"
+            "ASTRAL_BENCH_FEATURE_ITERS=${effective_iters}"
+            "ASTRAL_BENCH_MEMORY_METRIC=${metric}"
+            "ASTRAL_BENCH_MEMORY_STORAGE=${storage_value}"
+            "ASTRAL_BENCH_MEMORY_CASE=${memory_case}"
+            "ASTRAL_BENCH_MEMORY_DIM=${dim}"
+            "ASTRAL_BENCH_MEMORY_CAPACITY=${capacity}"
+            "ASTRAL_BENCH_MEMORY_GRAPH_SEARCH=${graph_search}"
+            "ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=${query_search_value}"
+            "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=${graph_neighbors}"
+            "ASTRAL_BENCH_MEMORY_RECALL_QUERIES=${recall_queries}"
+            "${bench_bin}"
+            --only
+            features
+          )
+          if [[ "${perf_enabled}" == "1" ]]; then
+            perf_prefix="${perf_dir}/${metric}-${storage_value}-d${dim}-n${capacity}-q${query_search_value}"
+            if ! "${perf_bin}" stat -x, -e "${perf_events}" -o "${perf_prefix}.csv" -- "${bench_cmd[@]}" \
+              >> "${out_file}" 2> "${perf_prefix}.stderr"; then
+              if [[ "${require_perf}" == "1" ]]; then
+                cat "${perf_prefix}.stderr" >&2
+                exit 1
+              fi
+              {
+                echo "# perf unavailable for metric=${metric} storage=${storage_value} dim=${dim} capacity=${capacity} query_search=${query_search_value}"
+                cat "${perf_prefix}.stderr"
+              } >> "${out_file}"
+              "${bench_cmd[@]}" >> "${out_file}" 2>&1
+            fi
+          else
             "${bench_cmd[@]}" >> "${out_file}" 2>&1
           fi
-        else
-          "${bench_cmd[@]}" >> "${out_file}" 2>&1
-        fi
 
-        ran=$((ran+1))
+          ran=$((ran+1))
+        done
       done
     done
   done
