@@ -15,6 +15,9 @@
 
 #if defined(__AVX2__)
 #include <immintrin.h>
+#if defined(__F16C__) || defined(_MSC_VER)
+#define ASTRAL_X86_F16C 1
+#endif
 #endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -431,7 +434,7 @@ inline void quantize_e5m2_store8_avx2(int8_t* dst, const float* src, __m256 inv_
   _mm_storel_epi64(reinterpret_cast<__m128i*>(dst), packed8);
 }
 
-#if defined(__F16C__)
+#if defined(ASTRAL_X86_F16C)
 inline __m256 e5m2_load8_f32_avx2(const int8_t* src) {
   const __m128i bytes = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src));
   const __m256i half_u32 = _mm256_slli_epi32(_mm256_cvtepu8_epi32(bytes), 8);
@@ -1334,7 +1337,7 @@ uint8_t f32_to_e5m2(float value) {
 
 float dot_e5m2_f32(const int8_t* a, const float* b, uint32_t dim) {
 #if defined(__AVX2__)
-#if defined(__F16C__)
+#if defined(ASTRAL_X86_F16C)
   __m256 acc0 = _mm256_setzero_ps();
   __m256 acc1 = _mm256_setzero_ps();
   uint32_t i = 0;
@@ -1400,7 +1403,7 @@ float dot_e5m2_f32(const int8_t* a, const float* b, uint32_t dim) {
 
 float dot_e5m2_e5m2(const int8_t* a, const int8_t* b, uint32_t dim) {
 #if defined(__AVX2__)
-#if defined(__F16C__)
+#if defined(ASTRAL_X86_F16C)
   __m256 acc0 = _mm256_setzero_ps();
   __m256 acc1 = _mm256_setzero_ps();
   uint32_t i = 0;
@@ -1475,7 +1478,7 @@ float dot_e5m2_e5m2(const int8_t* a, const int8_t* b, uint32_t dim) {
 }
 
 float l2_score_e5m2_f32(const int8_t* a, float scale, const float* b, uint32_t dim) {
-#if defined(__AVX2__) && defined(__F16C__)
+#if defined(__AVX2__) && defined(ASTRAL_X86_F16C)
   const __m256 scale_v = _mm256_set1_ps(scale);
   __m256 acc0 = _mm256_setzero_ps();
   __m256 acc1 = _mm256_setzero_ps();
@@ -1527,7 +1530,7 @@ float l2_score_e5m2_f32(const int8_t* a, float scale, const float* b, uint32_t d
 
 float l2_score_e5m2_e5m2(const int8_t* a, float a_scale, const int8_t* b, float b_scale,
                          uint32_t dim) {
-#if defined(__AVX2__) && defined(__F16C__)
+#if defined(__AVX2__) && defined(ASTRAL_X86_F16C)
   const __m256 a_scale_v = _mm256_set1_ps(a_scale);
   const __m256 b_scale_v = _mm256_set1_ps(b_scale);
   __m256 acc0 = _mm256_setzero_ps();
