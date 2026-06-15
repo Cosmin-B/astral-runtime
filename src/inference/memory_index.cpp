@@ -388,6 +388,49 @@ inline void quantize_q8_store8_avx2(int8_t* dst, const float* src, __m256 inv_sc
   _mm_storel_epi64(reinterpret_cast<__m128i*>(dst), packed8);
 }
 
+inline void quantize_e5m2_store8_avx2(int8_t* dst, const float* src, __m256 inv_scale) {
+  const __m256 scaled = _mm256_mul_ps(_mm256_loadu_ps(src), inv_scale);
+  const __m256i bits = _mm256_castps_si256(scaled);
+  const __m256i sign = _mm256_and_si256(_mm256_srli_epi32(bits, 24), _mm256_set1_epi32(0x80));
+  const __m256i abs_bits = _mm256_and_si256(bits, _mm256_set1_epi32(static_cast<int>(kF32AbsMask)));
+  const __m256i exponent = _mm256_and_si256(_mm256_srli_epi32(abs_bits, kF32ExponentShift),
+                                            _mm256_set1_epi32(kF32ExponentMask));
+  __m256i e5_exponent =
+      _mm256_sub_epi32(exponent, _mm256_set1_epi32(kF32ExponentBias - kE5M2ExponentBias));
+  __m256i e5_mantissa = _mm256_srli_epi32(
+      _mm256_add_epi32(_mm256_and_si256(abs_bits, _mm256_set1_epi32(kF32MantissaMask)),
+                       _mm256_set1_epi32(kE5M2MantissaRoundBit)),
+      kE5M2MantissaShift);
+  const __m256i mantissa_overflow =
+      _mm256_cmpeq_epi32(e5_mantissa, _mm256_set1_epi32(kE5M2MantissaOverflow));
+  e5_mantissa = _mm256_blendv_epi8(e5_mantissa, _mm256_setzero_si256(), mantissa_overflow);
+  e5_exponent =
+      _mm256_add_epi32(e5_exponent, _mm256_and_si256(mantissa_overflow, _mm256_set1_epi32(1)));
+
+  const __m256 abs_scaled = _mm256_andnot_ps(_mm256_set1_ps(-0.0f), scaled);
+  __m256i subnormal = _mm256_cvttps_epi32(_mm256_add_ps(
+      _mm256_mul_ps(abs_scaled, _mm256_set1_ps(1.0f / kE5M2SubnormalUnit)), _mm256_set1_ps(0.5f)));
+  subnormal = _mm256_min_epi32(subnormal, _mm256_set1_epi32(kE5M2MantissaMask));
+  const __m256i subnormal_raw = _mm256_or_si256(sign, subnormal);
+  const __m256i normal_raw = _mm256_or_si256(
+      sign, _mm256_or_si256(_mm256_slli_epi32(e5_exponent, kE5M2ExponentShift), e5_mantissa));
+  const __m256i saturated_raw = _mm256_or_si256(sign, _mm256_set1_epi32(kE5M2MaxFinite));
+  const __m256i zero_raw = sign;
+  const __m256i subnormal_mask = _mm256_cmpgt_epi32(_mm256_set1_epi32(1), e5_exponent);
+  const __m256i saturated_mask =
+      _mm256_or_si256(_mm256_cmpgt_epi32(e5_exponent, _mm256_set1_epi32(kE5M2ExponentMask - 1u)),
+                      _mm256_cmpgt_epi32(abs_bits, _mm256_set1_epi32(kF32InfBits - 1u)));
+  const __m256i zero_mask = _mm256_cmpeq_epi32(abs_bits, _mm256_setzero_si256());
+  __m256i raw = _mm256_blendv_epi8(normal_raw, subnormal_raw, subnormal_mask);
+  raw = _mm256_blendv_epi8(raw, saturated_raw, saturated_mask);
+  raw = _mm256_blendv_epi8(raw, zero_raw, zero_mask);
+  const __m128i lo = _mm256_castsi256_si128(raw);
+  const __m128i hi = _mm256_extracti128_si256(raw, 1);
+  const __m128i packed16 = _mm_packus_epi32(lo, hi);
+  const __m128i packed8 = _mm_packus_epi16(packed16, _mm_setzero_si128());
+  _mm_storel_epi64(reinterpret_cast<__m128i*>(dst), packed8);
+}
+
 #if defined(__F16C__)
 inline __m256 e5m2_load8_f32_avx2(const int8_t* src) {
   const __m128i bytes = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src));
@@ -2060,7 +2103,14 @@ void quantize_e5m2_vector(int8_t* dst, float* out_scale, const float* src, uint3
   const float max_abs = max_abs_f32(src, dim);
   const float scale = max_abs > 0.0f ? max_abs / kE5M2MaxFloat : 1.0f;
   const float inv_scale = 1.0f / scale;
-  for (uint32_t i = 0; i < dim; ++i) {
+  uint32_t i = 0;
+#if defined(__AVX2__)
+  const __m256 inv_scale_v = _mm256_set1_ps(inv_scale);
+  for (; i + kAvx2F32Lanes <= dim; i += kAvx2F32Lanes) {
+    quantize_e5m2_store8_avx2(dst + i, src + i, inv_scale_v);
+  }
+#endif
+  for (; i < dim; ++i) {
     dst[i] = static_cast<int8_t>(f32_to_e5m2(src[i] * inv_scale));
   }
   *out_scale = scale;

@@ -25,9 +25,9 @@ function(apply_compiler_flags target)
     # Platform-specific SIMD optimizations
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
         # AVX2 baseline for modern x86 (2013+)
-        # Includes FMA (fused multiply-add) for faster math
+        # Includes FMA for faster math and F16C for Float8 widening
         target_compile_options(${target} PRIVATE
-            $<$<CXX_COMPILER_ID:GNU,Clang>:-mavx2 -mfma>
+            $<$<CXX_COMPILER_ID:GNU,Clang>:-mavx2 -mfma -mf16c>
             $<$<CXX_COMPILER_ID:MSVC>:/arch:AVX2>
         )
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
