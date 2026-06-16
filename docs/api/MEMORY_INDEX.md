@@ -304,6 +304,13 @@ benchmark lane in `perf stat` with `--perf`, `--perf-bin`, `--perf-events`, and
 Perf CSV and stderr files are written beside the runner logs, so hardware
 counter evidence stays with the sidecar capture instead of entering the
 repository.
+`scripts/run_memory_bench_matrix.sh` also writes a compact CSV summary next to
+`.txt` logs by default, or to the path passed with `--summary`. The summary
+keeps one row per metric/storage/dimension/capacity/query-budget run and folds
+in useful perf ratios when counter CSVs are present: IPC, branch miss rate,
+cache miss rate, LLC load miss rate, L1D load miss rate, and DTLB load miss
+rate. Use it for quick sweeps; keep the raw log and perf CSVs for deeper
+inspection.
 Use `scripts/run_memory_ann_tuning.sh` when comparing several graph shapes. It
 wraps the acceptance runner across neighbor, build-search, and per-query search
 budgets, then writes one roll-up summary with f32/q8 recall, top-1 recall,

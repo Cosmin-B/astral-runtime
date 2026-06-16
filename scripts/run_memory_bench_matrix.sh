@@ -32,6 +32,7 @@ Options:
   --perf-bin <path>     Perf executable to use (default: perf from PATH)
   --perf-events <csv>   Perf stat event list
   --require-perf        Fail when perf is missing or blocked
+  --summary <file>      Write a compact CSV parsed from the log and perf CSVs
   --help                Show help
 
 Examples:
@@ -59,6 +60,7 @@ perf_enabled="0"
 require_perf="0"
 perf_bin=""
 perf_events="cycles,instructions,branches,branch-misses,cache-references,cache-misses,LLC-loads,LLC-load-misses,L1-dcache-loads,L1-dcache-load-misses,dTLB-loads,dTLB-load-misses"
+summary_file=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -80,6 +82,7 @@ while [[ $# -gt 0 ]]; do
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
     --require-perf) require_perf="1"; shift ;;
+    --summary) summary_file="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -93,6 +96,10 @@ if [[ -z "${out_file}" ]]; then
   echo "Missing required arg: --out" >&2
   usage
   exit 2
+fi
+
+if [[ -z "${summary_file}" && "${out_file}" == *.txt ]]; then
+  summary_file="${out_file%.txt}.csv"
 fi
 
 build_dir="build/${preset}"
@@ -181,6 +188,7 @@ fi
   echo "# perf_enabled: ${perf_enabled}"
   echo "# perf_bin: ${perf_bin}"
   echo "# perf_events: ${perf_events}"
+  echo "# summary: ${summary_file}"
   echo
 } > "${out_file}"
 
@@ -240,5 +248,9 @@ for metric in "${metric_values[@]}"; do
     done
   done
 done
+
+if [[ -n "${summary_file}" ]]; then
+  scripts/summarize_memory_bench_matrix.py --in "${out_file}" --out "${summary_file}" --require-rows
+fi
 
 echo "[memory-matrix] done runs=${ran} out=${out_file}"
