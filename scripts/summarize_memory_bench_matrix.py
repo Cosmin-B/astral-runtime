@@ -49,6 +49,15 @@ _RE_LATENCY = re.compile(
     r"p99=\s*(?P<p99>[0-9]+\.[0-9]+)\s+ns\s+"
     r"max=\s*(?P<max>[0-9]+\.[0-9]+)\s+ns\b"
 )
+_RE_PERF_EVENT_ALIAS = re.compile(r"^(?:cpu_core|cpu_atom)/(?P<event>[^/]+)/u$")
+
+
+def _event_name(raw: str) -> str:
+    event = raw.strip()
+    m = _RE_PERF_EVENT_ALIAS.match(event)
+    if m:
+        return m.group("event")
+    return event
 
 
 def _flush(rows: List[Row], cur: Optional[Row]) -> None:
@@ -130,9 +139,9 @@ def _read_perf_csv(path: str) -> Dict[str, float]:
             value = _counter_value(fields[0])
             if value is None:
                 continue
-            event = fields[2].strip()
+            event = _event_name(fields[2])
             if event:
-                counters[event] = value
+                counters[event] = counters.get(event, 0.0) + value
     return counters
 
 
