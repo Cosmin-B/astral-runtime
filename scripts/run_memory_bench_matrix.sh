@@ -149,7 +149,7 @@ fi
 
 recall_case_requires_full_query_set() {
   case "$1" in
-    flat_q8_recall_search|flat_compact_recall_search|graph_recall|graph_recall_top1|graph_recall_search|graph_snapshot_view_recall_search|graph_recall_search_sweep)
+    flat_q8_recall_search|flat_compact_recall_search|graph_recall|graph_recall_top1|graph_recall_search|graph_recall_latency|graph_snapshot_view_recall_search|graph_recall_search_sweep)
       return 0
       ;;
     *)

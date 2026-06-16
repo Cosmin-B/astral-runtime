@@ -250,11 +250,12 @@ flat oracle, which is useful when tuning search that only needs the best hit.
 `features.memory graph_recall_search` precomputes the exact flat oracle outside
 the timed region, then reports graph-only query latency with the same recall
 percentage. Use that marker for ANN perf counters when exact-search work would
-otherwise dominate the profile. Aggregate recall lanes must sample the full
-deterministic query set before their percentage is meaningful. The matrix
-runner records both requested `iters` and `effective_iters`; for aggregate recall
-cases it raises `effective_iters` to at least
-`ASTRAL_BENCH_MEMORY_RECALL_QUERIES`.
+otherwise dominate the profile. `features.memory graph_recall_latency` uses the
+same deterministic query preparation and reports p50/p95/p99 for the graph-only
+search calls. Aggregate recall lanes must sample the full deterministic query
+set before their percentage is meaningful. The matrix runner records both
+requested `iters` and `effective_iters`; for aggregate recall cases it raises
+`effective_iters` to at least `ASTRAL_BENCH_MEMORY_RECALL_QUERIES`.
 
 Feature benchmarks accept `ASTRAL_BENCH_MEMORY_CAPACITY`,
 `ASTRAL_BENCH_MEMORY_DIM`, `ASTRAL_BENCH_MEMORY_METRIC` (`cosine`, `dot`, or
