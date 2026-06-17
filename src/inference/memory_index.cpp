@@ -3324,7 +3324,7 @@ uint32_t graph_greedy_closest_pair(MemoryIndex* index, uint32_t slot, uint32_t e
 }
 
 void graph_search_layer_query(MemoryIndex* index, GraphSearchScratch* scratch, const float* query,
-                              float query_scale, uint32_t entry, uint32_t level, uint32_t capacity,
+                              float query_scale, uint32_t entry, uint32_t capacity,
                               uint32_t* out_top_count) {
   uint32_t candidate_count = 0;
   uint32_t top_count = 0;
@@ -3347,42 +3347,21 @@ void graph_search_layer_query(MemoryIndex* index, GraphSearchScratch* scratch, c
       break;
     }
 
-    const uint32_t* neighbors = graph_neighbors_at_level(index, slot, level);
-    const uint32_t neighbor_count = graph_neighbor_count_at_level(index, slot, level);
-    if (level == 0) {
-      for (uint32_t i = 0; i < neighbor_count; ++i) {
-        const uint32_t neighbor = neighbors[i];
-        if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
-          prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
-        }
-        if (graph_query_was_visited(scratch, neighbor)) {
-          continue;
-        }
-        graph_query_mark_visited(scratch, neighbor);
-        const float score = score_slot(index, query, neighbor, query_scale);
-        if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor,
-                                             score)) {
-          graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
-                                    &candidate_count);
-        }
+    const uint32_t* neighbors = graph_neighbors_at_level(index, slot, 0);
+    const uint32_t neighbor_count = graph_neighbor_count_at_level(index, slot, 0);
+    for (uint32_t i = 0; i < neighbor_count; ++i) {
+      const uint32_t neighbor = neighbors[i];
+      if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
+        prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
       }
-    } else {
-      for (uint32_t i = 0; i < neighbor_count; ++i) {
-        const uint32_t neighbor = neighbors[i];
-        if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
-          prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
-        }
-        if (graph_query_was_visited(scratch, neighbor) || index->slots[neighbor].occupied == 0 ||
-            index->graph_levels[neighbor] < level) {
-          continue;
-        }
-        graph_query_mark_visited(scratch, neighbor);
-        const float score = score_slot(index, query, neighbor, query_scale);
-        if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor,
-                                             score)) {
-          graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
-                                    &candidate_count);
-        }
+      if (graph_query_was_visited(scratch, neighbor)) {
+        continue;
+      }
+      graph_query_mark_visited(scratch, neighbor);
+      const float score = score_slot(index, query, neighbor, query_scale);
+      if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor, score)) {
+        graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
+                                  &candidate_count);
       }
     }
   }
@@ -3392,8 +3371,8 @@ void graph_search_layer_query(MemoryIndex* index, GraphSearchScratch* scratch, c
 
 void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* scratch,
                                       const int8_t* query, float query_scale,
-                                      float cosine_query_scale, uint32_t entry, uint32_t level,
-                                      uint32_t capacity, uint32_t* out_top_count) {
+                                      float cosine_query_scale, uint32_t entry, uint32_t capacity,
+                                      uint32_t* out_top_count) {
   uint32_t candidate_count = 0;
   uint32_t top_count = 0;
   const uint32_t candidate_capacity = graph_candidate_search_capacity(index, capacity);
@@ -3416,44 +3395,22 @@ void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* sc
       break;
     }
 
-    const uint32_t* neighbors = graph_neighbors_at_level(index, slot, level);
-    const uint32_t neighbor_count = graph_neighbor_count_at_level(index, slot, level);
-    if (level == 0) {
-      for (uint32_t i = 0; i < neighbor_count; ++i) {
-        const uint32_t neighbor = neighbors[i];
-        if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
-          prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
-        }
-        if (graph_query_was_visited(scratch, neighbor)) {
-          continue;
-        }
-        graph_query_mark_visited(scratch, neighbor);
-        const float score =
-            score_slot_compact_query(index, query, query_scale, neighbor, cosine_query_scale);
-        if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor,
-                                             score)) {
-          graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
-                                    &candidate_count);
-        }
+    const uint32_t* neighbors = graph_neighbors_at_level(index, slot, 0);
+    const uint32_t neighbor_count = graph_neighbor_count_at_level(index, slot, 0);
+    for (uint32_t i = 0; i < neighbor_count; ++i) {
+      const uint32_t neighbor = neighbors[i];
+      if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
+        prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
       }
-    } else {
-      for (uint32_t i = 0; i < neighbor_count; ++i) {
-        const uint32_t neighbor = neighbors[i];
-        if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
-          prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
-        }
-        if (graph_query_was_visited(scratch, neighbor) || index->slots[neighbor].occupied == 0 ||
-            index->graph_levels[neighbor] < level) {
-          continue;
-        }
-        graph_query_mark_visited(scratch, neighbor);
-        const float score =
-            score_slot_compact_query(index, query, query_scale, neighbor, cosine_query_scale);
-        if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor,
-                                             score)) {
-          graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
-                                    &candidate_count);
-        }
+      if (graph_query_was_visited(scratch, neighbor)) {
+        continue;
+      }
+      graph_query_mark_visited(scratch, neighbor);
+      const float score =
+          score_slot_compact_query(index, query, query_scale, neighbor, cosine_query_scale);
+      if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor, score)) {
+        graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
+                                  &candidate_count);
       }
     }
   }
@@ -3919,7 +3876,7 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
                                                  index->graph_entry_slot, index->graph_max_level, 0)
             : index->graph_entry_slot;
     graph_search_layer_compact_query(index, scratch, compact_query, compact_query_scale,
-                                     compact_cosine_query_scale, entry, 0, search_capacity,
+                                     compact_cosine_query_scale, entry, search_capacity,
                                      &top_count);
   } else {
     const uint32_t entry =
@@ -3927,7 +3884,7 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
             ? graph_greedy_closest_query(index, query, query_scale, index->graph_entry_slot,
                                          index->graph_max_level, 0)
             : index->graph_entry_slot;
-    graph_search_layer_query(index, scratch, query, query_scale, entry, 0, search_capacity,
+    graph_search_layer_query(index, scratch, query, query_scale, entry, search_capacity,
                              &top_count);
   }
 
@@ -6637,7 +6594,7 @@ uint32_t snapshot_graph_greedy_closest(SnapshotBytes bytes, const AstralMemorySn
 void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
                                  const SnapshotGraphLayout* graph,
                                  const SnapshotPreparedQuery* prepared, GraphSearchScratch* scratch,
-                                 uint32_t entry, uint32_t level, uint32_t search_capacity,
+                                 uint32_t entry, uint32_t search_capacity,
                                  uint32_t* out_top_count) {
   uint32_t candidate_count = 0;
   uint32_t top_count = 0;
@@ -6660,54 +6617,26 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
                                scratch->top_slots[0])) {
       break;
     }
-    const uint32_t neighbor_count =
-        snapshot_graph_neighbor_count(bytes.data, info, graph, slot, level);
-    const uint64_t neighbor_base = snapshot_graph_level_offset(info, graph, slot, level);
-    if (level == 0) {
-      for (uint32_t i = 0; i < neighbor_count; ++i) {
-        const uint32_t neighbor = snapshot_graph_neighbor_at_base(bytes.data, neighbor_base, i);
-        if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
-          const uint32_t prefetch_neighbor = snapshot_graph_neighbor_at_base(
-              bytes.data, neighbor_base, i + kGraphNeighborPrefetchDistance);
+    const uint32_t neighbor_count = snapshot_graph_neighbor_count(bytes.data, info, graph, slot, 0);
+    const uint64_t neighbor_base = snapshot_graph_level_offset(info, graph, slot, 0);
+    for (uint32_t i = 0; i < neighbor_count; ++i) {
+      const uint32_t neighbor = snapshot_graph_neighbor_at_base(bytes.data, neighbor_base, i);
+      if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
+        const uint32_t prefetch_neighbor = snapshot_graph_neighbor_at_base(
+            bytes.data, neighbor_base, i + kGraphNeighborPrefetchDistance);
 #if defined(__GNUC__) || defined(__clang__)
-          __builtin_prefetch(snapshot_score_vector_ptr(bytes, prepared, prefetch_neighbor), 0, 1);
+        __builtin_prefetch(snapshot_score_vector_ptr(bytes, prepared, prefetch_neighbor), 0, 1);
 #endif
-        }
-        if (snapshot_graph_was_visited(scratch, neighbor)) {
-          continue;
-        }
-        snapshot_graph_mark_visited(scratch, neighbor);
-        const float score = snapshot_score_active(bytes, info, prepared, neighbor);
-        if (snapshot_graph_insert_top(bytes, info, scratch, search_capacity, &top_count, neighbor,
-                                      score)) {
-          snapshot_graph_add_candidate(bytes, info, scratch, candidate_capacity, neighbor, score,
-                                       &candidate_count);
-        }
       }
-    } else {
-      for (uint32_t i = 0; i < neighbor_count; ++i) {
-        const uint32_t neighbor = snapshot_graph_neighbor_at_base(bytes.data, neighbor_base, i);
-        if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
-          const uint32_t prefetch_neighbor = snapshot_graph_neighbor_at_base(
-              bytes.data, neighbor_base, i + kGraphNeighborPrefetchDistance);
-          if (prefetch_neighbor != kU32Max && prefetch_neighbor < info->count) {
-#if defined(__GNUC__) || defined(__clang__)
-            __builtin_prefetch(snapshot_score_vector_ptr(bytes, prepared, prefetch_neighbor), 0, 1);
-#endif
-          }
-        }
-        if (neighbor == kU32Max || neighbor >= info->count ||
-            snapshot_graph_was_visited(scratch, neighbor) ||
-            snapshot_graph_level(bytes.data, graph, neighbor) < level) {
-          continue;
-        }
-        snapshot_graph_mark_visited(scratch, neighbor);
-        const float score = snapshot_score_active(bytes, info, prepared, neighbor);
-        if (snapshot_graph_insert_top(bytes, info, scratch, search_capacity, &top_count, neighbor,
-                                      score)) {
-          snapshot_graph_add_candidate(bytes, info, scratch, candidate_capacity, neighbor, score,
-                                       &candidate_count);
-        }
+      if (snapshot_graph_was_visited(scratch, neighbor)) {
+        continue;
+      }
+      snapshot_graph_mark_visited(scratch, neighbor);
+      const float score = snapshot_score_active(bytes, info, prepared, neighbor);
+      if (snapshot_graph_insert_top(bytes, info, scratch, search_capacity, &top_count, neighbor,
+                                    score)) {
+        snapshot_graph_add_candidate(bytes, info, scratch, candidate_capacity, neighbor, score,
+                                     &candidate_count);
       }
     }
   }
@@ -6754,7 +6683,7 @@ AstralErr memory_snapshot_view_search_graph(MemorySnapshotView* view,
                                           view->graph.header.max_level, 0)
           : view->graph.header.entry_active_pos;
   uint32_t top_count = 0;
-  snapshot_graph_search_layer(bytes, &view->info, &view->graph, &prepared, scratch, entry, 0,
+  snapshot_graph_search_layer(bytes, &view->info, &view->graph, &prepared, scratch, entry,
                               search_capacity, &top_count);
 
   uint32_t filled = 0;
