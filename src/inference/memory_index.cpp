@@ -144,6 +144,11 @@ constexpr uint32_t kAvx2Offset3 = kAvx2F32Lanes * 3u;
 constexpr uint32_t kAvx2I8Offset1 = kAvx2I8Lanes;
 constexpr uint32_t kAvx2I8Offset2 = kAvx2I8Lanes * 2u;
 constexpr uint32_t kAvx2I8Offset3 = kAvx2I8Lanes * 3u;
+constexpr uint32_t kAvxVnniI8Lanes = 32;
+constexpr uint32_t kAvxVnniUnrollI8 = kAvxVnniI8Lanes * kAvx2UnrollVectors;
+constexpr uint32_t kAvxVnniI8Offset1 = kAvxVnniI8Lanes;
+constexpr uint32_t kAvxVnniI8Offset2 = kAvxVnniI8Lanes * 2u;
+constexpr uint32_t kAvxVnniI8Offset3 = kAvxVnniI8Lanes * 3u;
 #endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
 constexpr uint32_t kNeonF32Lanes = 4;
@@ -375,6 +380,53 @@ inline __m256i dot_i8x16_avx2(const int8_t* a, const int8_t* b, __m256i ones) {
   const __m256i b16 = _mm256_cvtepi8_epi16(bv);
   return _mm256_madd_epi16(_mm256_mullo_epi16(a16, b16), ones);
 }
+
+#if (defined(__GNUC__) || defined(__clang__)) &&                                                   \
+    (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
+inline bool cpu_supports_avx_vnni() {
+  static const bool supported = __builtin_cpu_supports("avxvnni") != 0;
+  return supported;
+}
+
+__attribute__((target("avxvnni"))) int32_t dot_q8_q8_avx_vnni_i32(const int8_t* a, const int8_t* b,
+                                                                  uint32_t dim, int32_t b_sum) {
+  __m256i acc0 = _mm256_setzero_si256();
+  __m256i acc1 = _mm256_setzero_si256();
+  __m256i acc2 = _mm256_setzero_si256();
+  __m256i acc3 = _mm256_setzero_si256();
+  const __m256i sign_offset = _mm256_set1_epi8(static_cast<char>(0x80));
+  uint32_t i = 0;
+  for (; i + kAvxVnniUnrollI8 <= dim; i += kAvxVnniUnrollI8) {
+    const __m256i a0 =
+        _mm256_xor_si256(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + i)), sign_offset);
+    const __m256i a1 = _mm256_xor_si256(
+        _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + i + kAvxVnniI8Offset1)),
+        sign_offset);
+    const __m256i a2 = _mm256_xor_si256(
+        _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + i + kAvxVnniI8Offset2)),
+        sign_offset);
+    const __m256i a3 = _mm256_xor_si256(
+        _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + i + kAvxVnniI8Offset3)),
+        sign_offset);
+    acc0 =
+        _mm256_dpbusd_epi32(acc0, a0, _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b + i)));
+    acc1 = _mm256_dpbusd_epi32(
+        acc1, a1, _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b + i + kAvxVnniI8Offset1)));
+    acc2 = _mm256_dpbusd_epi32(
+        acc2, a2, _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b + i + kAvxVnniI8Offset2)));
+    acc3 = _mm256_dpbusd_epi32(
+        acc3, a3, _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b + i + kAvxVnniI8Offset3)));
+  }
+  for (; i + kAvxVnniI8Lanes <= dim; i += kAvxVnniI8Lanes) {
+    const __m256i av =
+        _mm256_xor_si256(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + i)), sign_offset);
+    acc0 =
+        _mm256_dpbusd_epi32(acc0, av, _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b + i)));
+  }
+  acc0 = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
+  return reduce_avx2_i32(acc0) - b_sum * 128;
+}
+#endif
 
 inline void quantize_q8_store8_avx2(int8_t* dst, const float* src, __m256 inv_scale,
                                     __m256 positive_bias, __m256 negative_bias, __m256 zero,
@@ -851,6 +903,37 @@ float dot_q8_q8(const int8_t* a, const int8_t* b, uint32_t dim) {
   }
   return static_cast<float>(sum);
 #endif
+}
+
+int32_t sum_i8(const int8_t* v, uint32_t dim) {
+  int32_t sum0 = 0;
+  int32_t sum1 = 0;
+  int32_t sum2 = 0;
+  int32_t sum3 = 0;
+  uint32_t i = 0;
+  for (; i + 4u <= dim; i += 4u) {
+    sum0 += static_cast<int32_t>(v[i]);
+    sum1 += static_cast<int32_t>(v[i + 1u]);
+    sum2 += static_cast<int32_t>(v[i + 2u]);
+    sum3 += static_cast<int32_t>(v[i + 3u]);
+  }
+  int32_t sum = (sum0 + sum1) + (sum2 + sum3);
+  for (; i < dim; ++i) {
+    sum += static_cast<int32_t>(v[i]);
+  }
+  return sum;
+}
+
+float dot_q8_q8_query(const int8_t* a, const int8_t* b, uint32_t dim, int32_t b_sum) {
+#if defined(__AVX2__) && (defined(__GNUC__) || defined(__clang__)) &&                              \
+    (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
+  if ((dim & 31u) == 0 && cpu_supports_avx_vnni()) {
+    return static_cast<float>(dot_q8_q8_avx_vnni_i32(a, b, dim, b_sum));
+  }
+#else
+  (void)b_sum;
+#endif
+  return dot_q8_q8(a, b, dim);
 }
 
 float dot_i16_i16(const int16_t* a, const int16_t* b, uint32_t dim) {
@@ -2828,18 +2911,18 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
   return l2_score_f32(query, vector_at(index, slot), index->dim);
 }
 
-inline float score_slot_compact_query(MemoryIndex* index, const int8_t* query, float query_scale,
-                                      uint32_t slot, float cosine_query_scale) {
+inline float score_slot_compact_query(MemoryIndex* index, const int8_t* query, int32_t query_sum,
+                                      float query_scale, uint32_t slot, float cosine_query_scale) {
   const int8_t* q8 = q8_vector_at(index, slot);
   const float scale = index->compact_score_scales[slot];
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
     return (e5m2_storage(index) ? dot_e5m2_e5m2(q8, query, index->dim)
-                                : dot_q8_q8(q8, query, index->dim)) *
+                                : dot_q8_q8_query(q8, query, index->dim, query_sum)) *
            scale * query_scale;
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
     return (e5m2_storage(index) ? dot_e5m2_e5m2(q8, query, index->dim)
-                                : dot_q8_q8(q8, query, index->dim)) *
+                                : dot_q8_q8_query(q8, query, index->dim, query_sum)) *
            scale * query_scale * cosine_query_scale;
   }
   return e5m2_storage(index)
@@ -3370,7 +3453,7 @@ void graph_search_layer_query(MemoryIndex* index, GraphSearchScratch* scratch, c
 }
 
 void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* scratch,
-                                      const int8_t* query, float query_scale,
+                                      const int8_t* query, int32_t query_sum, float query_scale,
                                       float cosine_query_scale, uint32_t entry, uint32_t capacity,
                                       uint32_t* out_top_count) {
   uint32_t candidate_count = 0;
@@ -3378,7 +3461,7 @@ void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* sc
   const uint32_t candidate_capacity = graph_candidate_search_capacity(index, capacity);
   graph_query_mark_visited(scratch, entry);
   const float entry_score =
-      score_slot_compact_query(index, query, query_scale, entry, cosine_query_scale);
+      score_slot_compact_query(index, query, query_sum, query_scale, entry, cosine_query_scale);
   insert_graph_query_top_candidate(index, scratch, capacity, &top_count, entry, entry_score);
   graph_query_add_candidate(index, scratch, candidate_capacity, entry, entry_score,
                             &candidate_count);
@@ -3406,8 +3489,8 @@ void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* sc
         continue;
       }
       graph_query_mark_visited(scratch, neighbor);
-      const float score =
-          score_slot_compact_query(index, query, query_scale, neighbor, cosine_query_scale);
+      const float score = score_slot_compact_query(index, query, query_sum, query_scale, neighbor,
+                                                   cosine_query_scale);
       if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor, score)) {
         graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
                                   &candidate_count);
@@ -3446,12 +3529,12 @@ uint32_t graph_greedy_closest_query(MemoryIndex* index, const float* query, floa
 }
 
 uint32_t graph_greedy_closest_compact_query(MemoryIndex* index, const int8_t* query,
-                                            float query_scale, float cosine_query_scale,
-                                            uint32_t entry, uint32_t begin_level,
-                                            uint32_t end_level) {
+                                            int32_t query_sum, float query_scale,
+                                            float cosine_query_scale, uint32_t entry,
+                                            uint32_t begin_level, uint32_t end_level) {
   uint32_t closest = entry;
   float closest_score =
-      score_slot_compact_query(index, query, query_scale, closest, cosine_query_scale);
+      score_slot_compact_query(index, query, query_sum, query_scale, closest, cosine_query_scale);
   for (uint32_t level = begin_level; level > end_level; --level) {
     bool changed = true;
     while (changed) {
@@ -3463,8 +3546,8 @@ uint32_t graph_greedy_closest_compact_query(MemoryIndex* index, const int8_t* qu
         if (index->slots[candidate].occupied == 0 || index->graph_levels[candidate] < level) {
           continue;
         }
-        const float score =
-            score_slot_compact_query(index, query, query_scale, candidate, cosine_query_scale);
+        const float score = score_slot_compact_query(index, query, query_sum, query_scale,
+                                                     candidate, cosine_query_scale);
         if (score > closest_score) {
           closest = candidate;
           closest_score = score;
@@ -3869,15 +3952,16 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
     float compact_query_scale = 1.0f;
     float compact_cosine_query_scale = query_scale;
     quantize_compact_query(index, compact_query, &compact_query_scale, query);
+    const int32_t compact_query_sum = e5m2_storage(index) ? 0 : sum_i8(compact_query, index->dim);
     const uint32_t entry =
         index->graph_max_level != 0
-            ? graph_greedy_closest_compact_query(index, compact_query, compact_query_scale,
-                                                 compact_cosine_query_scale,
+            ? graph_greedy_closest_compact_query(index, compact_query, compact_query_sum,
+                                                 compact_query_scale, compact_cosine_query_scale,
                                                  index->graph_entry_slot, index->graph_max_level, 0)
             : index->graph_entry_slot;
-    graph_search_layer_compact_query(index, scratch, compact_query, compact_query_scale,
-                                     compact_cosine_query_scale, entry, search_capacity,
-                                     &top_count);
+    graph_search_layer_compact_query(index, scratch, compact_query, compact_query_sum,
+                                     compact_query_scale, compact_cosine_query_scale, entry,
+                                     search_capacity, &top_count);
   } else {
     const uint32_t entry =
         index->graph_max_level != 0
