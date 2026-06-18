@@ -149,6 +149,7 @@ constexpr uint32_t kAvxVnniUnrollI8 = kAvxVnniI8Lanes * kAvx2UnrollVectors;
 constexpr uint32_t kAvxVnniI8Offset1 = kAvxVnniI8Lanes;
 constexpr uint32_t kAvxVnniI8Offset2 = kAvxVnniI8Lanes * 2u;
 constexpr uint32_t kAvxVnniI8Offset3 = kAvxVnniI8Lanes * 3u;
+constexpr int32_t kAvxVnniSignOffset = 128;
 #endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
 constexpr uint32_t kNeonF32Lanes = 4;
@@ -424,7 +425,7 @@ __attribute__((target("avxvnni"))) int32_t dot_q8_q8_avx_vnni_i32(const int8_t* 
         _mm256_dpbusd_epi32(acc0, av, _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b + i)));
   }
   acc0 = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
-  return reduce_avx2_i32(acc0) - b_sum * 128;
+  return reduce_avx2_i32(acc0) - b_sum * kAvxVnniSignOffset;
 }
 #endif
 
@@ -6254,6 +6255,7 @@ struct SnapshotPreparedQuery {
   uint64_t score_vector_stride;
   float query_scale;
   float compact_query_scale;
+  int32_t compact_query_sum;
   uint8_t compact;
   uint8_t use_f6;
   uint8_t use_f6_i16;
@@ -6293,10 +6295,15 @@ void snapshot_prepare_query(const AstralMemorySnapshotInfo* info, const float* q
   prepared->use_f6 = info->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E2M3 ? 1u : 0u;
   prepared->use_f6_i16 = info->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E3M2 ? 1u : 0u;
   prepared->use_f8 = info->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2 ? 1u : 0u;
-  if (prepared->use_f6 != 0) {
+  if (info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK) {
+    quantize_q8_vector(prepared->compact_query, &prepared->compact_query_scale, prepared->query,
+                       info->dim);
+    prepared->compact_query_sum = sum_i8(prepared->compact_query, info->dim);
+  } else if (prepared->use_f6 != 0) {
     quantize_e2m3_vector(prepared->compact_query, &prepared->compact_query_scale, prepared->query,
                          info->dim);
     prepared->compact_query_scale *= kE2M3InvScale;
+    prepared->compact_query_sum = sum_i8(prepared->compact_query, info->dim);
   } else if (prepared->use_f6_i16 != 0) {
     quantize_e3m2_vector(prepared->compact_query_i16, &prepared->compact_query_scale,
                          prepared->query, info->dim);
@@ -6335,6 +6342,33 @@ inline float snapshot_stored_scale(SnapshotBytes bytes, const AstralMemorySnapsh
 }
 
 float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
+                            const SnapshotPreparedQuery* prepared, uint32_t active_pos);
+
+float snapshot_graph_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
+                                  const SnapshotPreparedQuery* prepared, uint32_t active_pos) {
+  if (info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK) {
+    const float stored_scale = snapshot_stored_scale(bytes, info, active_pos);
+    const int8_t* vector =
+        reinterpret_cast<const int8_t*>(snapshot_vector_ptr(bytes, info, active_pos));
+    const float scale = compact_value_scale_kind(info->storage_kind, stored_scale);
+    if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
+      return dot_q8_q8_query(vector, prepared->compact_query, info->dim,
+                             prepared->compact_query_sum) *
+             scale * prepared->compact_query_scale;
+    }
+    if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      const float vector_scale = cosine_scale_q8(vector, stored_scale, info->dim);
+      return dot_q8_q8_query(vector, prepared->compact_query, info->dim,
+                             prepared->compact_query_sum) *
+             scale * prepared->compact_query_scale * prepared->query_scale * vector_scale;
+    }
+    return l2_score_q8_q8(vector, scale, prepared->compact_query, prepared->compact_query_scale,
+                          info->dim);
+  }
+  return snapshot_score_active(bytes, info, prepared, active_pos);
+}
+
+float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
                             const SnapshotPreparedQuery* prepared, uint32_t active_pos) {
   if (f32_rerank_storage_kind(info->storage_kind)) {
     const float* vector =
@@ -6355,8 +6389,9 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
     const int16_t* vector_i16 =
         reinterpret_cast<const int16_t*>(snapshot_vector_ptr(bytes, info, active_pos));
     if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
-      return prepared->use_f6 != 0 ? dot_q8_q8(vector, prepared->compact_query, info->dim) * scale *
-                                         prepared->compact_query_scale
+      return prepared->use_f6 != 0 ? dot_q8_q8_query(vector, prepared->compact_query, info->dim,
+                                                     prepared->compact_query_sum) *
+                                         scale * prepared->compact_query_scale
              : prepared->use_f6_i16 != 0
                  ? dot_i16_i16(vector_i16, prepared->compact_query_i16, info->dim) * scale *
                        prepared->compact_query_scale
@@ -6366,8 +6401,9 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
     }
     if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       if (prepared->use_f6 != 0) {
-        return dot_q8_q8(vector, prepared->compact_query, info->dim) * scale *
-               prepared->compact_query_scale * prepared->query_scale;
+        return dot_q8_q8_query(vector, prepared->compact_query, info->dim,
+                               prepared->compact_query_sum) *
+               scale * prepared->compact_query_scale * prepared->query_scale;
       }
       if (prepared->use_f6_i16 != 0) {
         return dot_i16_i16(vector_i16, prepared->compact_query_i16, info->dim) * scale *
@@ -6649,7 +6685,7 @@ uint32_t snapshot_graph_greedy_closest(SnapshotBytes bytes, const AstralMemorySn
                                        const SnapshotPreparedQuery* prepared, uint32_t entry,
                                        uint32_t begin_level, uint32_t end_level) {
   uint32_t closest = entry;
-  float closest_score = snapshot_score_active(bytes, info, prepared, closest);
+  float closest_score = snapshot_graph_score_active(bytes, info, prepared, closest);
   for (uint32_t level = begin_level; level > end_level; --level) {
     bool changed = true;
     while (changed) {
@@ -6663,7 +6699,7 @@ uint32_t snapshot_graph_greedy_closest(SnapshotBytes bytes, const AstralMemorySn
             snapshot_graph_level(bytes.data, graph, candidate) < level) {
           continue;
         }
-        const float score = snapshot_score_active(bytes, info, prepared, candidate);
+        const float score = snapshot_graph_score_active(bytes, info, prepared, candidate);
         if (score > closest_score) {
           closest = candidate;
           closest_score = score;
@@ -6685,7 +6721,7 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
   const uint32_t candidate_capacity =
       snapshot_graph_candidate_search_capacity(graph, search_capacity);
   snapshot_graph_mark_visited(scratch, entry);
-  const float entry_score = snapshot_score_active(bytes, info, prepared, entry);
+  const float entry_score = snapshot_graph_score_active(bytes, info, prepared, entry);
   snapshot_graph_insert_top(bytes, info, scratch, search_capacity, &top_count, entry, entry_score);
   snapshot_graph_add_candidate(bytes, info, scratch, candidate_capacity, entry, entry_score,
                                &candidate_count);
@@ -6709,14 +6745,17 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
         const uint32_t prefetch_neighbor = snapshot_graph_neighbor_at_base(
             bytes.data, neighbor_base, i + kGraphNeighborPrefetchDistance);
 #if defined(__GNUC__) || defined(__clang__)
-        __builtin_prefetch(snapshot_score_vector_ptr(bytes, prepared, prefetch_neighbor), 0, 1);
+        __builtin_prefetch(info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK
+                               ? snapshot_vector_ptr(bytes, info, prefetch_neighbor)
+                               : snapshot_score_vector_ptr(bytes, prepared, prefetch_neighbor),
+                           0, 1);
 #endif
       }
       if (snapshot_graph_was_visited(scratch, neighbor)) {
         continue;
       }
       snapshot_graph_mark_visited(scratch, neighbor);
-      const float score = snapshot_score_active(bytes, info, prepared, neighbor);
+      const float score = snapshot_graph_score_active(bytes, info, prepared, neighbor);
       if (snapshot_graph_insert_top(bytes, info, scratch, search_capacity, &top_count, neighbor,
                                     score)) {
         snapshot_graph_add_candidate(bytes, info, scratch, candidate_capacity, neighbor, score,
@@ -6781,7 +6820,11 @@ AstralErr memory_snapshot_view_search_graph(MemorySnapshotView* view,
     MemorySlot slot{};
     slot.record = record;
     AstralMemorySearchResult candidate{};
-    fill_result(&candidate, slot, scratch->top_scores[i]);
+    const float score =
+        f32_rerank_storage_kind(view->info.storage_kind)
+            ? snapshot_score_active(bytes, &view->info, &prepared, scratch->top_slots[i])
+            : scratch->top_scores[i];
+    fill_result(&candidate, slot, score);
     insert_result(out_results, desc->top_k, &filled, candidate);
   }
   *out_count = filled;
