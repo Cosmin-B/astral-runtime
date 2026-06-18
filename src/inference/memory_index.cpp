@@ -2269,6 +2269,7 @@ struct MemoryIndex {
   int16_t* i16_vectors;
   float* q8_scales;
   float* compact_score_scales;
+  int32_t* compact_vector_sums;
   uint32_t* active_slots;
   uint32_t* key_table;
   uint32_t* graph_neighbors;
@@ -2971,8 +2972,9 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
     const int8_t* va = q8_vector_at(index, a);
     const int8_t* vb = q8_vector_at(index, b);
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-      return (e5m2_storage(index) ? dot_e5m2_e5m2(va, vb, index->dim)
-                                  : dot_q8_q8(va, vb, index->dim)) *
+      return (e5m2_storage(index)
+                  ? dot_e5m2_e5m2(va, vb, index->dim)
+                  : dot_q8_q8_query(va, vb, index->dim, index->compact_vector_sums[b])) *
              scale_a * scale_b;
     }
     if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
@@ -2982,8 +2984,9 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
                  : l2_score_q8_q8(va, compact_value_scale(index, index->q8_scales[a]), vb,
                                   compact_value_scale(index, index->q8_scales[b]), index->dim);
     }
-    return (e5m2_storage(index) ? dot_e5m2_e5m2(va, vb, index->dim)
-                                : dot_q8_q8(va, vb, index->dim)) *
+    return (e5m2_storage(index)
+                ? dot_e5m2_e5m2(va, vb, index->dim)
+                : dot_q8_q8_query(va, vb, index->dim, index->compact_vector_sums[b])) *
            scale_a * scale_b;
   }
   const float* va = vector_at(index, a);
@@ -5080,6 +5083,10 @@ void destroy_allocations(MemoryIndex* index) {
     core::runtime_free_array(index->compact_score_scales, index->capacity);
     index->compact_score_scales = nullptr;
   }
+  if (index->compact_vector_sums != nullptr) {
+    core::runtime_free_array(index->compact_vector_sums, index->capacity);
+    index->compact_vector_sums = nullptr;
+  }
   if (index->active_slots != nullptr) {
     core::runtime_free_array(index->active_slots, index->capacity);
     index->active_slots = nullptr;
@@ -5149,6 +5156,7 @@ void memory_add_preprocess_range(MemoryIndex* index, const float* vectors, const
         store_f32_vector(index, slot, src);
       }
       quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
+      index->compact_vector_sums[slot] = sum_i8(q8_vector_at(index, slot), index->dim);
     } else if (e2m3_storage(index)) {
       if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
         quantize_e2m3_cosine_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src,
@@ -5156,6 +5164,7 @@ void memory_add_preprocess_range(MemoryIndex* index, const float* vectors, const
       } else {
         quantize_e2m3_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
       }
+      index->compact_vector_sums[slot] = sum_i8(q8_vector_at(index, slot), index->dim);
     } else if (e3m2_storage(index)) {
       if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
         quantize_e3m2_cosine_vector(i16_vector_at(index, slot), &index->q8_scales[slot], src,
@@ -5173,6 +5182,7 @@ void memory_add_preprocess_range(MemoryIndex* index, const float* vectors, const
       } else {
         quantize_e5m2_vector(q8_vector_at(index, slot), &index->q8_scales[slot], src, index->dim);
       }
+      index->compact_vector_sums[slot] = sum_i8(q8_vector_at(index, slot), index->dim);
     } else {
       store_f32_vector(index, slot, src);
     }
@@ -5322,6 +5332,10 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->compact_score_scales = compact_storage_kind(desc->storage_kind)
                                     ? core::runtime_alloc_array<float>(desc->capacity)
                                     : nullptr;
+  index->compact_vector_sums =
+      compact_storage_kind(desc->storage_kind) && !i16_storage_kind(desc->storage_kind)
+          ? core::runtime_alloc_array<int32_t>(desc->capacity)
+          : nullptr;
   index->active_slots = core::runtime_alloc_array<uint32_t>(desc->capacity);
   index->key_table = core::runtime_alloc_array<uint32_t>(key_table_capacity);
   index->graph_neighbors = nullptr;
@@ -5402,6 +5416,8 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
       (compact_storage_kind(desc->storage_kind) &&
        (index->q8_scales == nullptr || index->compact_score_scales == nullptr)) ||
       (compact_storage_kind(desc->storage_kind) && !i16_storage_kind(desc->storage_kind) &&
+       index->compact_vector_sums == nullptr) ||
+      (compact_storage_kind(desc->storage_kind) && !i16_storage_kind(desc->storage_kind) &&
        index->q8_vectors == nullptr) ||
       (i16_storage_kind(desc->storage_kind) && index->i16_vectors == nullptr) ||
       (graph_neighbor_capacity != 0 &&
@@ -5427,6 +5443,9 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     }
     std::memset(index->q8_scales, 0, sizeof(float) * desc->capacity);
     std::memset(index->compact_score_scales, 0, sizeof(float) * desc->capacity);
+    if (!i16_storage_kind(desc->storage_kind)) {
+      std::memset(index->compact_vector_sums, 0, sizeof(int32_t) * desc->capacity);
+    }
   }
   if (graph_neighbor_capacity != 0) {
     std::memset(index->graph_neighbors, 0, sizeof(uint32_t) * graph_neighbor_storage_count(index));
@@ -7160,6 +7179,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
         index->q8_scales[slot] = saved_compact_scale;
         std::memcpy(q8_vector_at(index, slot), saved_compact_vector,
                     static_cast<size_t>(index->dim) * sizeof(int8_t));
+        index->compact_vector_sums[slot] = sum_i8(q8_vector_at(index, slot), index->dim);
         if (f32_rerank_storage(index)) {
           store_f32_vector(index, slot, vector);
         }
@@ -7176,6 +7196,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
                                                : 0.0f;
           quantize_q8_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
                              index->dim);
+          index->compact_vector_sums[slot] = sum_i8(q8_vector_at(index, slot), index->dim);
         } else if (e2m3_storage(index)) {
           index->slots[slot].score_scale =
               index->metric == ASTRAL_MEMORY_METRIC_COSINE ? 1.0f : 0.0f;
@@ -7186,6 +7207,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
             quantize_e2m3_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
                                  index->dim);
           }
+          index->compact_vector_sums[slot] = sum_i8(q8_vector_at(index, slot), index->dim);
         } else if (e3m2_storage(index)) {
           index->slots[slot].score_scale =
               index->metric == ASTRAL_MEMORY_METRIC_COSINE ? 1.0f : 0.0f;
@@ -7209,6 +7231,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
             quantize_e5m2_vector(q8_vector_at(index, slot), &index->q8_scales[slot], vector,
                                  index->dim);
           }
+          index->compact_vector_sums[slot] = sum_i8(q8_vector_at(index, slot), index->dim);
         }
       }
       update_compact_score_scale(index, slot);
