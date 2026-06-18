@@ -2869,7 +2869,7 @@ TEST(inference_memory_index_q8_storage_mock) {
     ASSERT_EQ(snapshot.scale_offset, snapshot.record_offset + static_cast<uint64_t>(kRecordCount) *
                                                                   sizeof(AstralMemoryRecord));
     ASSERT_EQ(snapshot.vector_offset,
-              snapshot.scale_offset + static_cast<uint64_t>(kRecordCount) * sizeof(float));
+              snapshot.scale_offset + static_cast<uint64_t>(kRecordCount) * sizeof(float) * 2u);
     ASSERT_EQ(snapshot.graph_bytes, 0ull);
     ASSERT_EQ(snapshot.total_bytes, save_bytes);
 

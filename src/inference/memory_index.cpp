@@ -36,7 +36,8 @@ constexpr uint32_t kSaveVersionLegacyLayout = 4;
 constexpr uint32_t kSaveVersionModernLayout = 5;
 constexpr uint32_t kSaveVersionNormalizedF32Cosine = 6;
 constexpr uint32_t kSaveVersionGraphQuerySearch = 7;
-constexpr uint32_t kSaveVersion = kSaveVersionGraphQuerySearch;
+constexpr uint32_t kSaveVersionCompactScoreScales = 8;
+constexpr uint32_t kSaveVersion = kSaveVersionCompactScoreScales;
 constexpr uint32_t kSaveGraphTopologyFlag = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
@@ -220,6 +221,8 @@ struct SaveLayout {
   uint64_t record_stride;
   uint64_t scale_offset;
   uint64_t scale_stride;
+  uint64_t compact_score_scale_offset;
+  uint64_t compact_score_scale_stride;
   uint64_t vector_offset;
   uint64_t vector_stride;
   uint64_t rerank_vector_offset;
@@ -2375,7 +2378,7 @@ inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
   const uint64_t vector_bytes =
       compact_storage_kind(index->storage_kind)
           ? static_cast<uint64_t>(index->count) *
-                (sizeof(float) +
+                (sizeof(float) + sizeof(float) +
                  static_cast<uint64_t>(index->dim) *
                      (i16_storage_kind(index->storage_kind) ? sizeof(int16_t) : sizeof(int8_t)) +
                  (f32_rerank_storage_kind(index->storage_kind)
@@ -2417,6 +2420,11 @@ bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
       layout.scale_offset = cursor;
       layout.scale_stride = sizeof(float);
       cursor += static_cast<uint64_t>(count) * sizeof(float);
+      if (version >= kSaveVersionCompactScoreScales) {
+        layout.compact_score_scale_offset = cursor;
+        layout.compact_score_scale_stride = sizeof(float);
+        cursor += static_cast<uint64_t>(count) * sizeof(float);
+      }
       layout.vector_offset = cursor;
       layout.vector_stride = static_cast<uint64_t>(dim) * compact_element_bytes;
       cursor += static_cast<uint64_t>(count) * layout.vector_stride;
@@ -5934,6 +5942,12 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
     }
     for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
       const uint32_t slot = active_slot_at(index, active_pos);
+      const float scale = index->compact_score_scales[slot];
+      std::memcpy(cursor, &scale, sizeof(float));
+      cursor += sizeof(float);
+    }
+    for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
+      const uint32_t slot = active_slot_at(index, active_pos);
       const size_t bytes =
           static_cast<size_t>(index->dim) * (i16_storage(index) ? sizeof(int16_t) : sizeof(int8_t));
       std::memcpy(cursor,
@@ -6023,7 +6037,9 @@ AstralErr memory_snapshot_info_bytes(SnapshotBytes bytes, AstralMemorySnapshotIn
   const bool version_valid =
       header.version == kSaveVersionF32 || header.version == kSaveVersionCompactStorage ||
       header.version == kSaveVersionGraphTopology || header.version == kSaveVersionLegacyLayout ||
-      header.version == kSaveVersionModernLayout || header.version == kSaveVersion;
+      header.version == kSaveVersionModernLayout ||
+      header.version == kSaveVersionNormalizedF32Cosine ||
+      header.version == kSaveVersionGraphQuerySearch || header.version == kSaveVersion;
   AstralMemoryStorageKind storage = static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version >= kSaveVersionCompactStorage) {
     storage = static_cast<AstralMemoryStorageKind>(header._reserved0);
@@ -6253,6 +6269,8 @@ struct SnapshotPreparedQuery {
   int16_t compact_query_i16[kMaxDim];
   uint64_t score_vector_offset;
   uint64_t score_vector_stride;
+  uint64_t compact_score_scale_offset;
+  uint64_t compact_score_scale_stride;
   float query_scale;
   float compact_query_scale;
   int32_t compact_query_sum;
@@ -6274,6 +6292,14 @@ void snapshot_prepare_query(const AstralMemorySnapshotInfo* info, const float* q
                            info->index_kind, 0, 0, 0, &layout)) {
       prepared->score_vector_offset = layout.rerank_vector_offset;
       prepared->score_vector_stride = layout.rerank_vector_stride;
+    }
+  }
+  if (info->version >= kSaveVersionCompactScoreScales && compact_storage_kind(info->storage_kind)) {
+    SaveLayout layout{};
+    if (memory_save_layout(info->version, info->dim, info->count, info->storage_kind,
+                           info->index_kind, 0, 0, 0, &layout)) {
+      prepared->compact_score_scale_offset = layout.compact_score_scale_offset;
+      prepared->compact_score_scale_stride = layout.compact_score_scale_stride;
     }
   }
   prepared->compact = compact_storage_kind(info->storage_kind) ? 1u : 0u;
@@ -6341,6 +6367,17 @@ inline float snapshot_stored_scale(SnapshotBytes bytes, const AstralMemorySnapsh
   return stored_scale;
 }
 
+inline float snapshot_compact_score_scale(SnapshotBytes bytes,
+                                          const SnapshotPreparedQuery* prepared,
+                                          uint32_t active_pos) {
+  float scale = 1.0f;
+  std::memcpy(&scale,
+              bytes.data + prepared->compact_score_scale_offset +
+                  static_cast<uint64_t>(active_pos) * prepared->compact_score_scale_stride,
+              sizeof(scale));
+  return scale;
+}
+
 float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
                             const SnapshotPreparedQuery* prepared, uint32_t active_pos);
 
@@ -6350,14 +6387,18 @@ float snapshot_graph_score_active(SnapshotBytes bytes, const AstralMemorySnapsho
     const float stored_scale = snapshot_stored_scale(bytes, info, active_pos);
     const int8_t* vector =
         reinterpret_cast<const int8_t*>(snapshot_vector_ptr(bytes, info, active_pos));
-    const float scale = compact_value_scale_kind(info->storage_kind, stored_scale);
+    const float scale = prepared->compact_score_scale_stride != 0
+                            ? snapshot_compact_score_scale(bytes, prepared, active_pos)
+                            : compact_value_scale_kind(info->storage_kind, stored_scale);
     if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
       return dot_q8_q8_query(vector, prepared->compact_query, info->dim,
                              prepared->compact_query_sum) *
              scale * prepared->compact_query_scale;
     }
     if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-      const float vector_scale = cosine_scale_q8(vector, stored_scale, info->dim);
+      const float vector_scale = prepared->compact_score_scale_stride == 0
+                                     ? cosine_scale_q8(vector, stored_scale, info->dim)
+                                     : 1.0f;
       return dot_q8_q8_query(vector, prepared->compact_query, info->dim,
                              prepared->compact_query_sum) *
              scale * prepared->compact_query_scale * prepared->query_scale * vector_scale;
@@ -7003,7 +7044,9 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
   const bool version_valid =
       header.version == kSaveVersionF32 || header.version == kSaveVersionCompactStorage ||
       header.version == kSaveVersionGraphTopology || header.version == kSaveVersionLegacyLayout ||
-      header.version == kSaveVersionModernLayout || header.version == kSaveVersion;
+      header.version == kSaveVersionModernLayout ||
+      header.version == kSaveVersionNormalizedF32Cosine ||
+      header.version == kSaveVersionGraphQuerySearch || header.version == kSaveVersion;
   AstralMemoryStorageKind saved_storage =
       static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version >= kSaveVersionCompactStorage) {
