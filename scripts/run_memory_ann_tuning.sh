@@ -9,8 +9,8 @@ usage() {
 Usage: scripts/run_memory_ann_tuning.sh [options]
 
 Runs a repeatable ANN tuning sweep for Astral memory graph indexes. The runner
-captures f32, q8, and f6e2m3 graph recall, top-1 recall, build cost, load
-cost, edge counts, and optional insert-latency/budget sweeps for each requested graph shape.
+captures f32 and compact graph recall, top-1 recall, build cost, load cost,
+edge counts, and optional insert-latency/budget sweeps for each requested graph shape.
 Output goes outside the repository by default.
 
 Options:
@@ -470,7 +470,13 @@ for neighbors in "${neighbor_values[@]}"; do
       fi
       append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f32"
       append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "q8"
+      append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "q8f32"
       append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f6e2m3"
+      append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f6e2m3f32"
+      append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f6e3m2"
+      append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f6e3m2f32"
+      append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f8e5m2"
+      append_csv_row "${source_shape_dir}" "${neighbors}" "${build_search}" "${query_search}" "f8e5m2f32"
     done
   done
 done

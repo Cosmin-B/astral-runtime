@@ -116,6 +116,8 @@ static constexpr char kBenchMemoryStorageQ8[] = "q8";
 static constexpr char kBenchMemoryStorageQ8F32[] = "q8f32";
 static constexpr char kBenchMemoryStorageF6E2M3[] = "f6e2m3";
 static constexpr char kBenchMemoryStorageF6E3M2[] = "f6e3m2";
+static constexpr char kBenchMemoryStorageF6E2M3F32[] = "f6e2m3f32";
+static constexpr char kBenchMemoryStorageF6E3M2F32[] = "f6e3m2f32";
 static constexpr char kBenchMemoryStorageF8E5M2[] = "f8e5m2";
 static constexpr char kBenchMemoryStorageF8E5M2F32[] = "f8e5m2f32";
 static constexpr char kBenchMemoryCaseAddBatch[] = "add_batch";
@@ -292,6 +294,12 @@ static AstralMemoryStorageKind parse_memory_storage_env() {
     }
     if (value != nullptr && std::strcmp(value, kBenchMemoryStorageF6E3M2) == 0) {
       return ASTRAL_MEMORY_STORAGE_F6_E3M2;
+    }
+    if (value != nullptr && std::strcmp(value, kBenchMemoryStorageF6E2M3F32) == 0) {
+      return ASTRAL_MEMORY_STORAGE_F6_E2M3_F32_RERANK;
+    }
+    if (value != nullptr && std::strcmp(value, kBenchMemoryStorageF6E3M2F32) == 0) {
+      return ASTRAL_MEMORY_STORAGE_F6_E3M2_F32_RERANK;
     }
     if (value != nullptr && std::strcmp(value, kBenchMemoryStorageF8E5M2) == 0) {
       return ASTRAL_MEMORY_STORAGE_F8_E5M2;
