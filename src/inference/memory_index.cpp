@@ -1427,19 +1427,29 @@ float dot_e5m2_f32(const int8_t* a, const float* b, uint32_t dim) {
 #if defined(ASTRAL_X86_F16C)
   __m256 acc0 = _mm256_setzero_ps();
   __m256 acc1 = _mm256_setzero_ps();
+  __m256 acc2 = _mm256_setzero_ps();
+  __m256 acc3 = _mm256_setzero_ps();
   uint32_t i = 0;
-  for (; i + kAvx2F32Lanes * 2u <= dim; i += kAvx2F32Lanes * 2u) {
+  for (; i + kAvx2UnrollF32 <= dim; i += kAvx2UnrollF32) {
 #if defined(__FMA__)
     acc0 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i), _mm256_loadu_ps(b + i), acc0);
     acc1 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes),
                            _mm256_loadu_ps(b + i + kAvx2F32Lanes), acc1);
+    acc2 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset2),
+                           _mm256_loadu_ps(b + i + kAvx2Offset2), acc2);
+    acc3 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset3),
+                           _mm256_loadu_ps(b + i + kAvx2Offset3), acc3);
 #else
     acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i), _mm256_loadu_ps(b + i)));
     acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes),
                                              _mm256_loadu_ps(b + i + kAvx2F32Lanes)));
+    acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset2),
+                                             _mm256_loadu_ps(b + i + kAvx2Offset2)));
+    acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset3),
+                                             _mm256_loadu_ps(b + i + kAvx2Offset3)));
 #endif
   }
-  float sum = reduce_avx2_f32(_mm256_add_ps(acc0, acc1));
+  float sum = reduce_avx2_f32(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
   for (; i < dim; ++i) {
     sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * b[i];
   }
@@ -1493,20 +1503,30 @@ float dot_e5m2_e5m2(const int8_t* a, const int8_t* b, uint32_t dim) {
 #if defined(ASTRAL_X86_F16C)
   __m256 acc0 = _mm256_setzero_ps();
   __m256 acc1 = _mm256_setzero_ps();
+  __m256 acc2 = _mm256_setzero_ps();
+  __m256 acc3 = _mm256_setzero_ps();
   uint32_t i = 0;
-  for (; i + kAvx2F32Lanes * 2u <= dim; i += kAvx2F32Lanes * 2u) {
+  for (; i + kAvx2UnrollF32 <= dim; i += kAvx2UnrollF32) {
 #if defined(__FMA__)
     acc0 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i), e5m2_load8_f32_avx2(b + i), acc0);
     acc1 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes),
                            e5m2_load8_f32_avx2(b + i + kAvx2F32Lanes), acc1);
+    acc2 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset2),
+                           e5m2_load8_f32_avx2(b + i + kAvx2Offset2), acc2);
+    acc3 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset3),
+                           e5m2_load8_f32_avx2(b + i + kAvx2Offset3), acc3);
 #else
     acc0 =
         _mm256_add_ps(acc0, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i), e5m2_load8_f32_avx2(b + i)));
     acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes),
                                              e5m2_load8_f32_avx2(b + i + kAvx2F32Lanes)));
+    acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset2),
+                                             e5m2_load8_f32_avx2(b + i + kAvx2Offset2)));
+    acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset3),
+                                             e5m2_load8_f32_avx2(b + i + kAvx2Offset3)));
 #endif
   }
-  float sum = reduce_avx2_f32(_mm256_add_ps(acc0, acc1));
+  float sum = reduce_avx2_f32(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
   for (; i < dim; ++i) {
     sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * e5m2_to_f32(static_cast<uint8_t>(b[i]));
   }
