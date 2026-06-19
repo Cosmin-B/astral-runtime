@@ -35,6 +35,8 @@ Options:
   --perf-bin <path>     Perf executable to use (default: perf from PATH)
   --perf-events <csv>   Perf stat event list
   --require-perf        Fail when perf is missing or blocked
+  --min-recall-pct <N>  Fail if a named graph storage recall is below this percentage
+  --recall-storages <list> Comma-separated graph storage names checked by --min-recall-pct
   --help                Show help
 
 Examples:
@@ -64,6 +66,8 @@ perf_enabled="0"
 require_perf="0"
 perf_bin=""
 perf_events="cycles,instructions,branches,branch-misses,cache-references,cache-misses,LLC-loads,LLC-load-misses,L1-dcache-loads,L1-dcache-load-misses,dTLB-loads,dTLB-load-misses"
+min_recall_pct=""
+recall_storages=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -87,6 +91,8 @@ while [[ $# -gt 0 ]]; do
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
     --require-perf) require_perf="1"; shift ;;
+    --min-recall-pct) min_recall_pct="${2:-}"; shift 2 ;;
+    --recall-storages) recall_storages="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -161,6 +167,8 @@ run_case() {
   echo "# perf_enabled: ${perf_enabled}"
   echo "# perf_bin: ${perf_bin}"
   echo "# perf_events: ${perf_events}"
+  echo "# min_recall_pct: ${min_recall_pct:-none}"
+  echo "# recall_storages: ${recall_storages:-none}"
   echo
 } > "${out_dir}/summary.txt"
 
@@ -283,5 +291,46 @@ for file in "${out_dir}"/*.txt; do
     grep -nE "^# perf_stat:" "${file}" || true
   } >> "${out_dir}/summary.txt"
 done
+
+if [[ -n "${min_recall_pct}" && -n "${recall_storages}" ]]; then
+  IFS=',' read -r -a recall_storage_values <<< "${recall_storages}"
+  for storage in "${recall_storage_values[@]}"; do
+    recall_file="${out_dir}/graph_${storage}_recall.txt"
+    if [[ ! -f "${recall_file}" ]]; then
+      echo "[memory-search] missing recall file for storage=${storage}: ${recall_file}" >&2
+      exit 1
+    fi
+    recall_pct="$(awk '
+      /recall_pct=/ {
+        for (i = 1; i <= NF; ++i) {
+          if (index($i, "recall_pct=") == 1) {
+            value = substr($i, length("recall_pct=") + 1)
+            if (value != "") {
+              print value
+              exit
+            }
+            if ((i + 1) <= NF) {
+              print $(i + 1)
+              exit
+            }
+          }
+        }
+      }
+    ' "${recall_file}")"
+    if [[ -z "${recall_pct}" ]]; then
+      echo "[memory-search] missing recall_pct for storage=${storage}: ${recall_file}" >&2
+      exit 1
+    fi
+    awk -v storage="${storage}" -v recall="${recall_pct}" -v min="${min_recall_pct}" '
+      BEGIN {
+        if ((recall + 0.0) < (min + 0.0)) {
+          printf "[memory-search] recall below threshold: storage=%s recall_pct=%.4f min=%.4f\n",
+                 storage, recall + 0.0, min + 0.0 > "/dev/stderr"
+          exit 1
+        }
+      }
+    '
+  done
+fi
 
 echo "[memory-search] wrote ${out_dir}"
