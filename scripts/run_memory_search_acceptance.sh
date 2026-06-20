@@ -24,6 +24,7 @@ Options:
   --graph-search <N>    Graph build/search budget (default: 64)
   --query-search <N>    Per-query graph search budget (default: graph budget)
   --graph-neighbors <N> Graph neighbor budget (default: 32)
+  --graph-storages <list> Comma-separated graph storage names to run
   --recall-queries <N>  Recall query count (default: 32)
   --budget-sweep        Also capture graph_recall_search_sweep for graph storage lanes
   --recall-detail       Also capture graph_recall_detail for graph storage lanes
@@ -55,6 +56,7 @@ metric="cosine"
 graph_search="64"
 query_search=""
 graph_neighbors="32"
+graph_storages="f32,q8,q8f32,f6e2m3,f6e2m3f32,f6e3m2,f6e3m2f32,f8e5m2,f8e5m2f32"
 recall_queries="32"
 budget_sweep="0"
 recall_detail="0"
@@ -80,6 +82,7 @@ while [[ $# -gt 0 ]]; do
     --graph-search) graph_search="${2:-}"; shift 2 ;;
     --query-search) query_search="${2:-}"; shift 2 ;;
     --graph-neighbors) graph_neighbors="${2:-}"; shift 2 ;;
+    --graph-storages) graph_storages="${2:-}"; shift 2 ;;
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
     --budget-sweep) budget_sweep="1"; shift ;;
     --recall-detail) recall_detail="1"; shift ;;
@@ -146,6 +149,28 @@ run_case() {
     --out "${out_file}"
 }
 
+storage_enabled() {
+  local needle="$1"
+  local values="$2"
+  local value
+  IFS=',' read -r -a storage_values <<< "${values}"
+  for value in "${storage_values[@]}"; do
+    if [[ "${value}" == "${needle}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+run_graph_case() {
+  local name="$1"
+  local storage="$2"
+  local bench_case="$3"
+  if storage_enabled "${storage}" "${graph_storages}"; then
+    run_case "${name}" "${storage}" "${bench_case}"
+  fi
+}
+
 {
   echo "# Astral memory search acceptance"
   echo "# date: $(date -Iseconds)"
@@ -157,6 +182,7 @@ run_case() {
   echo "# graph_search: ${graph_search}"
   echo "# query_search: ${query_search}"
   echo "# graph_neighbors: ${graph_neighbors}"
+  echo "# graph_storages: ${graph_storages}"
   echo "# recall_queries: ${recall_queries}"
   echo "# budget_sweep: ${budget_sweep}"
   echo "# recall_detail: ${recall_detail}"
@@ -190,94 +216,103 @@ if [[ "${skip_flat_baseline}" != "1" ]]; then
   run_case "flat_f8e5m2f32_batch" "f8e5m2f32" "flat_search_batch"
   run_case "flat_f8e5m2f32_recall" "f8e5m2f32" "flat_compact_recall_search"
 fi
-run_case "graph_f32_build" "f32" "graph_add_batch"
-run_case "graph_f32_load" "f32" "graph_load"
-run_case "graph_f32_latency" "f32" "graph_search_latency"
-run_case "graph_f32_recall" "f32" "graph_recall_search"
-run_case "graph_f32_view_recall" "f32" "graph_snapshot_view_recall_search"
-run_case "graph_f32_top1_recall" "f32" "graph_recall_top1"
-run_case "graph_q8_build" "q8" "graph_add_batch"
-run_case "graph_q8_load" "q8" "graph_load"
-run_case "graph_q8_recall" "q8" "graph_recall_search"
-run_case "graph_q8_view_recall" "q8" "graph_snapshot_view_recall_search"
-run_case "graph_q8_top1_recall" "q8" "graph_recall_top1"
-run_case "graph_f6e2m3_build" "f6e2m3" "graph_add_batch"
-run_case "graph_f6e2m3_load" "f6e2m3" "graph_load"
-run_case "graph_f6e2m3_recall" "f6e2m3" "graph_recall_search"
-run_case "graph_f6e2m3_view_recall" "f6e2m3" "graph_snapshot_view_recall_search"
-run_case "graph_f6e2m3_top1_recall" "f6e2m3" "graph_recall_top1"
-run_case "graph_f6e2m3f32_build" "f6e2m3f32" "graph_add_batch"
-run_case "graph_f6e2m3f32_load" "f6e2m3f32" "graph_load"
-run_case "graph_f6e2m3f32_recall" "f6e2m3f32" "graph_recall_search"
-run_case "graph_f6e2m3f32_view_recall" "f6e2m3f32" "graph_snapshot_view_recall_search"
-run_case "graph_f6e2m3f32_top1_recall" "f6e2m3f32" "graph_recall_top1"
-run_case "graph_f6e3m2_build" "f6e3m2" "graph_add_batch"
-run_case "graph_f6e3m2_load" "f6e3m2" "graph_load"
-run_case "graph_f6e3m2_recall" "f6e3m2" "graph_recall_search"
-run_case "graph_f6e3m2_view_recall" "f6e3m2" "graph_snapshot_view_recall_search"
-run_case "graph_f6e3m2_top1_recall" "f6e3m2" "graph_recall_top1"
-run_case "graph_f6e3m2f32_build" "f6e3m2f32" "graph_add_batch"
-run_case "graph_f6e3m2f32_load" "f6e3m2f32" "graph_load"
-run_case "graph_f6e3m2f32_recall" "f6e3m2f32" "graph_recall_search"
-run_case "graph_f6e3m2f32_view_recall" "f6e3m2f32" "graph_snapshot_view_recall_search"
-run_case "graph_f6e3m2f32_top1_recall" "f6e3m2f32" "graph_recall_top1"
-run_case "graph_f8e5m2_build" "f8e5m2" "graph_add_batch"
-run_case "graph_f8e5m2_load" "f8e5m2" "graph_load"
-run_case "graph_f8e5m2_recall" "f8e5m2" "graph_recall_search"
-run_case "graph_f8e5m2_view_recall" "f8e5m2" "graph_snapshot_view_recall_search"
-run_case "graph_f8e5m2_top1_recall" "f8e5m2" "graph_recall_top1"
-run_case "graph_f8e5m2f32_build" "f8e5m2f32" "graph_add_batch"
-run_case "graph_f8e5m2f32_load" "f8e5m2f32" "graph_load"
-run_case "graph_f8e5m2f32_recall" "f8e5m2f32" "graph_recall_search"
-run_case "graph_f8e5m2f32_view_recall" "f8e5m2f32" "graph_snapshot_view_recall_search"
-run_case "graph_f8e5m2f32_top1_recall" "f8e5m2f32" "graph_recall_top1"
+run_graph_case "graph_f32_build" "f32" "graph_add_batch"
+run_graph_case "graph_f32_load" "f32" "graph_load"
+run_graph_case "graph_f32_latency" "f32" "graph_search_latency"
+run_graph_case "graph_f32_recall" "f32" "graph_recall_search"
+run_graph_case "graph_f32_view_recall" "f32" "graph_snapshot_view_recall_search"
+run_graph_case "graph_f32_top1_recall" "f32" "graph_recall_top1"
+run_graph_case "graph_q8_build" "q8" "graph_add_batch"
+run_graph_case "graph_q8_load" "q8" "graph_load"
+run_graph_case "graph_q8_recall" "q8" "graph_recall_search"
+run_graph_case "graph_q8_view_recall" "q8" "graph_snapshot_view_recall_search"
+run_graph_case "graph_q8_top1_recall" "q8" "graph_recall_top1"
+run_graph_case "graph_q8f32_build" "q8f32" "graph_add_batch"
+run_graph_case "graph_q8f32_load" "q8f32" "graph_load"
+run_graph_case "graph_q8f32_recall" "q8f32" "graph_recall_search"
+run_graph_case "graph_q8f32_view_recall" "q8f32" "graph_snapshot_view_recall_search"
+run_graph_case "graph_q8f32_top1_recall" "q8f32" "graph_recall_top1"
+run_graph_case "graph_f6e2m3_build" "f6e2m3" "graph_add_batch"
+run_graph_case "graph_f6e2m3_load" "f6e2m3" "graph_load"
+run_graph_case "graph_f6e2m3_recall" "f6e2m3" "graph_recall_search"
+run_graph_case "graph_f6e2m3_view_recall" "f6e2m3" "graph_snapshot_view_recall_search"
+run_graph_case "graph_f6e2m3_top1_recall" "f6e2m3" "graph_recall_top1"
+run_graph_case "graph_f6e2m3f32_build" "f6e2m3f32" "graph_add_batch"
+run_graph_case "graph_f6e2m3f32_load" "f6e2m3f32" "graph_load"
+run_graph_case "graph_f6e2m3f32_recall" "f6e2m3f32" "graph_recall_search"
+run_graph_case "graph_f6e2m3f32_view_recall" "f6e2m3f32" "graph_snapshot_view_recall_search"
+run_graph_case "graph_f6e2m3f32_top1_recall" "f6e2m3f32" "graph_recall_top1"
+run_graph_case "graph_f6e3m2_build" "f6e3m2" "graph_add_batch"
+run_graph_case "graph_f6e3m2_load" "f6e3m2" "graph_load"
+run_graph_case "graph_f6e3m2_recall" "f6e3m2" "graph_recall_search"
+run_graph_case "graph_f6e3m2_view_recall" "f6e3m2" "graph_snapshot_view_recall_search"
+run_graph_case "graph_f6e3m2_top1_recall" "f6e3m2" "graph_recall_top1"
+run_graph_case "graph_f6e3m2f32_build" "f6e3m2f32" "graph_add_batch"
+run_graph_case "graph_f6e3m2f32_load" "f6e3m2f32" "graph_load"
+run_graph_case "graph_f6e3m2f32_recall" "f6e3m2f32" "graph_recall_search"
+run_graph_case "graph_f6e3m2f32_view_recall" "f6e3m2f32" "graph_snapshot_view_recall_search"
+run_graph_case "graph_f6e3m2f32_top1_recall" "f6e3m2f32" "graph_recall_top1"
+run_graph_case "graph_f8e5m2_build" "f8e5m2" "graph_add_batch"
+run_graph_case "graph_f8e5m2_load" "f8e5m2" "graph_load"
+run_graph_case "graph_f8e5m2_recall" "f8e5m2" "graph_recall_search"
+run_graph_case "graph_f8e5m2_view_recall" "f8e5m2" "graph_snapshot_view_recall_search"
+run_graph_case "graph_f8e5m2_top1_recall" "f8e5m2" "graph_recall_top1"
+run_graph_case "graph_f8e5m2f32_build" "f8e5m2f32" "graph_add_batch"
+run_graph_case "graph_f8e5m2f32_load" "f8e5m2f32" "graph_load"
+run_graph_case "graph_f8e5m2f32_recall" "f8e5m2f32" "graph_recall_search"
+run_graph_case "graph_f8e5m2f32_view_recall" "f8e5m2f32" "graph_snapshot_view_recall_search"
+run_graph_case "graph_f8e5m2f32_top1_recall" "f8e5m2f32" "graph_recall_top1"
 
 if [[ "${add_latency}" == "1" ]]; then
-  run_case "graph_f32_add_latency" "f32" "graph_add_latency"
-  run_case "graph_q8_add_latency" "q8" "graph_add_latency"
-  run_case "graph_f6e2m3_add_latency" "f6e2m3" "graph_add_latency"
-  run_case "graph_f6e2m3f32_add_latency" "f6e2m3f32" "graph_add_latency"
-  run_case "graph_f6e3m2_add_latency" "f6e3m2" "graph_add_latency"
-  run_case "graph_f6e3m2f32_add_latency" "f6e3m2f32" "graph_add_latency"
-  run_case "graph_f8e5m2_add_latency" "f8e5m2" "graph_add_latency"
-  run_case "graph_f8e5m2f32_add_latency" "f8e5m2f32" "graph_add_latency"
+  run_graph_case "graph_f32_add_latency" "f32" "graph_add_latency"
+  run_graph_case "graph_q8_add_latency" "q8" "graph_add_latency"
+  run_graph_case "graph_q8f32_add_latency" "q8f32" "graph_add_latency"
+  run_graph_case "graph_f6e2m3_add_latency" "f6e2m3" "graph_add_latency"
+  run_graph_case "graph_f6e2m3f32_add_latency" "f6e2m3f32" "graph_add_latency"
+  run_graph_case "graph_f6e3m2_add_latency" "f6e3m2" "graph_add_latency"
+  run_graph_case "graph_f6e3m2f32_add_latency" "f6e3m2f32" "graph_add_latency"
+  run_graph_case "graph_f8e5m2_add_latency" "f8e5m2" "graph_add_latency"
+  run_graph_case "graph_f8e5m2f32_add_latency" "f8e5m2f32" "graph_add_latency"
 fi
 
 if [[ "${budget_sweep}" == "1" ]]; then
-  run_case "graph_f32_budget_sweep" "f32" "graph_recall_search_sweep"
-  run_case "graph_q8_budget_sweep" "q8" "graph_recall_search_sweep"
-  run_case "graph_f6e2m3_budget_sweep" "f6e2m3" "graph_recall_search_sweep"
-  run_case "graph_f6e2m3f32_budget_sweep" "f6e2m3f32" "graph_recall_search_sweep"
-  run_case "graph_f6e3m2_budget_sweep" "f6e3m2" "graph_recall_search_sweep"
-  run_case "graph_f6e3m2f32_budget_sweep" "f6e3m2f32" "graph_recall_search_sweep"
-  run_case "graph_f8e5m2_budget_sweep" "f8e5m2" "graph_recall_search_sweep"
-  run_case "graph_f8e5m2f32_budget_sweep" "f8e5m2f32" "graph_recall_search_sweep"
+  run_graph_case "graph_f32_budget_sweep" "f32" "graph_recall_search_sweep"
+  run_graph_case "graph_q8_budget_sweep" "q8" "graph_recall_search_sweep"
+  run_graph_case "graph_q8f32_budget_sweep" "q8f32" "graph_recall_search_sweep"
+  run_graph_case "graph_f6e2m3_budget_sweep" "f6e2m3" "graph_recall_search_sweep"
+  run_graph_case "graph_f6e2m3f32_budget_sweep" "f6e2m3f32" "graph_recall_search_sweep"
+  run_graph_case "graph_f6e3m2_budget_sweep" "f6e3m2" "graph_recall_search_sweep"
+  run_graph_case "graph_f6e3m2f32_budget_sweep" "f6e3m2f32" "graph_recall_search_sweep"
+  run_graph_case "graph_f8e5m2_budget_sweep" "f8e5m2" "graph_recall_search_sweep"
+  run_graph_case "graph_f8e5m2f32_budget_sweep" "f8e5m2f32" "graph_recall_search_sweep"
 fi
 
 if [[ "${recall_detail}" == "1" ]]; then
-  run_case "graph_f32_recall_detail" "f32" "graph_recall_detail"
-  run_case "graph_q8_recall_detail" "q8" "graph_recall_detail"
-  run_case "graph_f6e2m3_recall_detail" "f6e2m3" "graph_recall_detail"
-  run_case "graph_f6e2m3f32_recall_detail" "f6e2m3f32" "graph_recall_detail"
-  run_case "graph_f6e3m2_recall_detail" "f6e3m2" "graph_recall_detail"
-  run_case "graph_f6e3m2f32_recall_detail" "f6e3m2f32" "graph_recall_detail"
-  run_case "graph_f8e5m2_recall_detail" "f8e5m2" "graph_recall_detail"
-  run_case "graph_f8e5m2f32_recall_detail" "f8e5m2f32" "graph_recall_detail"
+  run_graph_case "graph_f32_recall_detail" "f32" "graph_recall_detail"
+  run_graph_case "graph_q8_recall_detail" "q8" "graph_recall_detail"
+  run_graph_case "graph_q8f32_recall_detail" "q8f32" "graph_recall_detail"
+  run_graph_case "graph_f6e2m3_recall_detail" "f6e2m3" "graph_recall_detail"
+  run_graph_case "graph_f6e2m3f32_recall_detail" "f6e2m3f32" "graph_recall_detail"
+  run_graph_case "graph_f6e3m2_recall_detail" "f6e3m2" "graph_recall_detail"
+  run_graph_case "graph_f6e3m2f32_recall_detail" "f6e3m2f32" "graph_recall_detail"
+  run_graph_case "graph_f8e5m2_recall_detail" "f8e5m2" "graph_recall_detail"
+  run_graph_case "graph_f8e5m2f32_recall_detail" "f8e5m2f32" "graph_recall_detail"
 fi
 
 if [[ "${level_stats}" == "1" ]]; then
-  run_case "graph_level_stats" "f32" "graph_level_stats"
+  run_graph_case "graph_level_stats" "f32" "graph_level_stats"
 fi
 
 if [[ "${edge_stats}" == "1" ]]; then
-  run_case "graph_f32_edge_stats" "f32" "graph_edge_stats"
-  run_case "graph_q8_edge_stats" "q8" "graph_edge_stats"
-  run_case "graph_f6e2m3_edge_stats" "f6e2m3" "graph_edge_stats"
-  run_case "graph_f6e2m3f32_edge_stats" "f6e2m3f32" "graph_edge_stats"
-  run_case "graph_f6e3m2_edge_stats" "f6e3m2" "graph_edge_stats"
-  run_case "graph_f6e3m2f32_edge_stats" "f6e3m2f32" "graph_edge_stats"
-  run_case "graph_f8e5m2_edge_stats" "f8e5m2" "graph_edge_stats"
-  run_case "graph_f8e5m2f32_edge_stats" "f8e5m2f32" "graph_edge_stats"
+  run_graph_case "graph_f32_edge_stats" "f32" "graph_edge_stats"
+  run_graph_case "graph_q8_edge_stats" "q8" "graph_edge_stats"
+  run_graph_case "graph_q8f32_edge_stats" "q8f32" "graph_edge_stats"
+  run_graph_case "graph_f6e2m3_edge_stats" "f6e2m3" "graph_edge_stats"
+  run_graph_case "graph_f6e2m3f32_edge_stats" "f6e2m3f32" "graph_edge_stats"
+  run_graph_case "graph_f6e3m2_edge_stats" "f6e3m2" "graph_edge_stats"
+  run_graph_case "graph_f6e3m2f32_edge_stats" "f6e3m2f32" "graph_edge_stats"
+  run_graph_case "graph_f8e5m2_edge_stats" "f8e5m2" "graph_edge_stats"
+  run_graph_case "graph_f8e5m2f32_edge_stats" "f8e5m2f32" "graph_edge_stats"
 fi
 
 for file in "${out_dir}"/*.txt; do
