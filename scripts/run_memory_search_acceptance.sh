@@ -38,6 +38,8 @@ Options:
   --require-perf        Fail when perf is missing or blocked
   --min-recall-pct <N>  Fail if a named graph storage recall is below this percentage
   --recall-storages <list> Comma-separated graph storage names checked by --min-recall-pct
+  --max-add-p99-ns <N>  Fail if a named graph storage insert p99 is above this nanosecond budget
+  --add-latency-storages <list> Comma-separated graph storage names checked by --max-add-p99-ns
   --help                Show help
 
 Examples:
@@ -70,6 +72,8 @@ perf_bin=""
 perf_events="cycles,instructions,branches,branch-misses,cache-references,cache-misses,LLC-loads,LLC-load-misses,L1-dcache-loads,L1-dcache-load-misses,dTLB-loads,dTLB-load-misses"
 min_recall_pct=""
 recall_storages=""
+max_add_p99_ns=""
+add_latency_storages=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -96,6 +100,8 @@ while [[ $# -gt 0 ]]; do
     --require-perf) require_perf="1"; shift ;;
     --min-recall-pct) min_recall_pct="${2:-}"; shift 2 ;;
     --recall-storages) recall_storages="${2:-}"; shift 2 ;;
+    --max-add-p99-ns) max_add_p99_ns="${2:-}"; shift 2 ;;
+    --add-latency-storages) add_latency_storages="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -103,6 +109,10 @@ done
 
 if [[ "${require_perf}" == "1" ]]; then
   perf_enabled="1"
+fi
+
+if [[ -n "${max_add_p99_ns}" && -n "${add_latency_storages}" ]]; then
+  add_latency="1"
 fi
 
 if [[ -z "${query_search}" ]]; then
@@ -195,6 +205,8 @@ run_graph_case() {
   echo "# perf_events: ${perf_events}"
   echo "# min_recall_pct: ${min_recall_pct:-none}"
   echo "# recall_storages: ${recall_storages:-none}"
+  echo "# max_add_p99_ns: ${max_add_p99_ns:-none}"
+  echo "# add_latency_storages: ${add_latency_storages:-none}"
   echo
 } > "${out_dir}/summary.txt"
 
@@ -361,6 +373,47 @@ if [[ -n "${min_recall_pct}" && -n "${recall_storages}" ]]; then
         if ((recall + 0.0) < (min + 0.0)) {
           printf "[memory-search] recall below threshold: storage=%s recall_pct=%.4f min=%.4f\n",
                  storage, recall + 0.0, min + 0.0 > "/dev/stderr"
+          exit 1
+        }
+      }
+    '
+  done
+fi
+
+if [[ -n "${max_add_p99_ns}" && -n "${add_latency_storages}" ]]; then
+  IFS=',' read -r -a add_latency_storage_values <<< "${add_latency_storages}"
+  for storage in "${add_latency_storage_values[@]}"; do
+    add_latency_file="${out_dir}/graph_${storage}_add_latency.txt"
+    if [[ ! -f "${add_latency_file}" ]]; then
+      echo "[memory-search] missing add-latency file for storage=${storage}: ${add_latency_file}" >&2
+      exit 1
+    fi
+    add_p99_ns="$(awk '
+      /p99=/ {
+        for (i = 1; i <= NF; ++i) {
+          if (index($i, "p99=") == 1) {
+            value = substr($i, length("p99=") + 1)
+            if (value != "") {
+              print value
+              exit
+            }
+            if ((i + 1) <= NF) {
+              print $(i + 1)
+              exit
+            }
+          }
+        }
+      }
+    ' "${add_latency_file}")"
+    if [[ -z "${add_p99_ns}" ]]; then
+      echo "[memory-search] missing p99 add latency for storage=${storage}: ${add_latency_file}" >&2
+      exit 1
+    fi
+    awk -v storage="${storage}" -v p99="${add_p99_ns}" -v max="${max_add_p99_ns}" '
+      BEGIN {
+        if ((p99 + 0.0) > (max + 0.0)) {
+          printf "[memory-search] add p99 above threshold: storage=%s p99_ns=%.4f max=%.4f\n",
+                 storage, p99 + 0.0, max + 0.0 > "/dev/stderr"
           exit 1
         }
       }
