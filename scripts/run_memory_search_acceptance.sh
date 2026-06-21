@@ -22,7 +22,7 @@ Options:
   --capacity <N>        Vector count (default: 100000)
   --metric <name>       Metric: cosine, dot, or l2 (default: cosine)
   --graph-search <N>    Graph build/search budget (default: 64)
-  --query-search <N>    Per-query graph search budget (default: graph budget)
+  --query-search <N>    Per-query graph search budget (default: index default)
   --graph-neighbors <N> Graph neighbor budget (default: 32)
   --graph-storages <list> Comma-separated graph storage names to run
   --recall-queries <N>  Recall query count (default: 32)
@@ -113,10 +113,6 @@ fi
 
 if [[ -n "${max_add_p99_ns}" && -n "${add_latency_storages}" ]]; then
   add_latency="1"
-fi
-
-if [[ -z "${query_search}" ]]; then
-  query_search="${graph_search}"
 fi
 
 if [[ -z "${out_dir}" ]]; then
