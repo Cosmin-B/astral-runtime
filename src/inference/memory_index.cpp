@@ -65,6 +65,8 @@ constexpr uint32_t kGraphLongLinkCount = 0;
 constexpr uint32_t kGraphNeighborPrefetchDistance = 2;
 constexpr uint32_t kGraphF32RerankMinCandidates = 256;
 constexpr uint32_t kGraphF32RerankTopKMultiplier = 32;
+constexpr uint32_t kGraphDefaultQueryCapacityMultiplier = 1;
+constexpr uint32_t kGraphRerankDefaultQueryCapacityMultiplier = 3;
 constexpr uint64_t kBytesPerKiB = 1024;
 constexpr uint64_t kBytesPerMiB = kBytesPerKiB * kBytesPerKiB;
 constexpr uint64_t kGraphCompactExactSearchMaxBytes = 16 * kBytesPerMiB;
@@ -316,8 +318,16 @@ inline uint32_t graph_default_query_search_from_desc(const AstralMemoryIndexDesc
     return 0;
   }
   uint32_t scaled = desc->capacity / neighbors;
-  if (desc->capacity % neighbors != 0) {
+  if ((desc->capacity % neighbors) != 0) {
     ++scaled;
+  }
+  const uint32_t multiplier = f32_rerank_storage_kind(desc->storage_kind)
+                                  ? kGraphRerankDefaultQueryCapacityMultiplier
+                                  : kGraphDefaultQueryCapacityMultiplier;
+  if (scaled <= kU32Max / multiplier) {
+    scaled *= multiplier;
+  } else {
+    scaled = kU32Max;
   }
   return scaled > kGraphDefaultEfSearch ? scaled : kGraphDefaultEfSearch;
 }
