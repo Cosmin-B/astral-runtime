@@ -310,12 +310,24 @@ inline uint32_t graph_search_from_desc(const AstralMemoryIndexDesc* desc) {
   return requested < kGraphMinSearch ? kGraphMinSearch : requested;
 }
 
+inline uint32_t graph_default_query_search_from_desc(const AstralMemoryIndexDesc* desc) {
+  const uint32_t neighbors = graph_neighbors_from_desc(desc);
+  if (neighbors == 0) {
+    return 0;
+  }
+  uint32_t scaled = desc->capacity / neighbors;
+  if (desc->capacity % neighbors != 0) {
+    ++scaled;
+  }
+  return scaled > kGraphDefaultEfSearch ? scaled : kGraphDefaultEfSearch;
+}
+
 inline uint32_t graph_query_search_from_desc(const AstralMemoryIndexDesc* desc) {
   if (desc->index_kind != ASTRAL_MEMORY_INDEX_GRAPH) {
     return 0;
   }
-  uint32_t requested =
-      desc->graph_query_search != 0 ? desc->graph_query_search : kGraphDefaultEfSearch;
+  uint32_t requested = desc->graph_query_search != 0 ? desc->graph_query_search
+                                                     : graph_default_query_search_from_desc(desc);
   if (requested < kGraphMinSearch) {
     requested = kGraphMinSearch;
   }
