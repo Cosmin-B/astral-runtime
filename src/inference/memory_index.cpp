@@ -2643,9 +2643,12 @@ inline float compact_value_scale(const MemoryIndex* index, float scale) {
 }
 
 inline float compact_value_scale_kind(AstralMemoryStorageKind kind, float scale) {
-  return kind == ASTRAL_MEMORY_STORAGE_F6_E2M3   ? scale * kE2M3InvScale
-         : kind == ASTRAL_MEMORY_STORAGE_F6_E3M2 ? scale * kE3M2InvScale
-                                                 : scale;
+  return (kind == ASTRAL_MEMORY_STORAGE_F6_E2M3 || kind == ASTRAL_MEMORY_STORAGE_F6_E2M3_F32_RERANK)
+             ? scale * kE2M3InvScale
+         : (kind == ASTRAL_MEMORY_STORAGE_F6_E3M2 ||
+            kind == ASTRAL_MEMORY_STORAGE_F6_E3M2_F32_RERANK)
+             ? scale * kE3M2InvScale
+             : scale;
 }
 
 inline void update_compact_score_scale(MemoryIndex* index, uint32_t slot) {
@@ -2995,6 +2998,21 @@ inline float score_slot_compact_query(MemoryIndex* index, const int8_t* query, i
                                   query_scale, index->dim)
              : l2_score_q8_q8(q8, compact_value_scale(index, index->q8_scales[slot]), query,
                               query_scale, index->dim);
+}
+
+inline float score_slot_compact_query_i16(MemoryIndex* index, const int16_t* query,
+                                          float query_scale, uint32_t slot,
+                                          float cosine_query_scale) {
+  const int16_t* v = i16_vector_at(index, slot);
+  const float scale = index->compact_score_scales[slot];
+  if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
+    return dot_i16_i16(v, query, index->dim) * scale * query_scale;
+  }
+  if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+    return dot_i16_i16(v, query, index->dim) * scale * query_scale * cosine_query_scale;
+  }
+  return l2_score_i16_i16(v, compact_value_scale(index, index->q8_scales[slot]), query, query_scale,
+                          index->dim);
 }
 
 inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
@@ -3574,6 +3592,55 @@ void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* sc
   *out_top_count = top_count;
 }
 
+void graph_search_layer_compact_query_i16(MemoryIndex* index, GraphSearchScratch* scratch,
+                                          const int16_t* query, float query_scale,
+                                          float cosine_query_scale, uint32_t entry,
+                                          uint32_t capacity, uint32_t* out_top_count) {
+  uint32_t candidate_count = 0;
+  uint32_t top_count = 0;
+  const uint32_t candidate_capacity = graph_candidate_search_capacity(index, capacity);
+  graph_query_mark_visited(scratch, entry);
+  const float entry_score =
+      score_slot_compact_query_i16(index, query, query_scale, entry, cosine_query_scale);
+  insert_graph_query_top_candidate(index, scratch, capacity, &top_count, entry, entry_score);
+  graph_query_add_candidate(index, scratch, candidate_capacity, entry, entry_score,
+                            &candidate_count);
+
+  while (candidate_count != 0) {
+    uint32_t slot = kU32Max;
+    float slot_score = kWorstScore;
+    if (!graph_query_pop_candidate(index, scratch, &candidate_count, &slot, &slot_score)) {
+      break;
+    }
+    if (top_count == capacity &&
+        !graph_candidate_better(index, slot_score, slot, scratch->top_scores[0],
+                                scratch->top_slots[0])) {
+      break;
+    }
+
+    const uint32_t* neighbors = graph_neighbors_at_level(index, slot, 0);
+    const uint32_t neighbor_count = graph_neighbor_count_at_level(index, slot, 0);
+    for (uint32_t i = 0; i < neighbor_count; ++i) {
+      const uint32_t neighbor = neighbors[i];
+      if (i + kGraphNeighborPrefetchDistance < neighbor_count) {
+        prefetch_slot_vector(index, neighbors[i + kGraphNeighborPrefetchDistance]);
+      }
+      if (graph_query_was_visited(scratch, neighbor)) {
+        continue;
+      }
+      graph_query_mark_visited(scratch, neighbor);
+      const float score =
+          score_slot_compact_query_i16(index, query, query_scale, neighbor, cosine_query_scale);
+      if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor, score)) {
+        graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
+                                  &candidate_count);
+      }
+    }
+  }
+
+  *out_top_count = top_count;
+}
+
 uint32_t graph_greedy_closest_query(MemoryIndex* index, const float* query, float query_scale,
                                     uint32_t entry, uint32_t begin_level, uint32_t end_level) {
   uint32_t closest = entry;
@@ -3590,6 +3657,37 @@ uint32_t graph_greedy_closest_query(MemoryIndex* index, const float* query, floa
           continue;
         }
         const float score = score_slot(index, query, candidate, query_scale);
+        if (score > closest_score) {
+          closest = candidate;
+          closest_score = score;
+          changed = true;
+        }
+      }
+    }
+  }
+  return closest;
+}
+
+uint32_t graph_greedy_closest_compact_query_i16(MemoryIndex* index, const int16_t* query,
+                                                float query_scale, float cosine_query_scale,
+                                                uint32_t entry, uint32_t begin_level,
+                                                uint32_t end_level) {
+  uint32_t closest = entry;
+  float closest_score =
+      score_slot_compact_query_i16(index, query, query_scale, closest, cosine_query_scale);
+  for (uint32_t level = begin_level; level > end_level; --level) {
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      const uint32_t* neighbors = graph_neighbors_at_level(index, closest, level);
+      const uint32_t neighbor_count = graph_neighbor_count_at_level(index, closest, level);
+      for (uint32_t i = 0; i < neighbor_count; ++i) {
+        const uint32_t candidate = neighbors[i];
+        if (index->slots[candidate].occupied == 0 || index->graph_levels[candidate] < level) {
+          continue;
+        }
+        const float score =
+            score_slot_compact_query_i16(index, query, query_scale, candidate, cosine_query_scale);
         if (score > closest_score) {
           closest = candidate;
           closest_score = score;
@@ -4037,7 +4135,19 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
 
   uint32_t filled = 0;
   uint32_t top_count = 0;
-  if (compact_storage(index) && !i16_storage(index) && !f8_f32_rerank_storage(index)) {
+  if (compact_storage(index) && i16_storage(index)) {
+    int16_t compact_query[kMaxDim];
+    float compact_query_scale = 1.0f;
+    quantize_e3m2_vector(compact_query, &compact_query_scale, query, index->dim);
+    compact_query_scale *= kE3M2InvScale;
+    const uint32_t entry = index->graph_max_level != 0
+                               ? graph_greedy_closest_compact_query_i16(
+                                     index, compact_query, compact_query_scale, query_scale,
+                                     index->graph_entry_slot, index->graph_max_level, 0)
+                               : index->graph_entry_slot;
+    graph_search_layer_compact_query_i16(index, scratch, compact_query, compact_query_scale,
+                                         query_scale, entry, search_capacity, &top_count);
+  } else if (compact_storage(index) && !i16_storage(index) && !f8_f32_rerank_storage(index)) {
     int8_t compact_query[kMaxDim];
     float compact_query_scale = 1.0f;
     float compact_cosine_query_scale = query_scale;
@@ -6503,6 +6613,24 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
 
 float snapshot_graph_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
                                   const SnapshotPreparedQuery* prepared, uint32_t active_pos) {
+  if (info->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E3M2_F32_RERANK) {
+    const float stored_scale = snapshot_stored_scale(bytes, info, active_pos);
+    const int16_t* vector =
+        reinterpret_cast<const int16_t*>(snapshot_vector_ptr(bytes, info, active_pos));
+    const float scale = prepared->compact_score_scale_stride != 0
+                            ? snapshot_compact_score_scale(bytes, prepared, active_pos)
+                            : compact_value_scale_kind(info->storage_kind, stored_scale);
+    if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
+      return dot_i16_i16(vector, prepared->compact_query_i16, info->dim) * scale *
+             prepared->compact_query_scale;
+    }
+    if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      return dot_i16_i16(vector, prepared->compact_query_i16, info->dim) * scale *
+             prepared->compact_query_scale * prepared->query_scale;
+    }
+    return l2_score_i16_i16(vector, scale, prepared->compact_query_i16,
+                            prepared->compact_query_scale, info->dim);
+  }
   if (info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK) {
     const float stored_scale = snapshot_stored_scale(bytes, info, active_pos);
     const int8_t* vector =
