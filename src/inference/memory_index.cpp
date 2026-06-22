@@ -6802,6 +6802,52 @@ bool snapshot_graph_pop_candidate(SnapshotBytes bytes, const AstralMemorySnapsho
   return true;
 }
 
+void remove_snapshot_graph_worst_top(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
+                                     GraphSearchScratch* scratch, uint32_t* top_count) {
+  uint32_t count = *top_count;
+  if (count == 0) {
+    return;
+  }
+
+  --count;
+  if (count != 0) {
+    const uint32_t slot = scratch->top_slots[count];
+    const float score = scratch->top_scores[count];
+    uint32_t pos = 0;
+    for (;;) {
+      const uint32_t left = (pos << 1u) + 1u;
+      if (left >= count) {
+        break;
+      }
+      const uint32_t right = left + 1u;
+      uint32_t child = left;
+      if (right < count &&
+          snapshot_graph_worse(bytes, info, scratch->top_scores[right], scratch->top_slots[right],
+                               scratch->top_scores[left], scratch->top_slots[left])) {
+        child = right;
+      }
+      if (!snapshot_graph_worse(bytes, info, scratch->top_scores[child], scratch->top_slots[child],
+                                score, slot)) {
+        break;
+      }
+      scratch->top_scores[pos] = scratch->top_scores[child];
+      scratch->top_slots[pos] = scratch->top_slots[child];
+      pos = child;
+    }
+    scratch->top_scores[pos] = score;
+    scratch->top_slots[pos] = slot;
+  }
+  *top_count = count;
+}
+
+void trim_snapshot_graph_top_candidates(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
+                                        GraphSearchScratch* scratch, uint32_t* top_count,
+                                        uint32_t target_count) {
+  while (*top_count > target_count) {
+    remove_snapshot_graph_worst_top(bytes, info, scratch, top_count);
+  }
+}
+
 void snapshot_graph_begin_visit(const AstralMemorySnapshotInfo* info, GraphSearchScratch* scratch) {
   ++scratch->visit_generation;
   scratch->candidate_worst_valid = 0;
@@ -6969,6 +7015,10 @@ AstralErr memory_snapshot_view_search_graph(MemorySnapshotView* view,
   uint32_t top_count = 0;
   snapshot_graph_search_layer(bytes, &view->info, &view->graph, &prepared, scratch, entry,
                               search_capacity, &top_count);
+  if (f32_rerank_storage_kind(view->info.storage_kind)) {
+    const uint32_t rerank_capacity = graph_f32_rerank_capacity(desc->top_k, top_count);
+    trim_snapshot_graph_top_candidates(bytes, &view->info, scratch, &top_count, rerank_capacity);
+  }
 
   uint32_t filled = 0;
   for (uint32_t i = 0; i < top_count; ++i) {
