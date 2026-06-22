@@ -40,7 +40,7 @@ execute_process(
 if(NOT tsv_result EQUAL 0)
   message(FATAL_ERROR "Comment inventory TSV smoke failed: ${tsv_error}")
 endif()
-if(NOT tsv_output MATCHES "^path\tline\tkind\tmarker\tbead\ttext")
+if(NOT tsv_output MATCHES "^path\tline\tkind\tmarker\treference\ttext")
   message(FATAL_ERROR "Comment inventory TSV header changed: ${tsv_output}")
 endif()
 
@@ -57,7 +57,7 @@ execute_process(
 if(NOT review_tsv_result EQUAL 0)
   message(FATAL_ERROR "Comment inventory review TSV smoke failed: ${review_tsv_error}")
 endif()
-if(NOT review_tsv_output MATCHES "^decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext")
+if(NOT review_tsv_output MATCHES "^decision\tissue\tnotes\tpath\tline\tkind\tmarker\treference\ttext")
   message(FATAL_ERROR "Comment inventory review TSV header changed: ${review_tsv_output}")
 endif()
 

@@ -35,6 +35,8 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY)
         test_utf8
         test_logging
         test_core
+        test_tokenization
+        test_prompt_cache
         test_abi_invalid_args
         test_arena
         test_model_sources
@@ -75,9 +77,9 @@ foreach(test_file ${TEST_FILES})
             astral_test_framework
         )
 
-        # Set C++20 standard
+        # Set C++17 standard
         set_target_properties(${test_file} PROPERTIES
-            CXX_STANDARD 20
+            CXX_STANDARD 17
             CXX_STANDARD_REQUIRED ON
         )
 
@@ -93,6 +95,7 @@ foreach(test_file ${TEST_FILES})
         target_include_directories(${test_file} PRIVATE
             ${CMAKE_SOURCE_DIR}/include
             ${CMAKE_SOURCE_DIR}/src
+            ${LLAMA_CPP_DIR}/vendor
         )
 
         # Platform-specific settings
@@ -180,7 +183,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
             )
 
             set_target_properties(${test_file}_tsan PROPERTIES
-                CXX_STANDARD 20
+                CXX_STANDARD 17
                 CXX_STANDARD_REQUIRED ON
             )
 
@@ -393,6 +396,20 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_embedded_presets")
         endif()
 
+        if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/model_preset_tool_smoke.py)
+            add_test(
+                NAME gate_model_presets
+                COMMAND ${ASTRAL_PYTHON_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/model_preset_tool_smoke.py
+                    ${CMAKE_SOURCE_DIR}
+            )
+            set_tests_properties(gate_model_presets PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;release"
+            )
+            message(STATUS "Configured test: gate_model_presets")
+        endif()
+
         if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_comment_inventory.cmake)
             add_test(
                 NAME gate_comment_inventory
@@ -581,6 +598,20 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_unity_editmode_results")
         endif()
 
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unity_mobile_package_layout.cmake)
+            add_test(
+                NAME gate_unity_mobile_package_layout
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unity_mobile_package_layout.cmake
+            )
+            set_tests_properties(gate_unity_mobile_package_layout PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unity"
+            )
+            message(STATUS "Configured test: gate_unity_mobile_package_layout")
+        endif()
+
         if(ASTRAL_PYTHON_EXECUTABLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_hf_matrix_log.cmake)
             add_test(
                 NAME gate_hf_matrix_log
@@ -692,7 +723,7 @@ endif()
 message(STATUS "========================================")
 
 # Gate: no tracked heap allocations in steady-state decode/stream.
-if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
     add_executable(gate_allocations
         gate_allocations.cpp
         main.cpp
@@ -738,7 +769,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allo
 endif()
 
 # Gate: no tracked steady-state I/O syscalls in decode/stream.
-if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
     add_executable(gate_io_syscalls
         gate_io_syscalls.cpp
         main.cpp
@@ -838,7 +869,7 @@ if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_mode
         ${CMAKE_SOURCE_DIR}/src
     )
     set_target_properties(gate_model_churn_soak PROPERTIES
-        CXX_STANDARD 20
+        CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
     )
     if(UNIX AND NOT APPLE)

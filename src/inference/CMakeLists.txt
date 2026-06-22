@@ -22,8 +22,8 @@ target_include_directories(astral_inference
         ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
 
-# C++20 required
-target_compile_features(astral_inference PUBLIC cxx_std_20)
+# C++17 required
+target_compile_features(astral_inference PUBLIC cxx_std_17)
 
 # Compiler warnings
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

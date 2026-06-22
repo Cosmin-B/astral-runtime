@@ -18,7 +18,7 @@ set(common_notes [=[
 
 - Runtime ABI: 0.1.0
 - Supported desktop targets: Linux x86_64
-- Unity support: Unity 2021.3.0f1, Collections 1.4.0
+- Unity support: Unity 6000.0.57f1, Collections 1.4.0
 - Unreal support: UE 5.4 through UE 5.7
 - Compiler/toolchain: clang 20.1.8
 
@@ -44,19 +44,19 @@ set(common_notes [=[
 
 ## Engine Evidence
 
-- Unity Editor ABI tests: Unity 2021.3.0f1, `scripts/run_unity_ci_tests.sh` passed
+- Unity Editor ABI tests: Unity 6000.0.57f1, `scripts/run_unity_gameci_tests.sh` passed
 - Unreal Automation tests: UE 5.4/5.5/5.6/5.7, `scripts/run_unreal_ci_tests.sh` passed
 - Unreal container images: ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3e46053afe29e4fdd0d55da53d60b7b29741f6ecfb34ce
 
 ## Rollback
 
 - Previous known-good artifact: astral-0.0.9-linux-x86_64.zip sha256:1111111111111111111111111111111111111111111111111111111111111111
-- Previous dependency pins: llama.cpp eff06702b, Tracy v0.11.1, Unreal 5.7.4, Unity 2021.3.0f1
+- Previous dependency pins: llama.cpp eff06702b, Tracy v0.11.1, Unreal 5.7.4, Unity 6000.0.57f1
 - Rollback command or release-manager procedure: promote astral-0.0.9 artifacts and restore dependency-pins.tsv
 
 ## Known Gaps
 
-- CUDA multi-GPU release breadth, owner release-manager, waiver expiration 2026-06-01, follow-up issue tracker issue workspace-9d5.8.3
+- CUDA multi-GPU release breadth, owner release-manager, waiver expiration 2026-06-01, follow-up issue reference ASTRAL-9d5.8.3
 ]=])
 
 set(good_notes "${notes_dir}/release-notes-good.md")
@@ -89,7 +89,7 @@ if(NOT placeholder_error MATCHES "template placeholders")
 endif()
 
 set(pin_notes "${notes_dir}/release-notes-missing-pins.md")
-string(REPLACE "Previous dependency pins: llama.cpp eff06702b, Tracy v0.11.1, Unreal 5.7.4, Unity 2021.3.0f1" "Previous dependency pins: Tracy v0.11.1" pin_text "${common_notes}")
+string(REPLACE "Previous dependency pins: llama.cpp eff06702b, Tracy v0.11.1, Unreal 5.7.4, Unity 6000.0.57f1" "Previous dependency pins: Tracy v0.11.1" pin_text "${common_notes}")
 file(WRITE "${pin_notes}" "${pin_text}")
 execute_process(
   COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/validate_release_notes.sh" "${pin_notes}"

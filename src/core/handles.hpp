@@ -6,7 +6,7 @@
  * - slot index (24 bits)
  * - generation (32 bits)
  *
- * Goals:
+ * Design:
  * - Detect stale handles after free (generation mismatch).
  * - Provider-agnostic (stores opaque pointers only).
  * - No dynamic allocation (fixed-size table).
@@ -24,12 +24,18 @@
 namespace astral::core {
 
 enum class HandleKind : uint32_t {
-    Invalid = 0,
-    Model = 1,
-    Session = 2,
-    Embedder = 3,
-    Adapter = 4,
-    Conversation = 5,
+  Invalid = 0,
+  Model = 1,
+  Session = 2,
+  Embedder = 3,
+  Adapter = 4,
+  Conversation = 5,
+  PromptCache = 6,
+  Toolset = 7,
+  MemoryIndex = 8,
+  MemorySearch = MemoryIndex + 1,
+  MemorySnapshot = MemorySearch + 1,
+  Agent = MemorySnapshot + 1,
 };
 
 inline constexpr uint32_t kMaxHandles = 8192;

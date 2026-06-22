@@ -64,6 +64,23 @@ for token in \
     *) echo "missing runtime arg: ${token}" >&2; exit 43 ;;
   esac
 done
+cat <<'LOG'
+LogPakFile: Display: Mounted IoStore container "../../../AstralSample/Content/Paks/AstralSample-Linux.utoc"
+LogPakFile: Display: Mounted Pak file '../../../AstralSample/Content/Paks/AstralSample-Linux.pak'
+LogAstralSample: Display: Astral sample: backend=cpu memory_backend=mock media_backend=mock model=/tmp/text.gguf embedding_model=/tmp/embed.gguf media_path=/tmp/mmproj.gguf media_path_root=Raw
+LogAstralSample: Display: Astral sample: generation model loaded backend=cpu
+LogAstralSample: Display: Astral sample: generation decode started
+LogAstralSample: Display: Astral sample: canceled stream wait result -4
+LogAstralSample: Display: Astral sample: embedding dimension 1024
+LogAstralSample: Display: Astral sample: media feed demo loaded mock backend with RGBA byte image, texture image, and PCM16 audio
+LogAstralSample: Display: Astral sample: packaged content bytes read from ../../../AstralSample/Content/AstralSample/Models/mock-model.bytes
+LogAstralSample: Display: Astral sample: packaged content memory model loaded from 4 bytes
+LogAstralSample: Display: Astral sample: saved cache bytes read from ../../../AstralSample/Saved/AstralSample/mock-model-cache.bytes
+LogAstralSample: Display: Astral sample: saved cache memory model loaded from 4 bytes
+LogAstralSample: Display: Astral sample: RAG chunk text alpha beta
+LogAstralSample: Display: Astral sample: RAG search top key 101 score 1.000 group 7
+LogAstralSample: Display: Astral sample: clean shutdown
+LOG
 SH
       chmod +x "${archive_dir}/Linux/AstralSample.sh"
     fi
@@ -322,6 +339,10 @@ foreach(required_sample_text
     "Desc.ModelPath = ModelPath;"
     "Desc.ModelPath = EmbeddingModelPath.IsEmpty() ? ModelPath : EmbeddingModelPath;"
     "void RunPackagedMemorySourceDemo();"
+    "UAstralBlueprintLibrary::ChunkText"
+    "UAstralBlueprintLibrary::MakeMemoryRecordFromChunkResult"
+    "UAstralBlueprintLibrary::CopyChunkTextResult"
+    "Astral sample: RAG chunk text"
     "void AAstralSampleActor::RunErrorDemo()"
     "Astral sample: expected load failure:")
   string(FIND "${sample_actor_header_text}\n${sample_actor_cpp_text}" "${required_sample_text}" sample_text_pos)

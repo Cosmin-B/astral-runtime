@@ -71,7 +71,7 @@ public static extern int astral_init(ref AstralInit cfg);
 // From managed string (allocates temporary NativeArray)
 var span = AstralSpanU8.FromString(str, out NativeArray<byte> tempArray);
 
-// From NativeArray (zero-copy)
+// From caller-owned NativeArray storage
 var span = AstralSpanU8.FromNativeArray(nativeArray);
 ```
 
@@ -138,7 +138,7 @@ session.ReadStream(buffer);
 
 ### Compilation
 
-- [ ] Code compiles in Unity 2021.3+ with a real Unity Editor runner.
+- [x] Code imports and assemblies compile in Unity 6.0+ GameCI container validation.
 - [x] `allowUnsafeCode: true` in asmdef
 - [ ] IL2CPP player build has no compile errors on each supported target.
 
@@ -180,8 +180,8 @@ session.ReadStream(buffer);
 | `AstralModel.Load()` | 1x temp string | 1x model weights |
 | `AstralSession.Create()` | 0 | 1x session context |
 | `session.Feed(string)` | 1x temp UTF-8 | 0 (uses session buffer) |
-| `session.Feed(NativeArray)` | 0 | 0 (zero-copy) |
-| `session.ReadStream(NativeArray)` | 0 | 0 (zero-copy) |
+| `session.Feed(NativeArray)` | 0 | 0 |
+| `session.ReadStream(NativeArray)` | 0 | 0 |
 | `session.ReadStreamAsString()` | 1x string | 0 |
 
 **Best Practice**: Use `NativeArray` APIs for hot paths; use `string` APIs for convenience during initialization.
@@ -236,7 +236,6 @@ IEnumerator StreamNativeArray()
     using var session = AstralSession.Create(model);
     using var buffer = new NativeArray<byte>(4096, Allocator.Persistent);
 
-    // Feed prompt (zero-copy)
     var promptBytes = System.Text.Encoding.UTF8.GetBytes("Once upon a time");
     var promptArray = new NativeArray<byte>(promptBytes, Allocator.Temp);
     session.Feed(promptArray, finalize: true);
@@ -267,9 +266,9 @@ IEnumerator StreamNativeArray()
 
 ## Known Limitations
 
-1. **Editor runner required**: ABI and mock-backend tests need a real Unity Editor with native binaries present.
-2. **Native packaging incomplete**: Platform binaries are built by CMake, but release packaging still needs final UPM-ready artifact layout, signing, and Unity import evidence for each target.
-3. **Real model coverage pending**: Text/media embeddings are exposed through `AstralEmbedder`, but production sign-off still needs real GGUF and MTMD fixture runs.
+1. **Licensed Editor execution required**: ABI and mock-backend EditMode tests need a Unity Editor runner with native binaries and valid Unity license material.
+2. **Player-build coverage pending**: Desktop and mobile plugin layouts exist, but IL2CPP/player builds still need target-specific Unity runner evidence.
+3. **Real model coverage pending**: Text/media embeddings are exposed through `AstralEmbedder`, but release sign-off still needs real GGUF and MTMD fixture runs.
 4. **GPU validation pending**: CUDA builds are handled by the native runtime gates; Unity-specific GPU artifact and runtime validation are still release-lane work.
 
 ## Testing Strategy
@@ -443,10 +442,10 @@ Expected: no per-token managed string allocation during ReadStream()
 
 ## References
 
-- **C ABI Specification**: `/home/user/workspace/astral/include/astral_rt.h`
-- **Memory Architecture**: `/home/user/workspace/astral/docs/architecture/MEMORY_ARCHITECTURE.md`
-- **Engine Integration Patterns**: `/home/user/workspace/astral/docs/architecture/ENGINE_INTEGRATION_PATTERNS.md`
-- **Coding Standards**: `/home/user/workspace/astral/docs/rules/CODING_STANDARDS.md`
+- **C ABI Specification**: `include/astral_rt.h`
+- **Memory Architecture**: `docs/architecture/MEMORY_ARCHITECTURE.md`
+- **Engine Integration Patterns**: `docs/architecture/ENGINE_INTEGRATION_PATTERNS.md`
+- **Coding Standards**: `docs/rules/CODING_STANDARDS.md`
 - **Unity Documentation**: https://docs.unity3d.com/Manual/NativePlugins.html
 - **Unity IL2CPP**: https://docs.unity3d.com/Manual/IL2CPP.html
 

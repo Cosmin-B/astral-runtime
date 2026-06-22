@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <type_traits>
 
+#include "../platform/compiler.hpp"
+
 namespace astral::memory {
 
 /// FrameAllocator - Linear/bump allocator for per-frame or per-session short-lived objects
@@ -65,17 +67,16 @@ public:
     /// Performance: O(1) - just align offset and increment
     /// No syscalls, no locks, no dynamic allocation
     void* alloc(size_t size, size_t align = 16) {
-        // Align current offset to requested alignment
-        // Algorithm: offset = (offset + align - 1) & ~(align - 1)
-        size_t aligned_offset = (used_ + align - 1) & ~(align - 1);
+        const std::uintptr_t base_addr = reinterpret_cast<std::uintptr_t>(base_);
+        const std::uintptr_t current_addr = base_addr + used_;
+        const std::uintptr_t aligned_addr = (current_addr + align - 1) & ~(static_cast<std::uintptr_t>(align) - 1);
+        size_t aligned_offset = static_cast<size_t>(aligned_addr - base_addr);
         size_t new_used = aligned_offset + size;
 
-        // Check capacity
-        if (new_used > capacity_) [[unlikely]] {
-            return nullptr; // Out of memory
+        if (new_used > capacity_) ASTRAL_UNLIKELY {
+            return nullptr;
         }
 
-        // Bump pointer
         used_ = new_used;
         return base_ + aligned_offset;
     }

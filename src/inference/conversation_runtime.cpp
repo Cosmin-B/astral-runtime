@@ -17,8 +17,62 @@ namespace astral::inference {
 
 namespace {
 
+constexpr uint32_t kStreamReadBatchCap = 16;
+constexpr size_t kDefaultAllocatorCapacity = 2 * 1024 * 1024;
+constexpr uint32_t kInvalidExecutorSlot = UINT32_MAX;
+
 inline uint64_t get_ticks() {
     return platform::ticks_now();
+}
+
+inline uint32_t max_stream_read_batch(uint32_t remaining) {
+    uint32_t count = remaining / concurrency::kStreamTokenUtf8Capacity;
+    if (count == 0) {
+        count = 1;
+    }
+    return count < kStreamReadBatchCap ? count : kStreamReadBatchCap;
+}
+
+int32_t conv_stream_drain(Conversation* conv, AstralMutSpanU8 out_buf) {
+    uint8_t* dst = out_buf.data;
+    uint32_t remaining = out_buf.len;
+    uint32_t total = 0;
+
+    while (remaining != 0) {
+        concurrency::StreamToken batch[kStreamReadBatchCap];
+        const size_t popped = conv->token_ring.pop_batch(batch, max_stream_read_batch(remaining));
+        if (popped == 0) {
+            break;
+        }
+
+        for (size_t i = 0; i < popped; ++i) {
+            const concurrency::StreamToken& tok = batch[i];
+            const uint32_t tok_len = tok.utf8_len;
+            if (tok_len == 0) {
+                continue;
+            }
+            if (tok_len <= remaining) {
+                std::memcpy(dst, tok.utf8_data, tok_len);
+                dst += tok_len;
+                remaining -= tok_len;
+                total += tok_len;
+                continue;
+            }
+
+            std::memcpy(dst, tok.utf8_data, remaining);
+            std::memcpy(conv->pending_utf8, tok.utf8_data, tok_len);
+            conv->pending_len = static_cast<uint8_t>(tok_len);
+            conv->pending_off = static_cast<uint8_t>(remaining);
+            total += remaining;
+            platform::cpu_signal_event();
+            return static_cast<int32_t>(total);
+        }
+    }
+
+    if (total != 0) {
+        platform::cpu_signal_event();
+    }
+    return static_cast<int32_t>(total);
 }
 
 struct ScopedAtomicFlagGuard {
@@ -40,8 +94,6 @@ struct ScopedAtomicFlagGuard {
         }
     }
 };
-
-constexpr size_t kDefaultAllocatorCapacity = 2 * 1024 * 1024;
 
 inline void lock_flag(std::atomic_flag& f) {
     uint32_t spins = 0;
@@ -236,6 +288,10 @@ ModelExecutor* ensure_executor(Model* model) {
 } // namespace
 
 AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv) {
+    return conv_create_affine(desc, 0, out_conv);
+}
+
+AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity, Conversation** out_conv) {
     if (desc == nullptr || out_conv == nullptr) {
         return ASTRAL_E_INVALID;
     }
@@ -255,6 +311,9 @@ AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv) {
     ModelExecutor* ex = ensure_executor(model);
     if (ex == nullptr) {
         return ASTRAL_E_UNSUPPORTED;
+    }
+    if (slot_affinity != 0 && slot_affinity > ex->max_slots) {
+        return ASTRAL_E_INVALID;
     }
 
     // Acquire allocator backing.
@@ -356,28 +415,36 @@ AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv) {
 
     // Allocate slot by scanning under executor lock (not a hot path).
     lock_flag(model->executor_lock);
-    uint32_t sid = 0xFFFFFFFFu;
-    for (uint32_t i = 0; i < ex->max_slots; ++i) {
-        if (ex->slots[i].load(std::memory_order_relaxed) == nullptr) {
-            ex->slots[i].store(conv, std::memory_order_release);
-            sid = i;
-            break;
+    uint32_t sid = kInvalidExecutorSlot;
+    if (slot_affinity != 0) {
+        const uint32_t preferred = slot_affinity - 1u;
+        if (preferred < ex->max_slots && ex->slots[preferred].load(std::memory_order_relaxed) == nullptr) {
+            ex->slots[preferred].store(conv, std::memory_order_release);
+            sid = preferred;
+        }
+    } else {
+        for (uint32_t i = 0; i < ex->max_slots; ++i) {
+            if (ex->slots[i].load(std::memory_order_relaxed) == nullptr) {
+                ex->slots[i].store(conv, std::memory_order_release);
+                sid = i;
+                break;
+            }
         }
     }
     unlock_flag(model->executor_lock);
 
-    if (sid == 0xFFFFFFFFu) {
+    if (sid == kInvalidExecutorSlot) {
         model_release(model);
         ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         core::runtime_delete(conv);
-        return ASTRAL_E_NOMEM;
+        return ASTRAL_E_BUSY;
     }
     conv->slot_id.store(sid, std::memory_order_release);
 
     const AstralHandle handle = core::register_handle(core::HandleKind::Conversation, conv);
     if (handle == 0) {
         ex->slots[sid].store(nullptr, std::memory_order_release);
-        conv->slot_id.store(0xFFFFFFFFu, std::memory_order_release);
+        conv->slot_id.store(kInvalidExecutorSlot, std::memory_order_release);
         model_release(model);
         ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
         core::runtime_delete(conv);
@@ -470,6 +537,10 @@ void conv_destroy(Conversation* conv) {
         conv->grammar_json = nullptr;
         conv->grammar_json_len = 0;
     }
+    if (conv->toolset != nullptr) {
+        toolset_release(conv->toolset);
+        conv->toolset = nullptr;
+    }
 
     // Release model ref (conversation holds one ref).
     if (model) {
@@ -533,6 +604,41 @@ AstralErr conv_feed(Conversation* conv, AstralSpanU8 prompt_chunk, uint8_t final
     }
 
     return ASTRAL_OK;
+}
+
+AstralErr conv_feed_tokens(Conversation* conv, const int32_t* tokens, uint32_t token_count, uint8_t finalize) {
+    if (conv == nullptr || (token_count != 0 && tokens == nullptr)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    ConvState state = conv->state.load(std::memory_order_acquire);
+    if (state != ConvState::Idle && state != ConvState::FeedingPrompt) {
+        return ASTRAL_E_STATE;
+    }
+
+    if (state == ConvState::Idle) {
+        conv->state.store(ConvState::FeedingPrompt, std::memory_order_release);
+    }
+
+    if (token_count == 0) {
+        return ASTRAL_OK;
+    }
+    if (conv->prompt_chunk_count >= kMaxPromptChunks) {
+        return ASTRAL_E_NOMEM;
+    }
+    const uint32_t space = conv->prompt_capacity - conv->prompt_count;
+    if (token_count >= space) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    const uint32_t token_start = conv->prompt_count;
+    std::memcpy(
+        conv->prompt_tokens + conv->prompt_count,
+        tokens,
+        static_cast<size_t>(token_count) * sizeof(int32_t)
+    );
+    conv->prompt_count += token_count;
+    return conv_push_text_chunk(conv, token_start, token_count, finalize);
 }
 
 AstralErr conv_feed_image(Conversation* conv, const AstralImageDesc* image, uint8_t finalize) {
@@ -1117,6 +1223,47 @@ AstralErr conv_stats(Conversation* conv, AstralConvStats* out_stats) {
     return ASTRAL_OK;
 }
 
+AstralErr conv_set_toolset(Conversation* conv, Toolset* toolset, AstralToolChoiceMode choice_mode) {
+    if (conv == nullptr || toolset == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (choice_mode != ASTRAL_TOOL_CHOICE_AUTO && choice_mode != ASTRAL_TOOL_CHOICE_REQUIRED &&
+        choice_mode != ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL) {
+        return ASTRAL_E_INVALID;
+    }
+    const ConvState st = conv->state.load(std::memory_order_acquire);
+    if (st == ConvState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    toolset_retain(toolset);
+    Toolset* old = conv->toolset;
+    conv->toolset = toolset;
+    conv->tool_choice_mode = choice_mode;
+    if (old != nullptr) {
+        toolset_release(old);
+    }
+    return ASTRAL_OK;
+}
+
+AstralErr conv_clear_toolset(Conversation* conv) {
+    if (conv == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const ConvState st = conv->state.load(std::memory_order_acquire);
+    if (st == ConvState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    Toolset* old = conv->toolset;
+    conv->toolset = nullptr;
+    conv->tool_choice_mode = ASTRAL_TOOL_CHOICE_AUTO;
+    if (old != nullptr) {
+        toolset_release(old);
+    }
+    return ASTRAL_OK;
+}
+
 int32_t conv_stream_read(Conversation* conv, AstralMutSpanU8 out_buf, uint32_t timeout_ms) {
     if (conv == nullptr || out_buf.data == nullptr || out_buf.len == 0) {
         return ASTRAL_E_INVALID;
@@ -1145,17 +1292,9 @@ int32_t conv_stream_read(Conversation* conv, AstralMutSpanU8 out_buf, uint32_t t
     uint32_t spins = 0;
 
     while (true) {
-        concurrency::StreamToken tok{};
-        if (conv->token_ring.pop(&tok)) {
-            const uint32_t n = (tok.utf8_len > out_buf.len) ? out_buf.len : tok.utf8_len;
-            std::memcpy(out_buf.data, tok.utf8_data, n);
-            if (n < tok.utf8_len) {
-                std::memcpy(conv->pending_utf8, tok.utf8_data, tok.utf8_len);
-                conv->pending_len = static_cast<uint8_t>(tok.utf8_len);
-                conv->pending_off = static_cast<uint8_t>(n);
-            }
-            platform::cpu_signal_event();
-            return static_cast<int32_t>(n);
+        const int32_t drained = conv_stream_drain(conv, out_buf);
+        if (drained > 0) {
+            return drained;
         }
 
         const ConvState st = conv->state.load(std::memory_order_acquire);

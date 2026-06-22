@@ -3,6 +3,7 @@
 #include "concurrency/spsc_ring.hpp"
 
 #include <atomic>
+#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
 #include <thread>

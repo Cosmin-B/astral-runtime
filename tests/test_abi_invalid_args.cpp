@@ -14,9 +14,46 @@ AstralSpanU8 null_span() {
     return s;
 }
 
+AstralSpanU8 span_from_cstr(const char* text) {
+    AstralSpanU8 s{};
+    s.data = reinterpret_cast<const uint8_t*>(text);
+    s.len = static_cast<uint32_t>(std::strlen(text));
+    return s;
+}
+
 AstralMutSpanU8 null_mut_span() {
     AstralMutSpanU8 s{};
     return s;
+}
+
+AstralMutSpanU8 mut_span(uint8_t* data, uint32_t len) {
+    AstralMutSpanU8 s{};
+    s.data = data;
+    s.len = len;
+    return s;
+}
+
+AstralModelPathResolveDesc path_resolve_desc(AstralModelPathRoot root, const char* path) {
+    AstralModelPathResolveDesc desc{};
+    desc.size = sizeof(AstralModelPathResolveDesc);
+    desc.root = root;
+    desc.path = span_from_cstr(path);
+    desc.content_root = span_from_cstr("/project/content");
+    desc.saved_root = span_from_cstr("/project/saved");
+    desc.cache_root = span_from_cstr("/project/cache");
+    desc.download_root = span_from_cstr("/project/downloads");
+    return desc;
+}
+
+void assert_path_resolves_to(AstralModelPathResolveDesc desc, const char* expected) {
+    constexpr uint32_t kResolveBufferBytes = 256;
+    uint8_t buffer[kResolveBufferBytes]{};
+    uint32_t written = 0;
+    const AstralSpanU8 expected_span = span_from_cstr(expected);
+
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(buffer, kResolveBufferBytes), &written), ASTRAL_OK);
+    ASSERT_EQ(written, expected_span.len);
+    ASSERT_EQ(std::memcmp(buffer, expected_span.data, expected_span.len), 0);
 }
 
 AstralInit small_init() {
@@ -93,6 +130,58 @@ AstralAudioDesc invalid_audio_desc() {
 
 } // namespace
 
+TEST(abi_model_path_resolve) {
+    assert_path_resolves_to(
+        path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_RAW, "Models/model.gguf"),
+        "Models/model.gguf");
+    assert_path_resolves_to(
+        path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_CONTENT, "Models/model.gguf"),
+        "/project/content/Models/model.gguf");
+    assert_path_resolves_to(
+        path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_CONTENT, "/absolute/model.gguf"),
+        "/absolute/model.gguf");
+    assert_path_resolves_to(
+        path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_CONTENT, "C:\\Models\\model.gguf"),
+        "C:\\Models\\model.gguf");
+
+    AstralModelPathResolveDesc slash_root = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_CACHE, "model.gguf");
+    slash_root.cache_root = span_from_cstr("/project/cache/");
+    assert_path_resolves_to(slash_root, "/project/cache/model.gguf");
+
+    AstralModelPathResolveDesc desc = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_DOWNLOAD, "model.gguf");
+    constexpr uint32_t kShortBufferBytes = 4;
+    uint8_t short_buffer[kShortBufferBytes]{};
+    uint32_t written = 0;
+    ASSERT_EQ(
+        astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written),
+        ASTRAL_E_NOMEM);
+    ASSERT_EQ(written, span_from_cstr("/project/downloads/model.gguf").len);
+
+    ASSERT_EQ(astral_model_path_resolve(nullptr, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), nullptr), ASTRAL_E_INVALID);
+
+    constexpr uint32_t kInvalidResolveDescSize = sizeof(AstralModelPathResolveDesc) - sizeof(uint32_t);
+    constexpr AstralModelPathResolveFlags kInvalidResolveFlags = ASTRAL_MODEL_PATH_RESOLVE_NONE + sizeof(uint32_t);
+    constexpr AstralModelPathRoot kInvalidPathRoot = ASTRAL_MODEL_PATH_ROOT_DOWNLOAD + sizeof(uint32_t);
+
+    desc.size = kInvalidResolveDescSize;
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+
+    desc = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_DOWNLOAD, "model.gguf");
+    desc.flags = kInvalidResolveFlags;
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+
+    desc = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_DOWNLOAD, "model.gguf");
+    desc.download_root = null_span();
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+
+    desc = path_resolve_desc(kInvalidPathRoot, "model.gguf");
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+
+    desc = path_resolve_desc(ASTRAL_MODEL_PATH_ROOT_RAW, "");
+    ASSERT_EQ(astral_model_path_resolve(&desc, mut_span(short_buffer, kShortBufferBytes), &written), ASTRAL_E_INVALID);
+}
+
 TEST(abi_invalid_args_core_and_backend) {
     astral_version(nullptr, nullptr, nullptr);
 
@@ -130,12 +219,83 @@ TEST(abi_invalid_args_model_surface) {
     AstralMediaInfo media_info{};
     AstralAdapterDesc adapter_desc{};
     AstralHandle adapter = 0;
+    AstralAdapterInfo adapter_info{};
+    adapter_info.size = sizeof(AstralAdapterInfo);
+    constexpr uint32_t kToolId = 1;
+    constexpr uint32_t kToolCount = 1;
+    AstralToolDesc tool_desc{};
+    tool_desc.size = sizeof(AstralToolDesc);
+    tool_desc.tool_id = kToolId;
+    tool_desc.name = span_from_cstr("search");
+    tool_desc.json_schema = span_from_cstr("{\"type\":\"object\"}");
+    AstralToolsetDesc toolset_desc{};
+    toolset_desc.size = sizeof(AstralToolsetDesc);
+    toolset_desc.tool_count = kToolCount;
+    toolset_desc.choice_mode = ASTRAL_TOOL_CHOICE_AUTO;
+    toolset_desc.tools = &tool_desc;
+    AstralHandle toolset = 0;
+    AstralToolInfo tool_info{};
+    tool_info.size = sizeof(AstralToolInfo);
+    AstralToolCallResult tool_call{};
+    tool_call.size = sizeof(AstralToolCallResult);
+    constexpr uint32_t kChunkMaxUnits = 2;
+    constexpr uint32_t kInvalidTokenCount = 1;
+    constexpr uint32_t kRangeCapacity = 1;
+    AstralChunkerDesc chunker{};
+    chunker.size = sizeof(AstralChunkerDesc);
+    chunker.mode = ASTRAL_CHUNK_MODE_WORD;
+    chunker.max_units = kChunkMaxUnits;
+    AstralChunkRange chunk_range{};
+    chunk_range.size = sizeof(AstralChunkRange);
+    constexpr uint32_t kMemoryDim = 4;
+    constexpr uint32_t kMemoryCapacity = 4;
+    constexpr uint64_t kMemoryKey = 1;
+    constexpr uint32_t kMemoryTopK = 1;
+    constexpr uint32_t kMemoryFetchCapacity = 1;
+    constexpr AstralMemoryStorageKind kInvalidMemoryStorage = UINT32_MAX;
+    constexpr AstralHandle kPromptModelHandle = 0x0100000100000001ull;
+    AstralMemoryIndexDesc memory_desc{};
+    memory_desc.size = sizeof(AstralMemoryIndexDesc);
+    memory_desc.dim = kMemoryDim;
+    memory_desc.capacity = kMemoryCapacity;
+    memory_desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+    memory_desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+    AstralMemoryRecord memory_record{};
+    memory_record.size = sizeof(AstralMemoryRecord);
+    memory_record.key = kMemoryKey;
+    AstralMemorySearchDesc memory_search{};
+    memory_search.size = sizeof(AstralMemorySearchDesc);
+    memory_search.top_k = kMemoryTopK;
+    memory_search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+    AstralMemorySearchResult memory_result{};
+    AstralMemoryStats memory_stats{};
+    memory_stats.size = sizeof(AstralMemoryStats);
+    AstralAgentDesc agent_desc{};
+    agent_desc.size = sizeof(AstralAgentDesc);
+    AstralAgentMessage agent_message{};
+    agent_message.size = sizeof(AstralAgentMessage);
+    agent_message.role = ASTRAL_AGENT_ROLE_USER;
+    AstralAgentChatDesc agent_chat{};
+    agent_chat.size = sizeof(AstralAgentChatDesc);
+    AstralAgentMemoryContextDesc agent_memory_context{};
+    agent_memory_context.size = sizeof(AstralAgentMemoryContextDesc);
+    AstralAgentChatResult agent_result{};
+    agent_result.size = sizeof(AstralAgentChatResult);
+    constexpr AstralHandle kInvalidAgentHandle = 0;
+    constexpr AstralHandle kMissingAgentHandle = 1;
     int32_t tokens[2] = {1, 2};
     uint32_t token_count = 0;
     uint8_t text_buf[16] = {};
     AstralMutSpanU8 text_out{};
     text_out.data = text_buf;
     text_out.len = static_cast<uint32_t>(sizeof(text_buf));
+    AstralPromptCacheKey prompt_key{};
+    prompt_key.size = sizeof(AstralPromptCacheKey);
+    AstralRequestRef request{};
+    request.size = sizeof(AstralRequestRef);
+    request.kind = ASTRAL_REQUEST_SESSION;
+    AstralRequestStatus request_status{};
+    request_status.size = sizeof(AstralRequestStatus);
     uint32_t dim = 0;
 
     ASSERT_EQ(astral_model_info(0, &info), ASTRAL_E_INVALID);
@@ -153,13 +313,132 @@ TEST(abi_invalid_args_model_surface) {
     ASSERT_EQ(astral_tokenize(0, null_span(), nullptr, 2, 0, 0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_tokenize(0, null_span(), tokens, 0, 0, 0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_tokenize(0, null_span(), tokens, 2, 0, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_count(0, null_span(), 0, 0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_count(0, null_span(), 0, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_batch(0, nullptr, 0, nullptr, nullptr, 0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(0, tokens, 2, text_out, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(0, nullptr, 2, text_out, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(0, tokens, 2, null_mut_span(), &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(0, tokens, 2, text_out, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_detokenize_count(0, tokens, 2, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_detokenize_count(0, tokens, 2, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, &adapter_desc, &adapter), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, nullptr, &adapter), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_adapter_load(0, &adapter_desc, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_adapter_info(0, &adapter_info), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_adapter_info(0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_adapter_path_copy(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_model_adapter_path_copy(0, text_out, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_create(nullptr, &toolset), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_create(&toolset_desc, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_count(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_count(1, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_get(0, 0, &tool_info), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_get(1, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_parse_call(0, null_span(), &tool_call), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_toolset_parse_call(1, null_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_count(nullptr, null_span(), &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_count(&chunker, null_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_ranges(nullptr, null_span(), &chunk_range, kRangeCapacity, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_ranges(&chunker, null_span(), nullptr, kRangeCapacity, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_text_copy(null_span(), nullptr, null_mut_span(), &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_chunk_text_copy(null_span(), &chunk_range, null_mut_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_token_chunk_count(nullptr, kInvalidTokenCount, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_token_chunk_count(&chunker, kInvalidTokenCount, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_token_chunk_ranges(nullptr, kInvalidTokenCount, &chunk_range, kRangeCapacity, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_token_chunk_ranges(&chunker, kInvalidTokenCount, nullptr, kRangeCapacity, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_create(nullptr, &toolset), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_create(&memory_desc, nullptr), ASTRAL_E_INVALID);
+    AstralMemoryIndexDesc invalid_memory_desc = memory_desc;
+    invalid_memory_desc.storage_kind = kInvalidMemoryStorage;
+    ASSERT_EQ(astral_memory_create(&invalid_memory_desc, &toolset), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_count(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_count(1, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_stats(0, &memory_stats), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_stats(1, nullptr), ASTRAL_E_INVALID);
+    memory_stats.size = 0;
+    ASSERT_EQ(astral_memory_stats(0, &memory_stats), ASTRAL_E_INVALID);
+    memory_stats.size = sizeof(AstralMemoryStats);
+    ASSERT_EQ(astral_memory_clear(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_add_batch(0, &memory_record, nullptr, kMemoryTopK), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_remove(0, kMemoryKey), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_search(0, &memory_search, nullptr, &memory_result, kMemoryTopK, &token_count), ASTRAL_E_INVALID);
+    const AstralErr memory_batch_err =
+        astral_memory_search_batch(0, &memory_search, nullptr, kMemoryTopK, &memory_result, kMemoryTopK, &token_count);
+    ASSERT_EQ(memory_batch_err, ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_search_begin(0, &memory_search, nullptr, &toolset), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_search_fetch(0, &memory_result, kMemoryFetchCapacity, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_save_size(0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_save(0, null_mut_span(), nullptr), ASTRAL_E_INVALID);
+    AstralMemorySnapshotInfo memory_snapshot{};
+    memory_snapshot.size = sizeof(AstralMemorySnapshotInfo);
+    ASSERT_EQ(astral_memory_snapshot_info(null_span(), &memory_snapshot), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_snapshot_info(null_span(), nullptr), ASTRAL_E_INVALID);
+    AstralHandle snapshot_view = 0;
+    ASSERT_EQ(astral_memory_snapshot_map(null_span(), &memory_snapshot, &snapshot_view),
+              ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_snapshot_map(null_span(), nullptr, &snapshot_view), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_snapshot_view_info(0, &memory_snapshot), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_snapshot_view_info(0, nullptr), ASTRAL_E_INVALID);
+    AstralErr snapshot_search_err = astral_memory_snapshot_search(
+        null_span(), &memory_search, nullptr, &memory_result, kMemoryTopK, &token_count);
+    ASSERT_EQ(snapshot_search_err, ASTRAL_E_INVALID);
+    snapshot_search_err = astral_memory_snapshot_search(null_span(), nullptr, nullptr,
+                                                        &memory_result, kMemoryTopK, &token_count);
+    ASSERT_EQ(snapshot_search_err, ASTRAL_E_INVALID);
+    snapshot_search_err = astral_memory_snapshot_view_search(
+        0, &memory_search, nullptr, &memory_result, kMemoryTopK, &token_count);
+    ASSERT_EQ(snapshot_search_err, ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_load(nullptr, null_span(), &toolset), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_load(&memory_desc, null_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_record_from_chunk(nullptr, kMemoryKey, 0, &memory_record), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_memory_record_from_chunk(&chunk_range, kMemoryKey, 0, nullptr), ASTRAL_E_INVALID);
+    AstralErr prompt_key_err =
+        astral_prompt_cache_key_from_bytes(0, ASTRAL_PROMPT_SECTION_SYSTEM, 1, null_span(), &prompt_key);
+    ASSERT_EQ(prompt_key_err, ASTRAL_E_INVALID);
+    prompt_key_err = astral_prompt_cache_key_from_bytes(kPromptModelHandle, 0, 1, null_span(), &prompt_key);
+    ASSERT_EQ(prompt_key_err, ASTRAL_E_INVALID);
+    prompt_key_err = astral_prompt_cache_key_from_bytes(
+        kPromptModelHandle, ASTRAL_PROMPT_SECTION_SYSTEM, 1, null_span(), nullptr);
+    ASSERT_EQ(prompt_key_err, ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_create(nullptr, &toolset), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_create(&agent_desc, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_set_system_prompt(0, null_span()), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_system_prompt_size(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_system_prompt(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_set_summary(0, null_span()), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_summary_size(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_summary(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_set_memory_context(0, null_span()), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_memory_context_size(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_get_memory_context(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_set_memory_context_from_results(0, &agent_memory_context), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_set_memory_context_from_results(kInvalidAgentHandle, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_parse_tool_call(kInvalidAgentHandle, null_span(), &tool_call), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_parse_tool_call(kMissingAgentHandle, null_span(), nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_message_add(0, &agent_message), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_clear(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_count(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_save_size(0, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_save(0, text_out, &token_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_history_load(0, null_span()), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_enqueue(0, &agent_chat), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_cancel(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_release_slot(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_stream_read(0, text_out, 0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_tool_call_result(0, &tool_call), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_tool_call_result(kInvalidAgentHandle, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_agent_chat_result(0, &agent_result), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_session(0, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_conversation(0, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_agent_chat(0, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_embedding(0, 1, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_from_memory_search(0, &request), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_state(nullptr, &request_status), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_state(&request, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_cancel(nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_wait(nullptr, 0, &request_status), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_request_wait(&request, 0, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_configure(0, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_model_executor_tune(0, nullptr), ASTRAL_E_INVALID);
 
@@ -184,6 +463,9 @@ TEST(abi_invalid_args_session_surface) {
     uint64_t written = 0;
     AstralSamplerDesc sampler{};
     int32_t tokens[2] = {1, 2};
+    uint32_t adapter_count = 0;
+    AstralHandle adapter = 0;
+    float adapter_scale = 0.0f;
 
     ASSERT_EQ(astral_session_state(0, &state), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_state(0, nullptr), ASTRAL_E_INVALID);
@@ -204,11 +486,21 @@ TEST(abi_invalid_args_session_surface) {
     ASSERT_EQ(astral_session_adapters_clear(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_adapters_add(0, 1, 1.0f), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_adapters_add(1, 0, 1.0f), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_count(0, &adapter_count), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_count(1, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_get(0, 0, &adapter, &adapter_scale), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_get(1, 0, nullptr, &adapter_scale), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_get(1, 0, &adapter, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_adapters_set_scale(0, 0, adapter_scale), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_grammar_gbnf(0, null_span(), null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_grammar_json_schema(0, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_clear_grammar(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_set_toolset(0, 1, ASTRAL_TOOL_CHOICE_AUTO), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_set_toolset(1, 0, ASTRAL_TOOL_CHOICE_AUTO), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_clear_toolset(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_set_slot(0, 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_feed(0, null_span(), 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_session_feed_tokens(0, tokens, 2, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_feed_image(0, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_feed_audio(0, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_decode(0), ASTRAL_E_INVALID);
@@ -243,9 +535,13 @@ TEST(abi_invalid_args_valid_handle_buffer_surface) {
     AstralMutSpanU8 out{};
     out.data = bytes;
     out.len = static_cast<uint32_t>(sizeof(bytes));
+    uint32_t token_count = 0;
 
     ASSERT_EQ(astral_tokenize(model, null_span(), nullptr, 2, 0, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_count(model, null_span(), 0, 0, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_tokenize_batch(model, nullptr, 1, nullptr, nullptr, 0, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_detokenize(model, nullptr, 1, out, nullptr), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_detokenize_count(model, nullptr, 1, &token_count), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_penalty_prompt_set_tokens(session, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_stop_add_utf8(session, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_session_stop_set_utf8(session, nullptr, 1), ASTRAL_E_INVALID);
@@ -306,6 +602,7 @@ TEST(abi_invalid_args_conversation_surface) {
     ASSERT_EQ(astral_conv_create(nullptr, &conv), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_create(&conv_desc, nullptr), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_feed(0, null_span(), 1), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_feed_tokens(0, tokens, 2, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_feed_image(0, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_feed_audio(0, nullptr, 1), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_decode(0), ASTRAL_E_INVALID);
@@ -324,6 +621,9 @@ TEST(abi_invalid_args_conversation_surface) {
     ASSERT_EQ(astral_conv_grammar_set_gbnf(0, null_span(), null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_grammar_set_json_schema(0, null_span()), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_grammar_clear(0), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_set_toolset(0, 1, ASTRAL_TOOL_CHOICE_AUTO), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_set_toolset(1, 0, ASTRAL_TOOL_CHOICE_AUTO), ASTRAL_E_INVALID);
+    ASSERT_EQ(astral_conv_clear_toolset(0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_stream_read(0, null_mut_span(), 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_stream_read_meta(0, nullptr, 0, 0), ASTRAL_E_INVALID);
     ASSERT_EQ(astral_conv_stats(0, &stats), ASTRAL_E_INVALID);

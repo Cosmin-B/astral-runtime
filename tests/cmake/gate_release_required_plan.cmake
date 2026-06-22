@@ -28,7 +28,6 @@ set(plan_env
   "UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd"
   "UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd"
   "UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh"
-  "UNITY_EDITOR=/opt/Unity/Editor/Unity"
 )
 
 execute_process(
@@ -64,6 +63,9 @@ endif()
 if(NOT good_output MATCHES "Unreal sample package: scripts/run_unreal_sample_package\\.sh --platform Linux --run-sample .* --sample-memory-backend mock --sample-media-backend mock")
   message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not require the Unreal sample package lane: ${good_output}")
 endif()
+if(NOT good_output MATCHES "Unity EditMode ABI: scripts/run_unity_gameci_tests\\.sh")
+  message(FATAL_ERROR "run_release_required_gates.sh --print-plan did not require the Unity GameCI lane: ${good_output}")
+endif()
 
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E env
@@ -78,7 +80,6 @@ execute_process(
     "UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd"
     "UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd"
     "UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh"
-    "UNITY_EDITOR=/opt/Unity/Editor/Unity"
     "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/run_release_required_gates.sh" --print-plan --cuda-arch native
   WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
   RESULT_VARIABLE manifest_env_result

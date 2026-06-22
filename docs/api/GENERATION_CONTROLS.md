@@ -76,8 +76,17 @@ If `ASTRAL_CAP_LORA` is set:
 - Attach to session:
   - `astral_session_adapters_clear(session)`
   - `astral_session_adapters_add(session, adapter, scale)`
+  - `astral_session_adapters_count(session, &out_count)`
+  - `astral_session_adapters_get(session, index, &out_adapter, &out_scale)`
+  - `astral_session_adapters_set_scale(session, index, scale)`
 
 Adapters are model-scoped; sessions retain references to attached adapters.
+Each session can hold up to `ASTRAL_SESSION_ADAPTERS_MAX` adapters. Scale
+updates are setup-time operations and return `ASTRAL_E_STATE` while the session
+is decoding.
+
+See `docs/api/LORA_ADAPTERS.md` for ownership, engine wrapper notes, and
+validation commands.
 
 ## Grammar (GBNF)
 
@@ -98,6 +107,26 @@ If `ASTRAL_CAP_GRAMMAR_JSON_SCHEMA` is set:
 Notes:
 - JSON schema is compiled provider-side into an internal grammar representation (typically GBNF).
 - Providers may reject unsupported schemas (e.g. external `$ref`s) with `ASTRAL_E_INVALID`.
+
+## Structured Output And Tools
+
+Toolsets are native setup-time objects:
+
+- `astral_toolset_create(&AstralToolsetDesc, &out_toolset)`
+- `astral_toolset_destroy(toolset)`
+- `astral_toolset_count(toolset, &out_count)`
+- `astral_toolset_get(toolset, index, &out_info)`
+- `astral_toolset_parse_call(toolset, generated_text, &out_result)`
+
+Sessions and conversations can bind a toolset:
+
+- `astral_session_set_toolset(session, toolset, choice_mode)`
+- `astral_session_clear_toolset(session)`
+- `astral_conv_set_toolset(conv, toolset, choice_mode)`
+- `astral_conv_clear_toolset(conv)`
+
+Tool definitions are copied into native memory at creation. Result parsing runs
+after generation and returns the raw JSON `arguments` span without allocating.
 
 ## Slots
 

@@ -9,8 +9,11 @@ Plugins/
 ├── x86_64/
 │   ├── libastral_rt.so      # Linux x86_64
 │   └── astral_rt.dll        # Windows x86_64
+├── Android/
+│   └── arm64-v8a/
+│       └── libastral_rt.so  # Android ARM64
 ├── arm64/
-│   ├── libastral_rt.so      # Linux ARM64 (Android)
+│   ├── libastral_rt.so      # Linux ARM64
 │   └── libastral_rt.dylib   # macOS ARM64 (Apple Silicon)
 └── iOS/
     └── libastral_rt.a       # iOS static library (ARM64)
@@ -22,7 +25,7 @@ Note: `cmake --preset unity-plugin` now also packages the built native library i
 
 ### Linux (x86_64)
 ```bash
-cd /home/user/workspace/astral
+cd <astral-repo>
 cmake --preset unity-plugin
 cmake --build build/unity
 # (optional) manual copy:
@@ -45,25 +48,15 @@ cp build/unity/libastral_rt.dylib plugins/unity/Runtime/Plugins/arm64/
 
 ### Android (ARM64)
 ```bash
-# Requires Android NDK
-export ANDROID_NDK=/path/to/android-ndk
-cmake --preset unity-plugin \
-  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI=arm64-v8a \
-  -DANDROID_PLATFORM=android-21
-cmake --build build/unity --target astral_rt
-cp build/unity/libastral_rt.so plugins/unity/Runtime/Plugins/arm64/
+export ANDROID_NDK_HOME=/path/to/android-ndk-r27c
+cmake --preset unity-plugin-android-arm64
+cmake --build --preset unity-plugin-android-arm64 -j
 ```
 
 ### iOS (ARM64)
 ```bash
-# Requires Xcode
-cmake --preset unity-plugin \
-  -DCMAKE_SYSTEM_NAME=iOS \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
-cmake --build build/unity --target astral_rt
-cp build/unity/libastral_rt.a plugins/unity/Runtime/Plugins/iOS/
+cmake --preset unity-plugin-ios-arm64
+cmake --build --preset unity-plugin-ios-arm64 -j
 ```
 
 ## Unity Import Settings
@@ -79,7 +72,7 @@ Ensure the following import settings in Unity Editor:
 - Platform: Windows x86_64
 - Load on startup: Yes
 
-### arm64/libastral_rt.so (Android)
+### Android/arm64-v8a/libastral_rt.so
 - Platform: Android
 - CPU: ARM64
 - Load on startup: Yes

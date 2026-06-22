@@ -91,7 +91,7 @@ Applied automatically in Debug mode:
 ## Requirements
 
 - **CMake**: 3.20 or higher
-- **C++ Compiler**: C++20 support required
+- **C++ Compiler**: C++17 support required
   - GCC 10+ or Clang 12+ recommended
   - MSVC 2019 16.11+ on Windows
 - **Platform**: Linux, macOS, Windows (cross-platform)
@@ -192,7 +192,7 @@ rm -rf build/
 
 ### Compilation Errors
 
-If you encounter unused function warnings, ensure you're using C++20:
+If you encounter unused function warnings, ensure you're using C++17:
 
 ```bash
 # Check compiler version

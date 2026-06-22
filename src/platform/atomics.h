@@ -19,6 +19,7 @@ namespace astral::platform {
 ///
 /// Detection strategy:
 /// - x86: CPUID instruction (leaf 0x80000006, ECX bits 7:0)
+/// - Apple: sysctl hw.cachelinesize
 /// - ARM: Read CTR_EL0 register (DminLine field)
 /// - Fallback: 64 bytes (safe default for x86/ARM)
 ///

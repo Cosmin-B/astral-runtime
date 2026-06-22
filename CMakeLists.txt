@@ -1,8 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(AstralRT VERSION 0.1.0 LANGUAGES C CXX)
 
-# C++20 required, no extensions
-set(CMAKE_CXX_STANDARD 20)
+# C++17 required, no extensions.
+#
+# Unreal 5.4 supports C++17 and C++20; Astral keeps the native core at C++17 so
+# engine integrations can consume the stable C ABI without pulling newer C++
+# requirements through private implementation headers.
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -12,6 +16,7 @@ option(ASTRAL_BUILD_BENCHMARKS "Build benchmarks" ON)
 option(ASTRAL_BUILD_EXAMPLES "Build examples" OFF)
 option(ASTRAL_BUILD_UNITY_PLUGIN "Build Unity plugin" OFF)
 option(ASTRAL_BUILD_UNREAL_PLUGIN "Build Unreal plugin" OFF)
+option(ASTRAL_UNITY_STATIC_CXX_RUNTIME "Link Linux Unity plugin builds with a static C++ runtime" ON)
 option(ASTRAL_NO_EXCEPTIONS "Build Astral sources without C++ exceptions (experimental; embedded)" OFF)
 option(ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR "Enable JSON schema -> GBNF grammar support (requires exceptions from llama.cpp helpers)" ON)
 option(ASTRAL_ENABLE_DYNAMIC_BACKENDS "Enable runtime-loadable backend providers (dlopen/LoadLibrary)" ON)
@@ -102,6 +107,18 @@ if(NOT ASTRAL_ENABLE_VIRTUAL_MEMORY)
         message(WARNING "ASTRAL_ENABLE_VIRTUAL_MEMORY=OFF disables temp-file mmap model loading for MEMORY/IO sources; forcing ASTRAL_CPU_MEMORY_SOURCE_MMAP=OFF")
         set(ASTRAL_CPU_MEMORY_SOURCE_MMAP OFF CACHE BOOL "CPU backend: materialize MEMORY/IO sources to temp files so llama.cpp can use mmap" FORCE)
     endif()
+elseif(WIN32)
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/vm_(linux|macos)\\.cpp$")
+elseif(APPLE)
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/vm_(linux|win32)\\.cpp$")
+else()
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/vm_(macos|win32)\\.cpp$")
+endif()
+
+if(WIN32)
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/thread_posix\\.cpp$")
+else()
+    list(FILTER ASTRAL_SOURCES EXCLUDE REGEX ".*/src/platform/thread_win32\\.cpp$")
 endif()
 
 # Mobile platforms: avoid temp-file-based mmap paths by default (sandboxed filesystems, non-standard temp locations).
@@ -286,6 +303,12 @@ if(ASTRAL_BUILD_SHARED_LIB)
             "LINKER:--version-script=${_ASTRAL_EXPORTS_MAP}"
             "LINKER:--exclude-libs,ALL"
         )
+        if(ASTRAL_BUILD_UNITY_PLUGIN AND ASTRAL_UNITY_STATIC_CXX_RUNTIME)
+            target_link_options(astral_rt_shared PRIVATE
+                $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-static-libstdc++>
+                $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-static-libgcc>
+            )
+        endif()
     endif()
 
     if(WIN32)

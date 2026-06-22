@@ -123,6 +123,36 @@ bool UAstralSession::FeedPrompt(const FString& Prompt, bool bFinalize)
     return FeedPromptRaw(TConstArrayView<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()), bFinalize);
 }
 
+bool UAstralSession::SetSystemPrompt(const FString& Prompt)
+{
+    FTCHARToUTF8 Utf8(*Prompt);
+    return SetSystemPromptRaw(TConstArrayView<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()));
+}
+
+bool UAstralSession::SetSystemPromptRaw(TConstArrayView<uint8> Utf8Data)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_SetSystemPrompt);
+
+    if (!IsValid())
+    {
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: session not created"));
+        return false;
+    }
+
+    AstralSpanU8 Span{};
+    Span.data = Utf8Data.GetData();
+    Span.len = static_cast<uint32_t>(Utf8Data.Num());
+
+    const AstralErr Err = astral_session_set_system_prompt(static_cast<AstralHandle>(SessionHandle), Span);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_set_system_prompt failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
 bool UAstralSession::FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize)
 {
     if (!IsValid())
@@ -333,6 +363,177 @@ bool UAstralSession::SetSampler(const FAstralSamplerDesc& Desc)
 
     const AstralErr Err = astral_session_set_sampler(static_cast<AstralHandle>(SessionHandle), &Native);
     return Err == ASTRAL_OK;
+}
+
+bool UAstralSession::ClearAdapters()
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_ClearAdapters);
+
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    const AstralErr Err = astral_session_adapters_clear(static_cast<AstralHandle>(SessionHandle));
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_adapters_clear failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
+bool UAstralSession::AddAdapter(int64 AdapterHandle, float Scale)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_AddAdapter);
+
+    if (!IsValid() || AdapterHandle == 0)
+    {
+        return false;
+    }
+
+    const AstralErr Err = astral_session_adapters_add(
+        static_cast<AstralHandle>(SessionHandle),
+        static_cast<AstralHandle>(AdapterHandle),
+        Scale
+    );
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_adapters_add failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
+bool UAstralSession::GetAdapterCount(int32& OutCount) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_GetAdapterCount);
+
+    OutCount = 0;
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    uint32 Count = 0;
+    const AstralErr Err = astral_session_adapters_count(static_cast<AstralHandle>(SessionHandle), &Count);
+    if (Err != ASTRAL_OK)
+    {
+        return false;
+    }
+
+    OutCount = static_cast<int32>(Count);
+    return true;
+}
+
+bool UAstralSession::GetAdapter(int32 Index, int64& OutAdapterHandle, float& OutScale) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_GetAdapter);
+
+    OutAdapterHandle = 0;
+    OutScale = 0.0f;
+    if (!IsValid() || Index < 0)
+    {
+        return false;
+    }
+
+    AstralHandle Adapter = 0;
+    float Scale = 0.0f;
+    const AstralErr Err = astral_session_adapters_get(
+        static_cast<AstralHandle>(SessionHandle),
+        static_cast<uint32>(Index),
+        &Adapter,
+        &Scale
+    );
+    if (Err != ASTRAL_OK)
+    {
+        return false;
+    }
+
+    OutAdapterHandle = static_cast<int64>(Adapter);
+    OutScale = Scale;
+    return true;
+}
+
+bool UAstralSession::SetAdapterScale(int32 Index, float Scale)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_SetAdapterScale);
+
+    if (!IsValid() || Index < 0)
+    {
+        return false;
+    }
+
+    const AstralErr Err = astral_session_adapters_set_scale(
+        static_cast<AstralHandle>(SessionHandle),
+        static_cast<uint32>(Index),
+        Scale
+    );
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_adapters_set_scale failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
+bool UAstralSession::SetToolset(int64 ToolsetHandle, EAstralToolChoiceMode ChoiceMode)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_SetToolset);
+
+    if (!IsValid() || ToolsetHandle == 0)
+    {
+        return false;
+    }
+
+    AstralToolChoiceMode NativeChoice = ASTRAL_TOOL_CHOICE_AUTO;
+    switch (ChoiceMode)
+    {
+    case EAstralToolChoiceMode::Required:
+        NativeChoice = ASTRAL_TOOL_CHOICE_REQUIRED;
+        break;
+    case EAstralToolChoiceMode::TextOrTool:
+        NativeChoice = ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL;
+        break;
+    case EAstralToolChoiceMode::Auto:
+    default:
+        break;
+    }
+
+    const AstralErr Err = astral_session_set_toolset(
+        static_cast<AstralHandle>(SessionHandle),
+        static_cast<AstralHandle>(ToolsetHandle),
+        NativeChoice
+    );
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_set_toolset failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
+}
+
+bool UAstralSession::ClearToolset()
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralSession_ClearToolset);
+
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    const AstralErr Err = astral_session_clear_toolset(static_cast<AstralHandle>(SessionHandle));
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_session_clear_toolset failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    return true;
 }
 
 bool UAstralSession::StopClear()

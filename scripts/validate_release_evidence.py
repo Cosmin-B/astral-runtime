@@ -102,7 +102,7 @@ REQUIRED_COMMAND_TOKENS = {
         "--sample-memory-backend mock",
         "--sample-media-backend mock",
     ),
-    "unity_editmode_abi": ("UNITY_EDITOR", "run_unity_ci_tests.sh"),
+    "unity_editmode_abi": ("run_unity_gameci_tests.sh", "unityci/editor", "6000.0.57f1"),
     "cuda_parity_matrix": (
         "ASTRAL_TEST_CUDA_PARITY_INFER=1",
         "ASTRAL_TEST_CUDA_E2E=1",
@@ -124,7 +124,7 @@ FORBIDDEN_COMMAND_TOKENS = {
     "unreal_compatibility_matrix": ("--allow-missing",),
 }
 
-COMMENT_REVIEW_HEADER = "decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext"
+COMMENT_REVIEW_HEADER = "decision\tissue\tnotes\tpath\tline\tkind\tmarker\treference\ttext"
 
 REQUIRED_ARTIFACT_NAMES = {
     "sanitizer_validation": ("asan.log", "tsan.log"),

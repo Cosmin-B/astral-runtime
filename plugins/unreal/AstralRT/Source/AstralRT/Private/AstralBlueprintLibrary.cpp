@@ -1,13 +1,30 @@
 #include "AstralBlueprintLibrary.h"
 
 #include "AstralEmbedder.h"
+#include "AstralLog.h"
 #include "AstralModel.h"
 #include "AstralSession.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "UObject/Package.h"
 
 #include "astral_rt.h"
 
 namespace {
+
+static constexpr int32 kInlineToolCapacity = 8;
+static constexpr int32 kInlineChunkRangeCapacity = 32;
+static constexpr int32 kInlineChunkTextBytes = 4096;
+static constexpr int32 kInlineMemoryRecordCapacity = 32;
+static constexpr int32 kInlineMemoryResultCapacity = 16;
+static constexpr int32 kInlineMemoryQueryCapacity = 16;
+static constexpr int32 kAgentReadBufferBytes = 4096;
+static constexpr int32 kInlineAgentTextBytes = kAgentReadBufferBytes;
+static constexpr int32 kInlineAdapterPathBytes = 1024;
+static constexpr int32 kNoElements = 0;
+static constexpr int32 kEmptyResultCount = 0;
+static constexpr int64 kInvalidAstralHandle = 0;
+static constexpr AstralHandle kNullNativeHandle = 0;
+static constexpr uint64_t kNoByteCount = 0;
 
 static UObject* resolve_outer(UObject* Outer)
 {
@@ -18,6 +35,475 @@ static bool has_cap(int64 Caps, AstralCaps Cap)
 {
     const AstralCaps NativeCaps = static_cast<AstralCaps>(Caps);
     return (NativeCaps & Cap) != 0;
+}
+
+static AstralToolChoiceMode to_native_tool_choice(EAstralToolChoiceMode Mode)
+{
+    switch (Mode)
+    {
+    case EAstralToolChoiceMode::Required:
+        return ASTRAL_TOOL_CHOICE_REQUIRED;
+    case EAstralToolChoiceMode::TextOrTool:
+        return ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL;
+    case EAstralToolChoiceMode::Auto:
+    default:
+        return ASTRAL_TOOL_CHOICE_AUTO;
+    }
+}
+
+static AstralChunkMode to_native_chunk_mode(EAstralChunkMode Mode)
+{
+    switch (Mode)
+    {
+    case EAstralChunkMode::Char:
+        return ASTRAL_CHUNK_MODE_CHAR;
+    case EAstralChunkMode::Word:
+        return ASTRAL_CHUNK_MODE_WORD;
+    case EAstralChunkMode::Sentence:
+        return ASTRAL_CHUNK_MODE_SENTENCE;
+    case EAstralChunkMode::Token:
+        return ASTRAL_CHUNK_MODE_TOKEN;
+    case EAstralChunkMode::None:
+    default:
+        return ASTRAL_CHUNK_MODE_NONE;
+    }
+}
+
+static AstralMemoryMetric to_native_memory_metric(EAstralMemoryMetric Metric)
+{
+    switch (Metric)
+    {
+    case EAstralMemoryMetric::Dot:
+        return ASTRAL_MEMORY_METRIC_DOT;
+    case EAstralMemoryMetric::L2:
+        return ASTRAL_MEMORY_METRIC_L2;
+    case EAstralMemoryMetric::Cosine:
+    default:
+        return ASTRAL_MEMORY_METRIC_COSINE;
+    }
+}
+
+static AstralMemoryIndexKind to_native_memory_index_kind(EAstralMemoryIndexKind Kind)
+{
+    switch (Kind)
+    {
+    case EAstralMemoryIndexKind::Graph:
+        return ASTRAL_MEMORY_INDEX_GRAPH;
+    case EAstralMemoryIndexKind::Flat:
+    default:
+        return ASTRAL_MEMORY_INDEX_FLAT;
+    }
+}
+
+static AstralMemoryStorageKind to_native_memory_storage_kind(EAstralMemoryStorageKind Kind) {
+  switch (Kind) {
+  case EAstralMemoryStorageKind::F8_E5M2:
+    return ASTRAL_MEMORY_STORAGE_F8_E5M2;
+  case EAstralMemoryStorageKind::F6_E2M3:
+    return ASTRAL_MEMORY_STORAGE_F6_E2M3;
+  case EAstralMemoryStorageKind::Q8:
+    return ASTRAL_MEMORY_STORAGE_Q8;
+  case EAstralMemoryStorageKind::F32:
+  default:
+    return ASTRAL_MEMORY_STORAGE_F32;
+  }
+}
+
+static EAstralMemoryMetric from_native_memory_metric(AstralMemoryMetric Metric)
+{
+    switch (Metric)
+    {
+    case ASTRAL_MEMORY_METRIC_DOT:
+        return EAstralMemoryMetric::Dot;
+    case ASTRAL_MEMORY_METRIC_L2:
+        return EAstralMemoryMetric::L2;
+    case ASTRAL_MEMORY_METRIC_COSINE:
+    default:
+        return EAstralMemoryMetric::Cosine;
+    }
+}
+
+static EAstralMemoryIndexKind from_native_memory_index_kind(AstralMemoryIndexKind Kind)
+{
+    switch (Kind)
+    {
+    case ASTRAL_MEMORY_INDEX_GRAPH:
+        return EAstralMemoryIndexKind::Graph;
+    case ASTRAL_MEMORY_INDEX_FLAT:
+    default:
+        return EAstralMemoryIndexKind::Flat;
+    }
+}
+
+static EAstralMemoryStorageKind from_native_memory_storage_kind(AstralMemoryStorageKind Kind) {
+  switch (Kind) {
+  case ASTRAL_MEMORY_STORAGE_F8_E5M2:
+    return EAstralMemoryStorageKind::F8_E5M2;
+  case ASTRAL_MEMORY_STORAGE_F6_E2M3:
+    return EAstralMemoryStorageKind::F6_E2M3;
+  case ASTRAL_MEMORY_STORAGE_Q8:
+    return EAstralMemoryStorageKind::Q8;
+  case ASTRAL_MEMORY_STORAGE_F32:
+  default:
+    return EAstralMemoryStorageKind::F32;
+  }
+}
+
+static AstralMemoryIndexDesc to_native_memory_desc(const FAstralMemoryIndexDesc& Desc)
+{
+    AstralMemoryIndexDesc Native{};
+    Native.size = sizeof(AstralMemoryIndexDesc);
+    Native.dim = static_cast<uint32_t>(Desc.Dimension);
+    Native.capacity = static_cast<uint32_t>(Desc.Capacity);
+    Native.metric = to_native_memory_metric(Desc.Metric);
+    Native.index_kind = to_native_memory_index_kind(Desc.IndexKind);
+    Native.graph_neighbors = Desc.GraphNeighbors > 0 ? static_cast<uint32_t>(Desc.GraphNeighbors) : 0u;
+    Native.graph_search = Desc.GraphSearch > 0 ? static_cast<uint32_t>(Desc.GraphSearch) : 0u;
+    Native.graph_query_search =
+        Desc.GraphQuerySearch > 0 ? static_cast<uint32_t>(Desc.GraphQuerySearch) : 0u;
+    Native.storage_kind = to_native_memory_storage_kind(Desc.StorageKind);
+    return Native;
+}
+
+static AstralAgentRole to_native_agent_role(EAstralAgentRole Role)
+{
+    switch (Role)
+    {
+    case EAstralAgentRole::System:
+        return ASTRAL_AGENT_ROLE_SYSTEM;
+    case EAstralAgentRole::Assistant:
+        return ASTRAL_AGENT_ROLE_ASSISTANT;
+    case EAstralAgentRole::Tool:
+        return ASTRAL_AGENT_ROLE_TOOL;
+    case EAstralAgentRole::User:
+    default:
+        return ASTRAL_AGENT_ROLE_USER;
+    }
+}
+
+static AstralPromptSectionKind to_native_prompt_section(EAstralPromptSectionKind Section)
+{
+    switch (Section)
+    {
+    case EAstralPromptSectionKind::Tools:
+        return ASTRAL_PROMPT_SECTION_TOOLS;
+    case EAstralPromptSectionKind::Memory:
+        return ASTRAL_PROMPT_SECTION_MEMORY;
+    case EAstralPromptSectionKind::History:
+        return ASTRAL_PROMPT_SECTION_HISTORY;
+    case EAstralPromptSectionKind::User:
+        return ASTRAL_PROMPT_SECTION_USER;
+    case EAstralPromptSectionKind::Raw:
+        return ASTRAL_PROMPT_SECTION_RAW;
+    case EAstralPromptSectionKind::System:
+    default:
+        return ASTRAL_PROMPT_SECTION_SYSTEM;
+    }
+}
+
+static AstralPromptCacheEvictionPolicy to_native_prompt_cache_eviction(EAstralPromptCacheEvictionPolicy Policy)
+{
+    switch (Policy)
+    {
+    case EAstralPromptCacheEvictionPolicy::Fifo:
+    default:
+        return ASTRAL_PROMPT_CACHE_EVICT_FIFO;
+    }
+}
+
+static AstralPromptCacheDesc to_native_prompt_cache_desc(const FAstralPromptCacheDesc& Desc)
+{
+    AstralPromptCacheDesc Native{};
+    Native.size = sizeof(AstralPromptCacheDesc);
+    Native.max_entries = static_cast<uint32_t>(Desc.MaxEntries);
+    Native.max_tokens = static_cast<uint32_t>(Desc.MaxTokens);
+    Native.max_bytes = static_cast<uint32_t>(Desc.MaxBytes);
+    Native.eviction_policy = to_native_prompt_cache_eviction(Desc.EvictionPolicy);
+    Native.flags = Desc.bTrackStats ? ASTRAL_PROMPT_CACHE_FLAG_TRACK_STATS : 0u;
+    return Native;
+}
+
+static AstralPromptCacheKey to_native_prompt_cache_key(const FAstralPromptCacheKey& Key)
+{
+    AstralPromptCacheKey Native{};
+    Native.size = sizeof(AstralPromptCacheKey);
+    Native.section_kind = to_native_prompt_section(Key.Section);
+    Native.model = static_cast<AstralHandle>(Key.ModelHandle);
+    Native.key = static_cast<uint64_t>(Key.Key);
+    Native.generation = static_cast<uint32_t>(Key.Generation);
+    return Native;
+}
+
+static AstralRequestKind to_native_request_kind(EAstralRequestKind Kind)
+{
+    switch (Kind)
+    {
+    case EAstralRequestKind::Session:
+        return ASTRAL_REQUEST_SESSION;
+    case EAstralRequestKind::Conversation:
+        return ASTRAL_REQUEST_CONVERSATION;
+    case EAstralRequestKind::AgentChat:
+        return ASTRAL_REQUEST_AGENT_CHAT;
+    case EAstralRequestKind::Embedding:
+        return ASTRAL_REQUEST_EMBEDDING;
+    case EAstralRequestKind::MemorySearch:
+        return ASTRAL_REQUEST_MEMORY_SEARCH;
+    case EAstralRequestKind::None:
+    default:
+        return ASTRAL_REQUEST_NONE;
+    }
+}
+
+static EAstralRequestKind from_native_request_kind(AstralRequestKind Kind)
+{
+    switch (Kind)
+    {
+    case ASTRAL_REQUEST_SESSION:
+        return EAstralRequestKind::Session;
+    case ASTRAL_REQUEST_CONVERSATION:
+        return EAstralRequestKind::Conversation;
+    case ASTRAL_REQUEST_AGENT_CHAT:
+        return EAstralRequestKind::AgentChat;
+    case ASTRAL_REQUEST_EMBEDDING:
+        return EAstralRequestKind::Embedding;
+    case ASTRAL_REQUEST_MEMORY_SEARCH:
+        return EAstralRequestKind::MemorySearch;
+    case ASTRAL_REQUEST_NONE:
+    default:
+        return EAstralRequestKind::None;
+    }
+}
+
+static EAstralRequestState from_native_request_state(AstralRequestState State)
+{
+    switch (State)
+    {
+    case ASTRAL_REQUEST_QUEUED:
+        return EAstralRequestState::Queued;
+    case ASTRAL_REQUEST_RUNNING:
+        return EAstralRequestState::Running;
+    case ASTRAL_REQUEST_COMPLETED:
+        return EAstralRequestState::Completed;
+    case ASTRAL_REQUEST_CANCELED:
+        return EAstralRequestState::Canceled;
+    case ASTRAL_REQUEST_FAILED:
+        return EAstralRequestState::Failed;
+    case ASTRAL_REQUEST_INVALID:
+    default:
+        return EAstralRequestState::Invalid;
+    }
+}
+
+static AstralRequestRef to_native_request_ref(const FAstralRequestRef& Request)
+{
+    AstralRequestRef Native{};
+    Native.size = sizeof(AstralRequestRef);
+    Native.kind = to_native_request_kind(Request.Kind);
+    Native.owner = static_cast<AstralHandle>(Request.OwnerHandle);
+    Native.ticket = static_cast<uint64_t>(Request.Ticket);
+    return Native;
+}
+
+static FAstralRequestRef from_native_request_ref(const AstralRequestRef& Native)
+{
+    FAstralRequestRef Request;
+    Request.Kind = from_native_request_kind(Native.kind);
+    Request.OwnerHandle = static_cast<int64>(Native.owner);
+    Request.Ticket = static_cast<int64>(Native.ticket);
+    return Request;
+}
+
+static FAstralRequestStatus from_native_request_status(const AstralRequestStatus& Native)
+{
+    FAstralRequestStatus Status;
+    Status.Kind = from_native_request_kind(Native.kind);
+    Status.State = from_native_request_state(Native.state);
+    Status.ErrorCode = static_cast<int32>(Native.result);
+    Status.OwnerHandle = static_cast<int64>(Native.owner);
+    Status.Ticket = static_cast<int64>(Native.ticket);
+    Status.QueueDepth = static_cast<int32>(Native.queue_depth);
+    Status.bHasTicket = (Native.flags & ASTRAL_REQUEST_FLAG_TICKET) != 0u;
+    Status.bStream = (Native.flags & ASTRAL_REQUEST_FLAG_STREAM) != 0u;
+    return Status;
+}
+
+static FAstralPromptCacheStats from_native_prompt_cache_stats(const AstralPromptCacheStats& Native)
+{
+    FAstralPromptCacheStats Stats;
+    Stats.Entries = static_cast<int32>(Native.entries);
+    Stats.MaxEntries = static_cast<int32>(Native.max_entries);
+    Stats.Tokens = static_cast<int32>(Native.tokens);
+    Stats.MaxTokens = static_cast<int32>(Native.max_tokens);
+    Stats.Bytes = static_cast<int32>(Native.bytes);
+    Stats.MaxBytes = static_cast<int32>(Native.max_bytes);
+    Stats.Hits = static_cast<int64>(Native.hits);
+    Stats.Misses = static_cast<int64>(Native.misses);
+    Stats.Evictions = static_cast<int64>(Native.evictions);
+    return Stats;
+}
+
+static void fill_native_chunker(const FAstralChunkerDesc& Source, const FTCHARToUTF8& DelimitersUtf8, AstralChunkerDesc& Out)
+{
+    Out = AstralChunkerDesc{};
+    Out.size = sizeof(AstralChunkerDesc);
+    Out.mode = to_native_chunk_mode(Source.Mode);
+    Out.max_units = static_cast<uint32_t>(Source.MaxUnits);
+    Out.overlap_units = static_cast<uint32_t>(Source.OverlapUnits);
+    Out.document_id = static_cast<uint32_t>(Source.DocumentId);
+    Out.group_id = static_cast<uint32_t>(Source.GroupId);
+    Out.delimiters.data = reinterpret_cast<const uint8_t*>(DelimitersUtf8.Get());
+    Out.delimiters.len = static_cast<uint32_t>(DelimitersUtf8.Length());
+}
+
+static FAstralChunkRange from_native_chunk_range(const AstralChunkRange& Native)
+{
+    FAstralChunkRange Range;
+    Range.DocumentId = static_cast<int32>(Native.document_id);
+    Range.ChunkId = static_cast<int32>(Native.chunk_id);
+    Range.GroupId = static_cast<int32>(Native.group_id);
+    Range.ByteBegin = static_cast<int32>(Native.byte_begin);
+    Range.ByteEnd = static_cast<int32>(Native.byte_end);
+    Range.TokenBegin = static_cast<int32>(Native.token_begin);
+    Range.TokenEnd = static_cast<int32>(Native.token_end);
+    return Range;
+}
+
+static AstralChunkRange to_native_chunk_range(const FAstralChunkRange& Source)
+{
+    AstralChunkRange Range{};
+    Range.size = sizeof(AstralChunkRange);
+    Range.document_id = static_cast<uint32_t>(Source.DocumentId);
+    Range.chunk_id = static_cast<uint32_t>(Source.ChunkId);
+    Range.group_id = static_cast<uint32_t>(Source.GroupId);
+    Range.byte_begin = static_cast<uint32_t>(Source.ByteBegin);
+    Range.byte_end = static_cast<uint32_t>(Source.ByteEnd);
+    Range.token_begin = static_cast<uint32_t>(Source.TokenBegin);
+    Range.token_end = static_cast<uint32_t>(Source.TokenEnd);
+    return Range;
+}
+
+static FAstralMemorySearchResult from_native_memory_result(const AstralMemorySearchResult& Native)
+{
+    FAstralMemorySearchResult Result;
+    Result.Key = static_cast<int64>(Native.key);
+    Result.GroupId = static_cast<int32>(Native.group_id);
+    Result.DocumentId = static_cast<int32>(Native.document_id);
+    Result.ChunkId = static_cast<int32>(Native.chunk_id);
+    Result.Score = Native.score;
+    Result.Flags = static_cast<int32>(Native.flags);
+    return Result;
+}
+
+static FAstralMemoryStats from_native_memory_stats(const AstralMemoryStats& Native)
+{
+    FAstralMemoryStats Stats;
+    Stats.Dimension = static_cast<int32>(Native.dim);
+    Stats.Capacity = static_cast<int32>(Native.capacity);
+    Stats.Count = static_cast<int32>(Native.count);
+    Stats.Metric = from_native_memory_metric(Native.metric);
+    Stats.IndexKind = from_native_memory_index_kind(Native.index_kind);
+    Stats.GraphNeighbors = static_cast<int32>(Native.graph_neighbors);
+    Stats.GraphSearch = static_cast<int32>(Native.graph_search);
+    Stats.GraphQuerySearch = static_cast<int32>(Native.graph_query_search);
+    Stats.GraphLevels = static_cast<int32>(Native.graph_levels);
+    Stats.StorageKind = from_native_memory_storage_kind(Native.storage_kind);
+    Stats.VectorBytes = static_cast<int64>(Native.vector_bytes);
+    Stats.MetadataBytes = static_cast<int64>(Native.metadata_bytes);
+    Stats.GraphBytes = static_cast<int64>(Native.graph_bytes);
+    Stats.GraphEdges = static_cast<int64>(Native.graph_edges);
+    Stats.GraphBaseEdges = static_cast<int64>(Native.graph_base_edges);
+    Stats.GraphUpperEdges = static_cast<int64>(Native.graph_upper_edges);
+    Stats.GraphBuildScoreEvals = static_cast<int64>(Native.graph_build_score_evals);
+    Stats.GraphBuildCandidateVisits = static_cast<int64>(Native.graph_build_candidate_visits);
+    Stats.TotalBytes = static_cast<int64>(Native.total_bytes);
+    Stats.SaveBytes = static_cast<int64>(Native.save_bytes);
+    return Stats;
+}
+
+static FAstralMemoryRecord from_native_memory_record(const AstralMemoryRecord& Native)
+{
+    FAstralMemoryRecord Record;
+    Record.Key = static_cast<int64>(Native.key);
+    Record.GroupId = static_cast<int32>(Native.group_id);
+    Record.DocumentId = static_cast<int32>(Native.document_id);
+    Record.ChunkId = static_cast<int32>(Native.chunk_id);
+    Record.Flags = static_cast<int32>(Native.flags);
+    return Record;
+}
+
+static AstralMemoryRecord to_native_memory_record(const FAstralMemoryRecord& Source)
+{
+    AstralMemoryRecord Native{};
+    Native.size = sizeof(AstralMemoryRecord);
+    Native.key = static_cast<uint64_t>(Source.Key);
+    Native.group_id = static_cast<uint32_t>(Source.GroupId);
+    Native.document_id = static_cast<uint32_t>(Source.DocumentId);
+    Native.chunk_id = static_cast<uint32_t>(Source.ChunkId);
+    Native.flags = static_cast<uint32_t>(Source.Flags);
+    return Native;
+}
+
+static FAstralAdapterInfo from_native_adapter_info(const AstralAdapterInfo& Native)
+{
+    FAstralAdapterInfo Info;
+    Info.ModelHandle = static_cast<int64>(Native.model);
+    Info.RefCount = static_cast<int32>(Native.refcount);
+    Info.PathBytes = static_cast<int32>(Native.path_bytes);
+    return Info;
+}
+
+static FAstralAgentChatResult from_native_agent_result(const AstralAgentChatResult& Native)
+{
+    FAstralAgentChatResult Result;
+    Result.State = static_cast<int32>(Native.state);
+    Result.PromptBytes = static_cast<int32>(Native.prompt_bytes);
+    Result.HistoryMessages = static_cast<int32>(Native.history_messages);
+    Result.PromptTokens = static_cast<int32>(Native.prompt_tokens);
+    Result.PromptCacheReusedTokens = static_cast<int32>(Native.prompt_cache_reused_tokens);
+    Result.PromptCacheNewTokens = static_cast<int32>(Native.prompt_cache_new_tokens);
+    Result.PromptCacheHits = static_cast<int32>(Native.prompt_cache_hits);
+    Result.PromptCacheMisses = static_cast<int32>(Native.prompt_cache_misses);
+    Result.LastError = static_cast<int32>(Native.last_error);
+    Result.PromptBuildMs = Native.prompt_build_ms;
+    Result.GeneratedTokens = static_cast<int64>(Native.generated_tokens);
+    Result.TimeToFirstTokenMs = Native.t_first_token_ms;
+    Result.TokensPerSecond = Native.tok_per_s;
+    return Result;
+}
+
+static FAstralOperationResult make_operation_result(
+    AstralErr Err,
+    int64 Handle = kInvalidAstralHandle,
+    int32 Count = kEmptyResultCount
+)
+{
+    FAstralOperationResult Result;
+    Result.bSuccess = Err == ASTRAL_OK;
+    Result.ErrorCode = static_cast<int32>(Err);
+    Result.Handle = Handle;
+    Result.Count = Count;
+    Result.bBackpressure = Err == ASTRAL_E_BUSY;
+    Result.bTimeout = Err == ASTRAL_E_TIMEOUT;
+    Result.bCanceled = Err == ASTRAL_E_CANCELED;
+    Result.bUnsupported = Err == ASTRAL_E_UNSUPPORTED;
+    Result.bNotFound = Err == ASTRAL_E_NOT_FOUND;
+    return Result;
+}
+
+static bool chunker_desc_valid_for_blueprint(const FAstralChunkerDesc& Desc)
+{
+    return Desc.MaxUnits > 0 && Desc.OverlapUnits >= 0 && Desc.OverlapUnits < Desc.MaxUnits &&
+           Desc.DocumentId >= 0 && Desc.GroupId >= 0;
+}
+
+static FString utf8_span_to_string(AstralSpanU8 Span)
+{
+    if (Span.data == nullptr || Span.len == 0)
+    {
+        return FString();
+    }
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Span.data), static_cast<int32>(Span.len));
+    return FString(Converted.Length(), Converted.Get());
 }
 
 } // namespace
@@ -65,9 +551,2367 @@ FString UAstralBlueprintLibrary::ErrorCodeName(int32 ErrorCode)
         return TEXT("ASTRAL_E_CANCELED");
     case ASTRAL_E_UNSUPPORTED:
         return TEXT("ASTRAL_E_UNSUPPORTED");
+    case ASTRAL_E_NOT_FOUND:
+        return TEXT("ASTRAL_E_NOT_FOUND");
     default:
         return FString::Printf(TEXT("ASTRAL_E_%d"), ErrorCode);
     }
+}
+
+FString UAstralBlueprintLibrary::RequestKindName(EAstralRequestKind Kind) {
+  switch (Kind) {
+  case EAstralRequestKind::Session:
+    return TEXT("Session");
+  case EAstralRequestKind::Conversation:
+    return TEXT("Conversation");
+  case EAstralRequestKind::AgentChat:
+    return TEXT("AgentChat");
+  case EAstralRequestKind::Embedding:
+    return TEXT("Embedding");
+  case EAstralRequestKind::MemorySearch:
+    return TEXT("MemorySearch");
+  case EAstralRequestKind::None:
+  default:
+    return TEXT("None");
+  }
+}
+
+FString UAstralBlueprintLibrary::RequestStateName(EAstralRequestState State) {
+  switch (State) {
+  case EAstralRequestState::Queued:
+    return TEXT("Queued");
+  case EAstralRequestState::Running:
+    return TEXT("Running");
+  case EAstralRequestState::Completed:
+    return TEXT("Completed");
+  case EAstralRequestState::Canceled:
+    return TEXT("Canceled");
+  case EAstralRequestState::Failed:
+    return TEXT("Failed");
+  case EAstralRequestState::Invalid:
+  default:
+    return TEXT("Invalid");
+  }
+}
+
+int32 UAstralBlueprintLibrary::MaxSessionAdapters()
+{
+    return static_cast<int32>(ASTRAL_SESSION_ADAPTERS_MAX);
+}
+
+bool UAstralBlueprintLibrary::GetAdapterInfo(int64 AdapterHandle, FAstralAdapterInfo& OutInfo, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetAdapterInfoResult(AdapterHandle, OutInfo);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAdapterInfoResult(int64 AdapterHandle, FAstralAdapterInfo& OutInfo)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAdapterInfo);
+
+    OutInfo = FAstralAdapterInfo();
+    AstralAdapterInfo Native{};
+    Native.size = sizeof(AstralAdapterInfo);
+    const AstralErr Err = astral_model_adapter_info(static_cast<AstralHandle>(AdapterHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutInfo = from_native_adapter_info(Native);
+    return make_operation_result(ASTRAL_OK, AdapterHandle);
+}
+
+bool UAstralBlueprintLibrary::CopyAdapterPath(int64 AdapterHandle, FString& OutPath, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = CopyAdapterPathResult(AdapterHandle, OutPath);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CopyAdapterPathResult(int64 AdapterHandle, FString& OutPath)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CopyAdapterPath);
+
+    OutPath.Reset();
+    AstralAdapterInfo Info{};
+    Info.size = sizeof(AstralAdapterInfo);
+    AstralErr Err = astral_model_adapter_info(static_cast<AstralHandle>(AdapterHandle), &Info);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    const uint32_t Required = Info.path_bytes;
+    if (Required == 0)
+    {
+        return make_operation_result(ASTRAL_OK, AdapterHandle, kEmptyResultCount);
+    }
+    if (Required > static_cast<uint32_t>(TNumericLimits<int32>::Max()))
+    {
+        return make_operation_result(ASTRAL_E_NOMEM);
+    }
+
+    TArray<uint8, TInlineAllocator<kInlineAdapterPathBytes>> PathBytes;
+    PathBytes.SetNumUninitialized(static_cast<int32>(Required));
+    AstralMutSpanU8 Out{};
+    Out.data = PathBytes.GetData();
+    Out.len = Required;
+    uint32_t Written = 0;
+    Err = astral_model_adapter_path_copy(static_cast<AstralHandle>(AdapterHandle), Out, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(PathBytes.GetData()), static_cast<int32>(Written));
+    OutPath = FString(Converted.Length(), Converted.Get());
+    return make_operation_result(ASTRAL_OK, AdapterHandle, static_cast<int32>(Written));
+}
+
+bool UAstralBlueprintLibrary::CreateToolset(
+    const TArray<FAstralToolDesc>& Tools,
+    EAstralToolChoiceMode ChoiceMode,
+    int64& OutToolsetHandle
+)
+{
+    const FAstralOperationResult Result = CreateToolsetResult(Tools, ChoiceMode);
+    OutToolsetHandle = Result.Handle;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateToolsetResult(
+    const TArray<FAstralToolDesc>& Tools,
+    EAstralToolChoiceMode ChoiceMode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateToolset);
+
+    if (Tools.Num() == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    int32 Utf8Bytes = 0;
+    for (const FAstralToolDesc& Tool : Tools)
+    {
+        FTCHARToUTF8 NameUtf8(*Tool.Name);
+        FTCHARToUTF8 DescriptionUtf8(*Tool.Description);
+        FTCHARToUTF8 SchemaUtf8(*Tool.JsonSchema);
+        Utf8Bytes += NameUtf8.Length() + DescriptionUtf8.Length() + SchemaUtf8.Length();
+    }
+
+    TArray<uint8> Utf8Storage;
+    Utf8Storage.Reserve(Utf8Bytes);
+    TArray<AstralToolDesc, TInlineAllocator<kInlineToolCapacity>> NativeTools;
+    NativeTools.SetNumZeroed(Tools.Num());
+
+    for (int32 Index = 0; Index < Tools.Num(); ++Index)
+    {
+        const FAstralToolDesc& Tool = Tools[Index];
+        FTCHARToUTF8 NameUtf8(*Tool.Name);
+        FTCHARToUTF8 DescriptionUtf8(*Tool.Description);
+        FTCHARToUTF8 SchemaUtf8(*Tool.JsonSchema);
+
+        AstralToolDesc& Native = NativeTools[Index];
+        Native.size = sizeof(AstralToolDesc);
+        Native.tool_id = static_cast<uint32_t>(Tool.ToolId);
+
+        const int32 NameOffset = Utf8Storage.Num();
+        Utf8Storage.Append(reinterpret_cast<const uint8*>(NameUtf8.Get()), NameUtf8.Length());
+        Native.name.data = Utf8Storage.GetData() + NameOffset;
+        Native.name.len = static_cast<uint32_t>(NameUtf8.Length());
+
+        const int32 DescriptionOffset = Utf8Storage.Num();
+        Utf8Storage.Append(reinterpret_cast<const uint8*>(DescriptionUtf8.Get()), DescriptionUtf8.Length());
+        Native.description.data = Utf8Storage.GetData() + DescriptionOffset;
+        Native.description.len = static_cast<uint32_t>(DescriptionUtf8.Length());
+
+        const int32 SchemaOffset = Utf8Storage.Num();
+        Utf8Storage.Append(reinterpret_cast<const uint8*>(SchemaUtf8.Get()), SchemaUtf8.Length());
+        Native.json_schema.data = Utf8Storage.GetData() + SchemaOffset;
+        Native.json_schema.len = static_cast<uint32_t>(SchemaUtf8.Length());
+    }
+
+    AstralToolsetDesc Desc{};
+    Desc.size = sizeof(AstralToolsetDesc);
+    Desc.tool_count = static_cast<uint32_t>(NativeTools.Num());
+    Desc.choice_mode = to_native_tool_choice(ChoiceMode);
+    Desc.tools = NativeTools.GetData();
+
+    AstralHandle Toolset = 0;
+    const AstralErr Err = astral_toolset_create(&Desc, &Toolset);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_toolset_create failed (%d)"), static_cast<int32>(Err));
+        return make_operation_result(Err);
+    }
+
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Toolset), static_cast<int32>(Tools.Num()));
+}
+
+void UAstralBlueprintLibrary::DestroyToolset(int64 ToolsetHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyToolset);
+
+    if (ToolsetHandle != 0)
+    {
+        astral_toolset_destroy(static_cast<AstralHandle>(ToolsetHandle));
+    }
+}
+
+bool UAstralBlueprintLibrary::ParseToolCall(
+    int64 ToolsetHandle,
+    const FString& GeneratedText,
+    FAstralToolCallResult& OutResult
+)
+{
+    return ParseToolCallResult(ToolsetHandle, GeneratedText, OutResult).bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ParseToolCallResult(
+    int64 ToolsetHandle,
+    const FString& GeneratedText,
+    FAstralToolCallResult& OutResult
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ParseToolCall);
+
+    OutResult = FAstralToolCallResult{};
+    if (ToolsetHandle == 0)
+    {
+        OutResult.ParseStatus = static_cast<int32>(ASTRAL_E_INVALID);
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 GeneratedUtf8(*GeneratedText);
+    AstralSpanU8 Text{};
+    Text.data = reinterpret_cast<const uint8_t*>(GeneratedUtf8.Get());
+    Text.len = static_cast<uint32_t>(GeneratedUtf8.Length());
+
+    AstralToolCallResult Native{};
+    Native.size = sizeof(AstralToolCallResult);
+    const AstralErr Err = astral_toolset_parse_call(static_cast<AstralHandle>(ToolsetHandle), Text, &Native);
+    if (Err != ASTRAL_OK)
+    {
+        OutResult.ParseStatus = static_cast<int32>(Err);
+        return make_operation_result(Err);
+    }
+
+    OutResult.bFound = true;
+    OutResult.ParseStatus = Native.parse_status;
+    OutResult.ToolId = static_cast<int32>(Native.tool_id);
+    OutResult.Name = utf8_span_to_string(Native.name);
+    OutResult.ArgumentsJson = utf8_span_to_string(Native.arguments_json);
+    return make_operation_result(ASTRAL_OK, ToolsetHandle, static_cast<int32>(Native.parse_status));
+}
+
+bool UAstralBlueprintLibrary::ChunkText(
+    const FString& Text,
+    const FAstralChunkerDesc& Desc,
+    TArray<FAstralChunkRange>& OutRanges,
+    int32& OutErrorCode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ChunkText);
+
+    OutRanges.Reset();
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (!chunker_desc_valid_for_blueprint(Desc) || Desc.Mode == EAstralChunkMode::Token)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    FTCHARToUTF8 TextUtf8(*Text);
+    FTCHARToUTF8 DelimitersUtf8(*Desc.Delimiters);
+    AstralChunkerDesc NativeDesc{};
+    fill_native_chunker(Desc, DelimitersUtf8, NativeDesc);
+
+    AstralSpanU8 NativeText{};
+    NativeText.data = reinterpret_cast<const uint8_t*>(TextUtf8.Get());
+    NativeText.len = static_cast<uint32_t>(TextUtf8.Length());
+
+    uint32_t Required = 0;
+    AstralErr Err = astral_chunk_count(&NativeDesc, NativeText, &Required);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    if (Required == 0)
+    {
+        return true;
+    }
+
+    TArray<AstralChunkRange, TInlineAllocator<kInlineChunkRangeCapacity>> NativeRanges;
+    NativeRanges.SetNumZeroed(static_cast<int32>(Required));
+    Err = astral_chunk_ranges(&NativeDesc, NativeText, NativeRanges.GetData(), Required, &Required);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+
+    OutRanges.Reserve(static_cast<int32>(Required));
+    for (uint32_t Index = 0; Index < Required; ++Index)
+    {
+        OutRanges.Add(from_native_chunk_range(NativeRanges[static_cast<int32>(Index)]));
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::CopyChunkText(
+    const FString& Text,
+    const FAstralChunkRange& Range,
+    FString& OutText,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CopyChunkTextResult(Text, Range, OutText);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CopyChunkTextResult(
+    const FString& Text,
+    const FAstralChunkRange& Range,
+    FString& OutText
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CopyChunkText);
+
+    OutText.Reset();
+    if (Range.ByteBegin < 0 || Range.ByteEnd < Range.ByteBegin)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 TextUtf8(*Text);
+    AstralSpanU8 NativeText{};
+    NativeText.data = reinterpret_cast<const uint8_t*>(TextUtf8.Get());
+    NativeText.len = static_cast<uint32_t>(TextUtf8.Length());
+
+    const AstralChunkRange NativeRange = to_native_chunk_range(Range);
+    AstralMutSpanU8 SizeOnly{};
+    uint32_t Required = 0;
+    AstralErr Err = astral_chunk_text_copy(NativeText, &NativeRange, SizeOnly, &Required);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    if (Required == 0)
+    {
+        return make_operation_result(ASTRAL_OK, kInvalidAstralHandle, kEmptyResultCount);
+    }
+    if (Required > static_cast<uint32_t>(TNumericLimits<int32>::Max()))
+    {
+        return make_operation_result(ASTRAL_E_NOMEM);
+    }
+
+    TArray<uint8, TInlineAllocator<kInlineChunkTextBytes>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(Required));
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = Required;
+    uint32_t Written = 0;
+    Err = astral_chunk_text_copy(NativeText, &NativeRange, Out, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), static_cast<int32>(Written));
+    OutText = FString(Converted.Length(), Converted.Get());
+    return make_operation_result(ASTRAL_OK, kInvalidAstralHandle, static_cast<int32>(Written));
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::MakeMemoryRecordFromChunkResult(
+    const FAstralChunkRange& Range,
+    int64 Key,
+    int32 Flags,
+    FAstralMemoryRecord& OutRecord
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_MakeMemoryRecordFromChunk);
+
+    OutRecord = FAstralMemoryRecord{};
+    if (Key < 0 || Flags < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    const AstralChunkRange NativeRange = to_native_chunk_range(Range);
+    AstralMemoryRecord NativeRecord{};
+    NativeRecord.size = sizeof(AstralMemoryRecord);
+    const AstralErr Err = astral_memory_record_from_chunk(
+        &NativeRange,
+        static_cast<uint64_t>(Key),
+        static_cast<uint32_t>(Flags),
+        &NativeRecord
+    );
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRecord = from_native_memory_record(NativeRecord);
+    return make_operation_result(ASTRAL_OK, kInvalidAstralHandle, OutRecord.ChunkId);
+}
+
+bool UAstralBlueprintLibrary::ChunkTokens(
+    int32 TokenCount,
+    const FAstralChunkerDesc& Desc,
+    TArray<FAstralChunkRange>& OutRanges,
+    int32& OutErrorCode
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ChunkTokens);
+
+    OutRanges.Reset();
+    OutErrorCode = static_cast<int32>(ASTRAL_OK);
+    if (!chunker_desc_valid_for_blueprint(Desc) || Desc.Mode != EAstralChunkMode::Token || TokenCount < 0)
+    {
+        OutErrorCode = static_cast<int32>(ASTRAL_E_INVALID);
+        return false;
+    }
+
+    FTCHARToUTF8 DelimitersUtf8(*Desc.Delimiters);
+    AstralChunkerDesc NativeDesc{};
+    fill_native_chunker(Desc, DelimitersUtf8, NativeDesc);
+
+    uint32_t Required = 0;
+    AstralErr Err = astral_token_chunk_count(&NativeDesc, static_cast<uint32_t>(TokenCount), &Required);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+    if (Required == 0)
+    {
+        return true;
+    }
+
+    TArray<AstralChunkRange, TInlineAllocator<kInlineChunkRangeCapacity>> NativeRanges;
+    NativeRanges.SetNumZeroed(static_cast<int32>(Required));
+    Err = astral_token_chunk_ranges(&NativeDesc, static_cast<uint32_t>(TokenCount), NativeRanges.GetData(), Required, &Required);
+    if (Err != ASTRAL_OK)
+    {
+        OutErrorCode = static_cast<int32>(Err);
+        return false;
+    }
+
+    OutRanges.Reserve(static_cast<int32>(Required));
+    for (uint32_t Index = 0; Index < Required; ++Index)
+    {
+        OutRanges.Add(from_native_chunk_range(NativeRanges[static_cast<int32>(Index)]));
+    }
+    return true;
+}
+
+bool UAstralBlueprintLibrary::CreateMemoryIndex(
+    const FAstralMemoryIndexDesc& Desc,
+    int64& OutMemoryHandle,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateMemoryIndexResult(Desc);
+    OutMemoryHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateMemoryIndexResult(const FAstralMemoryIndexDesc& Desc)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateMemoryIndex);
+
+    if (Desc.Dimension <= 0 || Desc.Capacity <= 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralMemoryIndexDesc Native = to_native_memory_desc(Desc);
+
+    AstralHandle Handle = kNullNativeHandle;
+    const AstralErr Err = astral_memory_create(&Native, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
+}
+
+void UAstralBlueprintLibrary::DestroyMemoryIndex(int64 MemoryHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyMemoryIndex);
+
+    if (MemoryHandle != kInvalidAstralHandle)
+    {
+        astral_memory_destroy(static_cast<AstralHandle>(MemoryHandle));
+    }
+}
+
+bool UAstralBlueprintLibrary::LoadMemoryIndex(
+    const FAstralMemoryIndexDesc& Desc,
+    const TArray<uint8>& Bytes,
+    int64& OutMemoryHandle,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = LoadMemoryIndexResult(Desc, Bytes);
+    OutMemoryHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::LoadMemoryIndexResult(const FAstralMemoryIndexDesc& Desc, const TArray<uint8>& Bytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_LoadMemoryIndex);
+
+    if (Desc.Dimension <= kNoElements || Desc.Capacity <= kNoElements || Bytes.Num() == kNoElements)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralMemoryIndexDesc Native = to_native_memory_desc(Desc);
+    AstralSpanU8 Span{};
+    Span.data = Bytes.GetData();
+    Span.len = static_cast<uint32_t>(Bytes.Num());
+
+    AstralHandle Handle = kNullNativeHandle;
+    const AstralErr Err = astral_memory_load(&Native, Span, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
+}
+
+bool UAstralBlueprintLibrary::ClearMemoryIndex(int64 MemoryHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = ClearMemoryIndexResult(MemoryHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ClearMemoryIndexResult(int64 MemoryHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ClearMemoryIndex);
+
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    const AstralErr Err = astral_memory_clear(static_cast<AstralHandle>(MemoryHandle));
+    return make_operation_result(Err, MemoryHandle);
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetMemoryRecordCountResult(int64 MemoryHandle, int32& OutCount)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetMemoryRecordCount);
+
+    OutCount = 0;
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t Count = 0;
+    const AstralErr Err = astral_memory_count(static_cast<AstralHandle>(MemoryHandle), &Count);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutCount = static_cast<int32>(Count);
+    return make_operation_result(ASTRAL_OK, MemoryHandle, OutCount);
+}
+
+bool UAstralBlueprintLibrary::GetMemoryStats(int64 MemoryHandle, FAstralMemoryStats& OutStats, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetMemoryStatsResult(MemoryHandle, OutStats);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetMemoryStatsResult(int64 MemoryHandle, FAstralMemoryStats& OutStats)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetMemoryStats);
+
+    OutStats = FAstralMemoryStats{};
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralMemoryStats Native{};
+    Native.size = sizeof(AstralMemoryStats);
+    const AstralErr Err = astral_memory_stats(static_cast<AstralHandle>(MemoryHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutStats = from_native_memory_stats(Native);
+    return make_operation_result(ASTRAL_OK, MemoryHandle, OutStats.Count);
+}
+
+bool UAstralBlueprintLibrary::GetMemoryRecord(int64 MemoryHandle, int64 Key, FAstralMemoryRecord& OutRecord, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetMemoryRecordResult(MemoryHandle, Key, OutRecord);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetMemoryRecordResult(int64 MemoryHandle, int64 Key, FAstralMemoryRecord& OutRecord)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetMemoryRecord);
+
+    OutRecord = FAstralMemoryRecord{};
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralMemoryRecord Native{};
+    const AstralErr Err = astral_memory_get_record(static_cast<AstralHandle>(MemoryHandle), static_cast<uint64_t>(Key), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRecord = from_native_memory_record(Native);
+    return make_operation_result(ASTRAL_OK, MemoryHandle);
+}
+
+bool UAstralBlueprintLibrary::UpdateMemoryRecord(int64 MemoryHandle, int64 Key, const FAstralMemoryRecord& Record, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = UpdateMemoryRecordResult(MemoryHandle, Key, Record);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::UpdateMemoryRecordResult(int64 MemoryHandle, int64 Key, const FAstralMemoryRecord& Record)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_UpdateMemoryRecord);
+
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    const AstralMemoryRecord Native = to_native_memory_record(Record);
+    const AstralErr Err = astral_memory_update_record(static_cast<AstralHandle>(MemoryHandle), static_cast<uint64_t>(Key), &Native);
+    return make_operation_result(Err, MemoryHandle);
+}
+
+bool UAstralBlueprintLibrary::RemoveMemoryRecord(int64 MemoryHandle, int64 Key, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = RemoveMemoryRecordResult(MemoryHandle, Key);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::RemoveMemoryRecordResult(int64 MemoryHandle, int64 Key)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_RemoveMemoryRecord);
+
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    const AstralErr Err = astral_memory_remove(static_cast<AstralHandle>(MemoryHandle), static_cast<uint64_t>(Key));
+    return make_operation_result(Err, MemoryHandle);
+}
+
+bool UAstralBlueprintLibrary::SaveMemoryIndex(int64 MemoryHandle, TArray<uint8>& OutBytes, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SaveMemoryIndexResult(MemoryHandle, OutBytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SaveMemoryIndexResult(int64 MemoryHandle, TArray<uint8>& OutBytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SaveMemoryIndex);
+
+    OutBytes.Reset();
+    if (MemoryHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint64_t ByteCount = kNoByteCount;
+    AstralErr Err = astral_memory_save_size(static_cast<AstralHandle>(MemoryHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    if (ByteCount > static_cast<uint64_t>(TNumericLimits<int32>::Max()))
+    {
+        return make_operation_result(ASTRAL_E_NOMEM);
+    }
+
+    OutBytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Span{};
+    Span.data = OutBytes.GetData();
+    Span.len = static_cast<uint32_t>(OutBytes.Num());
+
+    uint64_t Written = kNoByteCount;
+    Err = astral_memory_save(static_cast<AstralHandle>(MemoryHandle), Span, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        OutBytes.Reset();
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNum(static_cast<int32>(Written), EAllowShrinking::No);
+    return make_operation_result(ASTRAL_OK, MemoryHandle, static_cast<int32>(Written));
+}
+
+bool UAstralBlueprintLibrary::AddMemoryBatch(
+    int64 MemoryHandle,
+    const TArray<FAstralMemoryRecord>& Records,
+    const TArray<float>& Vectors,
+    int32 Dimension,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = AddMemoryBatchResult(MemoryHandle, Records, Vectors, Dimension);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::AddMemoryBatchResult(
+    int64 MemoryHandle,
+    const TArray<FAstralMemoryRecord>& Records,
+    const TArray<float>& Vectors,
+    int32 Dimension
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_AddMemoryBatch);
+
+    if (MemoryHandle == 0 || Dimension <= 0 || Records.Num() == 0 || Vectors.Num() != Records.Num() * Dimension)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    TArray<AstralMemoryRecord, TInlineAllocator<kInlineMemoryRecordCapacity>> NativeRecords;
+    NativeRecords.SetNumZeroed(Records.Num());
+    for (int32 Index = 0; Index < Records.Num(); ++Index)
+    {
+        const FAstralMemoryRecord& Source = Records[Index];
+        AstralMemoryRecord& Native = NativeRecords[Index];
+        Native.size = sizeof(AstralMemoryRecord);
+        Native.key = static_cast<uint64_t>(Source.Key);
+        Native.group_id = static_cast<uint32_t>(Source.GroupId);
+        Native.document_id = static_cast<uint32_t>(Source.DocumentId);
+        Native.chunk_id = static_cast<uint32_t>(Source.ChunkId);
+        Native.flags = static_cast<uint32_t>(Source.Flags);
+    }
+
+    const AstralErr Err = astral_memory_add_batch(
+        static_cast<AstralHandle>(MemoryHandle),
+        NativeRecords.GetData(),
+        Vectors.GetData(),
+        static_cast<uint32_t>(NativeRecords.Num())
+    );
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, MemoryHandle, Records.Num());
+}
+
+bool UAstralBlueprintLibrary::SearchMemoryIndex(
+    int64 MemoryHandle,
+    const TArray<float>& Query,
+    int32 TopK,
+    int32 GroupId,
+    TArray<FAstralMemorySearchResult>& OutResults,
+    int32& OutErrorCode,
+    int32 GraphSearch
+)
+{
+    const FAstralOperationResult Result = SearchMemoryIndexResult(MemoryHandle, Query, TopK, GroupId, OutResults, GraphSearch);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SearchMemoryIndexResult(
+    int64 MemoryHandle,
+    const TArray<float>& Query,
+    int32 TopK,
+    int32 GroupId,
+    TArray<FAstralMemorySearchResult>& OutResults,
+    int32 GraphSearch
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SearchMemoryIndex);
+
+    OutResults.Reset();
+    if (MemoryHandle == 0 || Query.Num() == 0 || TopK <= 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralMemorySearchDesc NativeSearch{};
+    NativeSearch.size = sizeof(AstralMemorySearchDesc);
+    NativeSearch.top_k = static_cast<uint32_t>(TopK);
+    NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
+    NativeSearch.graph_search = GraphSearch > 0 ? static_cast<uint32_t>(GraphSearch) : 0u;
+
+    TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
+    NativeResults.SetNumZeroed(TopK);
+    uint32_t ResultCount = 0;
+    const AstralErr Err = astral_memory_search(
+        static_cast<AstralHandle>(MemoryHandle),
+        &NativeSearch,
+        Query.GetData(),
+        NativeResults.GetData(),
+        static_cast<uint32_t>(NativeResults.Num()),
+        &ResultCount
+    );
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutResults.Reserve(static_cast<int32>(ResultCount));
+    for (uint32_t Index = 0; Index < ResultCount; ++Index)
+    {
+        OutResults.Add(from_native_memory_result(NativeResults[static_cast<int32>(Index)]));
+    }
+    return make_operation_result(ASTRAL_OK, MemoryHandle, static_cast<int32>(ResultCount));
+}
+
+bool UAstralBlueprintLibrary::SearchMemoryIndexBatch(int64 MemoryHandle,
+                                                     const TArray<float>& Queries, int32 QueryCount,
+                                                     int32 TopK, int32 GroupId,
+                                                     TArray<FAstralMemorySearchResult>& OutResults,
+                                                     TArray<int32>& OutCounts, int32& OutErrorCode,
+                                                     int32 GraphSearch) {
+  const FAstralOperationResult Result = SearchMemoryIndexBatchResult(
+      MemoryHandle, Queries, QueryCount, TopK, GroupId, OutResults, OutCounts, GraphSearch);
+  OutErrorCode = Result.ErrorCode;
+  return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SearchMemoryIndexBatchResult(
+    int64 MemoryHandle, const TArray<float>& Queries, int32 QueryCount, int32 TopK, int32 GroupId,
+    TArray<FAstralMemorySearchResult>& OutResults, TArray<int32>& OutCounts, int32 GraphSearch) {
+  TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SearchMemoryIndexBatch);
+
+  OutResults.Reset();
+  OutCounts.Reset();
+  if (MemoryHandle == 0 || Queries.Num() == 0 || QueryCount <= 0 || TopK <= 0) {
+    return make_operation_result(ASTRAL_E_INVALID);
+  }
+  if (QueryCount > TNumericLimits<int32>::Max() / TopK) {
+    return make_operation_result(ASTRAL_E_NOMEM);
+  }
+
+  FAstralMemoryStats Stats;
+  const FAstralOperationResult StatsResult = GetMemoryStatsResult(MemoryHandle, Stats);
+  if (!StatsResult.bSuccess) {
+    return StatsResult;
+  }
+  if (Stats.Dimension <= 0 || Queries.Num() != QueryCount * Stats.Dimension) {
+    return make_operation_result(ASTRAL_E_INVALID);
+  }
+
+  AstralMemorySearchDesc NativeSearch{};
+  NativeSearch.size = sizeof(AstralMemorySearchDesc);
+  NativeSearch.top_k = static_cast<uint32_t>(TopK);
+  NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
+  NativeSearch.graph_search = GraphSearch > 0 ? static_cast<uint32_t>(GraphSearch) : 0u;
+
+  const int32 ResultCapacity = QueryCount * TopK;
+  TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
+  TArray<uint32_t, TInlineAllocator<kInlineMemoryQueryCapacity>> NativeCounts;
+  NativeResults.SetNumZeroed(ResultCapacity);
+  NativeCounts.SetNumZeroed(QueryCount);
+
+  const AstralErr Err = astral_memory_search_batch(
+      static_cast<AstralHandle>(MemoryHandle), &NativeSearch, Queries.GetData(),
+      static_cast<uint32_t>(QueryCount), NativeResults.GetData(),
+      static_cast<uint32_t>(NativeResults.Num()), NativeCounts.GetData());
+  if (Err != ASTRAL_OK) {
+    return make_operation_result(Err);
+  }
+
+  OutResults.Reserve(ResultCapacity);
+  OutCounts.Reserve(QueryCount);
+  int32 TotalCount = 0;
+  for (int32 QueryIndex = 0; QueryIndex < QueryCount; ++QueryIndex) {
+    const int32 Count = static_cast<int32>(NativeCounts[QueryIndex]);
+    OutCounts.Add(Count);
+    TotalCount += Count;
+    const int32 ResultOffset = QueryIndex * TopK;
+    for (int32 ResultIndex = 0; ResultIndex < Count; ++ResultIndex) {
+      OutResults.Add(from_native_memory_result(NativeResults[ResultOffset + ResultIndex]));
+    }
+  }
+  return make_operation_result(ASTRAL_OK, MemoryHandle, TotalCount);
+}
+
+bool UAstralBlueprintLibrary::BeginMemorySearch(int64 MemoryHandle, const TArray<float>& Query,
+                                                int32 TopK, int32 GroupId, int64& OutCursorHandle,
+                                                int32& OutErrorCode, int32 GraphSearch) {
+  const FAstralOperationResult Result =
+      BeginMemorySearchResult(MemoryHandle, Query, TopK, GroupId, GraphSearch);
+  OutCursorHandle = Result.Handle;
+  OutErrorCode = Result.ErrorCode;
+  return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::BeginMemorySearchResult(int64 MemoryHandle,
+                                                                        const TArray<float>& Query,
+                                                                        int32 TopK, int32 GroupId,
+                                                                        int32 GraphSearch) {
+  TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_BeginMemorySearch);
+
+  if (MemoryHandle == 0 || Query.Num() == 0 || TopK <= 0) {
+    return make_operation_result(ASTRAL_E_INVALID);
+  }
+
+  AstralMemorySearchDesc NativeSearch{};
+  NativeSearch.size = sizeof(AstralMemorySearchDesc);
+  NativeSearch.top_k = static_cast<uint32_t>(TopK);
+  NativeSearch.group_id = GroupId < 0 ? ASTRAL_MEMORY_GROUP_ANY : static_cast<uint32_t>(GroupId);
+  NativeSearch.graph_search = GraphSearch > 0 ? static_cast<uint32_t>(GraphSearch) : 0u;
+
+  AstralHandle Cursor = 0;
+  const AstralErr Err = astral_memory_search_begin(static_cast<AstralHandle>(MemoryHandle),
+                                                   &NativeSearch, Query.GetData(), &Cursor);
+  if (Err != ASTRAL_OK) {
+    return make_operation_result(Err);
+  }
+
+  return make_operation_result(ASTRAL_OK, static_cast<int64>(Cursor));
+}
+
+bool UAstralBlueprintLibrary::FetchMemorySearch(
+    int64 CursorHandle,
+    int32 MaxResults,
+    TArray<FAstralMemorySearchResult>& OutResults,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = FetchMemorySearchResult(CursorHandle, MaxResults, OutResults);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::FetchMemorySearchResult(
+    int64 CursorHandle,
+    int32 MaxResults,
+    TArray<FAstralMemorySearchResult>& OutResults
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_FetchMemorySearch);
+
+    OutResults.Reset();
+    if (CursorHandle == 0 || MaxResults < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
+    NativeResults.SetNumZeroed(MaxResults);
+    uint32_t ResultCount = 0;
+    const AstralErr Err = astral_memory_search_fetch(
+        static_cast<AstralHandle>(CursorHandle),
+        NativeResults.GetData(),
+        static_cast<uint32_t>(NativeResults.Num()),
+        &ResultCount
+    );
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutResults.Reserve(static_cast<int32>(ResultCount));
+    for (uint32_t Index = 0; Index < ResultCount; ++Index)
+    {
+        OutResults.Add(from_native_memory_result(NativeResults[static_cast<int32>(Index)]));
+    }
+    return make_operation_result(ASTRAL_OK, CursorHandle, static_cast<int32>(ResultCount));
+}
+
+void UAstralBlueprintLibrary::EndMemorySearch(int64 CursorHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_EndMemorySearch);
+
+    if (CursorHandle != 0)
+    {
+        astral_memory_search_end(static_cast<AstralHandle>(CursorHandle));
+    }
+}
+
+bool UAstralBlueprintLibrary::CreateSessionRequest(
+    UAstralSession* Session,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateSessionRequestResult(Session, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateSessionRequestResult(
+    UAstralSession* Session,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateSessionRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (Session == nullptr || !Session->IsValid())
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err = astral_request_from_session(static_cast<AstralHandle>(Session->GetHandle()), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, OutRequest.OwnerHandle);
+}
+
+bool UAstralBlueprintLibrary::CreateConversationRequest(
+    int64 ConversationHandle,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateConversationRequestResult(ConversationHandle, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateConversationRequestResult(
+    int64 ConversationHandle,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateConversationRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (ConversationHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err = astral_request_from_conversation(static_cast<AstralHandle>(ConversationHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, OutRequest.OwnerHandle);
+}
+
+bool UAstralBlueprintLibrary::CreateAgentChatRequest(
+    int64 AgentHandle,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateAgentChatRequestResult(AgentHandle, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateAgentChatRequestResult(
+    int64 AgentHandle,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateAgentChatRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err = astral_request_from_agent_chat(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, OutRequest.OwnerHandle);
+}
+
+bool UAstralBlueprintLibrary::CreateEmbeddingRequest(
+    UAstralEmbedder* Embedder,
+    int64 Ticket,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateEmbeddingRequestResult(Embedder, Ticket, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateEmbeddingRequestResult(
+    UAstralEmbedder* Embedder,
+    int64 Ticket,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateEmbeddingRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (Embedder == nullptr || !Embedder->IsValid() || Ticket <= 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err =
+        astral_request_from_embedding(static_cast<AstralHandle>(Embedder->GetHandle()), static_cast<uint64_t>(Ticket), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, OutRequest.OwnerHandle);
+}
+
+bool UAstralBlueprintLibrary::CreateMemorySearchRequest(
+    int64 CursorHandle,
+    FAstralRequestRef& OutRequest,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = CreateMemorySearchRequestResult(CursorHandle, OutRequest);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateMemorySearchRequestResult(
+    int64 CursorHandle,
+    FAstralRequestRef& OutRequest
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateMemorySearchRequest);
+
+    OutRequest = FAstralRequestRef{};
+    if (CursorHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef Native{};
+    const AstralErr Err = astral_request_from_memory_search(static_cast<AstralHandle>(CursorHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutRequest = from_native_request_ref(Native);
+    return make_operation_result(ASTRAL_OK, CursorHandle);
+}
+
+bool UAstralBlueprintLibrary::GetRequestStatus(
+    const FAstralRequestRef& Request,
+    FAstralRequestStatus& OutStatus,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = GetRequestStatusResult(Request, OutStatus);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetRequestStatusResult(
+    const FAstralRequestRef& Request,
+    FAstralRequestStatus& OutStatus
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetRequestStatus);
+
+    OutStatus = FAstralRequestStatus{};
+    AstralRequestRef NativeRequest = to_native_request_ref(Request);
+    AstralRequestStatus NativeStatus{};
+    NativeStatus.size = sizeof(AstralRequestStatus);
+    const AstralErr Err = astral_request_state(&NativeRequest, &NativeStatus);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutStatus = from_native_request_status(NativeStatus);
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(NativeStatus.owner), static_cast<int32>(NativeStatus.queue_depth));
+}
+
+bool UAstralBlueprintLibrary::WaitRequest(
+    const FAstralRequestRef& Request,
+    int32 TimeoutMs,
+    FAstralRequestStatus& OutStatus,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = WaitRequestResult(Request, TimeoutMs, OutStatus);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::WaitRequestResult(
+    const FAstralRequestRef& Request,
+    int32 TimeoutMs,
+    FAstralRequestStatus& OutStatus
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_WaitRequest);
+
+    OutStatus = FAstralRequestStatus{};
+    if (TimeoutMs < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralRequestRef NativeRequest = to_native_request_ref(Request);
+    AstralRequestStatus NativeStatus{};
+    NativeStatus.size = sizeof(AstralRequestStatus);
+    const AstralErr Err = astral_request_wait(&NativeRequest, static_cast<uint32_t>(TimeoutMs), &NativeStatus);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutStatus = from_native_request_status(NativeStatus);
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(NativeStatus.owner), static_cast<int32>(NativeStatus.queue_depth));
+}
+
+bool UAstralBlueprintLibrary::CancelRequest(const FAstralRequestRef& Request, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = CancelRequestResult(Request);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CancelRequestResult(const FAstralRequestRef& Request)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CancelRequest);
+
+    AstralRequestRef NativeRequest = to_native_request_ref(Request);
+    const AstralErr Err = astral_request_cancel(&NativeRequest);
+    return make_operation_result(Err, Request.OwnerHandle);
+}
+
+bool UAstralBlueprintLibrary::IsRequestQueued(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Queued;
+}
+
+bool UAstralBlueprintLibrary::IsRequestRunning(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Running;
+}
+
+bool UAstralBlueprintLibrary::IsRequestCompleted(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Completed;
+}
+
+bool UAstralBlueprintLibrary::IsRequestCanceled(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Canceled;
+}
+
+bool UAstralBlueprintLibrary::IsRequestFailed(const FAstralRequestStatus& Status)
+{
+    return Status.State == EAstralRequestState::Failed;
+}
+
+bool UAstralBlueprintLibrary::IsRequestActive(const FAstralRequestStatus& Status)
+{
+    return IsRequestQueued(Status) || IsRequestRunning(Status);
+}
+
+bool UAstralBlueprintLibrary::IsRequestTerminal(const FAstralRequestStatus& Status)
+{
+    return IsRequestCompleted(Status) || IsRequestCanceled(Status) || IsRequestFailed(Status);
+}
+
+bool UAstralBlueprintLibrary::IsRequestSuccessful(const FAstralRequestStatus& Status)
+{
+    return IsRequestCompleted(Status) && Status.ErrorCode == static_cast<int32>(EAstralError::OK);
+}
+
+bool UAstralBlueprintLibrary::IsOperationSuccessful(const FAstralOperationResult& Result)
+{
+    return Result.bSuccess;
+}
+
+bool UAstralBlueprintLibrary::IsOperationBackpressure(const FAstralOperationResult& Result)
+{
+    return Result.bBackpressure;
+}
+
+bool UAstralBlueprintLibrary::IsOperationTimeout(const FAstralOperationResult& Result)
+{
+    return Result.bTimeout;
+}
+
+bool UAstralBlueprintLibrary::IsOperationCanceled(const FAstralOperationResult& Result)
+{
+    return Result.bCanceled;
+}
+
+bool UAstralBlueprintLibrary::IsOperationUnsupported(const FAstralOperationResult& Result)
+{
+    return Result.bUnsupported;
+}
+
+bool UAstralBlueprintLibrary::IsOperationNotFound(const FAstralOperationResult& Result)
+{
+    return Result.bNotFound;
+}
+
+bool UAstralBlueprintLibrary::IsOperationEndOfStream(const FAstralOperationResult& Result)
+{
+    return Result.bEndOfStream;
+}
+
+bool UAstralBlueprintLibrary::CreatePromptCache(const FAstralPromptCacheDesc& Desc, int64& OutCacheHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = CreatePromptCacheResult(Desc);
+    OutCacheHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreatePromptCacheResult(const FAstralPromptCacheDesc& Desc)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreatePromptCache);
+
+    if (Desc.MaxEntries < 0 || Desc.MaxTokens < 0 || Desc.MaxBytes < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralPromptCacheDesc Native = to_native_prompt_cache_desc(Desc);
+    AstralHandle Handle = 0;
+    const AstralErr Err = astral_prompt_cache_create(&Native, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
+}
+
+bool UAstralBlueprintLibrary::LoadPromptCache(
+    const FAstralPromptCacheDesc& Desc,
+    const TArray<uint8>& Bytes,
+    int64& OutCacheHandle,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = LoadPromptCacheResult(Desc, Bytes);
+    OutCacheHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::LoadPromptCacheResult(const FAstralPromptCacheDesc& Desc, const TArray<uint8>& Bytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_LoadPromptCache);
+
+    if (Desc.MaxEntries < 0 || Desc.MaxTokens < 0 || Desc.MaxBytes < 0 || Bytes.Num() == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralPromptCacheDesc NativeDesc = to_native_prompt_cache_desc(Desc);
+    AstralSpanU8 Span{};
+    Span.data = Bytes.GetData();
+    Span.len = static_cast<uint32_t>(Bytes.Num());
+
+    AstralHandle Handle = 0;
+    const AstralErr Err = astral_prompt_cache_load(&NativeDesc, Span, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
+}
+
+void UAstralBlueprintLibrary::DestroyPromptCache(int64 CacheHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyPromptCache);
+
+    if (CacheHandle != 0)
+    {
+        astral_prompt_cache_destroy(static_cast<AstralHandle>(CacheHandle));
+    }
+}
+
+bool UAstralBlueprintLibrary::ClearPromptCache(int64 CacheHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = ClearPromptCacheResult(CacheHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ClearPromptCacheResult(int64 CacheHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ClearPromptCache);
+
+    if (CacheHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    const AstralErr Err = astral_prompt_cache_clear(static_cast<AstralHandle>(CacheHandle));
+    return make_operation_result(Err, CacheHandle);
+}
+
+bool UAstralBlueprintLibrary::GetPromptCacheStats(int64 CacheHandle, FAstralPromptCacheStats& OutStats, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetPromptCacheStatsResult(CacheHandle, OutStats);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetPromptCacheStatsResult(int64 CacheHandle, FAstralPromptCacheStats& OutStats)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetPromptCacheStats);
+
+    OutStats = FAstralPromptCacheStats();
+    if (CacheHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralPromptCacheStats Native{};
+    Native.size = sizeof(AstralPromptCacheStats);
+    const AstralErr Err = astral_prompt_cache_stats(static_cast<AstralHandle>(CacheHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutStats = from_native_prompt_cache_stats(Native);
+    return make_operation_result(ASTRAL_OK, CacheHandle, OutStats.Entries);
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::MakePromptCacheKeyResult(
+    int64 ModelHandle,
+    EAstralPromptSectionKind Section,
+    int32 Generation,
+    const FString& Text,
+    FAstralPromptCacheKey& OutKey
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_MakePromptCacheKey);
+
+    OutKey = FAstralPromptCacheKey{};
+    if (ModelHandle == kInvalidAstralHandle || Generation < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 Utf8(*Text);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Span.len = static_cast<uint32_t>(Utf8.Length());
+
+    AstralPromptCacheKey Native{};
+    const AstralErr Err = astral_prompt_cache_key_from_bytes(
+        static_cast<AstralHandle>(ModelHandle),
+        to_native_prompt_section(Section),
+        static_cast<uint32_t>(Generation),
+        Span,
+        &Native
+    );
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutKey.Section = Section;
+    OutKey.ModelHandle = ModelHandle;
+    OutKey.Key = static_cast<int64>(Native.key);
+    OutKey.Generation = Generation;
+    return make_operation_result(ASTRAL_OK, ModelHandle, Utf8.Length());
+}
+
+bool UAstralBlueprintLibrary::PutPromptCacheTokens(
+    int64 CacheHandle,
+    const FAstralPromptCacheKey& Key,
+    const TArray<int32>& Tokens,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = PutPromptCacheTokensResult(CacheHandle, Key, Tokens);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::PutPromptCacheTokensResult(
+    int64 CacheHandle,
+    const FAstralPromptCacheKey& Key,
+    const TArray<int32>& Tokens
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_PutPromptCacheTokens);
+
+    if (CacheHandle == 0 || Key.ModelHandle == 0 || Key.Generation < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralPromptCacheKey NativeKey = to_native_prompt_cache_key(Key);
+    const AstralErr Err = astral_prompt_cache_put_tokens(
+        static_cast<AstralHandle>(CacheHandle),
+        &NativeKey,
+        Tokens.GetData(),
+        static_cast<uint32_t>(Tokens.Num())
+    );
+    return make_operation_result(Err, CacheHandle, Tokens.Num());
+}
+
+bool UAstralBlueprintLibrary::GetPromptCacheTokens(
+    int64 CacheHandle,
+    const FAstralPromptCacheKey& Key,
+    int32 MaxTokens,
+    TArray<int32>& OutTokens,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result = GetPromptCacheTokensResult(CacheHandle, Key, MaxTokens, OutTokens);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetPromptCacheTokensResult(
+    int64 CacheHandle,
+    const FAstralPromptCacheKey& Key,
+    int32 MaxTokens,
+    TArray<int32>& OutTokens
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetPromptCacheTokens);
+
+    OutTokens.Reset();
+    if (CacheHandle == 0 || Key.ModelHandle == 0 || Key.Generation < 0 || MaxTokens < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    OutTokens.SetNumZeroed(MaxTokens);
+    AstralPromptCacheKey NativeKey = to_native_prompt_cache_key(Key);
+    uint32_t TokenCount = 0;
+    const AstralErr Err = astral_prompt_cache_get_tokens(
+        static_cast<AstralHandle>(CacheHandle),
+        &NativeKey,
+        OutTokens.GetData(),
+        static_cast<uint32_t>(OutTokens.Num()),
+        &TokenCount
+    );
+    if (Err != ASTRAL_OK)
+    {
+        OutTokens.Reset();
+        return make_operation_result(Err);
+    }
+
+    OutTokens.SetNum(static_cast<int32>(TokenCount), EAllowShrinking::No);
+    return make_operation_result(ASTRAL_OK, CacheHandle, static_cast<int32>(TokenCount));
+}
+
+bool UAstralBlueprintLibrary::SavePromptCache(int64 CacheHandle, TArray<uint8>& OutBytes, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SavePromptCacheResult(CacheHandle, OutBytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SavePromptCacheResult(int64 CacheHandle, TArray<uint8>& OutBytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SavePromptCache);
+
+    OutBytes.Reset();
+    if (CacheHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t ByteCount = 0;
+    AstralErr Err = astral_prompt_cache_save_size(static_cast<AstralHandle>(CacheHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Span{};
+    Span.data = OutBytes.GetData();
+    Span.len = ByteCount;
+
+    uint32_t Written = 0;
+    Err = astral_prompt_cache_save(static_cast<AstralHandle>(CacheHandle), Span, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        OutBytes.Reset();
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNum(static_cast<int32>(Written), EAllowShrinking::No);
+    return make_operation_result(ASTRAL_OK, CacheHandle, static_cast<int32>(Written));
+}
+
+bool UAstralBlueprintLibrary::CreateAgent(const FAstralAgentDesc& Desc, int64& OutAgentHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = CreateAgentResult(Desc);
+    OutAgentHandle = Result.Handle;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CreateAgentResult(const FAstralAgentDesc& Desc)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CreateAgent);
+
+    if (Desc.ModelHandle == 0 || Desc.MaxTokens < 0 || Desc.TopK < 0 || Desc.MaxMessages < 0 ||
+        Desc.MaxPromptBytes < 0 || Desc.SlotAffinity < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralAgentDesc Native{};
+    Native.size = sizeof(AstralAgentDesc);
+    Native.model = static_cast<AstralHandle>(Desc.ModelHandle);
+    Native.prompt_cache = static_cast<AstralHandle>(Desc.PromptCacheHandle);
+    Native.memory_index = static_cast<AstralHandle>(Desc.MemoryIndexHandle);
+    Native.toolset = static_cast<AstralHandle>(Desc.ToolsetHandle);
+    Native.max_tokens = static_cast<uint32_t>(Desc.MaxTokens);
+    Native.temperature = Desc.Temperature;
+    Native.top_k = static_cast<uint32_t>(Desc.TopK);
+    Native.top_p = Desc.TopP;
+    Native.stream_enabled = Desc.bStream ? 1 : 0;
+    Native.seed = static_cast<uint32_t>(Desc.Seed);
+    Native.tool_choice_mode = to_native_tool_choice(Desc.ToolChoiceMode);
+    Native.max_messages = static_cast<uint32_t>(Desc.MaxMessages);
+    Native.max_prompt_bytes = static_cast<uint32_t>(Desc.MaxPromptBytes);
+    Native.overflow_policy = static_cast<AstralAgentOverflowPolicy>(Desc.OverflowPolicy);
+    Native.slot_affinity = static_cast<uint32_t>(Desc.SlotAffinity);
+
+    FTCHARToUTF8 SystemPromptUtf8(*Desc.SystemPrompt);
+    FTCHARToUTF8 SummaryUtf8(*Desc.Summary);
+    FTCHARToUTF8 MemoryContextUtf8(*Desc.MemoryContext);
+    Native.system_prompt.data = reinterpret_cast<const uint8_t*>(SystemPromptUtf8.Get());
+    Native.system_prompt.len = static_cast<uint32_t>(SystemPromptUtf8.Length());
+    Native.summary.data = reinterpret_cast<const uint8_t*>(SummaryUtf8.Get());
+    Native.summary.len = static_cast<uint32_t>(SummaryUtf8.Length());
+    Native.memory_context.data = reinterpret_cast<const uint8_t*>(MemoryContextUtf8.Get());
+    Native.memory_context.len = static_cast<uint32_t>(MemoryContextUtf8.Length());
+
+    AstralHandle Handle = 0;
+    const AstralErr Err = astral_agent_create(&Native, &Handle);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(Handle));
+}
+
+bool UAstralBlueprintLibrary::GetAgentAssignedSlot(int64 AgentHandle, int32& OutSlot, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetAgentAssignedSlotResult(AgentHandle, OutSlot);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentAssignedSlotResult(int64 AgentHandle, int32& OutSlot)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentAssignedSlot);
+
+    OutSlot = 0;
+    uint32 Slot = 0;
+    const AstralErr Err = astral_agent_assigned_slot(static_cast<AstralHandle>(AgentHandle), &Slot);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutSlot = static_cast<int32>(Slot);
+    return make_operation_result(ASTRAL_OK, AgentHandle, OutSlot);
+}
+
+bool UAstralBlueprintLibrary::ReleaseAgentSlot(int64 AgentHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = ReleaseAgentSlotResult(AgentHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ReleaseAgentSlotResult(int64 AgentHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ReleaseAgentSlot);
+
+    const AstralErr Err = astral_agent_release_slot(static_cast<AstralHandle>(AgentHandle));
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle);
+}
+
+void UAstralBlueprintLibrary::DestroyAgent(int64 AgentHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_DestroyAgent);
+
+    if (AgentHandle != 0)
+    {
+        astral_agent_destroy(static_cast<AstralHandle>(AgentHandle));
+    }
+}
+
+bool UAstralBlueprintLibrary::SetAgentSystemPrompt(int64 AgentHandle, const FString& SystemPrompt, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SetAgentSystemPromptResult(AgentHandle, SystemPrompt);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SetAgentSystemPromptResult(int64 AgentHandle, const FString& SystemPrompt)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SetAgentSystemPrompt);
+
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 Utf8(*SystemPrompt);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Span.len = static_cast<uint32_t>(Utf8.Length());
+    const AstralErr Err = astral_agent_set_system_prompt(static_cast<AstralHandle>(AgentHandle), Span);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentSystemPromptResult(int64 AgentHandle, FString& OutSystemPrompt)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentSystemPrompt);
+
+    OutSystemPrompt.Reset();
+    if (AgentHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t ByteCount = 0;
+    AstralErr Err = astral_agent_get_system_prompt_size(static_cast<AstralHandle>(AgentHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    if (ByteCount == kNoElements)
+    {
+        return make_operation_result(ASTRAL_OK, AgentHandle, kEmptyResultCount);
+    }
+
+    TArray<uint8, TInlineAllocator<kInlineAgentTextBytes>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = ByteCount;
+    uint32_t Written = 0;
+    Err = astral_agent_get_system_prompt(static_cast<AstralHandle>(AgentHandle), Out, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    AstralSpanU8 TextSpan{};
+    TextSpan.data = Bytes.GetData();
+    TextSpan.len = Written;
+    OutSystemPrompt = utf8_span_to_string(TextSpan);
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Written));
+}
+
+bool UAstralBlueprintLibrary::SetAgentSummary(int64 AgentHandle, const FString& Summary, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SetAgentSummaryResult(AgentHandle, Summary);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SetAgentSummaryResult(int64 AgentHandle, const FString& Summary)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SetAgentSummary);
+
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 Utf8(*Summary);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Span.len = static_cast<uint32_t>(Utf8.Length());
+    const AstralErr Err = astral_agent_set_summary(static_cast<AstralHandle>(AgentHandle), Span);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
+}
+
+bool UAstralBlueprintLibrary::GetAgentSummary(int64 AgentHandle, FString& OutSummary, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetAgentSummaryResult(AgentHandle, OutSummary);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentSummaryResult(int64 AgentHandle, FString& OutSummary)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentSummary);
+
+    OutSummary.Reset();
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t ByteCount = 0;
+    AstralErr Err = astral_agent_get_summary_size(static_cast<AstralHandle>(AgentHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    if (ByteCount == kNoElements)
+    {
+        return make_operation_result(ASTRAL_OK, AgentHandle, kEmptyResultCount);
+    }
+
+    TArray<uint8, TInlineAllocator<kInlineAgentTextBytes>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = ByteCount;
+    uint32_t Written = 0;
+    Err = astral_agent_get_summary(static_cast<AstralHandle>(AgentHandle), Out, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    AstralSpanU8 TextSpan{};
+    TextSpan.data = Bytes.GetData();
+    TextSpan.len = Written;
+    OutSummary = utf8_span_to_string(TextSpan);
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Written));
+}
+
+bool UAstralBlueprintLibrary::SetAgentMemoryContext(int64 AgentHandle, const FString& MemoryContext, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SetAgentMemoryContextResult(AgentHandle, MemoryContext);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SetAgentMemoryContextResult(int64 AgentHandle, const FString& MemoryContext)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SetAgentMemoryContext);
+
+    if (AgentHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 Utf8(*MemoryContext);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Span.len = static_cast<uint32_t>(Utf8.Length());
+    const AstralErr Err = astral_agent_set_memory_context(static_cast<AstralHandle>(AgentHandle), Span);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
+}
+
+bool UAstralBlueprintLibrary::SetAgentMemoryContextFromResults(
+    int64 AgentHandle,
+    const FString& DocumentText,
+    const TArray<FAstralChunkRange>& Chunks,
+    const TArray<FAstralMemorySearchResult>& Results,
+    const FString& Separator,
+    int32 MaxBytes,
+    int32& OutErrorCode
+)
+{
+    const FAstralOperationResult Result =
+        SetAgentMemoryContextFromResultsStatus(AgentHandle, DocumentText, Chunks, Results, Separator, MaxBytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SetAgentMemoryContextFromResultsStatus(
+    int64 AgentHandle,
+    const FString& DocumentText,
+    const TArray<FAstralChunkRange>& Chunks,
+    const TArray<FAstralMemorySearchResult>& Results,
+    const FString& Separator,
+    int32 MaxBytes
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SetAgentMemoryContextFromResults);
+
+    if (AgentHandle == kInvalidAstralHandle || MaxBytes < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 DocumentUtf8(*DocumentText);
+    FTCHARToUTF8 SeparatorUtf8(*Separator);
+    TArray<AstralChunkRange, TInlineAllocator<kInlineChunkRangeCapacity>> NativeChunks;
+    NativeChunks.Reserve(Chunks.Num());
+    for (const FAstralChunkRange& Chunk : Chunks)
+    {
+        NativeChunks.Add(to_native_chunk_range(Chunk));
+    }
+
+    TArray<AstralMemorySearchResult, TInlineAllocator<kInlineMemoryResultCapacity>> NativeResults;
+    NativeResults.Reserve(Results.Num());
+    for (const FAstralMemorySearchResult& Result : Results)
+    {
+        AstralMemorySearchResult Native{};
+        Native.size = sizeof(AstralMemorySearchResult);
+        Native.group_id = static_cast<uint32_t>(Result.GroupId);
+        Native.key = static_cast<uint64_t>(Result.Key);
+        Native.document_id = static_cast<uint32_t>(Result.DocumentId);
+        Native.chunk_id = static_cast<uint32_t>(Result.ChunkId);
+        Native.score = Result.Score;
+        Native.flags = static_cast<uint32_t>(Result.Flags);
+        NativeResults.Add(Native);
+    }
+
+    AstralAgentMemoryContextDesc Desc{};
+    Desc.size = sizeof(AstralAgentMemoryContextDesc);
+    Desc.result_count = static_cast<uint32_t>(NativeResults.Num());
+    Desc.chunk_count = static_cast<uint32_t>(NativeChunks.Num());
+    Desc.max_bytes = static_cast<uint32_t>(MaxBytes);
+    Desc.document_text.data = reinterpret_cast<const uint8_t*>(DocumentUtf8.Get());
+    Desc.document_text.len = static_cast<uint32_t>(DocumentUtf8.Length());
+    Desc.separator.data = reinterpret_cast<const uint8_t*>(SeparatorUtf8.Get());
+    Desc.separator.len = static_cast<uint32_t>(SeparatorUtf8.Length());
+    Desc.chunks = NativeChunks.GetData();
+    Desc.results = NativeResults.GetData();
+
+    const AstralErr Err = astral_agent_set_memory_context_from_results(static_cast<AstralHandle>(AgentHandle), &Desc);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Desc.result_count));
+}
+
+bool UAstralBlueprintLibrary::GetAgentMemoryContext(int64 AgentHandle, FString& OutMemoryContext, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetAgentMemoryContextResult(AgentHandle, OutMemoryContext);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentMemoryContextResult(int64 AgentHandle, FString& OutMemoryContext)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentMemoryContext);
+
+    OutMemoryContext.Reset();
+    if (AgentHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t ByteCount = 0;
+    AstralErr Err = astral_agent_get_memory_context_size(static_cast<AstralHandle>(AgentHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    if (ByteCount == kNoElements)
+    {
+        return make_operation_result(ASTRAL_OK, AgentHandle, kEmptyResultCount);
+    }
+
+    TArray<uint8, TInlineAllocator<kInlineAgentTextBytes>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = ByteCount;
+    uint32_t Written = 0;
+    Err = astral_agent_get_memory_context(static_cast<AstralHandle>(AgentHandle), Out, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    AstralSpanU8 TextSpan{};
+    TextSpan.data = Bytes.GetData();
+    TextSpan.len = Written;
+    OutMemoryContext = utf8_span_to_string(TextSpan);
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Written));
+}
+
+bool UAstralBlueprintLibrary::ParseAgentToolCall(
+    int64 AgentHandle,
+    const FString& GeneratedText,
+    FAstralToolCallResult& OutResult
+)
+{
+    return ParseAgentToolCallResult(AgentHandle, GeneratedText, OutResult).bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ParseAgentToolCallResult(
+    int64 AgentHandle,
+    const FString& GeneratedText,
+    FAstralToolCallResult& OutResult
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ParseAgentToolCall);
+
+    OutResult = FAstralToolCallResult{};
+    if (AgentHandle == kInvalidAstralHandle)
+    {
+        OutResult.ParseStatus = static_cast<int32>(ASTRAL_E_INVALID);
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 GeneratedUtf8(*GeneratedText);
+    AstralSpanU8 Text{};
+    Text.data = reinterpret_cast<const uint8_t*>(GeneratedUtf8.Get());
+    Text.len = static_cast<uint32_t>(GeneratedUtf8.Length());
+
+    AstralToolCallResult Native{};
+    Native.size = sizeof(AstralToolCallResult);
+    const AstralErr Err = astral_agent_parse_tool_call(static_cast<AstralHandle>(AgentHandle), Text, &Native);
+    if (Err != ASTRAL_OK)
+    {
+        OutResult.ParseStatus = static_cast<int32>(Err);
+        return make_operation_result(Err);
+    }
+
+    OutResult.bFound = true;
+    OutResult.ParseStatus = Native.parse_status;
+    OutResult.ToolId = static_cast<int32>(Native.tool_id);
+    OutResult.Name = utf8_span_to_string(Native.name);
+    OutResult.ArgumentsJson = utf8_span_to_string(Native.arguments_json);
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Native.parse_status));
+}
+
+bool UAstralBlueprintLibrary::GetAgentChatToolCallResult(int64 AgentHandle, FAstralToolCallResult& OutResult)
+{
+    return GetAgentChatToolCallResultStatus(AgentHandle, OutResult).bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentChatToolCallResultStatus(
+    int64 AgentHandle,
+    FAstralToolCallResult& OutResult
+)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentChatToolCallResult);
+
+    OutResult = FAstralToolCallResult{};
+    if (AgentHandle == kInvalidAstralHandle)
+    {
+        OutResult.ParseStatus = static_cast<int32>(ASTRAL_E_INVALID);
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralToolCallResult Native{};
+    Native.size = sizeof(AstralToolCallResult);
+    const AstralErr Err = astral_agent_chat_tool_call_result(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        OutResult.ParseStatus = static_cast<int32>(Err);
+        return make_operation_result(Err);
+    }
+
+    OutResult.bFound = true;
+    OutResult.ParseStatus = Native.parse_status;
+    OutResult.ToolId = static_cast<int32>(Native.tool_id);
+    OutResult.Name = utf8_span_to_string(Native.name);
+    OutResult.ArgumentsJson = utf8_span_to_string(Native.arguments_json);
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Native.parse_status));
+}
+
+bool UAstralBlueprintLibrary::AddAgentMessage(int64 AgentHandle, EAstralAgentRole Role, const FString& Text, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = AddAgentMessageResult(AgentHandle, Role, Text);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::AddAgentMessageResult(int64 AgentHandle, EAstralAgentRole Role, const FString& Text)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_AddAgentMessage);
+
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 Utf8(*Text);
+    AstralAgentMessage Native{};
+    Native.size = sizeof(AstralAgentMessage);
+    Native.role = to_native_agent_role(Role);
+    Native.content.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Native.content.len = static_cast<uint32_t>(Utf8.Length());
+
+    const AstralErr Err = astral_agent_message_add(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
+}
+
+bool UAstralBlueprintLibrary::ClearAgentHistory(int64 AgentHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = ClearAgentHistoryResult(AgentHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ClearAgentHistoryResult(int64 AgentHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ClearAgentHistory);
+
+    const AstralErr Err = astral_agent_history_clear(static_cast<AstralHandle>(AgentHandle));
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle);
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentHistoryCountResult(int64 AgentHandle, int32& OutCount)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentHistoryCount);
+
+    OutCount = 0;
+    if (AgentHandle == kInvalidAstralHandle)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t Count = 0;
+    const AstralErr Err = astral_agent_history_count(static_cast<AstralHandle>(AgentHandle), &Count);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutCount = static_cast<int32>(Count);
+    return make_operation_result(ASTRAL_OK, AgentHandle, OutCount);
+}
+
+bool UAstralBlueprintLibrary::SaveAgentHistory(int64 AgentHandle, TArray<uint8>& OutBytes, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = SaveAgentHistoryResult(AgentHandle, OutBytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::SaveAgentHistoryResult(int64 AgentHandle, TArray<uint8>& OutBytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_SaveAgentHistory);
+
+    OutBytes.Reset();
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint32_t ByteCount = 0;
+    AstralErr Err = astral_agent_history_save_size(static_cast<AstralHandle>(AgentHandle), &ByteCount);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Span{};
+    Span.data = OutBytes.GetData();
+    Span.len = ByteCount;
+
+    uint32_t Written = 0;
+    Err = astral_agent_history_save(static_cast<AstralHandle>(AgentHandle), Span, &Written);
+    if (Err != ASTRAL_OK)
+    {
+        OutBytes.Reset();
+        return make_operation_result(Err);
+    }
+
+    OutBytes.SetNum(static_cast<int32>(Written), EAllowShrinking::No);
+    return make_operation_result(ASTRAL_OK, AgentHandle, static_cast<int32>(Written));
+}
+
+bool UAstralBlueprintLibrary::LoadAgentHistory(int64 AgentHandle, const TArray<uint8>& Bytes, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = LoadAgentHistoryResult(AgentHandle, Bytes);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::LoadAgentHistoryResult(int64 AgentHandle, const TArray<uint8>& Bytes)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_LoadAgentHistory);
+
+    if (AgentHandle == 0 || Bytes.Num() == kNoElements)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    AstralSpanU8 Span{};
+    Span.data = Bytes.GetData();
+    Span.len = static_cast<uint32_t>(Bytes.Num());
+
+    const AstralErr Err = astral_agent_history_load(static_cast<AstralHandle>(AgentHandle), Span);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, Bytes.Num());
+}
+
+bool UAstralBlueprintLibrary::EnqueueAgentChat(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = EnqueueAgentChatResult(AgentHandle, UserMessage, bWarmupOnly);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::EnqueueAgentChatResult(int64 AgentHandle, const FString& UserMessage, bool bWarmupOnly)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_EnqueueAgentChat);
+
+    if (AgentHandle == 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    FTCHARToUTF8 Utf8(*UserMessage);
+    AstralAgentChatDesc Native{};
+    Native.size = sizeof(AstralAgentChatDesc);
+    Native.flags = bWarmupOnly ? ASTRAL_AGENT_CHAT_FLAG_WARMUP : ASTRAL_AGENT_CHAT_FLAG_NONE;
+    Native.user_message.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+    Native.user_message.len = static_cast<uint32_t>(Utf8.Length());
+
+    const AstralErr Err = astral_agent_chat_enqueue(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle, Utf8.Length());
+}
+
+bool UAstralBlueprintLibrary::CancelAgentChat(int64 AgentHandle, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = CancelAgentChatResult(AgentHandle);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::CancelAgentChatResult(int64 AgentHandle)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_CancelAgentChat);
+
+    const AstralErr Err = astral_agent_chat_cancel(static_cast<AstralHandle>(AgentHandle));
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    return make_operation_result(ASTRAL_OK, AgentHandle);
+}
+
+bool UAstralBlueprintLibrary::ReadAgentChat(int64 AgentHandle, int32 TimeoutMs, FString& OutText, bool& bEndOfStream, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = ReadAgentChatResult(AgentHandle, TimeoutMs, OutText);
+    bEndOfStream = Result.bEndOfStream;
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::ReadAgentChatResult(int64 AgentHandle, int32 TimeoutMs, FString& OutText)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_ReadAgentChat);
+
+    OutText.Reset();
+    if (AgentHandle == 0 || TimeoutMs < 0)
+    {
+        return make_operation_result(ASTRAL_E_INVALID);
+    }
+
+    uint8 Buffer[kAgentReadBufferBytes]{};
+    AstralMutSpanU8 Out{};
+    Out.data = Buffer;
+    Out.len = static_cast<uint32_t>(sizeof(Buffer));
+    const int32 Result = astral_agent_chat_stream_read(static_cast<AstralHandle>(AgentHandle), Out, static_cast<uint32_t>(TimeoutMs));
+    if (Result == 0)
+    {
+        FAstralOperationResult Status = make_operation_result(ASTRAL_OK, AgentHandle);
+        Status.bEndOfStream = true;
+        return Status;
+    }
+    if (Result < 0)
+    {
+        return make_operation_result(static_cast<AstralErr>(Result), AgentHandle);
+    }
+
+    AstralSpanU8 TextSpan{};
+    TextSpan.data = Buffer;
+    TextSpan.len = static_cast<uint32_t>(Result);
+    OutText = utf8_span_to_string(TextSpan);
+    return make_operation_result(ASTRAL_OK, AgentHandle, Result);
+}
+
+bool UAstralBlueprintLibrary::GetAgentChatResult(int64 AgentHandle, FAstralAgentChatResult& OutResult, int32& OutErrorCode)
+{
+    const FAstralOperationResult Result = GetAgentChatStatusResult(AgentHandle, OutResult);
+    OutErrorCode = Result.ErrorCode;
+    return Result.bSuccess;
+}
+
+FAstralOperationResult UAstralBlueprintLibrary::GetAgentChatStatusResult(int64 AgentHandle, FAstralAgentChatResult& OutResult)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralBlueprint_GetAgentChatResult);
+
+    AstralAgentChatResult Native{};
+    Native.size = sizeof(AstralAgentChatResult);
+    const AstralErr Err = astral_agent_chat_result(static_cast<AstralHandle>(AgentHandle), &Native);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err);
+    }
+    OutResult = from_native_agent_result(Native);
+    return make_operation_result(ASTRAL_OK, AgentHandle, OutResult.PromptTokens);
 }
 
 bool UAstralBlueprintLibrary::HasEmbeddings(int64 Caps)

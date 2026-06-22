@@ -8,6 +8,7 @@ using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace Astral.Runtime
 {
@@ -89,6 +90,243 @@ namespace Astral.Runtime
             }
 
             return limits;
+        }
+
+        /// <summary>
+        /// Count token ids produced for UTF-8 text without allocating a token buffer.
+        /// </summary>
+        public uint CountTokens(string text, bool addSpecial = false, bool parseSpecial = false)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            NativeArray<byte> textArray;
+            var textSpan = AstralNative.AstralSpanU8.FromString(text, out textArray);
+            try
+            {
+                int err = AstralNative.astral_tokenize_count(
+                    m_handle,
+                    textSpan,
+                    (byte)(addSpecial ? 1 : 0),
+                    (byte)(parseSpecial ? 1 : 0),
+                    out uint count);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_tokenize_count failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+                return count;
+            }
+            finally
+            {
+                if (textArray.IsCreated)
+                {
+                    textArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tokenize UTF-8 text into a new NativeArray owned by the caller.
+        /// </summary>
+        public unsafe NativeArray<int> Tokenize(string text, Allocator allocator, bool addSpecial = false, bool parseSpecial = false)
+        {
+            uint count = CountTokens(text, addSpecial, parseSpecial);
+            var tokens = new NativeArray<int>((int)count, allocator, NativeArrayOptions.UninitializedMemory);
+            if (count == 0)
+            {
+                return tokens;
+            }
+
+            NativeArray<byte> textArray;
+            var textSpan = AstralNative.AstralSpanU8.FromString(text, out textArray);
+            try
+            {
+                int err = AstralNative.astral_tokenize(
+                    m_handle,
+                    textSpan,
+                    (int*)tokens.GetUnsafePtr(),
+                    count,
+                    (byte)(addSpecial ? 1 : 0),
+                    (byte)(parseSpecial ? 1 : 0),
+                    out uint written);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    tokens.Dispose();
+                    throw new AstralException($"astral_tokenize failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+                if (written != count)
+                {
+                    tokens.Dispose();
+                    throw new AstralException("astral_tokenize wrote an unexpected token count.", AstralNative.ASTRAL_E_BACKEND);
+                }
+                return tokens;
+            }
+            finally
+            {
+                if (textArray.IsCreated)
+                {
+                    textArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tokenize UTF-8 text into a caller-owned NativeArray.
+        /// </summary>
+        public unsafe uint Tokenize(string text, NativeArray<int> outTokens, bool addSpecial = false, bool parseSpecial = false)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+            if (!outTokens.IsCreated)
+            {
+                throw new ArgumentException("outTokens must be created", nameof(outTokens));
+            }
+
+            NativeArray<byte> textArray;
+            var textSpan = AstralNative.AstralSpanU8.FromString(text, out textArray);
+            try
+            {
+                int err = AstralNative.astral_tokenize(
+                    m_handle,
+                    textSpan,
+                    (int*)outTokens.GetUnsafePtr(),
+                    (uint)outTokens.Length,
+                    (byte)(addSpecial ? 1 : 0),
+                    (byte)(parseSpecial ? 1 : 0),
+                    out uint written);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_tokenize failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+                return written;
+            }
+            finally
+            {
+                if (textArray.IsCreated)
+                {
+                    textArray.Dispose();
+                }
+            }
+        }
+
+        public unsafe uint CountTokensBatch(
+            NativeArray<AstralNative.AstralTokenizeRequest> requests,
+            NativeArray<uint> outOffsets)
+        {
+            ValidateTokenizeBatchBuffers(requests, outOffsets);
+
+            int err = AstralNative.astral_tokenize_batch(
+                m_handle,
+                (AstralNative.AstralTokenizeRequest*)requests.GetUnsafeReadOnlyPtr(),
+                (uint)requests.Length,
+                (uint*)outOffsets.GetUnsafePtr(),
+                null,
+                0,
+                out uint totalTokens);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_tokenize_batch failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+            return totalTokens;
+        }
+
+        public unsafe uint TokenizeBatch(
+            NativeArray<AstralNative.AstralTokenizeRequest> requests,
+            NativeArray<uint> outOffsets,
+            NativeArray<int> outTokens)
+        {
+            ValidateTokenizeBatchBuffers(requests, outOffsets);
+            if (!outTokens.IsCreated)
+            {
+                throw new ArgumentException("outTokens must be created", nameof(outTokens));
+            }
+
+            int err = AstralNative.astral_tokenize_batch(
+                m_handle,
+                (AstralNative.AstralTokenizeRequest*)requests.GetUnsafeReadOnlyPtr(),
+                (uint)requests.Length,
+                (uint*)outOffsets.GetUnsafePtr(),
+                (int*)outTokens.GetUnsafePtr(),
+                (uint)outTokens.Length,
+                out uint totalTokens);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_tokenize_batch failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+            return totalTokens;
+        }
+
+        /// <summary>
+        /// Detokenize token ids into a managed UTF-8 string.
+        /// </summary>
+        public unsafe string Detokenize(NativeArray<int> tokens)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+            if (!tokens.IsCreated)
+            {
+                throw new ArgumentException("tokens must be created", nameof(tokens));
+            }
+
+            int err = AstralNative.astral_detokenize_count(
+                m_handle,
+                (int*)tokens.GetUnsafeReadOnlyPtr(),
+                (uint)tokens.Length,
+                out uint byteCount);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_detokenize_count failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+            if (byteCount == 0)
+            {
+                return string.Empty;
+            }
+
+            using (var bytes = new NativeArray<byte>((int)byteCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory))
+            {
+                err = AstralNative.astral_detokenize(
+                    m_handle,
+                    (int*)tokens.GetUnsafeReadOnlyPtr(),
+                    (uint)tokens.Length,
+                    AstralNative.AstralMutSpanU8.FromNativeArray(bytes),
+                    out uint written);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_detokenize failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+
+                byte[] managed = new byte[written];
+                NativeArray<byte>.Copy(bytes, managed, (int)written);
+                return System.Text.Encoding.UTF8.GetString(managed);
+            }
+        }
+
+        private void ValidateTokenizeBatchBuffers(
+            NativeArray<AstralNative.AstralTokenizeRequest> requests,
+            NativeArray<uint> outOffsets)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+            if (!requests.IsCreated || requests.Length == 0)
+            {
+                throw new ArgumentException("requests must be created and non-empty", nameof(requests));
+            }
+            if (!outOffsets.IsCreated)
+            {
+                throw new ArgumentException("outOffsets must be created", nameof(outOffsets));
+            }
+            if (outOffsets.Length < requests.Length + 1)
+            {
+                throw new ArgumentException("outOffsets must have requests.Length + 1 entries", nameof(outOffsets));
+            }
         }
 
         /// <summary>
@@ -189,6 +427,62 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Load a model-scoped LoRA adapter for later session attachment.
+        /// </summary>
+        public AstralAdapter LoadAdapter(string adapterPath)
+        {
+            return AstralAdapter.Load(this, adapterPath);
+        }
+
+        /// <summary>
+        /// Configure continuous batching before creating conversations.
+        /// </summary>
+        public void ConfigureExecutor(AstralExecutorConfig config)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            var desc = new AstralNative.AstralExecutorDesc
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralExecutorDesc>(),
+                max_slots = config.maxSlots,
+                max_batch_tokens = config.maxBatchTokens,
+                worker_hint = config.workerHint
+            };
+
+            int err = AstralNative.astral_model_executor_configure(m_handle, ref desc);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_model_executor_configure failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
+        /// Tune continuous batching after an executor has been configured.
+        /// </summary>
+        public void TuneExecutor(AstralExecutorTuning tuning)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Model is not valid (disposed or not loaded).");
+            }
+
+            var desc = new AstralNative.AstralExecutorTuning
+            {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralExecutorTuning>(),
+                max_prompt_tokens_per_slot_tick = tuning.maxPromptTokensPerSlotTick
+            };
+
+            int err = AstralNative.astral_model_executor_tune(m_handle, ref desc);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_model_executor_tune failed: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        /// <summary>
         /// Load a GGUF model.
         /// Thread-safety: Safe to call from multiple threads.
         /// </summary>
@@ -220,6 +514,11 @@ namespace Astral.Runtime
                 ? new AstralNative.AstralSpanU8 { data = IntPtr.Zero, len = 0 }
                 : AstralNative.AstralSpanU8.FromString(config.backendName, out backendArray);
 
+            NativeArray<byte> remoteApiKeyArray = default;
+            var remoteApiKeySpan = string.IsNullOrEmpty(config.remoteApiKey)
+                ? new AstralNative.AstralSpanU8 { data = IntPtr.Zero, len = 0 }
+                : AstralNative.AstralSpanU8.FromString(config.remoteApiKey, out remoteApiKeyArray);
+
             try
             {
                 var desc = new AstralNative.AstralModelDesc
@@ -227,6 +526,7 @@ namespace Astral.Runtime
                     size = (uint)Marshal.SizeOf<AstralNative.AstralModelDesc>(),
                     source_kind = AstralNative.AstralModelSourceKind.Path,
                     model_path = pathSpan,
+                    model_bytes = remoteApiKeySpan,
                     backend_name = backendSpan,
                     gpu_layers = config.gpuLayers,
                     n_ctx = config.contextSize,
@@ -257,7 +557,16 @@ namespace Astral.Runtime
                 {
                     backendArray.Dispose();
                 }
+                if (remoteApiKeyArray.IsCreated)
+                {
+                    remoteApiKeyArray.Dispose();
+                }
             }
+        }
+
+        public static AstralModel Load(AstralModelPath modelPath, AstralModelConfig config = null)
+        {
+            return Load(modelPath.Resolve(), config);
         }
 
         /// <summary>
@@ -338,6 +647,11 @@ namespace Astral.Runtime
         public string backendName = null;
 
         /// <summary>
+        /// Bearer key used by the remote backend. Leave null/empty for local providers or unauthenticated endpoints.
+        /// </summary>
+        public string remoteApiKey = null;
+
+        /// <summary>
         /// Default configuration for desktop platforms.
         /// </summary>
         public static AstralModelConfig Default => new AstralModelConfig();
@@ -376,6 +690,38 @@ namespace Astral.Runtime
             batchSize = 512,
             threads = 0,
             embeddingsOnly = true
+        };
+    }
+
+    [Serializable]
+    public struct AstralExecutorConfig
+    {
+        public const uint DefaultMaxSlots = AstralConversationConfig.DefaultMaxSlots;
+        public const uint DefaultMaxBatchTokens = AstralConversationConfig.DefaultMaxBatchTokens;
+        public const uint AutoWorkerHint = 0;
+
+        public uint maxSlots;
+        public uint maxBatchTokens;
+        public uint workerHint;
+
+        public static AstralExecutorConfig Default => new AstralExecutorConfig
+        {
+            maxSlots = DefaultMaxSlots,
+            maxBatchTokens = DefaultMaxBatchTokens,
+            workerHint = AutoWorkerHint
+        };
+    }
+
+    [Serializable]
+    public struct AstralExecutorTuning
+    {
+        public const uint LeavePromptTokensPerSlotTickUnchanged = 0;
+
+        public uint maxPromptTokensPerSlotTick;
+
+        public static AstralExecutorTuning Default => new AstralExecutorTuning
+        {
+            maxPromptTokensPerSlotTick = LeavePromptTokensPerSlotTickUnchanged
         };
     }
 }

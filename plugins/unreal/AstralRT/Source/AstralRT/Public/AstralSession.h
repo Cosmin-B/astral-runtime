@@ -40,6 +40,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool FeedPrompt(const FString& Prompt, bool bFinalize = true);
 
+    /** Set the system prompt before user prompt text is fed. */
+    UFUNCTION(BlueprintCallable, Category = "Astral")
+    bool SetSystemPrompt(const FString& Prompt);
+
+    /** Set the system prompt from caller-owned UTF-8 bytes. */
+    bool SetSystemPromptRaw(TConstArrayView<uint8> Utf8Data);
+
     /** Feed caller-owned UTF-8 bytes. The native runtime copies or consumes them before return. */
     bool FeedPromptRaw(TConstArrayView<uint8> Utf8Data, bool bFinalize = true);
 
@@ -71,6 +78,34 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool SetSampler(const FAstralSamplerDesc& Desc);
 
+    /** Remove every adapter attached to this session. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool ClearAdapters();
+
+    /** Attach a model-scoped adapter handle returned by UAstralModel::LoadAdapter. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool AddAdapter(int64 AdapterHandle, float Scale = 1.0f);
+
+    /** Return the number of adapters currently attached to this session. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool GetAdapterCount(int32& OutCount) const;
+
+    /** Return one attached adapter handle and scale by index. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool GetAdapter(int32 Index, int64& OutAdapterHandle, float& OutScale) const;
+
+    /** Update one attached adapter scale between requests. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
+    bool SetAdapterScale(int32 Index, float Scale);
+
+    /** Bind a native toolset handle for structured output. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
+    bool SetToolset(int64 ToolsetHandle, EAstralToolChoiceMode ChoiceMode = EAstralToolChoiceMode::Auto);
+
+    /** Clear any structured-output toolset binding. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Tools")
+    bool ClearToolset();
+
     /** Clear all native stop sequences for this session. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool StopClear();
@@ -96,6 +131,8 @@ public:
     /** True while this object owns a native session from the current runtime generation. */
     UFUNCTION(BlueprintPure, Category = "Astral")
     bool IsValid() const;
+
+    uint64 GetHandle() const { return IsValid() ? SessionHandle : 0; }
 
     /** Raw bytes streaming (UTF-8). Recommended for low-overhead C++ consumers. */
     FAstralStreamBytesNative& OnStreamBytesNative() { return StreamBytesNative; }

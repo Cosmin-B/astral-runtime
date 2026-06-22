@@ -125,7 +125,7 @@ print_release_plan() {
     echo "  Unreal container, matrix, and sample package: skipped for local diagnosis"
   fi
   if [[ "${run_unity}" -eq 1 ]]; then
-    echo "  Unity EditMode ABI: scripts/run_unity_ci_tests.sh"
+    echo "  Unity EditMode ABI: scripts/run_unity_gameci_tests.sh"
   else
     echo "  Unity EditMode ABI: skipped for local diagnosis"
   fi
@@ -144,10 +144,6 @@ print_release_plan() {
       UNREAL_56_EDITOR \
       UNREAL_57_EDITOR \
       UNREAL_RUNUAT || missing=1
-  fi
-
-  if [[ "${run_unity}" -eq 1 ]]; then
-    require_env_for_plan UNITY_EDITOR || missing=1
   fi
 
   if [[ "${missing}" -ne 0 ]]; then
@@ -223,7 +219,7 @@ fi
 
 if [[ "${run_unity}" -eq 1 ]]; then
   echo "[release-gate] Unity EditMode ABI validation"
-  scripts/run_unity_ci_tests.sh
+  scripts/run_unity_gameci_tests.sh
 else
   echo "[release-gate] Unity EditMode ABI validation skipped"
 fi

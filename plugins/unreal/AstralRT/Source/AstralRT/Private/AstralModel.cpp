@@ -2,13 +2,21 @@
 #include "AstralLog.h"
 #include "IAstralRT.h"
 
+#include "Containers/Array.h"
+#include "Containers/StringConv.h"
 #include "Containers/UnrealString.h"
 #include "HAL/Platform.h"
 #include "Misc/Paths.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "astral_rt.h"
 
 namespace {
+
+static constexpr int32 kInlineResolvedPathBytes = 512;
+static constexpr int32 kInlineDetokenizedBytes = 512;
+static constexpr int32 kNoUtf8Chars = 0;
+static constexpr uint32 kNoUtf8Bytes = 0;
 
 static FString path_root_dir(EAstralUnrealPathRoot Root)
 {
@@ -26,20 +34,87 @@ static FString path_root_dir(EAstralUnrealPathRoot Root)
     }
 }
 
+static AstralModelPathRoot native_path_root(EAstralUnrealPathRoot Root)
+{
+    switch (Root)
+    {
+    case EAstralUnrealPathRoot::ProjectContent:
+        return ASTRAL_MODEL_PATH_ROOT_CONTENT;
+    case EAstralUnrealPathRoot::ProjectSaved:
+        return ASTRAL_MODEL_PATH_ROOT_SAVED;
+    case EAstralUnrealPathRoot::ProjectPersistentDownload:
+        return ASTRAL_MODEL_PATH_ROOT_DOWNLOAD;
+    case EAstralUnrealPathRoot::Raw:
+    default:
+        return ASTRAL_MODEL_PATH_ROOT_RAW;
+    }
+}
+
+static AstralSpanU8 utf8_span(const FTCHARToUTF8& Utf8)
+{
+    AstralSpanU8 Span{};
+    if (Utf8.Length() > kNoUtf8Chars)
+    {
+        Span.data = reinterpret_cast<const uint8_t*>(Utf8.Get());
+        Span.len = static_cast<uint32_t>(Utf8.Length());
+    }
+    return Span;
+}
+
 static FString resolve_unreal_path(const FString& Path, EAstralUnrealPathRoot RootKind)
 {
-    if (Path.IsEmpty() || FPaths::IsRelative(Path) == false)
+    if (Path.IsEmpty())
     {
         return Path;
     }
 
-    const FString Root = path_root_dir(RootKind);
-    if (Root.IsEmpty())
+    const FString ContentRoot = path_root_dir(EAstralUnrealPathRoot::ProjectContent);
+    const FString SavedRoot = path_root_dir(EAstralUnrealPathRoot::ProjectSaved);
+    const FString DownloadRoot = path_root_dir(EAstralUnrealPathRoot::ProjectPersistentDownload);
+
+    FTCHARToUTF8 PathUtf8(*Path);
+    FTCHARToUTF8 ContentRootUtf8(*ContentRoot);
+    FTCHARToUTF8 SavedRootUtf8(*SavedRoot);
+    FTCHARToUTF8 DownloadRootUtf8(*DownloadRoot);
+
+    AstralModelPathResolveDesc Desc{};
+    Desc.size = sizeof(AstralModelPathResolveDesc);
+    Desc.root = native_path_root(RootKind);
+    Desc.path = utf8_span(PathUtf8);
+    Desc.content_root = utf8_span(ContentRootUtf8);
+    Desc.saved_root = utf8_span(SavedRootUtf8);
+    Desc.cache_root = utf8_span(SavedRootUtf8);
+    Desc.download_root = utf8_span(DownloadRootUtf8);
+
+    uint32 RequiredBytes = kNoUtf8Bytes;
+    AstralMutSpanU8 EmptyOut{};
+    AstralErr Err = astral_model_path_resolve(&Desc, EmptyOut, &RequiredBytes);
+    if (Err != ASTRAL_E_NOMEM && Err != ASTRAL_OK)
     {
-        return FPaths::ConvertRelativePathToFull(Path);
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_model_path_resolve failed (%d)"), static_cast<int32>(Err));
+        return FString();
+    }
+    if (RequiredBytes > static_cast<uint32>(TNumericLimits<int32>::Max()))
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: resolved path is too large"));
+        return FString();
     }
 
-    return FPaths::ConvertRelativePathToFull(FPaths::Combine(Root, Path));
+    TArray<uint8, TInlineAllocator<kInlineResolvedPathBytes>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(RequiredBytes));
+
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = RequiredBytes;
+    Err = astral_model_path_resolve(&Desc, Out, &RequiredBytes);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_model_path_resolve copy failed (%d)"), static_cast<int32>(Err));
+        return FString();
+    }
+
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), static_cast<int32>(RequiredBytes));
+    return FString(Converted.Length(), Converted.Get());
 }
 
 static FString resolve_model_path(const FAstralModelDesc& Desc)
@@ -50,6 +125,26 @@ static FString resolve_model_path(const FAstralModelDesc& Desc)
 static FString resolve_media_path(const FAstralModelMediaDesc& Desc)
 {
     return resolve_unreal_path(Desc.MediaPath, Desc.MediaPathRoot);
+}
+
+static FString resolve_adapter_path(const FAstralAdapterDesc& Desc)
+{
+    return resolve_unreal_path(Desc.AdapterPath, Desc.PathRoot);
+}
+
+static FAstralOperationResult make_operation_result(AstralErr Err, int64 Handle, int32 Count = 0)
+{
+    FAstralOperationResult Result;
+    Result.bSuccess = Err == ASTRAL_OK;
+    Result.ErrorCode = static_cast<int32>(Err);
+    Result.Handle = Handle;
+    Result.Count = Count;
+    Result.bBackpressure = Err == ASTRAL_E_BUSY;
+    Result.bTimeout = Err == ASTRAL_E_TIMEOUT;
+    Result.bCanceled = Err == ASTRAL_E_CANCELED;
+    Result.bUnsupported = Err == ASTRAL_E_UNSUPPORTED;
+    Result.bNotFound = Err == ASTRAL_E_NOT_FOUND;
+    return Result;
 }
 
 } // namespace
@@ -74,6 +169,8 @@ bool UAstralModel::IsValid() const
 
 bool UAstralModel::Load(const FAstralModelDesc& Desc)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_Load);
+
     Release();
 
     if (!IAstralRT::IsAvailable() || !IAstralRT::Get().IsInitialized())
@@ -85,6 +182,7 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
     const FString ResolvedModelPath = resolve_model_path(Desc);
     FTCHARToUTF8 PathUtf8(*ResolvedModelPath);
     FTCHARToUTF8 BackendUtf8(*Desc.BackendName);
+    FTCHARToUTF8 RemoteApiKeyUtf8(*Desc.RemoteApiKey);
 
     AstralModelDesc Native{};
     Native.size = sizeof(AstralModelDesc);
@@ -118,6 +216,12 @@ bool UAstralModel::Load(const FAstralModelDesc& Desc)
     {
         Native.backend_name.data = reinterpret_cast<const uint8_t*>(BackendUtf8.Get());
         Native.backend_name.len = static_cast<uint32_t>(BackendUtf8.Length());
+    }
+
+    if (Desc.SourceKind == EAstralModelSourceKind::Path && !Desc.RemoteApiKey.IsEmpty())
+    {
+        Native.model_bytes.data = reinterpret_cast<const uint8_t*>(RemoteApiKeyUtf8.Get());
+        Native.model_bytes.len = static_cast<uint32_t>(RemoteApiKeyUtf8.Length());
     }
 
     Native.gpu_layers = static_cast<uint32_t>(Desc.GpuLayers);
@@ -161,6 +265,48 @@ bool UAstralModel::GetEmbeddingDim(int32& OutDim) const
     return true;
 }
 
+bool UAstralModel::LoadAdapter(const FAstralAdapterDesc& Desc, int64& OutAdapterHandle) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_LoadAdapter);
+
+    OutAdapterHandle = 0;
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    const FString ResolvedAdapterPath = resolve_adapter_path(Desc);
+    FTCHARToUTF8 PathUtf8(*ResolvedAdapterPath);
+
+    AstralAdapterDesc Native{};
+    Native.size = sizeof(AstralAdapterDesc);
+    Native.path.data = reinterpret_cast<const uint8_t*>(PathUtf8.Get());
+    Native.path.len = static_cast<uint32_t>(PathUtf8.Length());
+
+    AstralHandle Out = 0;
+    const AstralErr Err = astral_model_adapter_load(static_cast<AstralHandle>(ModelHandle), &Native, &Out);
+    if (Err != ASTRAL_OK)
+    {
+        UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_model_adapter_load failed (%d)"), static_cast<int32>(Err));
+        return false;
+    }
+
+    OutAdapterHandle = static_cast<int64>(Out);
+    return true;
+}
+
+void UAstralModel::ReleaseAdapter(int64 AdapterHandle) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_ReleaseAdapter);
+
+    if (AdapterHandle == 0)
+    {
+        return;
+    }
+
+    astral_model_adapter_release(static_cast<AstralHandle>(AdapterHandle));
+}
+
 bool UAstralModel::GetCaps(int64& OutCaps) const
 {
     OutCaps = 0;
@@ -202,8 +348,155 @@ bool UAstralModel::GetLimits(FAstralModelLimits& OutLimits) const
     return true;
 }
 
+bool UAstralModel::CountTokens(const FString& Text, bool bAddSpecial, bool bParseSpecial, int32& OutCount) const
+{
+    return CountTokensResult(Text, bAddSpecial, bParseSpecial, OutCount).bSuccess;
+}
+
+FAstralOperationResult UAstralModel::CountTokensResult(
+    const FString& Text,
+    bool bAddSpecial,
+    bool bParseSpecial,
+    int32& OutCount
+) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_CountTokens);
+
+    OutCount = 0;
+    if (!IsValid())
+    {
+        return make_operation_result(ASTRAL_E_INVALID, static_cast<int64>(ModelHandle));
+    }
+
+    FTCHARToUTF8 TextUtf8(*Text);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(TextUtf8.Get());
+    Span.len = static_cast<uint32_t>(TextUtf8.Length());
+
+    uint32_t Count = 0;
+    const AstralErr Err = astral_tokenize_count(
+        static_cast<AstralHandle>(ModelHandle),
+        Span,
+        bAddSpecial ? 1 : 0,
+        bParseSpecial ? 1 : 0,
+        &Count);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err, static_cast<int64>(ModelHandle));
+    }
+
+    OutCount = static_cast<int32>(Count);
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle), OutCount);
+}
+
+bool UAstralModel::Tokenize(const FString& Text, bool bAddSpecial, bool bParseSpecial, TArray<int32>& OutTokens) const
+{
+    return TokenizeResult(Text, bAddSpecial, bParseSpecial, OutTokens).bSuccess;
+}
+
+FAstralOperationResult UAstralModel::TokenizeResult(
+    const FString& Text,
+    bool bAddSpecial,
+    bool bParseSpecial,
+    TArray<int32>& OutTokens
+) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_Tokenize);
+
+    OutTokens.Reset();
+    int32 Count = 0;
+    const FAstralOperationResult CountResult = CountTokensResult(Text, bAddSpecial, bParseSpecial, Count);
+    if (!CountResult.bSuccess)
+    {
+        return CountResult;
+    }
+    if (Count == 0)
+    {
+        return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle));
+    }
+
+    OutTokens.SetNumUninitialized(Count);
+    FTCHARToUTF8 TextUtf8(*Text);
+    AstralSpanU8 Span{};
+    Span.data = reinterpret_cast<const uint8_t*>(TextUtf8.Get());
+    Span.len = static_cast<uint32_t>(TextUtf8.Length());
+
+    uint32_t Written = 0;
+    const AstralErr Err = astral_tokenize(
+        static_cast<AstralHandle>(ModelHandle),
+        Span,
+        OutTokens.GetData(),
+        static_cast<uint32_t>(OutTokens.Num()),
+        bAddSpecial ? 1 : 0,
+        bParseSpecial ? 1 : 0,
+        &Written);
+    if (Err != ASTRAL_OK)
+    {
+        OutTokens.Reset();
+        return make_operation_result(Err, static_cast<int64>(ModelHandle));
+    }
+
+    OutTokens.SetNum(static_cast<int32>(Written), EAllowShrinking::No);
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle), static_cast<int32>(Written));
+}
+
+bool UAstralModel::Detokenize(const TArray<int32>& Tokens, FString& OutText) const
+{
+    return DetokenizeResult(Tokens, OutText).bSuccess;
+}
+
+FAstralOperationResult UAstralModel::DetokenizeResult(const TArray<int32>& Tokens, FString& OutText) const
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_Detokenize);
+
+    OutText.Reset();
+    if (!IsValid())
+    {
+        return make_operation_result(ASTRAL_E_INVALID, static_cast<int64>(ModelHandle));
+    }
+
+    uint32_t ByteCount = 0;
+    const AstralErr CountErr = astral_detokenize_count(
+        static_cast<AstralHandle>(ModelHandle),
+        Tokens.GetData(),
+        static_cast<uint32_t>(Tokens.Num()),
+        &ByteCount);
+    if (CountErr != ASTRAL_OK)
+    {
+        return make_operation_result(CountErr, static_cast<int64>(ModelHandle));
+    }
+    if (ByteCount == 0)
+    {
+        return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle));
+    }
+
+    TArray<uint8, TInlineAllocator<kInlineDetokenizedBytes>> Bytes;
+    Bytes.SetNumUninitialized(static_cast<int32>(ByteCount));
+    AstralMutSpanU8 Out{};
+    Out.data = Bytes.GetData();
+    Out.len = ByteCount;
+
+    uint32_t Written = 0;
+    const AstralErr Err = astral_detokenize(
+        static_cast<AstralHandle>(ModelHandle),
+        Tokens.GetData(),
+        static_cast<uint32_t>(Tokens.Num()),
+        Out,
+        &Written);
+    if (Err != ASTRAL_OK)
+    {
+        return make_operation_result(Err, static_cast<int64>(ModelHandle));
+    }
+
+    FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), static_cast<int32>(Written));
+    OutText = FString(Converted.Length(), Converted.Get());
+    return make_operation_result(ASTRAL_OK, static_cast<int64>(ModelHandle), static_cast<int32>(Written));
+}
+
 bool UAstralModel::InitMedia(const FAstralModelMediaDesc& Desc)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_InitMedia);
+
     if (!IsValid())
     {
         return false;

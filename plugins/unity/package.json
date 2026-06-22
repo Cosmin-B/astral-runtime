@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "displayName": "Astral Runtime",
   "description": "Unity bindings and package layout for Astral Runtime, including native C ABI wrappers, streaming session APIs, embeddings, and CPU/CUDA backend packaging support.",
-  "unity": "2021.3",
+  "unity": "6000.0",
   "unityRelease": "0f1",
   "license": "SEE LICENSE IN LICENSE",
   "documentationUrl": "https://github.com/astral-runtime/astral",
@@ -27,9 +27,9 @@
   },
   "samples": [
     {
-      "displayName": "Basic Inference Example",
-      "description": "Simple example demonstrating model loading and inference",
-      "path": "Samples~/BasicInference"
+      "displayName": "Basic Chat Example",
+      "description": "Minimal chat example demonstrating model loading, streaming, and inference",
+      "path": "Samples~/BasicChat"
     }
   ]
 }

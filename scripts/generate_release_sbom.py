@@ -2,8 +2,16 @@
 import argparse
 import datetime as dt
 import json
+import os
+import re
+import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import quote
+
+
+DEFAULT_REPOSITORY_URL = "https://github.com/Cosmin-B/astral"
+REPOSITORY_URL_ENV = "ASTRAL_REPOSITORY_URL"
 
 
 def load_json(path):
@@ -33,6 +41,59 @@ def package(name, version, supplier, download_location, license_id, external_ref
     return data
 
 
+def strip_git_suffix(url):
+    return url[:-4] if url.endswith(".git") else url
+
+
+def normalize_repository_url(raw_url):
+    url = raw_url.strip()
+    if not url:
+        return DEFAULT_REPOSITORY_URL
+    if url.startswith("git+"):
+        url = url[4:]
+    ssh_match = re.fullmatch(r"git@([^:]+):(.+)", url)
+    if ssh_match:
+        host, path = ssh_match.groups()
+        return f"https://{host}/{strip_git_suffix(path).rstrip('/')}"
+    ssh_url_match = re.fullmatch(r"ssh://git@([^/]+)/(.+)", url)
+    if ssh_url_match:
+        host, path = ssh_url_match.groups()
+        return f"https://{host}/{strip_git_suffix(path).rstrip('/')}"
+    return strip_git_suffix(url).rstrip("/")
+
+
+def repository_url_from_git(repo_root):
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "config", "--get", "remote.origin.url"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def resolve_repository_url(repo_root):
+    override = os.environ.get(REPOSITORY_URL_ENV, "")
+    if override:
+        return normalize_repository_url(override)
+    origin = repository_url_from_git(repo_root)
+    if origin:
+        return normalize_repository_url(origin)
+    return DEFAULT_REPOSITORY_URL
+
+
+def repository_vcs_url(repository_url):
+    if repository_url.endswith(".git"):
+        return repository_url
+    return f"{repository_url}.git"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate an SPDX 2.3 JSON SBOM from Astral release metadata."
@@ -49,6 +110,8 @@ def main():
     version = str(astral.get("version") or "unknown")
     git_commit = str(astral.get("git_commit") or "unknown")
     created = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    repository_url = resolve_repository_url(Path(__file__).resolve().parents[1])
+    purl_vcs_url = quote(f"git+{repository_vcs_url(repository_url)}@{git_commit}", safe="/:@.")
 
     packages = [
         package(
@@ -61,7 +124,7 @@ def main():
                 {
                     "referenceCategory": "PACKAGE-MANAGER",
                     "referenceType": "purl",
-                    "referenceLocator": f"pkg:generic/astralrt@{version}?vcs_url=git%2Bhttps://github.com/Cosmin-B/astral.git@{git_commit}",
+                    "referenceLocator": f"pkg:generic/astralrt@{version}?vcs_url={purl_vcs_url}",
                 }
             ],
         )
@@ -116,7 +179,7 @@ def main():
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": f"AstralRT {version} release SBOM",
-        "documentNamespace": f"https://github.com/Cosmin-B/astral/releases/{version}/sbom/{git_commit}",
+        "documentNamespace": f"{repository_url}/releases/{version}/sbom/{git_commit}",
         "creationInfo": {
             "created": created,
             "creators": ["Tool: scripts/generate_release_sbom.py"],

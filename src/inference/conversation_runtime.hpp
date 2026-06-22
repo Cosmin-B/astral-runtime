@@ -6,9 +6,11 @@
 namespace astral::inference {
 
 AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv);
+AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity, Conversation** out_conv);
 void conv_destroy(Conversation* conv);
 
 AstralErr conv_feed(Conversation* conv, AstralSpanU8 prompt_chunk, uint8_t finalize);
+AstralErr conv_feed_tokens(Conversation* conv, const int32_t* tokens, uint32_t token_count, uint8_t finalize);
 AstralErr conv_feed_image(Conversation* conv, const AstralImageDesc* image, uint8_t finalize);
 AstralErr conv_feed_audio(Conversation* conv, const AstralAudioDesc* audio, uint8_t finalize);
 AstralErr conv_decode(Conversation* conv);
@@ -27,6 +29,8 @@ AstralErr conv_set_logprobs(Conversation* conv, uint32_t n_probs);
 AstralErr conv_grammar_set_gbnf(Conversation* conv, AstralSpanU8 gbnf, AstralSpanU8 root);
 AstralErr conv_grammar_set_json_schema(Conversation* conv, AstralSpanU8 json_schema);
 AstralErr conv_grammar_clear(Conversation* conv);
+AstralErr conv_set_toolset(Conversation* conv, Toolset* toolset, AstralToolChoiceMode choice_mode);
+AstralErr conv_clear_toolset(Conversation* conv);
 
 AstralErr conv_stats(Conversation* conv, AstralConvStats* out_stats);
 

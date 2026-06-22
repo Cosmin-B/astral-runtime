@@ -21,6 +21,7 @@ namespace Astral.Runtime
 
         public bool IsValid => !m_disposed && m_handle.IsValid;
         public uint Dimension => m_dim;
+        internal AstralNative.AstralHandle Handle => m_handle;
 
         public static AstralEmbedder Create(AstralModel model)
         {
@@ -373,6 +374,20 @@ namespace Astral.Runtime
                 {
                     throw new AstralException($"astral_embed_collect failed: {AstralRuntime.GetErrorString(err)}", err);
                 }
+            }
+        }
+
+        public void Cancel(ulong ticket)
+        {
+            if (!IsValid)
+            {
+                throw new AstralException("Embedder is not valid (disposed or not created).");
+            }
+
+            int err = AstralNative.astral_embed_cancel(m_handle, ticket);
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"astral_embed_cancel failed: {AstralRuntime.GetErrorString(err)}", err);
             }
         }
 

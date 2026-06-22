@@ -3,8 +3,8 @@
 This is a UE5 plugin scaffold that wraps Astral's C ABI (`astral_rt.h`) with engine-friendly types and a bytes-first streaming path (UTF-8 chunks via `TConstArrayView<uint8>` / `TArray<uint8>`).
 
 Current status: the native ThirdParty package can be staged and checked locally,
-but real UE 5.7 container runs and UE 5.4+ editor compatibility runs remain
-required before release sign-off.
+and UE 5.7 Linux container/sample runs have current evidence. UE 5.4, 5.5, and
+5.6 editor compatibility runs still need dedicated validation.
 
 ## Build and package (native)
 
@@ -50,7 +50,7 @@ Copy `astral/plugins/unreal/AstralRT/` into your Unreal project:
 ```
 
 Enable the plugin and build the project. Treat a local native package build as
-staging evidence only; release evidence still needs UnrealEditor Automation.
+staging evidence only; use UnrealEditor Automation for engine validation.
 
 ## Minimal example (mock backend)
 
@@ -118,6 +118,24 @@ public:
 For Blueprint convenience, `UAstralSession` also exposes:
 - `OnBytesReceived` (UTF-8 bytes, per tick)
 - `OnTokenReceived` (decoded text, per tick; allocates an `FString` only when bound)
+
+## Remote backend
+
+Remote runtime mode uses the same `UAstralModel` and `UAstralSession` wrappers
+as local providers:
+
+```cpp
+FAstralModelDesc ModelDesc;
+ModelDesc.BackendName = TEXT("remote");
+ModelDesc.SourceKind = EAstralModelSourceKind::Path;
+ModelDesc.PathRoot = EAstralUnrealPathRoot::Raw;
+ModelDesc.ModelPath = TEXT("http://127.0.0.1:8080");
+ModelDesc.RemoteApiKey = TEXT("");
+Model->Load(ModelDesc);
+```
+
+`RemoteApiKey` is passed to native code for the load call only and is not stored
+by the Unreal wrapper after `Load` returns.
 
 ## Vision / Audio (Media)
 

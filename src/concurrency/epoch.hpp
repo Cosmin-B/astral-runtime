@@ -6,6 +6,7 @@
 #include <type_traits>
 
 #include "../platform/cacheline.hpp"
+#include "../platform/compiler.hpp"
 
 namespace astral::concurrency {
 
@@ -90,7 +91,7 @@ public:
     /// The returned ID must be passed to enter/leave/unregister.
     int32_t register_thread() {
         uint32_t id = thread_count_.fetch_add(1, std::memory_order_seq_cst);
-        if (id >= kMaxThreads) [[unlikely]] {
+        if (id >= kMaxThreads) ASTRAL_UNLIKELY {
             // Registration failed: too many threads
             thread_count_.fetch_sub(1, std::memory_order_seq_cst);
             return -1;
@@ -106,7 +107,7 @@ public:
     ///
     /// @param thread_id Thread-local ID returned by register_thread().
     void unregister_thread(int32_t thread_id) {
-        if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads)) [[unlikely]] {
+        if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads)) ASTRAL_UNLIKELY {
             return;
         }
 
@@ -120,7 +121,7 @@ public:
     /// Call this before accessing shared lock-free data structures.
     /// Must be paired with leave() at the end of the critical section.
     void enter(int32_t thread_id) {
-        if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads)) [[unlikely]] {
+        if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads)) ASTRAL_UNLIKELY {
             return;
         }
 
@@ -137,7 +138,7 @@ public:
     ///
     /// Must be paired with enter() at the start of the critical section.
     void leave(int32_t thread_id) {
-        if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads)) [[unlikely]] {
+        if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads)) ASTRAL_UNLIKELY {
             return;
         }
 
@@ -153,7 +154,7 @@ public:
     /// The pointer will be freed after all threads have advanced 3 epochs.
     /// If the deferred deletion ring is full, the pointer is freed immediately.
     void defer_delete(void* ptr) {
-        if (ptr == nullptr) [[unlikely]] {
+        if (ptr == nullptr) ASTRAL_UNLIKELY {
             return;
         }
 
@@ -166,7 +167,7 @@ public:
         uint64_t head = ring.head.load(std::memory_order_relaxed);
         uint64_t tail = ring.tail.load(std::memory_order_acquire);
 
-        if (head - tail >= kMaxDeferredPerEpoch) [[unlikely]] {
+        if (head - tail >= kMaxDeferredPerEpoch) ASTRAL_UNLIKELY {
             // Ring is full; free immediately (fallback)
             ::operator delete(ptr);
             return;

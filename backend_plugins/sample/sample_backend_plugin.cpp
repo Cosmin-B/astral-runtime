@@ -92,11 +92,15 @@ AstralErr ASTRAL_CALL sample_tokenize(void* model_ctx, AstralSpanU8 text,
                                       uint32_t* out_count) {
     (void)parse_special;
 
-    if (model_ctx == nullptr || out_tokens == nullptr || out_count == nullptr) {
+    if (model_ctx == nullptr || out_count == nullptr) {
         return ASTRAL_E_INVALID;
     }
 
     const uint32_t needed = text.len + (add_special ? 1u : 0u);
+    *out_count = needed;
+    if (out_tokens == nullptr && max_tokens == 0) {
+        return ASTRAL_OK;
+    }
     if (needed > max_tokens) {
         return ASTRAL_E_NOMEM;
     }
@@ -116,7 +120,7 @@ AstralErr ASTRAL_CALL sample_tokenize(void* model_ctx, AstralSpanU8 text,
 
 AstralErr ASTRAL_CALL sample_detokenize(void* model_ctx, const int32_t* tokens, uint32_t count,
                                         AstralMutSpanU8 out_text, uint32_t* out_len) {
-    if (model_ctx == nullptr || tokens == nullptr || out_text.data == nullptr || out_len == nullptr) {
+    if (model_ctx == nullptr || (tokens == nullptr && count != 0) || out_len == nullptr) {
         return ASTRAL_E_INVALID;
     }
 
@@ -127,12 +131,15 @@ AstralErr ASTRAL_CALL sample_detokenize(void* model_ctx, const int32_t* tokens, 
             continue;
         }
 
-        if (offset >= out_text.len) {
+        if (out_text.data != nullptr && offset >= out_text.len) {
             return ASTRAL_E_NOMEM;
         }
 
         const uint8_t b = (t >= 0 && t <= 255) ? static_cast<uint8_t>(t) : static_cast<uint8_t>('?');
-        out_text.data[offset++] = b;
+        if (out_text.data != nullptr) {
+            out_text.data[offset] = b;
+        }
+        offset++;
     }
 
     *out_len = offset;

@@ -88,7 +88,7 @@ require_regex 'MTMD|vision/audio' "release notes must include multimodal evidenc
 require_regex 'Previous known-good artifact' "release notes must identify rollback artifact"
 require_regex 'Previous dependency pins' "release notes must identify rollback dependency pins"
 require_regex 'waiver[^[:cntrl:]]*(expiration|expires|until|through|by)' "known gaps must identify waiver expiration"
-require_regex 'issue tracker issue|waiver' "known gaps must carry a waiver or issue tracker issue"
+require_regex 'issue reference|waiver' "known gaps must carry a waiver or issue reference"
 
 if [[ "${allow_placeholders}" -eq 0 ]]; then
   if grep -Eq '<[^>]+>' "${notes_path}"; then

@@ -101,6 +101,82 @@ namespace Astral.Runtime
             }
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralTokenizeRequest
+        {
+            public AstralSpanU8 text;
+            public byte add_special;
+            public byte parse_special;
+            public ushort _reserved;
+        }
+
+        public enum AstralPromptSectionKind : uint
+        {
+            System = 1,
+            Tools = 2,
+            Memory = 3,
+            History = 4,
+            User = 5,
+            Raw = 6
+        }
+
+        public enum AstralPromptCacheEvictionPolicy : uint
+        {
+            Fifo = 0
+        }
+
+        public enum AstralToolChoiceMode : uint
+        {
+            Auto = 0,
+            Required = 1,
+            TextOrTool = 2
+        }
+
+        [Flags]
+        public enum AstralPromptCacheFlags : uint
+        {
+            None = 0,
+            TrackStats = 1u << 0
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralPromptCacheDesc
+        {
+            public uint size;
+            public uint max_entries;
+            public uint max_tokens;
+            public uint max_bytes;
+            public AstralPromptCacheEvictionPolicy eviction_policy;
+            public AstralPromptCacheFlags flags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralPromptCacheKey
+        {
+            public uint size;
+            public uint section_kind;
+            public AstralHandle model;
+            public ulong key;
+            public uint generation;
+            public uint _reserved0;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralPromptCacheStats
+        {
+            public uint size;
+            public uint entries;
+            public uint max_entries;
+            public uint tokens;
+            public uint max_tokens;
+            public uint bytes;
+            public uint max_bytes;
+            public uint _reserved0;
+            public ulong hits;
+            public ulong misses;
+            public ulong evictions;
+        }
+
         /// <summary>
         /// Opaque handle (model, session, embedder).
         /// Never dereference; only pass to Astral functions.
@@ -194,12 +270,67 @@ namespace Astral.Runtime
         public const int ASTRAL_E_BACKEND = -6;  // Backend error
         public const int ASTRAL_E_CANCELED = -7; // Canceled
         public const int ASTRAL_E_UNSUPPORTED = -8; // Unsupported
+        public const int ASTRAL_E_NOT_FOUND = -9; // Not found
 
         // ====================================================================
         // Tunables / Limits
         // ====================================================================
 
         public const int ASTRAL_LOGPROBS_MAX = 16;
+        public const int ASTRAL_SESSION_ADAPTERS_MAX = 8;
+        public const uint ASTRAL_TOOL_CHOICE_AUTO = 0;
+        public const uint ASTRAL_TOOL_CHOICE_REQUIRED = 1;
+        public const uint ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL = 2;
+
+        public enum AstralRequestKind : uint
+        {
+            None = 0,
+            Session = 1,
+            Conversation = 2,
+            AgentChat = 3,
+            Embedding = 4,
+            MemorySearch = 5
+        }
+
+        public enum AstralRequestState : uint
+        {
+            Invalid = 0,
+            Queued = 1,
+            Running = 2,
+            Completed = 3,
+            Canceled = 4,
+            Failed = 5
+        }
+
+        [Flags]
+        public enum AstralRequestFlags : uint
+        {
+            None = 0,
+            Stream = 1u << 0,
+            Ticket = 1u << 1
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralRequestRef
+        {
+            public uint size;
+            public AstralRequestKind kind;
+            public AstralHandle owner;
+            public ulong ticket;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralRequestStatus
+        {
+            public uint size;
+            public AstralRequestKind kind;
+            public AstralRequestState state;
+            public AstralRequestFlags flags;
+            public AstralHandle owner;
+            public ulong ticket;
+            public int result;
+            public uint queue_depth;
+        }
 
         // ====================================================================
         // Allocator
@@ -298,6 +429,34 @@ namespace Astral.Runtime
             Path = 0,
             Memory = 1,
             IO = 2
+        }
+
+        public enum AstralModelPathRoot : uint
+        {
+            Raw = 0,
+            Content = 1,
+            Saved = 2,
+            Cache = 3,
+            Download = 4
+        }
+
+        public enum AstralModelPathResolveFlags : uint
+        {
+            None = 0
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralModelPathResolveDesc
+        {
+            public uint size;
+            public AstralModelPathRoot root;
+            public AstralSpanU8 path;
+            public AstralSpanU8 content_root;
+            public AstralSpanU8 saved_root;
+            public AstralSpanU8 cache_root;
+            public AstralSpanU8 download_root;
+            public AstralModelPathResolveFlags flags;
+            public uint _reserved0;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -407,6 +566,12 @@ namespace Astral.Runtime
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_model_load2(ref AstralModelDesc desc, out AstralHandle out_model);
 
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_path_resolve(
+            ref AstralModelPathResolveDesc desc,
+            AstralMutSpanU8 out_path,
+            out uint out_len);
+
         /// <summary>
         /// Release a model.
         /// Thread-safety: Not thread-safe; must not be in use by any session.
@@ -479,12 +644,106 @@ namespace Astral.Runtime
             out uint out_count);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_tokenize_count(
+            AstralHandle model,
+            AstralSpanU8 text,
+            byte add_special,
+            byte parse_special,
+            out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_tokenize_batch(
+            AstralHandle model,
+            AstralTokenizeRequest* requests,
+            uint request_count,
+            uint* out_offsets,
+            int* out_tokens,
+            uint max_tokens,
+            out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern unsafe int astral_detokenize(
             AstralHandle model,
             int* tokens,
             uint count,
             AstralMutSpanU8 out_text,
             out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_detokenize_count(
+            AstralHandle model,
+            int* tokens,
+            uint count,
+            out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_create(
+            ref AstralPromptCacheDesc desc,
+            out AstralHandle out_cache);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_prompt_cache_destroy(AstralHandle cache);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_clear(AstralHandle cache);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_stats(
+            AstralHandle cache,
+            ref AstralPromptCacheStats out_stats);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_save_size(
+            AstralHandle cache,
+            out uint out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_save(
+            AstralHandle cache,
+            AstralMutSpanU8 out_bytes,
+            out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_load(
+            ref AstralPromptCacheDesc desc,
+            AstralSpanU8 bytes,
+            out AstralHandle out_cache);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_key_from_bytes(
+            AstralHandle model,
+            AstralPromptSectionKind section_kind,
+            uint generation,
+            AstralSpanU8 bytes,
+            ref AstralPromptCacheKey out_key);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_prompt_cache_put_tokens(
+            AstralHandle cache,
+            ref AstralPromptCacheKey key,
+            int* tokens,
+            uint token_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_prompt_cache_get_tokens(
+            AstralHandle cache,
+            ref AstralPromptCacheKey key,
+            int* out_tokens,
+            uint max_tokens,
+            out uint out_token_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_prompt_cache_get_token_view(
+            AstralHandle cache,
+            ref AstralPromptCacheKey key,
+            out IntPtr out_tokens,
+            out uint out_token_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_executor_configure(AstralHandle model, ref AstralExecutorDesc desc);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_executor_tune(AstralHandle model, ref AstralExecutorTuning tuning);
 
         // ====================================================================
         // Session
@@ -500,6 +759,47 @@ namespace Astral.Runtime
             public float top_p;              // Top-P (nucleus) sampling
             public byte stream_enabled;      // Enable token streaming
             public uint seed;                // RNG seed (0 = auto)
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralExecutorDesc
+        {
+            public uint size;
+            public uint max_slots;
+            public uint max_batch_tokens;
+            public uint worker_hint;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralExecutorTuning
+        {
+            public uint size;
+            public uint max_prompt_tokens_per_slot_tick;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralConvDesc
+        {
+            public uint size;
+            public AstralHandle model;
+            public uint max_tokens;
+            public float temperature;
+            public uint top_k;
+            public float top_p;
+            public byte stream_enabled;
+            public uint seed;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralConvStats
+        {
+            public uint slot_id;
+            public uint prompt_tokens;
+            public uint kv_tokens;
+            public uint _padding0;
+            public ulong generated_tokens;
+            public double t_first_token_ms;
+            public double tok_per_s;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -565,6 +865,321 @@ namespace Astral.Runtime
             public AstralSpanU8 path;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAdapterInfo
+        {
+            public uint size;
+            public AstralHandle model;
+            public uint path_bytes;
+            public uint refcount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralToolDesc
+        {
+            public uint size;
+            public uint tool_id;
+            public AstralSpanU8 name;
+            public AstralSpanU8 description;
+            public AstralSpanU8 json_schema;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralToolsetDesc
+        {
+            public uint size;
+            public uint tool_count;
+            public uint choice_mode;
+            public uint _reserved0;
+            public IntPtr tools;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralToolInfo
+        {
+            public uint size;
+            public uint tool_id;
+            public AstralSpanU8 name;
+            public AstralSpanU8 description;
+            public AstralSpanU8 json_schema;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralToolCallResult
+        {
+            public uint size;
+            public uint tool_id;
+            public int parse_status;
+            public uint _reserved0;
+            public AstralSpanU8 name;
+            public AstralSpanU8 arguments_json;
+        }
+
+        public enum AstralChunkMode : uint
+        {
+            None = 0,
+            Char = 1,
+            Word = 2,
+            Sentence = 3,
+            Token = 4
+        }
+
+        [Flags]
+        public enum AstralChunkFlags : uint
+        {
+            None = 0,
+            KeepEmpty = 1u << 0
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralChunkerDesc
+        {
+            public uint size;
+            public AstralChunkMode mode;
+            public uint max_units;
+            public uint overlap_units;
+            public uint document_id;
+            public uint group_id;
+            public AstralChunkFlags flags;
+            public uint _reserved0;
+            public AstralSpanU8 delimiters;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralChunkRange
+        {
+            public uint size;
+            public uint document_id;
+            public uint chunk_id;
+            public uint group_id;
+            public uint byte_begin;
+            public uint byte_end;
+            public uint token_begin;
+            public uint token_end;
+        }
+
+        public enum AstralMemoryMetric : uint
+        {
+            Dot = 0,
+            Cosine = 1,
+            L2 = 2
+        }
+
+        public enum AstralMemoryIndexKind : uint
+        {
+            Flat = 0,
+            Graph = 1
+        }
+
+        public enum AstralMemoryStorageKind : uint
+        {
+            F32 = 0,
+            Q8 = 1,
+            F6_E2M3 = 2,
+            F8_E5M2 = 3
+        }
+
+        public const uint ASTRAL_MEMORY_GROUP_ANY = 0xFFFFFFFFu;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemoryIndexDesc
+        {
+            public uint size;
+            public uint dim;
+            public uint capacity;
+            public AstralMemoryMetric metric;
+            public AstralMemoryIndexKind index_kind;
+            public uint graph_neighbors;
+            public uint graph_search;
+            public uint graph_query_search;
+            public AstralMemoryStorageKind storage_kind;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemoryRecord
+        {
+            public uint size;
+            public uint group_id;
+            public ulong key;
+            public uint document_id;
+            public uint chunk_id;
+            public uint flags;
+            public uint _reserved0;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemorySearchDesc
+        {
+            public uint size;
+            public uint top_k;
+            public uint group_id;
+            public uint flags;
+            public uint graph_search;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemorySearchResult
+        {
+            public uint size;
+            public uint group_id;
+            public ulong key;
+            public uint document_id;
+            public uint chunk_id;
+            public float score;
+            public uint flags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemoryStats
+        {
+            public uint size;
+            public uint dim;
+            public uint capacity;
+            public uint count;
+            public AstralMemoryMetric metric;
+            public AstralMemoryIndexKind index_kind;
+            public uint graph_neighbors;
+            public uint graph_search;
+            public uint graph_query_search;
+            public uint graph_levels;
+            public AstralMemoryStorageKind storage_kind;
+            public ulong vector_bytes;
+            public ulong metadata_bytes;
+            public ulong graph_bytes;
+            public ulong graph_edges;
+            public ulong graph_base_edges;
+            public ulong graph_upper_edges;
+            public ulong graph_build_score_evals;
+            public ulong graph_build_candidate_visits;
+            public ulong total_bytes;
+            public ulong save_bytes;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralMemorySnapshotInfo
+        {
+            public uint size;
+            public uint version;
+            public uint dim;
+            public uint count;
+            public AstralMemoryMetric metric;
+            public AstralMemoryIndexKind index_kind;
+            public AstralMemoryStorageKind storage_kind;
+            public uint flags;
+            public ulong record_offset;
+            public ulong record_stride;
+            public ulong vector_offset;
+            public ulong vector_stride;
+            public ulong scale_offset;
+            public ulong scale_stride;
+            public ulong graph_offset;
+            public ulong graph_bytes;
+            public ulong total_bytes;
+        }
+
+        public enum AstralAgentRole : uint
+        {
+            System = 1,
+            User = 2,
+            Assistant = 3,
+            Tool = 4
+        }
+
+        [Flags]
+        public enum AstralAgentFlags : uint
+        {
+            None = 0
+        }
+
+        [Flags]
+        public enum AstralAgentChatFlags : uint
+        {
+            None = 0,
+            Warmup = 1u << 0
+        }
+
+        public enum AstralAgentOverflowPolicy : uint
+        {
+            Reject = 0,
+            TruncateOldest = 1
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentDesc
+        {
+            public uint size;
+            public AstralAgentFlags flags;
+            public AstralHandle model;
+            public AstralHandle prompt_cache;
+            public AstralHandle memory_index;
+            public AstralHandle toolset;
+            public uint max_tokens;
+            public float temperature;
+            public uint top_k;
+            public float top_p;
+            public byte stream_enabled;
+            public byte _padding0;
+            public byte _padding1;
+            public byte _padding2;
+            public uint seed;
+            public uint tool_choice_mode;
+            public uint max_messages;
+            public uint max_prompt_bytes;
+            public AstralAgentOverflowPolicy overflow_policy;
+            public uint slot_affinity;
+            public AstralSpanU8 system_prompt;
+            public AstralSpanU8 summary;
+            public AstralSpanU8 memory_context;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentMessage
+        {
+            public uint size;
+            public AstralAgentRole role;
+            public AstralSpanU8 content;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentChatDesc
+        {
+            public uint size;
+            public AstralAgentChatFlags flags;
+            public AstralSpanU8 user_message;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentMemoryContextDesc
+        {
+            public uint size;
+            public uint result_count;
+            public uint chunk_count;
+            public uint max_bytes;
+            public AstralSpanU8 document_text;
+            public AstralSpanU8 separator;
+            public IntPtr chunks;
+            public IntPtr results;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralAgentChatResult
+        {
+            public uint size;
+            public uint state;
+            public uint prompt_bytes;
+            public uint history_messages;
+            public uint prompt_tokens;
+            public uint prompt_cache_reused_tokens;
+            public uint prompt_cache_new_tokens;
+            public uint prompt_cache_hits;
+            public uint prompt_cache_misses;
+            public int last_error;
+            public double prompt_build_ms;
+            public ulong generated_tokens;
+            public double t_first_token_ms;
+            public double tok_per_s;
+        }
+
         /// <summary>
         /// Create an inference session.
         /// Thread-safety: Safe to call from multiple threads.
@@ -585,6 +1200,12 @@ namespace Astral.Runtime
         /// </summary>
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_feed(AstralHandle session, AstralSpanU8 prompt_chunk, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_session_feed_tokens(AstralHandle session, int* tokens, uint token_count, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_set_system_prompt(AstralHandle session, AstralSpanU8 system_prompt);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_feed_image(AstralHandle session, ref AstralImageDesc image, byte finalize);
@@ -645,6 +1266,15 @@ namespace Astral.Runtime
         public static extern int astral_model_adapter_load(AstralHandle model, ref AstralAdapterDesc desc, out AstralHandle out_adapter);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_adapter_info(AstralHandle adapter, ref AstralAdapterInfo out_info);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_model_adapter_path_copy(
+            AstralHandle adapter,
+            AstralMutSpanU8 out_path,
+            out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern void astral_model_adapter_release(AstralHandle adapter);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
@@ -654,6 +1284,15 @@ namespace Astral.Runtime
         public static extern int astral_session_adapters_add(AstralHandle session, AstralHandle adapter, float scale);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_adapters_count(AstralHandle session, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_adapters_get(AstralHandle session, uint index, out AstralHandle out_adapter, out float out_scale);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_adapters_set_scale(AstralHandle session, uint index, float scale);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_set_grammar_gbnf(AstralHandle session, AstralSpanU8 gbnf, AstralSpanU8 root);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
@@ -661,6 +1300,290 @@ namespace Astral.Runtime
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_clear_grammar(AstralHandle session);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_toolset_create(ref AstralToolsetDesc desc, out AstralHandle out_toolset);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_toolset_destroy(AstralHandle toolset);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_toolset_count(AstralHandle toolset, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_toolset_get(AstralHandle toolset, uint index, ref AstralToolInfo out_info);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_toolset_parse_call(AstralHandle toolset, AstralSpanU8 generated_text, ref AstralToolCallResult out_result);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_set_toolset(AstralHandle session, AstralHandle toolset, uint choice_mode);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_session_clear_toolset(AstralHandle session);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_create(ref AstralConvDesc desc, out AstralHandle out_conv);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_conv_destroy(AstralHandle conv);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_feed(AstralHandle conv, AstralSpanU8 prompt_chunk, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_conv_feed_tokens(AstralHandle conv, int* tokens, uint token_count, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_set_system_prompt(AstralHandle conv, AstralSpanU8 system_prompt);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_feed_image(AstralHandle conv, ref AstralImageDesc image, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_feed_audio(AstralHandle conv, ref AstralAudioDesc audio, byte finalize);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_decode(AstralHandle conv);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_cancel(AstralHandle conv);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_state(AstralHandle conv, out uint out_state);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_wait(AstralHandle conv, uint timeout_ms);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_reset(AstralHandle conv, ref AstralConvDesc desc);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_set_sampler(AstralHandle conv, ref AstralSamplerDesc desc);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_conv_penalty_prompt_set_tokens(AstralHandle conv, int* tokens, uint count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_stop_clear(AstralHandle conv);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_stop_add_utf8(AstralHandle conv, AstralSpanU8 utf8);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_stop_set_utf8(AstralHandle conv, IntPtr seqs, uint count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_set_logprobs(AstralHandle conv, uint n_probs);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_grammar_set_gbnf(AstralHandle conv, AstralSpanU8 gbnf, AstralSpanU8 root);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_grammar_set_json_schema(AstralHandle conv, AstralSpanU8 json_schema);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_grammar_clear(AstralHandle conv);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_set_toolset(AstralHandle conv, AstralHandle toolset, uint choice_mode);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_clear_toolset(AstralHandle conv);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_stream_read(AstralHandle conv, AstralMutSpanU8 out_buf, uint timeout_ms);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_conv_stream_read_meta(AstralHandle conv, AstralTokenMeta* out_events, uint capacity, uint timeout_ms);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_conv_stats(AstralHandle conv, ref AstralConvStats out_stats);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_chunk_count(ref AstralChunkerDesc desc, AstralSpanU8 text, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_chunk_ranges(ref AstralChunkerDesc desc, AstralSpanU8 text, AstralChunkRange* out_ranges, uint max_ranges, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_chunk_text_copy(AstralSpanU8 text, ref AstralChunkRange range, AstralMutSpanU8 out_text, out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_token_chunk_count(ref AstralChunkerDesc desc, uint token_count, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_token_chunk_ranges(ref AstralChunkerDesc desc, uint token_count, AstralChunkRange* out_ranges, uint max_ranges, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_create(ref AstralMemoryIndexDesc desc, out AstralHandle out_index);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_memory_destroy(AstralHandle index);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_count(AstralHandle index, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_stats(AstralHandle index, ref AstralMemoryStats out_stats);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_clear(AstralHandle index);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_get_record(AstralHandle index, ulong key, ref AstralMemoryRecord out_record);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_update_record(AstralHandle index, ulong key, ref AstralMemoryRecord record);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_memory_add_batch(AstralHandle index, AstralMemoryRecord* records, float* vectors, uint count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_remove(AstralHandle index, ulong key);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_memory_search(AstralHandle index, ref AstralMemorySearchDesc desc, float* query, AstralMemorySearchResult* out_results, uint max_results, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_memory_search_batch(AstralHandle index, ref AstralMemorySearchDesc desc, float* queries, uint query_count, AstralMemorySearchResult* out_results, uint max_results, uint* out_counts);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_memory_search_begin(AstralHandle index, ref AstralMemorySearchDesc desc, float* query, out AstralHandle out_cursor);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern unsafe int astral_memory_search_fetch(AstralHandle cursor, AstralMemorySearchResult* out_results, uint max_results, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_memory_search_end(AstralHandle cursor);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_create(ref AstralAgentDesc desc, out AstralHandle out_agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_agent_destroy(AstralHandle agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_assigned_slot(AstralHandle agent, out uint out_slot);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_release_slot(AstralHandle agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_set_system_prompt(AstralHandle agent, AstralSpanU8 system_prompt);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_system_prompt_size(AstralHandle agent, out uint out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_system_prompt(AstralHandle agent, AstralMutSpanU8 out_text, out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_set_summary(AstralHandle agent, AstralSpanU8 summary);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_summary_size(AstralHandle agent, out uint out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_summary(AstralHandle agent, AstralMutSpanU8 out_text, out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_set_memory_context(AstralHandle agent, AstralSpanU8 memory_context);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_set_memory_context_from_results(
+            AstralHandle agent,
+            ref AstralAgentMemoryContextDesc desc);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_memory_context_size(AstralHandle agent, out uint out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_get_memory_context(AstralHandle agent, AstralMutSpanU8 out_text, out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_parse_tool_call(AstralHandle agent, AstralSpanU8 generated_text, ref AstralToolCallResult out_result);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_tool_call_result(AstralHandle agent, ref AstralToolCallResult out_result);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_message_add(AstralHandle agent, ref AstralAgentMessage message);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_clear(AstralHandle agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_count(AstralHandle agent, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_save_size(AstralHandle agent, out uint out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_save(AstralHandle agent, AstralMutSpanU8 out_bytes, out uint out_len);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_history_load(AstralHandle agent, AstralSpanU8 bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_enqueue(AstralHandle agent, ref AstralAgentChatDesc desc);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_cancel(AstralHandle agent);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_stream_read(AstralHandle agent, AstralMutSpanU8 out_buf, uint timeout_ms);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_agent_chat_result(AstralHandle agent, ref AstralAgentChatResult out_result);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_session(AstralHandle session, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_conversation(AstralHandle conv, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_agent_chat(AstralHandle agent, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_embedding(AstralHandle emb, ulong ticket, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_from_memory_search(AstralHandle cursor, out AstralRequestRef out_request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_state(ref AstralRequestRef request, ref AstralRequestStatus out_status);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_cancel(ref AstralRequestRef request);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_request_wait(ref AstralRequestRef request, uint timeout_ms, ref AstralRequestStatus out_status);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_save_size(AstralHandle index, out ulong out_bytes);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_save(AstralHandle index, AstralMutSpanU8 out_bytes, out ulong out_written);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_snapshot_info(AstralSpanU8 bytes, ref AstralMemorySnapshotInfo out_info);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_snapshot_map(AstralSpanU8 path, ref AstralMemorySnapshotInfo out_info, out AstralHandle out_view);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void astral_memory_snapshot_unmap(AstralHandle view);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_snapshot_view_info(AstralHandle view, ref AstralMemorySnapshotInfo out_info);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_snapshot_view_search(AstralHandle view, ref AstralMemorySearchDesc desc, IntPtr query, IntPtr out_results, uint max_results, out uint out_count);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_memory_load(ref AstralMemoryIndexDesc desc, AstralSpanU8 bytes, out AstralHandle out_index);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_session_set_slot(AstralHandle session, uint slot_id);
@@ -723,6 +1646,9 @@ namespace Astral.Runtime
         /// </summary>
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_embed_collect(AstralHandle emb, ulong ticket, AstralMutSpanU8 out_vector);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_embed_cancel(AstralHandle emb, ulong ticket);
 
         // ====================================================================
         // Statistics

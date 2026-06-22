@@ -225,6 +225,12 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestEqual(TEXT("unknown error name"),
               UAstralBlueprintLibrary::ErrorCodeName(-12345),
               FString(TEXT("ASTRAL_E_-12345")));
+    TestEqual(TEXT("request kind name"),
+              UAstralBlueprintLibrary::RequestKindName(EAstralRequestKind::MemorySearch),
+              FString(TEXT("MemorySearch")));
+    TestEqual(TEXT("request state name"),
+              UAstralBlueprintLibrary::RequestStateName(EAstralRequestState::Canceled),
+              FString(TEXT("Canceled")));
 
     const int64 Caps = static_cast<int64>(ASTRAL_CAP_EMBEDDINGS |
                                           ASTRAL_CAP_SAMPLER_EXT |
@@ -255,6 +261,827 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     TestTrue(TEXT("gbnf grammar cap"), UAstralBlueprintLibrary::HasGbnfGrammar(Caps));
     TestTrue(TEXT("json schema grammar cap"), UAstralBlueprintLibrary::HasJsonSchemaGrammar(Caps));
     TestFalse(TEXT("empty caps"), UAstralBlueprintLibrary::HasEmbeddings(0));
+
+    constexpr int32 MockTokenCount = 3;
+    constexpr int32 MockTokenA = static_cast<int32>('a');
+    constexpr int32 MockTokenB = static_cast<int32>('b');
+    constexpr int32 MockTokenC = static_cast<int32>('c');
+    constexpr int32 MockDetokenizedBytes = 3;
+    int32 InvalidTokenCount = 0;
+    const FAstralOperationResult InvalidCountTokens = Model->CountTokensResult(TEXT("abc"), false, false, InvalidTokenCount);
+    TestFalse(TEXT("invalid model token count fails"), InvalidCountTokens.bSuccess);
+    TestEqual(TEXT("invalid model token count error"), InvalidCountTokens.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    FAstralModelDesc ModelDesc{};
+    ModelDesc.BackendName = TEXT("mock");
+    ModelDesc.ContextSize = 128;
+    const bool ModelLoaded = Model->Load(ModelDesc);
+    TestTrue(TEXT("Blueprint model loads for tokenization"), ModelLoaded);
+
+    constexpr uint32 ExecutorSlots = 2;
+    constexpr uint32 ExecutorBatchTokens = 16;
+    AstralExecutorDesc ExecutorDesc{};
+    ExecutorDesc.size = sizeof(AstralExecutorDesc);
+    ExecutorDesc.max_slots = ExecutorSlots;
+    ExecutorDesc.max_batch_tokens = ExecutorBatchTokens;
+    const AstralErr ExecutorErr = astral_model_executor_configure(
+        static_cast<AstralHandle>(Model->GetHandle()),
+        &ExecutorDesc
+    );
+    TestEqual(
+        TEXT("mock model shared executor configures"),
+        static_cast<int32>(ExecutorErr),
+        static_cast<int32>(ASTRAL_OK)
+    );
+
+    int32 TokenCount = 0;
+    const FAstralOperationResult CountTokens = Model->CountTokensResult(TEXT("abc"), false, false, TokenCount);
+    TestTrue(TEXT("token count result succeeds"), CountTokens.bSuccess);
+    TestEqual(TEXT("token count result count"), CountTokens.Count, MockTokenCount);
+    TestEqual(TEXT("token count out count"), TokenCount, MockTokenCount);
+
+    TArray<int32> Tokens;
+    const FAstralOperationResult Tokenize = Model->TokenizeResult(TEXT("abc"), false, false, Tokens);
+    TestTrue(TEXT("tokenize result succeeds"), Tokenize.bSuccess);
+    TestEqual(TEXT("tokenize result count"), Tokenize.Count, MockTokenCount);
+    TestEqual(TEXT("tokenize token count"), Tokens.Num(), MockTokenCount);
+    if (Tokens.Num() == MockTokenCount) {
+        TestEqual(TEXT("tokenize token a"), Tokens[0], MockTokenA);
+        TestEqual(TEXT("tokenize token b"), Tokens[1], MockTokenB);
+        TestEqual(TEXT("tokenize token c"), Tokens[2], MockTokenC);
+    }
+
+    FString Detokenized;
+    const FAstralOperationResult Detokenize = Model->DetokenizeResult(Tokens, Detokenized);
+    TestTrue(TEXT("detokenize result succeeds"), Detokenize.bSuccess);
+    TestEqual(TEXT("detokenize byte count"), Detokenize.Count, MockDetokenizedBytes);
+    TestEqual(TEXT("detokenize text"), Detokenized, FString(TEXT("abc")));
+
+    constexpr int32 AdapterSessionMaxTokens = 1;
+    constexpr int32 AdapterSessionSeed = 31;
+    constexpr int32 AdapterIndex = 0;
+    constexpr int32 AdapterAttachedCount = 1;
+    constexpr int32 AdapterClearedCount = 0;
+    constexpr int32 AdapterLoadedRefCount = 1;
+    constexpr int32 AdapterAttachedRefCount = 2;
+    constexpr float AdapterInitialScale = 0.75f;
+    constexpr float AdapterUpdatedScale = 0.5f;
+    const FString AdapterPath(TEXT("adapter-unreal-smoke"));
+
+    FAstralAdapterDesc AdapterDesc;
+    AdapterDesc.AdapterPath = AdapterPath;
+    int64 AdapterHandle = 0;
+    TestTrue(TEXT("unreal adapter loads"), Model->LoadAdapter(AdapterDesc, AdapterHandle));
+    TestTrue(TEXT("unreal adapter handle valid"), AdapterHandle != 0);
+
+    FAstralAdapterInfo AdapterInfo;
+    const FAstralOperationResult AdapterInfoResult =
+        UAstralBlueprintLibrary::GetAdapterInfoResult(AdapterHandle, AdapterInfo);
+    TestTrue(TEXT("unreal adapter info succeeds"), AdapterInfoResult.bSuccess);
+    TestEqual(TEXT("unreal adapter refcount after load"), AdapterInfo.RefCount, AdapterLoadedRefCount);
+    TestTrue(TEXT("unreal adapter path byte count"), AdapterInfo.PathBytes > 0);
+
+    FString CopiedAdapterPath;
+    const FAstralOperationResult AdapterPathResult =
+        UAstralBlueprintLibrary::CopyAdapterPathResult(AdapterHandle, CopiedAdapterPath);
+    TestTrue(TEXT("unreal adapter path copy succeeds"), AdapterPathResult.bSuccess);
+    TestEqual(TEXT("unreal adapter path value"), CopiedAdapterPath, AdapterPath);
+
+    FAstralSessionDesc AdapterSessionDesc;
+    AdapterSessionDesc.MaxTokens = AdapterSessionMaxTokens;
+    AdapterSessionDesc.Temperature = 0.0f;
+    AdapterSessionDesc.TopK = 0;
+    AdapterSessionDesc.TopP = 1.0f;
+    AdapterSessionDesc.bStreamEnabled = false;
+    AdapterSessionDesc.Seed = AdapterSessionSeed;
+    TestTrue(TEXT("unreal adapter session creates"), Session->Create(Model, AdapterSessionDesc));
+    TestTrue(TEXT("unreal adapter attaches"), Session->AddAdapter(AdapterHandle, AdapterInitialScale));
+
+    int32 AttachedAdapterCount = 0;
+    TestTrue(TEXT("unreal adapter count succeeds"), Session->GetAdapterCount(AttachedAdapterCount));
+    TestEqual(TEXT("unreal adapter count"), AttachedAdapterCount, AdapterAttachedCount);
+
+    int64 AttachedAdapterHandle = 0;
+    float AttachedAdapterScale = 0.0f;
+    TestTrue(TEXT("unreal adapter get succeeds"), Session->GetAdapter(AdapterIndex, AttachedAdapterHandle, AttachedAdapterScale));
+    TestEqual(TEXT("unreal adapter handle from session"), AttachedAdapterHandle, AdapterHandle);
+    TestTrue(TEXT("unreal adapter scale from session"), FMath::IsNearlyEqual(AttachedAdapterScale, AdapterInitialScale));
+
+    FAstralAdapterInfo AttachedAdapterInfo;
+    const FAstralOperationResult AttachedAdapterInfoResult =
+        UAstralBlueprintLibrary::GetAdapterInfoResult(AdapterHandle, AttachedAdapterInfo);
+    TestTrue(TEXT("unreal attached adapter info succeeds"), AttachedAdapterInfoResult.bSuccess);
+    TestEqual(TEXT("unreal adapter refcount after attach"), AttachedAdapterInfo.RefCount, AdapterAttachedRefCount);
+
+    TestTrue(TEXT("unreal adapter scale updates"), Session->SetAdapterScale(AdapterIndex, AdapterUpdatedScale));
+    TestTrue(TEXT("unreal adapter get after scale succeeds"), Session->GetAdapter(AdapterIndex, AttachedAdapterHandle, AttachedAdapterScale));
+    TestTrue(TEXT("unreal adapter updated scale"), FMath::IsNearlyEqual(AttachedAdapterScale, AdapterUpdatedScale));
+
+    TestTrue(TEXT("unreal adapter clear succeeds"), Session->ClearAdapters());
+    TestTrue(TEXT("unreal adapter count after clear succeeds"), Session->GetAdapterCount(AttachedAdapterCount));
+    TestEqual(TEXT("unreal adapter count after clear"), AttachedAdapterCount, AdapterClearedCount);
+    Model->ReleaseAdapter(AdapterHandle);
+    Session->ConditionalBeginDestroy();
+
+    constexpr int32 AgentMaxTokens = 8;
+    constexpr int32 AgentMaxMessages = 4;
+    constexpr int32 AgentMaxPromptBytes = 1024;
+    constexpr int32 AgentSystemPromptBytes = 11;
+    constexpr int32 AgentMessageBytes = 5;
+    constexpr int32 AgentMessageCount = 1;
+    constexpr int32 AgentChatUserBytes = 4;
+    constexpr int32 AgentChatTimeoutMs = 1000;
+    constexpr int32 AgentChatMaxReads = 32;
+    constexpr int32 AgentChatMinOutputBytes = 1;
+    constexpr int32 AgentSlotAffinityA = 1;
+    constexpr int32 AgentSlotAffinityB = 2;
+    constexpr int32 AgentSlotA = 0;
+    constexpr int32 AgentSlotB = 1;
+    constexpr int32 AgentBSeed = 23;
+    constexpr int32 AgentToolId = 13;
+    TArray<FAstralToolDesc> AgentTools;
+    FAstralToolDesc AgentTool;
+    AgentTool.ToolId = AgentToolId;
+    AgentTool.Name = TEXT("agent_lookup");
+    AgentTool.Description = TEXT("search agent memory");
+    AgentTool.JsonSchema = TEXT("{}");
+    AgentTools.Add(AgentTool);
+
+    const FAstralOperationResult AgentToolsetResult =
+        UAstralBlueprintLibrary::CreateToolsetResult(AgentTools, EAstralToolChoiceMode::Required);
+    TestTrue(TEXT("agent toolset result succeeds"), AgentToolsetResult.bSuccess);
+    TestTrue(TEXT("agent toolset handle valid"), AgentToolsetResult.Handle != 0);
+
+    FAstralAgentDesc AgentDesc;
+    AgentDesc.ModelHandle = static_cast<int64>(Model->GetHandle());
+    AgentDesc.ToolsetHandle = AgentToolsetResult.Handle;
+    AgentDesc.ToolChoiceMode = EAstralToolChoiceMode::Required;
+    AgentDesc.MaxTokens = AgentMaxTokens;
+    AgentDesc.MaxMessages = AgentMaxMessages;
+    AgentDesc.MaxPromptBytes = AgentMaxPromptBytes;
+    AgentDesc.SlotAffinity = AgentSlotAffinityA;
+    AgentDesc.SystemPrompt = TEXT("stay terse.");
+    const FAstralOperationResult AgentCreate = UAstralBlueprintLibrary::CreateAgentResult(AgentDesc);
+    TestTrue(TEXT("agent create result succeeds"), AgentCreate.bSuccess);
+    TestTrue(TEXT("agent handle valid"), AgentCreate.Handle != 0);
+
+    int32 AgentAssignedSlot = -1;
+    const FAstralOperationResult GetAgentSlot =
+        UAstralBlueprintLibrary::GetAgentAssignedSlotResult(AgentCreate.Handle, AgentAssignedSlot);
+    TestFalse(TEXT("new agent has no assigned slot before chat"), GetAgentSlot.bSuccess);
+    TestEqual(TEXT("new agent assigned slot error"), GetAgentSlot.ErrorCode, static_cast<int32>(ASTRAL_E_NOT_FOUND));
+
+    FAstralToolCallResult AgentToolCall;
+    const FAstralOperationResult ParseAgentTool =
+        UAstralBlueprintLibrary::ParseAgentToolCallResult(
+            AgentCreate.Handle,
+            TEXT("{\"name\":\"agent_lookup\",\"arguments\":{\"q\":\"agent\"}}"),
+            AgentToolCall
+        );
+    TestTrue(TEXT("agent tool parse result succeeds"), ParseAgentTool.bSuccess);
+    TestTrue(TEXT("agent tool parse found"), AgentToolCall.bFound);
+    TestEqual(TEXT("agent tool parse id"), AgentToolCall.ToolId, AgentToolId);
+    TestEqual(TEXT("agent tool parse name"), AgentToolCall.Name, AgentTool.Name);
+    TestEqual(TEXT("agent tool parse arguments"), AgentToolCall.ArgumentsJson, FString(TEXT("{\"q\":\"agent\"}")));
+
+    FAstralAgentDesc AgentBDesc = AgentDesc;
+    AgentBDesc.Seed = AgentBSeed;
+    AgentBDesc.SlotAffinity = AgentSlotAffinityB;
+    const FAstralOperationResult AgentBCreate = UAstralBlueprintLibrary::CreateAgentResult(AgentBDesc);
+    TestTrue(TEXT("second shared-model agent create succeeds"), AgentBCreate.bSuccess);
+    TestTrue(TEXT("second shared-model agent handle valid"), AgentBCreate.Handle != 0);
+
+    int32 AgentBAssignedSlot = -1;
+    const FAstralOperationResult GetAgentBSlot =
+        UAstralBlueprintLibrary::GetAgentAssignedSlotResult(AgentBCreate.Handle, AgentBAssignedSlot);
+    TestFalse(TEXT("second shared-model agent has no assigned slot before chat"), GetAgentBSlot.bSuccess);
+    TestEqual(TEXT("second shared-model agent assigned slot error"), GetAgentBSlot.ErrorCode, static_cast<int32>(ASTRAL_E_NOT_FOUND));
+
+    FString ReadAgentSystemPrompt;
+    const FAstralOperationResult GetAgentSystem =
+        UAstralBlueprintLibrary::GetAgentSystemPromptResult(AgentCreate.Handle, ReadAgentSystemPrompt);
+    TestTrue(TEXT("get agent system prompt succeeds"), GetAgentSystem.bSuccess);
+    TestEqual(TEXT("get agent system prompt bytes"), GetAgentSystem.Count, AgentSystemPromptBytes);
+    TestEqual(TEXT("get agent system prompt value"), ReadAgentSystemPrompt, AgentDesc.SystemPrompt);
+
+    const FAstralOperationResult AddAgentUser =
+        UAstralBlueprintLibrary::AddAgentMessageResult(AgentCreate.Handle, EAstralAgentRole::User, TEXT("hello"));
+    TestTrue(TEXT("add agent message succeeds"), AddAgentUser.bSuccess);
+    TestEqual(TEXT("add agent message bytes"), AddAgentUser.Count, AgentMessageBytes);
+
+    int32 AgentHistoryCount = 0;
+    const FAstralOperationResult GetAgentHistoryCount =
+        UAstralBlueprintLibrary::GetAgentHistoryCountResult(AgentCreate.Handle, AgentHistoryCount);
+    TestTrue(TEXT("get agent history count succeeds"), GetAgentHistoryCount.bSuccess);
+    TestEqual(TEXT("get agent history count result"), GetAgentHistoryCount.Count, AgentMessageCount);
+    TestEqual(TEXT("get agent history count out"), AgentHistoryCount, AgentMessageCount);
+
+    const FAstralOperationResult ClearAgentHistory = UAstralBlueprintLibrary::ClearAgentHistoryResult(AgentCreate.Handle);
+    TestTrue(TEXT("clear agent history succeeds"), ClearAgentHistory.bSuccess);
+    const FAstralOperationResult GetClearedAgentHistoryCount =
+        UAstralBlueprintLibrary::GetAgentHistoryCountResult(AgentCreate.Handle, AgentHistoryCount);
+    TestTrue(TEXT("get cleared agent history count succeeds"), GetClearedAgentHistoryCount.bSuccess);
+    TestEqual(TEXT("get cleared agent history count"), AgentHistoryCount, 0);
+
+    const FString AgentBSystemPrompt(TEXT("stay precise."));
+    const FAstralOperationResult SetAgentBSystem =
+        UAstralBlueprintLibrary::SetAgentSystemPromptResult(AgentBCreate.Handle, AgentBSystemPrompt);
+    TestTrue(TEXT("set second shared-model agent system prompt succeeds"), SetAgentBSystem.bSuccess);
+
+    const FAstralOperationResult AddAgentBUser =
+        UAstralBlueprintLibrary::AddAgentMessageResult(AgentBCreate.Handle, EAstralAgentRole::User, TEXT("status"));
+    TestTrue(TEXT("add second shared-model agent message succeeds"), AddAgentBUser.bSuccess);
+
+    const FAstralOperationResult EnqueueAgentChat =
+        UAstralBlueprintLibrary::EnqueueAgentChatResult(AgentCreate.Handle, TEXT("ping"), false);
+    TestTrue(TEXT("enqueue agent chat succeeds"), EnqueueAgentChat.bSuccess);
+    TestEqual(TEXT("enqueue agent chat byte count"), EnqueueAgentChat.Count, AgentChatUserBytes);
+    const FAstralOperationResult GetAgentSlotAfterChat =
+        UAstralBlueprintLibrary::GetAgentAssignedSlotResult(AgentCreate.Handle, AgentAssignedSlot);
+    TestTrue(TEXT("get agent assigned slot after chat succeeds"), GetAgentSlotAfterChat.bSuccess);
+    TestEqual(TEXT("agent assigned slot after chat"), AgentAssignedSlot, AgentSlotA);
+
+    const FAstralOperationResult EnqueueAgentBChat =
+        UAstralBlueprintLibrary::EnqueueAgentChatResult(AgentBCreate.Handle, TEXT("pong"), false);
+    TestTrue(TEXT("enqueue second shared-model agent chat succeeds"), EnqueueAgentBChat.bSuccess);
+    TestEqual(TEXT("enqueue second shared-model agent byte count"), EnqueueAgentBChat.Count, AgentChatUserBytes);
+    const FAstralOperationResult GetAgentBSlotAfterChat =
+        UAstralBlueprintLibrary::GetAgentAssignedSlotResult(AgentBCreate.Handle, AgentBAssignedSlot);
+    TestTrue(TEXT("get second shared-model agent assigned slot after chat succeeds"), GetAgentBSlotAfterChat.bSuccess);
+    TestEqual(TEXT("second shared-model agent assigned slot after chat"), AgentBAssignedSlot, AgentSlotB);
+
+    FAstralRequestRef AgentChatRequest;
+    const FAstralOperationResult CreateAgentChatRequest =
+        UAstralBlueprintLibrary::CreateAgentChatRequestResult(AgentCreate.Handle, AgentChatRequest);
+    TestTrue(TEXT("agent chat request succeeds"), CreateAgentChatRequest.bSuccess);
+    TestEqual(TEXT("agent chat request kind"), AgentChatRequest.Kind, EAstralRequestKind::AgentChat);
+
+    FAstralRequestRef AgentBChatRequest;
+    const FAstralOperationResult CreateAgentBChatRequest =
+        UAstralBlueprintLibrary::CreateAgentChatRequestResult(AgentBCreate.Handle, AgentBChatRequest);
+    TestTrue(TEXT("second shared-model agent chat request succeeds"), CreateAgentBChatRequest.bSuccess);
+    TestEqual(TEXT("second shared-model agent chat request kind"), AgentBChatRequest.Kind, EAstralRequestKind::AgentChat);
+
+    FAstralRequestStatus AgentChatWaitStatus;
+    const FAstralOperationResult AgentChatWait =
+        UAstralBlueprintLibrary::WaitRequestResult(AgentChatRequest, AgentChatTimeoutMs, AgentChatWaitStatus);
+    TestTrue(TEXT("agent chat wait succeeds"), AgentChatWait.bSuccess);
+    TestEqual(TEXT("agent chat wait state"), AgentChatWaitStatus.State, EAstralRequestState::Completed);
+
+    FAstralRequestStatus AgentBChatWaitStatus;
+    const FAstralOperationResult AgentBChatWait =
+        UAstralBlueprintLibrary::WaitRequestResult(AgentBChatRequest, AgentChatTimeoutMs, AgentBChatWaitStatus);
+    TestTrue(TEXT("second shared-model agent chat wait succeeds"), AgentBChatWait.bSuccess);
+    TestEqual(TEXT("second shared-model agent chat wait state"), AgentBChatWaitStatus.State, EAstralRequestState::Completed);
+
+    const FAstralOperationResult ReleaseUnreadAgentSlot =
+        UAstralBlueprintLibrary::ReleaseAgentSlotResult(AgentCreate.Handle);
+    TestFalse(TEXT("release unread agent slot fails"), ReleaseUnreadAgentSlot.bSuccess);
+    TestEqual(TEXT("release unread agent slot error"), ReleaseUnreadAgentSlot.ErrorCode,
+              static_cast<int32>(ASTRAL_E_BUSY));
+
+    for (int32 ReadIndex = 0; ReadIndex < AgentChatMaxReads; ++ReadIndex) {
+        FString Chunk;
+        const FAstralOperationResult ReadAgentChat =
+            UAstralBlueprintLibrary::ReadAgentChatResult(AgentCreate.Handle, AgentChatTimeoutMs, Chunk);
+        TestTrue(TEXT("read agent chat succeeds"), ReadAgentChat.bSuccess);
+        if (ReadAgentChat.bEndOfStream) {
+            break;
+        }
+    }
+
+    for (int32 ReadIndex = 0; ReadIndex < AgentChatMaxReads; ++ReadIndex) {
+        FString Chunk;
+        const FAstralOperationResult ReadAgentBChat =
+            UAstralBlueprintLibrary::ReadAgentChatResult(AgentBCreate.Handle, AgentChatTimeoutMs, Chunk);
+        TestTrue(TEXT("read second shared-model agent chat succeeds"), ReadAgentBChat.bSuccess);
+        if (ReadAgentBChat.bEndOfStream) {
+            break;
+        }
+    }
+
+    FAstralAgentChatResult AgentChatStatus;
+    const FAstralOperationResult GetAgentChatStatus =
+        UAstralBlueprintLibrary::GetAgentChatStatusResult(AgentCreate.Handle, AgentChatStatus);
+    TestTrue(TEXT("get agent chat status succeeds"), GetAgentChatStatus.bSuccess);
+    TestEqual(TEXT("agent chat status state"), AgentChatStatus.State, static_cast<int32>(ASTRAL_SESSION_COMPLETED));
+    TestEqual(TEXT("agent chat status error"), AgentChatStatus.LastError, static_cast<int32>(ASTRAL_OK));
+    TestTrue(TEXT("agent chat prompt build timing"), AgentChatStatus.PromptBuildMs >= 0.0);
+    TestTrue(TEXT("agent chat generated tokens"), AgentChatStatus.GeneratedTokens >= AgentChatMinOutputBytes);
+
+    FAstralAgentChatResult AgentBChatStatus;
+    const FAstralOperationResult GetAgentBChatStatus =
+        UAstralBlueprintLibrary::GetAgentChatStatusResult(AgentBCreate.Handle, AgentBChatStatus);
+    TestTrue(TEXT("get second shared-model agent chat status succeeds"), GetAgentBChatStatus.bSuccess);
+    TestEqual(TEXT("second shared-model agent chat status state"), AgentBChatStatus.State, static_cast<int32>(ASTRAL_SESSION_COMPLETED));
+    TestEqual(TEXT("second shared-model agent chat status error"), AgentBChatStatus.LastError, static_cast<int32>(ASTRAL_OK));
+    TestTrue(TEXT("second shared-model agent prompt build timing"), AgentBChatStatus.PromptBuildMs >= 0.0);
+    TestTrue(TEXT("second shared-model agent generated tokens"), AgentBChatStatus.GeneratedTokens >= AgentChatMinOutputBytes);
+    TestEqual(TEXT("second shared-model agent history count"), AgentBChatStatus.HistoryMessages, AgentMessageCount);
+
+    UAstralBlueprintLibrary::DestroyAgent(AgentBCreate.Handle);
+    UAstralBlueprintLibrary::DestroyAgent(AgentCreate.Handle);
+    UAstralBlueprintLibrary::DestroyToolset(AgentToolsetResult.Handle);
+    Model->Release();
+
+    TArray<uint8> EmptyBytes;
+    constexpr int64 InvalidTicket = 0;
+    constexpr int64 InvalidHandle = 0;
+
+    FAstralAdapterInfo InvalidAdapterInfo;
+    const FAstralOperationResult InvalidAdapterInfoResult =
+        UAstralBlueprintLibrary::GetAdapterInfoResult(InvalidHandle, InvalidAdapterInfo);
+    TestFalse(TEXT("invalid adapter info fails"), InvalidAdapterInfoResult.bSuccess);
+    TestEqual(TEXT("invalid adapter info error"), InvalidAdapterInfoResult.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    FString InvalidAdapterPath;
+    const FAstralOperationResult InvalidAdapterPathResult =
+        UAstralBlueprintLibrary::CopyAdapterPathResult(InvalidHandle, InvalidAdapterPath);
+    TestFalse(TEXT("invalid adapter path fails"), InvalidAdapterPathResult.bSuccess);
+    TestEqual(TEXT("invalid adapter path error"), InvalidAdapterPathResult.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralAsyncResult InvalidEnqueue = Embedder->EnqueueUtf8BytesResult(EmptyBytes);
+    TestFalse(TEXT("invalid embedder enqueue result fails"), InvalidEnqueue.bSuccess);
+    TestEqual(TEXT("invalid embedder enqueue error"), InvalidEnqueue.ErrorCode, static_cast<int32>(ASTRAL_E_STATE));
+    TestEqual(TEXT("invalid embedder enqueue ticket"), InvalidEnqueue.Ticket, InvalidTicket);
+    TestFalse(TEXT("invalid embedder enqueue backpressure flag"), InvalidEnqueue.bBackpressure);
+
+    TArray<FAstralToolDesc> Tools;
+    constexpr int32 ToolLookupId = 7;
+    FAstralToolDesc Tool;
+    Tool.ToolId = ToolLookupId;
+    Tool.Name = TEXT("lookup");
+    Tool.Description = TEXT("search memory");
+    Tool.JsonSchema = TEXT("{}");
+    Tools.Add(Tool);
+
+    const FAstralOperationResult ToolsetResult =
+        UAstralBlueprintLibrary::CreateToolsetResult(Tools, EAstralToolChoiceMode::Auto);
+    TestTrue(TEXT("toolset result succeeds"), ToolsetResult.bSuccess);
+    TestTrue(TEXT("toolset handle valid"), ToolsetResult.Handle != InvalidHandle);
+    TestEqual(TEXT("toolset count"), ToolsetResult.Count, Tools.Num());
+
+    FAstralToolCallResult ToolCall;
+    const FAstralOperationResult ParseResult =
+        UAstralBlueprintLibrary::ParseToolCallResult(ToolsetResult.Handle, TEXT("{\"name\":\"lookup\",\"arguments\":{\"q\":\"x\"}}"), ToolCall);
+    TestTrue(TEXT("tool parse result succeeds"), ParseResult.bSuccess);
+    TestTrue(TEXT("tool parse found"), ToolCall.bFound);
+    TestEqual(TEXT("tool parse id"), ToolCall.ToolId, Tool.ToolId);
+    TestEqual(TEXT("tool parse name"), ToolCall.Name, Tool.Name);
+    TestEqual(TEXT("tool parse arguments"), ToolCall.ArgumentsJson, FString(TEXT("{\"q\":\"x\"}")));
+
+    FAstralToolCallResult MissingToolCall;
+    const FAstralOperationResult MissingTool =
+        UAstralBlueprintLibrary::ParseToolCallResult(ToolsetResult.Handle, TEXT("{\"name\":\"missing\",\"arguments\":{}}"), MissingToolCall);
+    TestFalse(TEXT("missing tool parse fails"), MissingTool.bSuccess);
+    TestTrue(TEXT("missing tool flag"), MissingTool.bNotFound);
+
+    UAstralBlueprintLibrary::DestroyToolset(ToolsetResult.Handle);
+
+    constexpr int32 ChunkMaxWords = 2;
+    constexpr int32 ChunkExpectedCount = 2;
+    FAstralChunkerDesc ChunkDesc;
+    ChunkDesc.Mode = EAstralChunkMode::Word;
+    ChunkDesc.MaxUnits = ChunkMaxWords;
+    ChunkDesc.OverlapUnits = 0;
+    TArray<FAstralChunkRange> ChunkRanges;
+    int32 ChunkError = static_cast<int32>(ASTRAL_OK);
+    TestTrue(
+        TEXT("chunk text ranges"),
+        UAstralBlueprintLibrary::ChunkText(TEXT("alpha beta gamma"), ChunkDesc, ChunkRanges, ChunkError)
+    );
+    TestEqual(TEXT("chunk text count"), ChunkRanges.Num(), ChunkExpectedCount);
+    if (ChunkRanges.Num() > 0) {
+        FString FirstChunk;
+        const FAstralOperationResult CopyChunk =
+            UAstralBlueprintLibrary::CopyChunkTextResult(TEXT("alpha beta gamma"), ChunkRanges[0], FirstChunk);
+        TestTrue(TEXT("copy chunk text result succeeds"), CopyChunk.bSuccess);
+        TestEqual(TEXT("copy chunk text bytes"), CopyChunk.Count, ChunkRanges[0].ByteEnd - ChunkRanges[0].ByteBegin);
+        TestEqual(TEXT("copy chunk text value"), FirstChunk, FString(TEXT("alpha beta")));
+
+        constexpr int64 ChunkMemoryKey = 31;
+        constexpr int32 ChunkMemoryFlags = 9;
+        FAstralMemoryRecord ChunkRecord;
+        const FAstralOperationResult ChunkRecordResult =
+            UAstralBlueprintLibrary::MakeMemoryRecordFromChunkResult(ChunkRanges[0], ChunkMemoryKey, ChunkMemoryFlags, ChunkRecord);
+        TestTrue(TEXT("chunk memory record succeeds"), ChunkRecordResult.bSuccess);
+        TestEqual(TEXT("chunk memory record key"), ChunkRecord.Key, ChunkMemoryKey);
+        TestEqual(TEXT("chunk memory record chunk"), ChunkRecord.ChunkId, ChunkRanges[0].ChunkId);
+        TestEqual(TEXT("chunk memory record flags"), ChunkRecord.Flags, ChunkMemoryFlags);
+    }
+
+    constexpr int32 MemoryDim = 2;
+    constexpr int32 MemoryCapacity = 3;
+    constexpr int64 MemoryKeyA = 10;
+    constexpr int64 MemoryKeyB = 20;
+    constexpr int64 MemoryKeyRenamed = 21;
+    constexpr int32 MemoryGroupA = 1;
+    constexpr int32 MemoryGroupB = 2;
+    constexpr int32 MemoryDocumentA = 100;
+    constexpr int32 MemoryDocumentB = 200;
+    constexpr int32 MemoryChunkA = 1000;
+    constexpr int32 MemoryChunkB = 2000;
+    constexpr float VectorOne = 1.0f;
+    constexpr float VectorZero = 0.0f;
+    constexpr int32 SearchTopK = 2;
+    constexpr int32 AnyMemoryGroup = -1;
+    constexpr int32 CursorFetchLimit = 1;
+    constexpr int32 EmptySearchCount = 0;
+    constexpr int32 EmptyByteCount = 0;
+    FAstralMemoryIndexDesc MemoryDesc;
+    MemoryDesc.Dimension = MemoryDim;
+    MemoryDesc.Capacity = MemoryCapacity;
+    MemoryDesc.Metric = EAstralMemoryMetric::Cosine;
+    const FAstralOperationResult MemoryCreate = UAstralBlueprintLibrary::CreateMemoryIndexResult(MemoryDesc);
+    TestTrue(TEXT("memory create result succeeds"), MemoryCreate.bSuccess);
+    TestTrue(TEXT("memory handle valid"), MemoryCreate.Handle != InvalidHandle);
+
+    TArray<FAstralMemoryRecord> Records;
+    FAstralMemoryRecord RecordA;
+    RecordA.Key = MemoryKeyA;
+    RecordA.GroupId = MemoryGroupA;
+    RecordA.DocumentId = MemoryDocumentA;
+    RecordA.ChunkId = MemoryChunkA;
+    Records.Add(RecordA);
+    FAstralMemoryRecord RecordB;
+    RecordB.Key = MemoryKeyB;
+    RecordB.GroupId = MemoryGroupB;
+    RecordB.DocumentId = MemoryDocumentB;
+    RecordB.ChunkId = MemoryChunkB;
+    Records.Add(RecordB);
+    TArray<float> Vectors;
+    Vectors.Add(VectorOne);
+    Vectors.Add(VectorZero);
+    Vectors.Add(VectorZero);
+    Vectors.Add(VectorOne);
+
+    const FAstralOperationResult AddMemory = UAstralBlueprintLibrary::AddMemoryBatchResult(MemoryCreate.Handle, Records, Vectors, MemoryDesc.Dimension);
+    TestTrue(TEXT("memory add result succeeds"), AddMemory.bSuccess);
+    TestEqual(TEXT("memory add count"), AddMemory.Count, Records.Num());
+
+    int32 MemoryRecordCount = 0;
+    const FAstralOperationResult MemoryCountResult =
+        UAstralBlueprintLibrary::GetMemoryRecordCountResult(MemoryCreate.Handle, MemoryRecordCount);
+    TestTrue(TEXT("memory count succeeds"), MemoryCountResult.bSuccess);
+    TestEqual(TEXT("memory count result"), MemoryCountResult.Count, Records.Num());
+    TestEqual(TEXT("memory count out"), MemoryRecordCount, Records.Num());
+
+    FAstralMemoryRecord FoundRecord;
+    const FAstralOperationResult FoundRecordResult =
+        UAstralBlueprintLibrary::GetMemoryRecordResult(MemoryCreate.Handle, MemoryKeyA, FoundRecord);
+    TestTrue(TEXT("memory record lookup succeeds"), FoundRecordResult.bSuccess);
+    TestEqual(TEXT("memory record lookup key"), FoundRecord.Key, MemoryKeyA);
+    TestEqual(TEXT("memory record lookup document"), FoundRecord.DocumentId, MemoryDocumentA);
+    TestEqual(TEXT("memory record lookup chunk"), FoundRecord.ChunkId, MemoryChunkA);
+
+    FAstralMemoryRecord UpdatedRecord = RecordB;
+    UpdatedRecord.Key = MemoryKeyRenamed;
+    UpdatedRecord.DocumentId = MemoryDocumentA;
+    const FAstralOperationResult UpdatedRecordResult =
+        UAstralBlueprintLibrary::UpdateMemoryRecordResult(MemoryCreate.Handle, MemoryKeyB, UpdatedRecord);
+    TestTrue(TEXT("memory record update succeeds"), UpdatedRecordResult.bSuccess);
+    FAstralMemoryRecord RenamedRecord;
+    const FAstralOperationResult RenamedRecordResult =
+        UAstralBlueprintLibrary::GetMemoryRecordResult(MemoryCreate.Handle, MemoryKeyRenamed, RenamedRecord);
+    TestTrue(TEXT("memory record renamed lookup succeeds"), RenamedRecordResult.bSuccess);
+    TestEqual(TEXT("memory record renamed key"), RenamedRecord.Key, MemoryKeyRenamed);
+    TestEqual(TEXT("memory record renamed document"), RenamedRecord.DocumentId, MemoryDocumentA);
+
+    FAstralMemoryStats MemoryStats;
+    const FAstralOperationResult MemoryStatsResult =
+        UAstralBlueprintLibrary::GetMemoryStatsResult(MemoryCreate.Handle, MemoryStats);
+    TestTrue(TEXT("memory stats succeeds"), MemoryStatsResult.bSuccess);
+    TestEqual(TEXT("memory stats count"), MemoryStats.Count, Records.Num());
+    TestEqual(TEXT("memory stats dimension"), MemoryStats.Dimension, MemoryDesc.Dimension);
+    TestEqual(TEXT("memory stats capacity"), MemoryStats.Capacity, MemoryDesc.Capacity);
+    TestEqual(TEXT("memory stats index kind"), MemoryStats.IndexKind, EAstralMemoryIndexKind::Flat);
+    TestEqual(TEXT("memory stats storage kind"), MemoryStats.StorageKind, EAstralMemoryStorageKind::F32);
+    TestTrue(TEXT("memory stats vector bytes"), MemoryStats.VectorBytes > EmptyByteCount);
+    TestTrue(TEXT("memory stats metadata bytes"), MemoryStats.MetadataBytes > EmptyByteCount);
+    TestEqual(TEXT("memory stats graph bytes"), MemoryStats.GraphBytes, EmptyByteCount);
+    TestEqual(TEXT("memory stats graph edges"), MemoryStats.GraphEdges, EmptyByteCount);
+    TestEqual(TEXT("memory stats graph base edges"), MemoryStats.GraphBaseEdges, EmptyByteCount);
+    TestEqual(TEXT("memory stats graph upper edges"), MemoryStats.GraphUpperEdges, EmptyByteCount);
+    TestTrue(TEXT("memory stats total bytes"), MemoryStats.TotalBytes >= MemoryStats.VectorBytes);
+    TestTrue(TEXT("memory stats save bytes"), MemoryStats.SaveBytes > EmptyByteCount);
+
+    TArray<float> Query;
+    Query.Add(VectorOne);
+    Query.Add(VectorZero);
+    TArray<FAstralMemorySearchResult> MemoryResults;
+    const FAstralOperationResult SearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(MemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup, MemoryResults);
+    TestTrue(TEXT("memory search result succeeds"), SearchMemory.bSuccess);
+    TestEqual(TEXT("memory search count"), SearchMemory.Count, SearchTopK);
+    if (MemoryResults.Num() > 0) {
+        TestEqual(TEXT("memory top key"), MemoryResults[0].Key, RecordA.Key);
+    }
+
+    constexpr int32 BatchTopK = 1;
+    constexpr int32 BatchQueryCount = 2;
+    TArray<float> BatchQueries;
+    BatchQueries.Add(VectorOne);
+    BatchQueries.Add(VectorZero);
+    BatchQueries.Add(VectorZero);
+    BatchQueries.Add(VectorOne);
+    TArray<FAstralMemorySearchResult> BatchMemoryResults;
+    TArray<int32> BatchMemoryCounts;
+    const FAstralOperationResult BatchSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexBatchResult(
+            MemoryCreate.Handle, BatchQueries, BatchQueryCount, BatchTopK, AnyMemoryGroup,
+            BatchMemoryResults, BatchMemoryCounts);
+    TestTrue(TEXT("memory batch search succeeds"), BatchSearchMemory.bSuccess);
+    TestEqual(TEXT("memory batch search total count"), BatchSearchMemory.Count,
+              BatchQueryCount * BatchTopK);
+    TestEqual(TEXT("memory batch count entries"), BatchMemoryCounts.Num(), BatchQueryCount);
+    if (BatchMemoryCounts.Num() == BatchQueryCount) {
+      TestEqual(TEXT("memory batch first count"), BatchMemoryCounts[0], BatchTopK);
+      TestEqual(TEXT("memory batch second count"), BatchMemoryCounts[1], BatchTopK);
+    }
+    TestEqual(TEXT("memory batch result entries"), BatchMemoryResults.Num(),
+              BatchQueryCount * BatchTopK);
+    if (BatchMemoryResults.Num() == BatchQueryCount * BatchTopK) {
+      TestEqual(TEXT("memory batch first top key"), BatchMemoryResults[0].Key, RecordA.Key);
+      TestEqual(TEXT("memory batch second top key"), BatchMemoryResults[1].Key, UpdatedRecord.Key);
+    }
+
+    const FAstralOperationResult BeginSearch =
+        UAstralBlueprintLibrary::BeginMemorySearchResult(MemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup);
+    TestTrue(TEXT("memory cursor begin succeeds"), BeginSearch.bSuccess);
+    TestTrue(TEXT("memory cursor handle valid"), BeginSearch.Handle != InvalidHandle);
+
+    FAstralRequestRef SearchRequest;
+    const FAstralOperationResult CreateSearchRequest =
+        UAstralBlueprintLibrary::CreateMemorySearchRequestResult(BeginSearch.Handle, SearchRequest);
+    TestTrue(TEXT("memory cursor request succeeds"), CreateSearchRequest.bSuccess);
+    TestEqual(TEXT("memory cursor request kind"), SearchRequest.Kind, EAstralRequestKind::MemorySearch);
+    TestEqual(TEXT("memory cursor request owner"), SearchRequest.OwnerHandle, BeginSearch.Handle);
+
+    FAstralRequestStatus SearchRequestStatus;
+    const FAstralOperationResult GetSearchStatus =
+        UAstralBlueprintLibrary::GetRequestStatusResult(SearchRequest, SearchRequestStatus);
+    TestTrue(TEXT("memory cursor status succeeds"), GetSearchStatus.bSuccess);
+    TestEqual(TEXT("memory cursor status state"), SearchRequestStatus.State, EAstralRequestState::Completed);
+    TestEqual(TEXT("memory cursor status depth"), SearchRequestStatus.QueueDepth, SearchTopK);
+
+    FAstralRequestStatus WaitSearchStatus;
+    const FAstralOperationResult WaitSearch =
+        UAstralBlueprintLibrary::WaitRequestResult(SearchRequest, EmptySearchCount, WaitSearchStatus);
+    TestTrue(TEXT("memory cursor wait succeeds"), WaitSearch.bSuccess);
+    TestEqual(TEXT("memory cursor wait state"), WaitSearchStatus.State, EAstralRequestState::Completed);
+    TestEqual(TEXT("memory cursor wait depth"), WaitSearchStatus.QueueDepth, SearchTopK);
+
+    const FAstralOperationResult CancelSearch = UAstralBlueprintLibrary::CancelRequestResult(SearchRequest);
+    TestTrue(TEXT("memory cursor cancel succeeds"), CancelSearch.bSuccess);
+
+    FAstralRequestStatus CanceledSearchStatus;
+    const FAstralOperationResult CanceledSearch =
+        UAstralBlueprintLibrary::GetRequestStatusResult(SearchRequest, CanceledSearchStatus);
+    TestTrue(TEXT("memory cursor canceled status succeeds"), CanceledSearch.bSuccess);
+    TestEqual(TEXT("memory cursor canceled state"), CanceledSearchStatus.State, EAstralRequestState::Canceled);
+    TestEqual(TEXT("memory cursor canceled depth"), CanceledSearchStatus.QueueDepth, EmptySearchCount);
+
+    TArray<FAstralMemorySearchResult> CursorResults;
+    const FAstralOperationResult FetchSearch =
+        UAstralBlueprintLibrary::FetchMemorySearchResult(BeginSearch.Handle, CursorFetchLimit, CursorResults);
+    TestFalse(TEXT("memory cursor fetch canceled"), FetchSearch.bSuccess);
+    TestEqual(TEXT("memory cursor fetch canceled code"), FetchSearch.ErrorCode, static_cast<int32>(EAstralError::Canceled));
+
+    FAstralRequestStatus SearchRequestAfterFetch;
+    const FAstralOperationResult GetSearchAfterFetch =
+        UAstralBlueprintLibrary::GetRequestStatusResult(SearchRequest, SearchRequestAfterFetch);
+    TestTrue(TEXT("memory cursor status after fetch succeeds"), GetSearchAfterFetch.bSuccess);
+    TestEqual(TEXT("memory cursor status after fetch depth"), SearchRequestAfterFetch.QueueDepth, EmptySearchCount);
+    UAstralBlueprintLibrary::EndMemorySearch(BeginSearch.Handle);
+
+    TArray<uint8> MemoryBytes;
+    const FAstralOperationResult SaveMemory = UAstralBlueprintLibrary::SaveMemoryIndexResult(MemoryCreate.Handle, MemoryBytes);
+    TestTrue(TEXT("memory save succeeds"), SaveMemory.bSuccess);
+    TestTrue(TEXT("memory save has bytes"), MemoryBytes.Num() > EmptyByteCount);
+
+    const FAstralOperationResult LoadMemory = UAstralBlueprintLibrary::LoadMemoryIndexResult(MemoryDesc, MemoryBytes);
+    TestTrue(TEXT("memory load succeeds"), LoadMemory.bSuccess);
+    TestTrue(TEXT("memory load handle valid"), LoadMemory.Handle != InvalidHandle);
+
+    TArray<FAstralMemorySearchResult> LoadedMemoryResults;
+    const FAstralOperationResult LoadedSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, LoadedMemoryResults);
+    TestTrue(TEXT("loaded memory search succeeds"), LoadedSearchMemory.bSuccess);
+    TestEqual(TEXT("loaded memory search count"), LoadedSearchMemory.Count, SearchTopK);
+    if (LoadedMemoryResults.Num() > 0) {
+        TestEqual(TEXT("loaded memory top key"), LoadedMemoryResults[0].Key, RecordA.Key);
+    }
+
+    const FAstralOperationResult RemoveMemory = UAstralBlueprintLibrary::RemoveMemoryRecordResult(LoadMemory.Handle, MemoryKeyA);
+    TestTrue(TEXT("memory remove succeeds"), RemoveMemory.bSuccess);
+
+    const FAstralOperationResult RemovedMemoryCount =
+        UAstralBlueprintLibrary::GetMemoryRecordCountResult(LoadMemory.Handle, MemoryRecordCount);
+    TestTrue(TEXT("removed memory count succeeds"), RemovedMemoryCount.bSuccess);
+    TestEqual(TEXT("removed memory count"), MemoryRecordCount, CursorFetchLimit);
+
+    TArray<FAstralMemorySearchResult> RemovedMemoryResults;
+    const FAstralOperationResult RemovedSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, RemovedMemoryResults);
+    TestTrue(TEXT("removed memory search succeeds"), RemovedSearchMemory.bSuccess);
+    TestEqual(TEXT("removed memory search count"), RemovedSearchMemory.Count, CursorFetchLimit);
+    if (RemovedMemoryResults.Num() > 0) {
+        TestEqual(TEXT("removed memory top key"), RemovedMemoryResults[0].Key, RecordB.Key);
+    }
+
+    const FAstralOperationResult ClearMemory = UAstralBlueprintLibrary::ClearMemoryIndexResult(LoadMemory.Handle);
+    TestTrue(TEXT("memory clear succeeds"), ClearMemory.bSuccess);
+
+    const FAstralOperationResult ClearedMemoryCount =
+        UAstralBlueprintLibrary::GetMemoryRecordCountResult(LoadMemory.Handle, MemoryRecordCount);
+    TestTrue(TEXT("cleared memory count succeeds"), ClearedMemoryCount.bSuccess);
+    TestEqual(TEXT("cleared memory count"), MemoryRecordCount, EmptySearchCount);
+
+    TArray<FAstralMemorySearchResult> ClearedMemoryResults;
+    const FAstralOperationResult ClearedSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, ClearedMemoryResults);
+    TestTrue(TEXT("cleared memory search succeeds"), ClearedSearchMemory.bSuccess);
+    TestEqual(TEXT("cleared memory search count"), ClearedSearchMemory.Count, EmptySearchCount);
+
+    UAstralBlueprintLibrary::DestroyMemoryIndex(LoadMemory.Handle);
+    UAstralBlueprintLibrary::DestroyMemoryIndex(MemoryCreate.Handle);
+
+    FAstralMemoryIndexDesc GraphMemoryDesc = MemoryDesc;
+    GraphMemoryDesc.IndexKind = EAstralMemoryIndexKind::Graph;
+    GraphMemoryDesc.GraphNeighbors = 2;
+    GraphMemoryDesc.GraphSearch = 4;
+    GraphMemoryDesc.GraphQuerySearch = 5;
+    const FAstralOperationResult GraphMemoryCreate = UAstralBlueprintLibrary::CreateMemoryIndexResult(GraphMemoryDesc);
+    TestTrue(TEXT("graph memory create result succeeds"), GraphMemoryCreate.bSuccess);
+    const FAstralOperationResult GraphAddMemory =
+        UAstralBlueprintLibrary::AddMemoryBatchResult(GraphMemoryCreate.Handle, Records, Vectors, GraphMemoryDesc.Dimension);
+    TestTrue(TEXT("graph memory add result succeeds"), GraphAddMemory.bSuccess);
+    FAstralMemoryStats GraphMemoryStats;
+    const FAstralOperationResult GraphMemoryStatsResult =
+        UAstralBlueprintLibrary::GetMemoryStatsResult(GraphMemoryCreate.Handle, GraphMemoryStats);
+    TestTrue(TEXT("graph memory stats succeeds"), GraphMemoryStatsResult.bSuccess);
+    TestEqual(TEXT("graph memory stats index kind"), GraphMemoryStats.IndexKind, EAstralMemoryIndexKind::Graph);
+    TestEqual(TEXT("graph memory stats storage kind"), GraphMemoryStats.StorageKind, EAstralMemoryStorageKind::F32);
+    TestEqual(TEXT("graph memory stats neighbors"), GraphMemoryStats.GraphNeighbors,
+              GraphMemoryDesc.GraphNeighbors);
+    TestEqual(TEXT("graph memory stats search"), GraphMemoryStats.GraphSearch,
+              GraphMemoryDesc.GraphSearch);
+    TestEqual(TEXT("graph memory stats query search"), GraphMemoryStats.GraphQuerySearch,
+              GraphMemoryDesc.GraphQuerySearch);
+    TestTrue(TEXT("graph memory stats graph bytes"), GraphMemoryStats.GraphBytes > EmptyByteCount);
+    TestTrue(TEXT("graph memory stats graph edges"), GraphMemoryStats.GraphEdges > EmptyByteCount);
+    TestTrue(TEXT("graph memory stats base edges"),
+             GraphMemoryStats.GraphBaseEdges > EmptyByteCount);
+    TestEqual(TEXT("graph memory stats edge split"), GraphMemoryStats.GraphEdges,
+              GraphMemoryStats.GraphBaseEdges + GraphMemoryStats.GraphUpperEdges);
+    TestTrue(TEXT("graph memory stats build score evals"),
+             GraphMemoryStats.GraphBuildScoreEvals > EmptyByteCount);
+    TestTrue(TEXT("graph memory stats build candidate visits"),
+             GraphMemoryStats.GraphBuildCandidateVisits > EmptyByteCount);
+    TestTrue(TEXT("graph memory stats save bytes"), GraphMemoryStats.SaveBytes > EmptyByteCount);
+    TArray<FAstralMemorySearchResult> GraphMemoryResults;
+    const FAstralOperationResult GraphSearchMemory =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(GraphMemoryCreate.Handle, Query, SearchTopK, AnyMemoryGroup, GraphMemoryResults);
+    TestTrue(TEXT("graph memory search result succeeds"), GraphSearchMemory.bSuccess);
+    TestEqual(TEXT("graph memory search count"), GraphSearchMemory.Count, SearchTopK);
+    if (GraphMemoryResults.Num() > 0) {
+        TestEqual(TEXT("graph memory top key"), GraphMemoryResults[0].Key, RecordA.Key);
+    }
+    UAstralBlueprintLibrary::DestroyMemoryIndex(GraphMemoryCreate.Handle);
+
+    constexpr int32 PromptCacheMaxEntries = 4;
+    constexpr int32 PromptCacheMaxTokens = 16;
+    constexpr int64 PromptCacheModelHandle = 1;
+    constexpr int64 PromptCacheSystemKey = 11;
+    constexpr int32 PromptCacheGeneration = 1;
+    constexpr int32 PromptCacheTokenA = 101;
+    constexpr int32 PromptCacheTokenB = 202;
+    constexpr int32 PromptCacheReadCapacity = 4;
+    constexpr int32 PromptCacheEntryCount = 1;
+    constexpr int32 PromptCacheTokenCount = 2;
+    FAstralPromptCacheDesc PromptCacheDesc;
+    PromptCacheDesc.MaxEntries = PromptCacheMaxEntries;
+    PromptCacheDesc.MaxTokens = PromptCacheMaxTokens;
+    PromptCacheDesc.bTrackStats = true;
+
+    const FAstralOperationResult PromptCacheCreate = UAstralBlueprintLibrary::CreatePromptCacheResult(PromptCacheDesc);
+    TestTrue(TEXT("prompt cache create succeeds"), PromptCacheCreate.bSuccess);
+    TestTrue(TEXT("prompt cache handle valid"), PromptCacheCreate.Handle != InvalidHandle);
+
+    FAstralPromptCacheKey PromptCacheKey;
+    PromptCacheKey.Section = EAstralPromptSectionKind::System;
+    PromptCacheKey.ModelHandle = PromptCacheModelHandle;
+    PromptCacheKey.Key = PromptCacheSystemKey;
+    PromptCacheKey.Generation = PromptCacheGeneration;
+
+    FAstralPromptCacheKey DerivedPromptCacheKey;
+    const FAstralOperationResult DerivedPromptKey =
+        UAstralBlueprintLibrary::MakePromptCacheKeyResult(
+            PromptCacheModelHandle,
+            EAstralPromptSectionKind::System,
+            PromptCacheGeneration,
+            TEXT("system section"),
+            DerivedPromptCacheKey
+        );
+    TestTrue(TEXT("derived prompt cache key succeeds"), DerivedPromptKey.bSuccess);
+    TestEqual(TEXT("derived prompt cache key model"), DerivedPromptCacheKey.ModelHandle, PromptCacheModelHandle);
+    TestEqual(TEXT("derived prompt cache key generation"), DerivedPromptCacheKey.Generation, PromptCacheGeneration);
+
+    TArray<int32> PromptCacheTokens;
+    PromptCacheTokens.Add(PromptCacheTokenA);
+    PromptCacheTokens.Add(PromptCacheTokenB);
+    const FAstralOperationResult PromptCachePut =
+        UAstralBlueprintLibrary::PutPromptCacheTokensResult(PromptCacheCreate.Handle, PromptCacheKey, PromptCacheTokens);
+    TestTrue(TEXT("prompt cache put succeeds"), PromptCachePut.bSuccess);
+    TestEqual(TEXT("prompt cache put count"), PromptCachePut.Count, PromptCacheTokens.Num());
+
+    TArray<int32> PromptCacheReadTokens;
+    const FAstralOperationResult PromptCacheGet =
+        UAstralBlueprintLibrary::GetPromptCacheTokensResult(PromptCacheCreate.Handle, PromptCacheKey, PromptCacheReadCapacity, PromptCacheReadTokens);
+    TestTrue(TEXT("prompt cache get succeeds"), PromptCacheGet.bSuccess);
+    TestEqual(TEXT("prompt cache get count"), PromptCacheGet.Count, PromptCacheTokenCount);
+    if (PromptCacheReadTokens.Num() >= PromptCacheTokenCount) {
+        TestEqual(TEXT("prompt cache token a"), PromptCacheReadTokens[0], PromptCacheTokenA);
+        TestEqual(TEXT("prompt cache token b"), PromptCacheReadTokens[1], PromptCacheTokenB);
+    }
+
+    FAstralPromptCacheStats PromptCacheStats;
+    const FAstralOperationResult PromptCacheStatsResult =
+        UAstralBlueprintLibrary::GetPromptCacheStatsResult(PromptCacheCreate.Handle, PromptCacheStats);
+    TestTrue(TEXT("prompt cache stats succeeds"), PromptCacheStatsResult.bSuccess);
+    TestEqual(TEXT("prompt cache stats entries"), PromptCacheStats.Entries, PromptCacheEntryCount);
+    TestEqual(TEXT("prompt cache stats tokens"), PromptCacheStats.Tokens, PromptCacheTokenCount);
+
+    TArray<uint8> PromptCacheBytes;
+    const FAstralOperationResult PromptCacheSave = UAstralBlueprintLibrary::SavePromptCacheResult(PromptCacheCreate.Handle, PromptCacheBytes);
+    TestTrue(TEXT("prompt cache save succeeds"), PromptCacheSave.bSuccess);
+    TestTrue(TEXT("prompt cache save has bytes"), PromptCacheBytes.Num() > 0);
+
+    const FAstralOperationResult PromptCacheLoad = UAstralBlueprintLibrary::LoadPromptCacheResult(PromptCacheDesc, PromptCacheBytes);
+    TestTrue(TEXT("prompt cache load succeeds"), PromptCacheLoad.bSuccess);
+    TestTrue(TEXT("prompt cache load handle valid"), PromptCacheLoad.Handle != InvalidHandle);
+
+    TArray<int32> LoadedPromptCacheTokens;
+    const FAstralOperationResult LoadedPromptCacheGet =
+        UAstralBlueprintLibrary::GetPromptCacheTokensResult(PromptCacheLoad.Handle, PromptCacheKey, PromptCacheReadCapacity, LoadedPromptCacheTokens);
+    TestTrue(TEXT("loaded prompt cache get succeeds"), LoadedPromptCacheGet.bSuccess);
+    TestEqual(TEXT("loaded prompt cache token count"), LoadedPromptCacheGet.Count, PromptCacheTokenCount);
+
+    const FAstralOperationResult PromptCacheClear = UAstralBlueprintLibrary::ClearPromptCacheResult(PromptCacheCreate.Handle);
+    TestTrue(TEXT("prompt cache clear succeeds"), PromptCacheClear.bSuccess);
+    FAstralPromptCacheKey MissingPromptCacheKey = PromptCacheKey;
+    MissingPromptCacheKey.Key = PromptCacheSystemKey + PromptCacheEntryCount;
+    TArray<int32> MissingPromptCacheTokens;
+    const FAstralOperationResult MissingPromptCache =
+        UAstralBlueprintLibrary::GetPromptCacheTokensResult(PromptCacheCreate.Handle, MissingPromptCacheKey, PromptCacheReadCapacity, MissingPromptCacheTokens);
+    TestFalse(TEXT("missing prompt cache lookup fails"), MissingPromptCache.bSuccess);
+    TestTrue(TEXT("missing prompt cache flag"), MissingPromptCache.bNotFound);
+
+    UAstralBlueprintLibrary::DestroyPromptCache(PromptCacheLoad.Handle);
+    UAstralBlueprintLibrary::DestroyPromptCache(PromptCacheCreate.Handle);
+
+    FAstralMemoryIndexDesc InvalidMemoryDesc;
+    const FAstralOperationResult InvalidMemoryCreate = UAstralBlueprintLibrary::CreateMemoryIndexResult(InvalidMemoryDesc);
+    TestFalse(TEXT("invalid memory create fails"), InvalidMemoryCreate.bSuccess);
+    TestEqual(TEXT("invalid memory create error"), InvalidMemoryCreate.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidAgentCancel = UAstralBlueprintLibrary::CancelAgentChatResult(InvalidHandle);
+    TestFalse(TEXT("invalid agent cancel fails"), InvalidAgentCancel.bSuccess);
+    TestEqual(TEXT("invalid agent cancel error"), InvalidAgentCancel.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidAgentRelease = UAstralBlueprintLibrary::ReleaseAgentSlotResult(InvalidHandle);
+    TestFalse(TEXT("invalid agent release fails"), InvalidAgentRelease.bSuccess);
+    TestEqual(TEXT("invalid agent release error"), InvalidAgentRelease.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    FAstralRequestRef InvalidRequest;
+    const FAstralOperationResult InvalidSessionRequest =
+        UAstralBlueprintLibrary::CreateSessionRequestResult(nullptr, InvalidRequest);
+    TestFalse(TEXT("invalid session request fails"), InvalidSessionRequest.bSuccess);
+    TestEqual(TEXT("invalid session request error"), InvalidSessionRequest.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidConversationRequest =
+        UAstralBlueprintLibrary::CreateConversationRequestResult(InvalidHandle, InvalidRequest);
+    TestFalse(TEXT("invalid conversation request fails"), InvalidConversationRequest.bSuccess);
+    TestEqual(TEXT("invalid conversation request error"), InvalidConversationRequest.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidAgentRequest =
+        UAstralBlueprintLibrary::CreateAgentChatRequestResult(InvalidHandle, InvalidRequest);
+    TestFalse(TEXT("invalid agent request fails"), InvalidAgentRequest.bSuccess);
+    TestEqual(TEXT("invalid agent request error"), InvalidAgentRequest.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidEmbeddingRequest =
+        UAstralBlueprintLibrary::CreateEmbeddingRequestResult(nullptr, InvalidHandle, InvalidRequest);
+    TestFalse(TEXT("invalid embedding request fails"), InvalidEmbeddingRequest.bSuccess);
+    TestEqual(TEXT("invalid embedding request error"), InvalidEmbeddingRequest.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    TArray<uint8> AgentHistoryBytes;
+    const FAstralOperationResult InvalidAgentSave = UAstralBlueprintLibrary::SaveAgentHistoryResult(InvalidHandle, AgentHistoryBytes);
+    TestFalse(TEXT("invalid agent history save fails"), InvalidAgentSave.bSuccess);
+    TestEqual(TEXT("invalid agent history save error"), InvalidAgentSave.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
+
+    const FAstralOperationResult InvalidAgentLoad = UAstralBlueprintLibrary::LoadAgentHistoryResult(InvalidHandle, AgentHistoryBytes);
+    TestFalse(TEXT("invalid agent history load fails"), InvalidAgentLoad.bSuccess);
+    TestEqual(TEXT("invalid agent history load error"), InvalidAgentLoad.ErrorCode, static_cast<int32>(ASTRAL_E_INVALID));
 
     return true;
 }
@@ -364,6 +1191,62 @@ bool FAstralRTModuleRuntimeGenerationInvalidationTest::RunTest(const FString& Pa
     ok = Session->Create(Model, SessionDesc);
     TestTrue(TEXT("session creates before runtime generation change"), ok);
     TestTrue(TEXT("session valid before runtime generation change"), Session->IsValid());
+
+    FAstralRequestRef SessionRequest;
+    const FAstralOperationResult CreateSessionRequest =
+        UAstralBlueprintLibrary::CreateSessionRequestResult(Session, SessionRequest);
+    TestTrue(TEXT("session request succeeds before runtime generation change"), CreateSessionRequest.bSuccess);
+    TestEqual(TEXT("session request kind"), SessionRequest.Kind, EAstralRequestKind::Session);
+    TestTrue(TEXT("session request owner valid"), SessionRequest.OwnerHandle != 0);
+
+    FAstralRequestStatus SessionRequestStatus;
+    const FAstralOperationResult GetSessionRequestStatus =
+        UAstralBlueprintLibrary::GetRequestStatusResult(SessionRequest, SessionRequestStatus);
+    TestTrue(TEXT("session request status succeeds"), GetSessionRequestStatus.bSuccess);
+    TestEqual(TEXT("session request status state"), SessionRequestStatus.State, EAstralRequestState::Queued);
+    TestTrue(TEXT("session request queued helper"), UAstralBlueprintLibrary::IsRequestQueued(SessionRequestStatus));
+    TestTrue(TEXT("session request active helper"), UAstralBlueprintLibrary::IsRequestActive(SessionRequestStatus));
+    TestFalse(TEXT("session request terminal helper"), UAstralBlueprintLibrary::IsRequestTerminal(SessionRequestStatus));
+    TestFalse(TEXT("session request successful helper before completion"), UAstralBlueprintLibrary::IsRequestSuccessful(SessionRequestStatus));
+
+    FAstralRequestStatus CompletedStatus = SessionRequestStatus;
+    CompletedStatus.State = EAstralRequestState::Completed;
+    CompletedStatus.ErrorCode = static_cast<int32>(EAstralError::OK);
+    TestTrue(TEXT("completed request helper"), UAstralBlueprintLibrary::IsRequestCompleted(CompletedStatus));
+    TestTrue(TEXT("successful request helper"), UAstralBlueprintLibrary::IsRequestSuccessful(CompletedStatus));
+    TestTrue(TEXT("completed terminal helper"), UAstralBlueprintLibrary::IsRequestTerminal(CompletedStatus));
+    TestFalse(TEXT("completed active helper"), UAstralBlueprintLibrary::IsRequestActive(CompletedStatus));
+
+    CompletedStatus.State = EAstralRequestState::Failed;
+    CompletedStatus.ErrorCode = static_cast<int32>(EAstralError::Backend);
+    TestTrue(TEXT("failed request helper"), UAstralBlueprintLibrary::IsRequestFailed(CompletedStatus));
+    TestTrue(TEXT("failed terminal helper"), UAstralBlueprintLibrary::IsRequestTerminal(CompletedStatus));
+    TestFalse(TEXT("failed successful helper"), UAstralBlueprintLibrary::IsRequestSuccessful(CompletedStatus));
+
+    CompletedStatus.State = EAstralRequestState::Canceled;
+    CompletedStatus.ErrorCode = static_cast<int32>(EAstralError::Canceled);
+    TestTrue(TEXT("canceled request helper"), UAstralBlueprintLibrary::IsRequestCanceled(CompletedStatus));
+    TestTrue(TEXT("canceled terminal helper"), UAstralBlueprintLibrary::IsRequestTerminal(CompletedStatus));
+
+    TestTrue(TEXT("operation success helper"), UAstralBlueprintLibrary::IsOperationSuccessful(CreateSessionRequest));
+    FAstralOperationResult OperationStatus{};
+    OperationStatus.bBackpressure = true;
+    TestTrue(TEXT("operation backpressure helper"), UAstralBlueprintLibrary::IsOperationBackpressure(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bTimeout = true;
+    TestTrue(TEXT("operation timeout helper"), UAstralBlueprintLibrary::IsOperationTimeout(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bCanceled = true;
+    TestTrue(TEXT("operation canceled helper"), UAstralBlueprintLibrary::IsOperationCanceled(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bUnsupported = true;
+    TestTrue(TEXT("operation unsupported helper"), UAstralBlueprintLibrary::IsOperationUnsupported(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bNotFound = true;
+    TestTrue(TEXT("operation not found helper"), UAstralBlueprintLibrary::IsOperationNotFound(OperationStatus));
+    OperationStatus = FAstralOperationResult{};
+    OperationStatus.bEndOfStream = true;
+    TestTrue(TEXT("operation end of stream helper"), UAstralBlueprintLibrary::IsOperationEndOfStream(OperationStatus));
 
     UAstralModel* EmbeddingModel = NewObject<UAstralModel>();
     TestNotNull(TEXT("embedding model allocated"), EmbeddingModel);
@@ -1054,6 +1937,7 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
     };
     int64 Tickets[Inflight] = {};
     TArray<uint8> Bytes;
+    constexpr int64 InvalidTicket = 0;
 
     for (int32 i = 0; i < Inflight; ++i) {
         append_ascii(Bytes, Texts[i]);
@@ -1062,17 +1946,37 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
         TestTrue(TEXT("ticket valid"), Tickets[i] > 0);
     }
 
-    int64 OverflowTicket = 0;
+    FAstralRequestRef EmbeddingRequest;
+    const FAstralOperationResult CreateEmbeddingRequest =
+        UAstralBlueprintLibrary::CreateEmbeddingRequestResult(Embedder, Tickets[0], EmbeddingRequest);
+    TestTrue(TEXT("embedding request succeeds"), CreateEmbeddingRequest.bSuccess);
+    TestEqual(TEXT("embedding request kind"), EmbeddingRequest.Kind, EAstralRequestKind::Embedding);
+    TestEqual(TEXT("embedding request ticket"), EmbeddingRequest.Ticket, Tickets[0]);
+
+    FAstralRequestStatus EmbeddingRequestStatus;
+    const FAstralOperationResult GetEmbeddingRequestStatus =
+        UAstralBlueprintLibrary::GetRequestStatusResult(EmbeddingRequest, EmbeddingRequestStatus);
+    TestTrue(TEXT("embedding request status succeeds"), GetEmbeddingRequestStatus.bSuccess);
+    TestEqual(TEXT("embedding request status ticket"), EmbeddingRequestStatus.Ticket, Tickets[0]);
+    TestTrue(TEXT("embedding request has ticket flag"), EmbeddingRequestStatus.bHasTicket);
+
+    int64 OverflowTicket = InvalidTicket;
     append_ascii(Bytes, "overflow");
+    const FAstralAsyncResult Overflow = Embedder->EnqueueUtf8BytesResult(Bytes);
+    TestFalse(TEXT("overflow result fails"), Overflow.bSuccess);
+    TestEqual(TEXT("overflow error code"), Overflow.ErrorCode, static_cast<int32>(ASTRAL_E_BUSY));
+    TestTrue(TEXT("overflow backpressure flag"), Overflow.bBackpressure);
+    TestEqual(TEXT("overflow result ticket remains zero"), Overflow.Ticket, InvalidTicket);
     ok = Embedder->EnqueueUtf8Bytes(Bytes, OverflowTicket);
     TestFalse(TEXT("overflow returns busy through wrapper"), ok);
-    TestEqual(TEXT("overflow ticket remains zero"), OverflowTicket, static_cast<int64>(0));
+    TestEqual(TEXT("overflow wrapper ticket remains zero"), OverflowTicket, InvalidTicket);
 
     constexpr int32 CanceledIndex = 3;
     ok = Embedder->Cancel(Tickets[CanceledIndex]);
     TestTrue(TEXT("cancel queued embedding ticket"), ok);
-    ok = Embedder->Cancel(Tickets[CanceledIndex]);
-    TestFalse(TEXT("cancel stale embedding ticket fails"), ok);
+    const FAstralAsyncResult StaleCancel = Embedder->CancelResult(Tickets[CanceledIndex]);
+    TestFalse(TEXT("cancel stale embedding ticket fails"), StaleCancel.bSuccess);
+    TestEqual(TEXT("cancel stale error"), StaleCancel.ErrorCode, static_cast<int32>(ASTRAL_E_NOT_FOUND));
 
     int64 ReplacementTicket = 0;
     append_ascii(Bytes, "replacement");
@@ -1107,10 +2011,13 @@ bool FAstralRTMockEmbedderQueuePressureTest::RunTest(const FString& Parameters) 
     ++Collected;
     const double ElapsedSeconds = FPlatformTime::Seconds() - StartSeconds;
 
-    ok = Embedder->Collect(Tickets[0], Vec);
-    TestFalse(TEXT("stale ticket rejected"), ok);
-    ok = Embedder->Collect(Tickets[CanceledIndex], Vec);
-    TestFalse(TEXT("canceled ticket rejected"), ok);
+    const FAstralAsyncResult StaleCollect = Embedder->CollectResult(Tickets[0], Vec);
+    TestFalse(TEXT("stale ticket rejected"), StaleCollect.bSuccess);
+    TestEqual(TEXT("stale ticket error"), StaleCollect.ErrorCode, static_cast<int32>(ASTRAL_E_NOT_FOUND));
+    const FAstralAsyncResult CanceledCollect = Embedder->CollectResult(Tickets[CanceledIndex], Vec);
+    TestFalse(TEXT("canceled ticket rejected"), CanceledCollect.bSuccess);
+    TestEqual(TEXT("canceled ticket error"), CanceledCollect.ErrorCode, static_cast<int32>(ASTRAL_E_CANCELED));
+    TestTrue(TEXT("canceled ticket flag"), CanceledCollect.bCanceled);
 
     int64 ReuseTicket = 0;
     append_ascii(Bytes, "reuse");

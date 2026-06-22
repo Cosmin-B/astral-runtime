@@ -65,6 +65,8 @@ ASTRAL_API const char* ASTRAL_CALL astral_error_string(AstralErr err) {
             return "Canceled";
         case ASTRAL_E_UNSUPPORTED:
             return "Unsupported";
+        case ASTRAL_E_NOT_FOUND:
+            return "Not found";
         default:
             return "Unknown error";
     }

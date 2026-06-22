@@ -1,0 +1,199 @@
+# Native Agents
+
+Astral agents own system prompt bytes, memory context bytes, chat history,
+prompt assembly, and a conversation handle in native memory. Engine wrappers
+pass strings and handles through the ABI; they do not build prompts or manage
+history themselves.
+
+## C ABI
+
+- `AstralAgentDesc`
+- `AstralAgentMessage`
+- `AstralAgentChatDesc`
+- `AstralAgentChatResult`
+- `astral_agent_create()`
+- `astral_agent_destroy()`
+- `astral_agent_set_system_prompt()`
+- `astral_agent_get_system_prompt_size()`
+- `astral_agent_get_system_prompt()`
+- `astral_agent_set_summary()`
+- `astral_agent_get_summary_size()`
+- `astral_agent_get_summary()`
+- `astral_agent_set_memory_context()`
+- `astral_agent_set_memory_context_from_results()`
+- `astral_agent_get_memory_context_size()`
+- `astral_agent_get_memory_context()`
+- `astral_agent_parse_tool_call()`
+- `astral_agent_message_add()`
+- `astral_agent_history_clear()`
+- `astral_agent_history_count()`
+- `astral_agent_history_save_size()`
+- `astral_agent_history_save()`
+- `astral_agent_history_load()`
+- `astral_agent_chat_enqueue()`
+- `astral_agent_chat_cancel()`
+- `astral_agent_chat_stream_read()`
+- `astral_agent_chat_tool_call_result()`
+- `astral_agent_chat_result()`
+- `astral_agent_assigned_slot()`
+- `astral_agent_release_slot()`
+
+Agents run on the existing model-scoped conversation executor. Configure the
+executor before creating agents for a model. Initial system prompt, rolling
+summary, retrieved memory context, toolsets, and prompt caches can be bound at
+creation time and are forwarded to native prompt setup. A bound
+toolset can also be used through `astral_agent_parse_tool_call()` for
+caller-provided text or `astral_agent_chat_tool_call_result()` for the latest
+drained chat stream, so wrappers do not need to retain a separate toolset
+handle for completed output parsing.
+Idle agents do not occupy executor slots. A chat request acquires the
+agent's slot-backed conversation on first enqueue, so applications can create
+larger native character pools than the active decode slot count. If every slot
+is occupied when a new agent chat starts, enqueue first reclaims one completed,
+canceled, failed, or idle agent slot with no unread stream bytes. If no such
+slot exists, enqueue returns `ASTRAL_E_BUSY`.
+`AstralAgentDesc::slot_affinity` is a one-based preferred executor slot. It is
+validated at creation time and applied when the first chat request starts. If
+the preferred slot is occupied at enqueue time, the request only reclaims a
+finished agent already assigned to that slot; otherwise it returns
+`ASTRAL_E_BUSY`. If the requested slot is outside the configured executor,
+creation returns `ASTRAL_E_INVALID`. `astral_agent_assigned_slot()` reports the
+zero-based slot after the agent has started a chat and returns
+`ASTRAL_E_NOT_FOUND` before a slot is assigned.
+`astral_agent_release_slot()` frees a completed, canceled, failed, or idle
+conversation slot while keeping the agent handle, prompts, memory context, and
+history alive. It returns `ASTRAL_E_STATE` while decode is active,
+`ASTRAL_E_BUSY` while stream bytes remain unread, and `ASTRAL_E_NOT_FOUND`
+when the agent has no assigned slot. The next chat enqueue reacquires a slot
+through the same executor and affinity rules.
+
+## Ownership
+
+The agent copies `AstralAgentDesc::system_prompt`,
+`AstralAgentDesc::summary`, `AstralAgentDesc::memory_context`, and history
+content into native storage. Those sections can also be replaced later through
+the matching set calls. Input spans only need to remain valid for the duration
+of the call. Chat enqueue assembles one bounded prompt buffer in this order:
+system prompt, summary, memory context, history, current user turn, assistant
+prefix. The scratch buffer is owned by the agent and reused across chat
+requests.
+History messages are stored as small native records that point into one
+agent-owned byte arena. Adding a message appends its UTF-8 bytes once; prompt
+assembly reuses a cached stable prefix and appends only the current user turn
+and assistant marker into the prompt buffer.
+The agent caches stable prefix bytes, byte count, and prompt-cache hash after
+system prompt, summary, memory context, or history changes, so repeated turns
+do not rescan those bytes or rebuild that section.
+`astral_agent_set_memory_context_from_results()` builds that memory context
+from document bytes, chunk ranges, and memory search results in result order.
+It copies only the selected byte ranges into the agent and inserts the caller's
+separator between non-empty chunks.
+When `AstralAgentDesc::prompt_cache` is set, the agent looks up the assembled
+prompt in the native prompt cache during request setup. Exact hits feed cached
+token spans directly into the conversation prompt buffer. Misses also cache the
+stable system, summary, memory, and history prefix so later turns with different
+user text can reuse that prefix while tokenizing only the current suffix.
+
+`astral_agent_history_save()` serializes the system prompt and history entries
+into a caller-provided buffer. Current snapshots include the rolling summary and
+memory context. `astral_agent_history_load()` replaces the current native
+prompt, summary, memory context, and history copy after validating the payload.
+
+`AstralAgentDesc::overflow_policy` controls history overflow before prompt
+decode starts. `ASTRAL_AGENT_OVERFLOW_REJECT` is the default and returns
+`ASTRAL_E_NOMEM` when adding history beyond `max_messages` or when the assembled
+prompt exceeds `max_prompt_bytes`. `ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST`
+removes oldest history messages during message add or prompt setup until the
+configured bounds are met.
+
+## Thread Safety
+
+Creation and destruction are control-path operations. A single control thread
+should mutate one agent's system prompt, summary, memory context, or history.
+Chat streaming follows the same rule as conversations: one consumer may read
+from the stream while decode is active.
+Release an agent slot from the same control path used for chat lifecycle calls,
+after wait/cancel and stream drain.
+
+## Performance
+
+Prompt assembly is outside the decode loop. The assembled buffer is bounded by
+`AstralAgentDesc::max_prompt_bytes`, and history growth is bounded by
+`max_messages`. History storage is a byte arena plus POD records, so the common
+prompt-build path avoids per-message heap objects and stays a forward scan over
+contiguous metadata. The decode hot path remains the existing conversation
+executor, stream ring, sampler, grammar, and backend slot machinery.
+Slot release and automatic completed-slot reuse are control-path operations.
+They do not add checks to token streaming or decode loops. Applications that
+run more completed agents than executor slots should drain streams promptly so
+the native runtime can rotate reusable completed slots instead of repeatedly
+reclaiming the same agent. Applications that need strict queue ordering can
+still wait for a request, drain its stream, release its slot, and enqueue the
+next ready agent.
+
+`AstralAgentChatResult` reports `prompt_cache_reused_tokens`,
+`prompt_cache_new_tokens`, `prompt_cache_hits`, and `prompt_cache_misses` for
+the most recent request, along with `prompt_build_ms` for native prompt assembly
+before decode begins. On a stable-prefix hit, reused tokens count the cached
+prefix and new tokens count the current suffix. These counters describe agent
+prompt setup only; they do not imply backend KV-prefix reuse.
+
+Unreal wrapper functions use `TRACE_CPUPROFILER_EVENT_SCOPE` around meaningful
+agent operations, including history save/load helpers that copy native snapshot
+bytes into engine-owned arrays. Unity exposes `AstralAgent` as a thin owned
+handle over the same ABI; prompt assembly, summary storage, history snapshots,
+and streaming remain native.
+
+## Example
+
+```c
+enum {
+    kBytesPerKiB = 1024,
+    kMaxPromptKiB = 64,
+    kMaxTokens = 128,
+    kMaxMessages = 64,
+    kMaxPromptBytes = kMaxPromptKiB * kBytesPerKiB,
+    kStreamEnabled = 1,
+};
+
+AstralSpanU8 system_prompt = {0};
+AstralSpanU8 summary = {0};
+AstralSpanU8 memory_context = {0};
+
+AstralAgentDesc desc = {0};
+desc.size = sizeof(AstralAgentDesc);
+desc.model = model;
+desc.prompt_cache = cache;
+desc.max_tokens = kMaxTokens;
+desc.stream_enabled = kStreamEnabled;
+desc.max_messages = kMaxMessages;
+desc.max_prompt_bytes = kMaxPromptBytes;
+desc.system_prompt = system_prompt;
+desc.summary = summary;
+desc.memory_context = memory_context;
+
+AstralHandle agent = 0;
+AstralErr err = astral_agent_create(&desc, &agent);
+
+AstralAgentMessage message = {0};
+message.size = sizeof(AstralAgentMessage);
+message.role = ASTRAL_AGENT_ROLE_USER;
+message.content = user_text;
+err = astral_agent_message_add(agent, &message);
+```
+
+## Validation
+
+```bash
+cmake --build --preset dev -j8 --target test_inference test_abi_invalid_args
+ctest --preset dev -R '^(test_inference|test_abi_invalid_args|gate_abi_layout_report|gate_source_scans|gate_doc_links|gate_unreal_header_mirror)$' --output-on-failure
+ASTRAL_BENCH_PROMPT_CACHE_ONLY=1 ASTRAL_BENCH_FEATURE_ITERS=1000 ./build/dev/benchmarks/astral_benchmarks --only features
+```
+
+Expected markers include `features.agent prompt_warmup`,
+`features.agent prompt_cache_warmup`, and
+`features.system_prompt cached_tokens`. Native tests include agent-bound tool
+call parsing in `inference_toolset_parse_and_bind_mock` and shared-model agent
+slot isolation, slot release/reacquire, and cancel isolation in
+`inference_agents_share_model_executor_mock` and
+`inference_agents_cancel_one_shared_model_mock`.

@@ -30,6 +30,7 @@ struct MockModel {
     int32_t token_eos;
     bool infinite;
     bool sampler_mode;
+    bool tool_call_mode;
 };
 
 struct MockSession {
@@ -38,6 +39,7 @@ struct MockSession {
     uint32_t slot_id;
     uint32_t n_slots;
     uint32_t slot_step[32];
+    uint32_t slot_output_step[32];
     bool slot_has_logits[32];
     uint32_t adapter_count;
     uint32_t grammar_enabled;
@@ -62,6 +64,7 @@ constexpr uint32_t kMockMaxSlots = 32;
 constexpr uint32_t kMockMaxBatchOutputs = 64;
 
 constexpr const char* kMockMessage = "mock-backend";
+constexpr const char* kMockToolCallMessage = "{\"name\":\"search\",\"arguments\":{\"query\":\"agent\"}}";
 
 inline bool span_equals_ascii(AstralSpanU8 span, const char* lit) {
     if (lit == nullptr) {
@@ -181,6 +184,7 @@ void* mock_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
     model->token_bos = kMockTokenBos;
     model->infinite = span_equals_ascii(tag, "infinite");
     model->sampler_mode = span_equals_ascii(tag, "sampler");
+    model->tool_call_mode = span_equals_ascii(tag, "toolcall");
     model->token_eos = (model->infinite || model->sampler_mode) ? -1 : kMockTokenEos;
 
     *out_err = ASTRAL_OK;
@@ -197,12 +201,17 @@ AstralErr mock_tokenize(void* model_ctx, AstralSpanU8 text,
                         uint32_t* out_count) {
     (void)parse_special;
 
-    if (model_ctx == nullptr || out_tokens == nullptr || out_count == nullptr) {
+    if (model_ctx == nullptr || out_count == nullptr) {
         return ASTRAL_E_INVALID;
     }
 
     uint32_t needed = text.len + (add_special != 0 ? 1u : 0u);
+    *out_count = needed;
+    if (out_tokens == nullptr && max_tokens == 0) {
+        return ASTRAL_OK;
+    }
     if (needed > max_tokens) {
+        *out_count = needed;
         return ASTRAL_E_NOMEM;
     }
 
@@ -221,7 +230,7 @@ AstralErr mock_tokenize(void* model_ctx, AstralSpanU8 text,
 
 AstralErr mock_detokenize(void* model_ctx, const int32_t* tokens, uint32_t count,
                           AstralMutSpanU8 out_text, uint32_t* out_len) {
-    if (model_ctx == nullptr || tokens == nullptr || out_text.data == nullptr || out_len == nullptr) {
+    if (model_ctx == nullptr || (tokens == nullptr && count != 0) || out_len == nullptr) {
         return ASTRAL_E_INVALID;
     }
 
@@ -232,12 +241,15 @@ AstralErr mock_detokenize(void* model_ctx, const int32_t* tokens, uint32_t count
             continue;
         }
 
-        if (offset >= out_text.len) {
+        if (out_text.data != nullptr && offset >= out_text.len) {
             return ASTRAL_E_NOMEM;
         }
 
         const uint8_t b = (t >= 0 && t <= 255) ? static_cast<uint8_t>(t) : static_cast<uint8_t>('?');
-        out_text.data[offset++] = b;
+        if (out_text.data != nullptr) {
+            out_text.data[offset] = b;
+        }
+        offset++;
     }
 
     *out_len = offset;
@@ -347,6 +359,7 @@ void* mock_session_create_ex(void* model_ctx, const AstralSessionDesc* desc, uin
 
     for (uint32_t i = 0; i < kMockMaxSlots; ++i) {
         session->slot_step[i] = 0;
+        session->slot_output_step[i] = 0;
         session->slot_has_logits[i] = false;
         session->slot_grammar_enabled[i] = 0;
         session->slot_grammar_allow_token[i] = 0xFFFFFFFFu;
@@ -469,12 +482,18 @@ AstralErr mock_session_logits(void* session_ctx, BackendLogitsView* out_view) {
         if (a < session->model->vocab_size) session->logits[a] = 10.0f;
         if (b < session->model->vocab_size) session->logits[b] = 10.0f;
     } else {
-        const size_t msg_len = std::strlen(kMockMessage);
+        const char* message = session->model->tool_call_mode ? kMockToolCallMessage : kMockMessage;
+        const size_t msg_len = std::strlen(message);
         int32_t next = kMockTokenEos;
-        if (msg_len > 0 && session->model != nullptr && session->model->infinite) {
-            next = static_cast<int32_t>(static_cast<uint8_t>(kMockMessage[session->step % msg_len]));
+        if (msg_len > 0 && session->model != nullptr && session->model->tool_call_mode) {
+            const uint32_t out_step = session->slot_output_step[session->slot_id];
+            if (out_step < msg_len) {
+                next = static_cast<int32_t>(static_cast<uint8_t>(message[out_step]));
+            }
+        } else if (msg_len > 0 && session->model != nullptr && session->model->infinite) {
+            next = static_cast<int32_t>(static_cast<uint8_t>(message[session->step % msg_len]));
         } else if (session->step < msg_len) {
-            next = static_cast<int32_t>(static_cast<uint8_t>(kMockMessage[session->step]));
+            next = static_cast<int32_t>(static_cast<uint8_t>(message[session->step]));
         }
 
         if (next >= 0 && static_cast<uint32_t>(next) < session->model->vocab_size) {
@@ -504,6 +523,9 @@ AstralErr mock_session_accept(void* session_ctx, int32_t token) {
 
     session->step++;
     if (session->slot_id < session->n_slots) {
+        if (session->model != nullptr && session->model->tool_call_mode) {
+            session->slot_output_step[session->slot_id] += 1u;
+        }
         session->slot_step[session->slot_id] = session->step;
         session->slot_has_logits[session->slot_id] = true;
     }
@@ -854,7 +876,15 @@ AstralErr mock_session_batch_eval(void* session_ctx,
             std::memset(out, 0, static_cast<size_t>(session->model->vocab_size) * sizeof(float));
 
             int32_t next = kMockTokenEos;
-            if (next_step < 16) {
+            if (session->model->tool_call_mode) {
+                const char* message = kMockToolCallMessage;
+                const size_t msg_len = std::strlen(message);
+                const uint32_t out_step = session->slot_output_step[t.slot_id];
+                if (out_step < msg_len) {
+                    next = static_cast<int32_t>(static_cast<uint8_t>(message[out_step]));
+                    session->slot_output_step[t.slot_id] = out_step + 1u;
+                }
+            } else if (next_step < 16) {
                 next = static_cast<int32_t>((t.slot_id * 17u + next_step * 3u) & 0xFFu);
             }
 
@@ -901,6 +931,7 @@ AstralErr mock_session_slot_reset(void* session_ctx, uint32_t slot_id) {
     }
 
     session->slot_step[slot_id] = 0;
+    session->slot_output_step[slot_id] = 0;
     session->slot_has_logits[slot_id] = false;
     if (slot_id == session->slot_id) {
         session->step = 0;

@@ -164,10 +164,8 @@ namespace Astral.Runtime.Examples
             output = ""; // Clear previous output
 
             AstralSession session = null;
-
             try
             {
-                // Create session
                 var sessionConfig = new AstralSessionConfig
                 {
                     maxTokens = maxTokens,
@@ -184,29 +182,28 @@ namespace Astral.Runtime.Examples
                 session.Decode();
 
                 Debug.Log("[AstralExample] Inference started (streaming mode)");
-
-                // Stream tokens
-                yield return StartCoroutine(session.StreamCoroutine(
-                    onToken: (token) =>
-                    {
-                        output += token;
-                        Debug.Log($"[AstralExample] Token: {token}");
-                    },
-                    onComplete: () =>
-                    {
-                        Debug.Log("[AstralExample] Inference complete");
-                        PrintStats(session);
-                    }
-                ));
             }
             catch (AstralException ex)
             {
                 Debug.LogError($"[AstralExample] Inference failed: {ex.Message}");
-            }
-            finally
-            {
                 session?.Dispose();
+                yield break;
             }
+
+            yield return StartCoroutine(session.StreamCoroutine(
+                onToken: (token) =>
+                {
+                    output += token;
+                    Debug.Log($"[AstralExample] Token: {token}");
+                },
+                onComplete: () =>
+                {
+                    Debug.Log("[AstralExample] Inference complete");
+                    PrintStats(session);
+                }
+            ));
+
+            session.Dispose();
         }
 
         /// <summary>
@@ -230,7 +227,6 @@ namespace Astral.Runtime.Examples
 
             try
             {
-                // Create session
                 var sessionConfig = new AstralSessionConfig
                 {
                     maxTokens = maxTokens,
@@ -240,7 +236,6 @@ namespace Astral.Runtime.Examples
 
                 session = AstralSession.Create(m_model, sessionConfig);
 
-                // Feed prompt (zero-copy)
                 var promptBytes = System.Text.Encoding.UTF8.GetBytes(prompt);
                 var promptArray = new NativeArray<byte>(promptBytes, Allocator.Temp);
                 session.Feed(promptArray, finalize: true);
@@ -250,54 +245,45 @@ namespace Astral.Runtime.Examples
                 session.Decode();
 
                 Debug.Log("[AstralExample] Inference started (NativeArray stream mode)");
-
-                // Stream tokens into the caller-owned byte buffer.
-                while (true)
-                {
-                    int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
-
-                    if (bytesRead > 0)
-                    {
-                        // Process token bytes directly. A real game can route them
-                        // to UI, gameplay state, or a render-side buffer.
-                        unsafe
-                        {
-                            fixed (byte* ptr = &buffer[0])
-                            {
-                                // Example: just log (this allocates string for debug)
-                                string token = System.Text.Encoding.UTF8.GetString(ptr, bytesRead);
-                                Debug.Log($"[AstralExample] Token: {token}");
-                            }
-                        }
-                    }
-                    else if (bytesRead == AstralNative.ASTRAL_E_TIMEOUT)
-                    {
-                        // No data available; wait one frame
-                        yield return null;
-                    }
-                    else if (bytesRead < 0)
-                    {
-                        Debug.LogError($"[AstralExample] Stream read failed: {AstralRuntime.GetErrorString(bytesRead)}");
-                        break;
-                    }
-                    else
-                    {
-                        // End of stream
-                        Debug.Log("[AstralExample] Inference complete");
-                        PrintStats(session);
-                        break;
-                    }
-                }
             }
             catch (AstralException ex)
             {
                 Debug.LogError($"[AstralExample] Inference failed: {ex.Message}");
-            }
-            finally
-            {
                 session?.Dispose();
                 buffer.Dispose();
+                yield break;
             }
+
+            while (true)
+            {
+                int bytesRead = session.ReadStream(buffer, timeoutMs: 0);
+
+                if (bytesRead > 0)
+                {
+                    string token = new NativeSlice<byte>(buffer, 0, bytesRead).ToUtf8String();
+                    Debug.Log($"[AstralExample] Token: {token}");
+                    continue;
+                }
+
+                if (bytesRead == AstralNative.ASTRAL_E_TIMEOUT)
+                {
+                    yield return null;
+                    continue;
+                }
+
+                if (bytesRead < 0)
+                {
+                    Debug.LogError($"[AstralExample] Stream read failed: {AstralRuntime.GetErrorString(bytesRead)}");
+                    break;
+                }
+
+                Debug.Log("[AstralExample] Inference complete");
+                PrintStats(session);
+                break;
+            }
+
+            session.Dispose();
+            buffer.Dispose();
         }
 
         private void PrintStats(AstralSession session)

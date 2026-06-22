@@ -21,6 +21,7 @@ struct llama_model;
 struct llama_context;
 struct llama_vocab;
 struct llama_sampler;
+struct llama_adapter_lora;
 #if ASTRAL_ENABLE_MTMD
 struct mtmd_context;
 #endif
@@ -85,6 +86,10 @@ struct CpuSession {
 
     // Optional generation controls (per-slot; stateful)
     ::llama_sampler* grammar[32]; // nullptr if no grammar for this slot
+
+    uint32_t adapter_count;
+    ::llama_adapter_lora* adapters[ASTRAL_SESSION_ADAPTERS_MAX];
+    float adapter_scales[ASTRAL_SESSION_ADAPTERS_MAX];
 
     // Preallocated llama_batch buffers (no allocations in hot paths)
     int32_t* batch_token_storage;

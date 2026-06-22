@@ -47,7 +47,6 @@ EXCLUDED_PARTS = {
     "Binaries",
     "Intermediate",
     "Saved",
-    ".issue tracker",
 }
 EXCLUDED_RELATIVE_PATHS = {
     "docs/FEATURE_" + "PARITY.md",
@@ -55,7 +54,7 @@ EXCLUDED_RELATIVE_PATHS = {
 
 MARKER_TOKENS = ("TO" + "DO", "FIX" + "ME", "HA" + "CK")
 MARKER_RE = re.compile(r"\b(" + "|".join(MARKER_TOKENS) + r")\b")
-BEADS_RE = re.compile(r"workspace-[A-Za-z0-9]+")
+REFERENCE_RE = re.compile(r"(?:GH|ASTRAL)-[A-Za-z0-9._-]+|#[0-9]+")
 
 
 @dataclass(frozen=True)
@@ -64,7 +63,7 @@ class Entry:
     line: int
     kind: str
     marker: str
-    bead: str
+    reference: str
     text: str
 
 
@@ -125,8 +124,8 @@ def marker_for(text: str) -> str:
     return match.group(1)
 
 
-def bead_for(text: str) -> str:
-    match = BEADS_RE.search(text)
+def reference_for(text: str) -> str:
+    match = REFERENCE_RE.search(text)
     if not match:
         return ""
     return match.group(0)
@@ -141,7 +140,7 @@ def make_entry(path: Path, root: Path, line: int, kind: str, text: str) -> Entry
         line=line,
         kind=kind,
         marker=marker_for(clean),
-        bead=bead_for(clean),
+        reference=reference_for(clean),
         text=clean,
     )
 
@@ -269,24 +268,24 @@ def collect_entries(root: Path, scan_paths: Sequence[str]) -> List[Entry]:
 
 
 def print_tsv(entries: Iterable[Entry], limit: int) -> None:
-    print("path\tline\tkind\tmarker\tbead\ttext")
+    print("path\tline\tkind\tmarker\treference\ttext")
     count = 0
     for entry in entries:
         if limit and count >= limit:
             break
         text = entry.text.replace("\t", " ").replace("\n", " ")
-        print(f"{entry.path}\t{entry.line}\t{entry.kind}\t{entry.marker}\t{entry.bead}\t{text}")
+        print(f"{entry.path}\t{entry.line}\t{entry.kind}\t{entry.marker}\t{entry.reference}\t{text}")
         count += 1
 
 
 def print_review_tsv(entries: Iterable[Entry], limit: int) -> None:
-    print("decision\tissue\tnotes\tpath\tline\tkind\tmarker\tbead\ttext")
+    print("decision\tissue\tnotes\tpath\tline\tkind\tmarker\treference\ttext")
     count = 0
     for entry in entries:
         if limit and count >= limit:
             break
         text = entry.text.replace("\t", " ").replace("\n", " ")
-        print(f"\t\t\t{entry.path}\t{entry.line}\t{entry.kind}\t{entry.marker}\t{entry.bead}\t{text}")
+        print(f"\t\t\t{entry.path}\t{entry.line}\t{entry.kind}\t{entry.marker}\t{entry.reference}\t{text}")
         count += 1
 
 
@@ -298,7 +297,7 @@ def limited(entries: Sequence[Entry], limit: int) -> Sequence[Entry]:
 
 def print_summary(entries: Sequence[Entry]) -> None:
     markers = [entry for entry in entries if entry.marker]
-    orphan_markers = [entry for entry in markers if not entry.bead]
+    orphan_markers = [entry for entry in markers if not entry.reference]
     files = {entry.path for entry in entries}
     docs = sum(1 for entry in entries if entry.kind == "doc")
     comments = len(entries) - docs
@@ -325,14 +324,14 @@ def main() -> int:
     parser.add_argument(
         "--fail-orphan-markers",
         action="store_true",
-        help="Return non-zero when tracked cleanup markers lack a issue tracker issue id",
+        help="Return non-zero when tracked cleanup markers lack an issue reference",
     )
     args = parser.parse_args()
 
     root = args.root.resolve()
     scan_paths = tuple(args.scan_paths) if args.scan_paths else DEFAULT_SCAN_PATHS
     entries = collect_entries(root, scan_paths)
-    orphan_markers = [entry for entry in entries if entry.marker and not entry.bead]
+    orphan_markers = [entry for entry in entries if entry.marker and not entry.reference]
 
     if args.format == "summary":
         print_summary(entries)

@@ -19,6 +19,7 @@ backend.
 | `ASTRAL_E_BACKEND` | The selected provider failed below the ABI layer, such as model load, tokenization, decode, or llama.cpp integration failure. | Log `astral_last_error()` and provider context. Retrying only helps after changing the model, backend, or input. |
 | `ASTRAL_E_CANCELED` | The operation ended because the caller canceled it. | Treat as an expected control-flow result when cancellation was requested. |
 | `ASTRAL_E_UNSUPPORTED` | The selected build, backend, or model does not implement the requested feature. | Query capabilities where available and route to a supported path instead of relying on fallback behavior. |
+| `ASTRAL_E_NOT_FOUND` | A requested object or cache entry does not exist. | Treat cache misses as normal control flow; for other objects, check the lookup key or recreate the missing state. |
 
 ## Logging
 

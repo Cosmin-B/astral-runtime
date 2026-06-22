@@ -68,14 +68,65 @@ Session::Session(Model* model_,
     , stop_max_len(0)
     , adapter_count(0)
     , adapter_handles{}
+    , adapter_refs{}
     , adapter_scales{}
+    , toolset(nullptr)
+    , tool_choice_mode(ASTRAL_TOOL_CHOICE_AUTO)
     , slot_id(0)
     , worker_id(0) {}
 
 namespace {
 
+constexpr uint32_t kStreamReadBatchCap = 16;
+
 inline uint64_t get_ticks() {
     return platform::ticks_now();
+}
+
+inline uint32_t max_stream_read_batch(uint32_t remaining) {
+    uint32_t count = remaining / concurrency::kStreamTokenUtf8Capacity;
+    if (count == 0) {
+        count = 1;
+    }
+    return count < kStreamReadBatchCap ? count : kStreamReadBatchCap;
+}
+
+int32_t session_stream_drain(Session* session, AstralMutSpanU8 out_buf) {
+    uint8_t* dst = out_buf.data;
+    uint32_t remaining = out_buf.len;
+    uint32_t total = 0;
+
+    while (remaining != 0) {
+        concurrency::StreamToken batch[kStreamReadBatchCap];
+        const size_t popped = session->token_ring.pop_batch(batch, max_stream_read_batch(remaining));
+        if (popped == 0) {
+            break;
+        }
+
+        for (size_t i = 0; i < popped; ++i) {
+            const concurrency::StreamToken& token = batch[i];
+            const uint32_t tok_len = token.utf8_len;
+            if (tok_len == 0) {
+                continue;
+            }
+            if (tok_len <= remaining) {
+                std::memcpy(dst, token.utf8_data, tok_len);
+                dst += tok_len;
+                remaining -= tok_len;
+                total += tok_len;
+                continue;
+            }
+
+            std::memcpy(dst, token.utf8_data, remaining);
+            std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
+            session->pending_len = static_cast<uint8_t>(tok_len);
+            session->pending_off = static_cast<uint8_t>(remaining);
+            total += remaining;
+            return static_cast<int32_t>(total);
+        }
+    }
+
+    return static_cast<int32_t>(total);
 }
 
 inline bool session_stream_flush_one(Session* session, const concurrency::StreamToken& tok) {
@@ -408,6 +459,19 @@ inline void session_prompt_chunks_clear(Session* session) {
     session->prompt_chunk_token_off = 0;
 }
 
+inline void session_adapter_refs_clear(Session* session) {
+    for (uint32_t i = 0; i < session->adapter_count; ++i) {
+        Adapter* adapter = session->adapter_refs[i];
+        if (adapter != nullptr) {
+            adapter_release(adapter);
+        }
+    }
+    session->adapter_count = 0;
+    std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
+    std::memset(session->adapter_refs, 0, sizeof(session->adapter_refs));
+    std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
+}
+
 inline bool image_desc_valid(const AstralImageDesc* image) {
     return image != nullptr && image->size == sizeof(AstralImageDesc) && image->pixels.data != nullptr &&
            image->pixels.len != 0 && image->width != 0 && image->height != 0;
@@ -691,6 +755,7 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
     // Adapters.
     session->adapter_count = 0;
     std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
+    std::memset(session->adapter_refs, 0, sizeof(session->adapter_refs));
     std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
 
     // Slot id.
@@ -774,6 +839,13 @@ void session_destroy(Session* session) {
     }
 
     session_prompt_chunks_clear(session);
+
+    if (session->toolset != nullptr) {
+        toolset_release(session->toolset);
+        session->toolset = nullptr;
+    }
+
+    session_adapter_refs_clear(session);
 
     // Release allocator memory
     if (session->allocator_memory != nullptr) {
@@ -863,6 +935,37 @@ AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t fina
     // Caller must call session_decode() next
 
     return ASTRAL_OK;
+}
+
+AstralErr session_feed_tokens(Session* session, const int32_t* tokens, uint32_t token_count, uint8_t finalize) {
+    if (session == nullptr || (token_count != 0 && tokens == nullptr)) {
+        return ASTRAL_E_INVALID;
+    }
+
+    SessionState state = session->state.load(std::memory_order_acquire);
+    if (state != SessionState::Idle && state != SessionState::FeedingPrompt) {
+        return ASTRAL_E_STATE;
+    }
+
+    if (state == SessionState::Idle) {
+        session->state.store(SessionState::FeedingPrompt, std::memory_order_release);
+    }
+
+    if (token_count == 0) {
+        return ASTRAL_OK;
+    }
+    if (session->prompt_chunk_count >= kMaxPromptChunks) {
+        return ASTRAL_E_NOMEM;
+    }
+    const uint32_t space = session->prompt_capacity - session->prompt_count;
+    if (token_count >= space) {
+        return ASTRAL_E_NOMEM;
+    }
+
+    const uint32_t token_start = session->prompt_count;
+    std::memcpy(session->prompt_tokens + session->prompt_count, tokens, static_cast<size_t>(token_count) * sizeof(int32_t));
+    session->prompt_count += token_count;
+    return session_push_text_chunk(session, token_start, token_count, finalize);
 }
 
 AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uint8_t finalize) {
@@ -1110,7 +1213,7 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     if (ops->session_adapter_clear != nullptr && ops->session_adapter_add != nullptr) {
         (void)ops->session_adapter_clear(session->backend_session_ctx);
         for (uint32_t i = 0; i < session->adapter_count; ++i) {
-            auto* a = static_cast<Adapter*>(core::lookup_handle(session->adapter_handles[i], core::HandleKind::Adapter));
+            Adapter* a = session->adapter_refs[i];
             if (a != nullptr && a->backend_adapter_ctx != nullptr) {
                 (void)ops->session_adapter_add(session->backend_session_ctx, a->backend_adapter_ctx, session->adapter_scales[i]);
             }
@@ -1484,15 +1587,7 @@ AstralErr session_adapters_clear(Session* session) {
         return err;
     }
 
-    for (uint32_t i = 0; i < session->adapter_count; ++i) {
-        auto* a = static_cast<Adapter*>(core::lookup_handle(session->adapter_handles[i], core::HandleKind::Adapter));
-        if (a != nullptr) {
-            adapter_release(a);
-        }
-    }
-    session->adapter_count = 0;
-    std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
-    std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
+    session_adapter_refs_clear(session);
     return ASTRAL_OK;
 }
 
@@ -1504,7 +1599,7 @@ AstralErr session_adapters_add(Session* session, AstralHandle adapter, float sca
     if (state == SessionState::Decoding) {
         return ASTRAL_E_STATE;
     }
-    if (session->adapter_count >= 8) {
+    if (session->adapter_count >= ASTRAL_SESSION_ADAPTERS_MAX) {
         return ASTRAL_E_NOMEM;
     }
     if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
@@ -1530,7 +1625,68 @@ AstralErr session_adapters_add(Session* session, AstralHandle adapter, float sca
 
     const uint32_t idx = session->adapter_count++;
     session->adapter_handles[idx] = adapter;
+    session->adapter_refs[idx] = a;
     session->adapter_scales[idx] = scale;
+    return ASTRAL_OK;
+}
+
+AstralErr session_adapters_count(Session* session, uint32_t* out_count) {
+    if (session == nullptr || out_count == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    *out_count = session->adapter_count;
+    return ASTRAL_OK;
+}
+
+AstralErr session_adapters_get(Session* session, uint32_t index, AstralHandle* out_adapter, float* out_scale) {
+    if (session == nullptr || out_adapter == nullptr || out_scale == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (index >= session->adapter_count) {
+        return ASTRAL_E_NOT_FOUND;
+    }
+    *out_adapter = session->adapter_handles[index];
+    *out_scale = session->adapter_scales[index];
+    return ASTRAL_OK;
+}
+
+AstralErr session_adapters_set_scale(Session* session, uint32_t index, float scale) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (index >= session->adapter_count) {
+        return ASTRAL_E_NOT_FOUND;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    if (session->model == nullptr || session->model->backend == nullptr || session->model->backend->ops == nullptr) {
+        return ASTRAL_E_STATE;
+    }
+    const backend::BackendOps* ops = session->model->backend->ops;
+    if (ops->session_adapter_clear == nullptr || ops->session_adapter_add == nullptr) {
+        return ASTRAL_E_UNSUPPORTED;
+    }
+
+    AstralErr err = ops->session_adapter_clear(session->backend_session_ctx);
+    if (err != ASTRAL_OK) {
+        return err;
+    }
+
+    for (uint32_t i = 0; i < session->adapter_count; ++i) {
+        Adapter* a = session->adapter_refs[i];
+        if (a == nullptr || a->model != session->model || a->backend_adapter_ctx == nullptr) {
+            return ASTRAL_E_INVALID;
+        }
+        const float next_scale = i == index ? scale : session->adapter_scales[i];
+        err = ops->session_adapter_add(session->backend_session_ctx, a->backend_adapter_ctx, next_scale);
+        if (err != ASTRAL_OK) {
+            return err;
+        }
+    }
+
+    session->adapter_scales[index] = scale;
     return ASTRAL_OK;
 }
 
@@ -1594,6 +1750,46 @@ AstralErr session_clear_grammar(Session* session) {
         return ASTRAL_E_UNSUPPORTED;
     }
     return ops->session_grammar_clear(session->backend_session_ctx);
+}
+
+AstralErr session_set_toolset(Session* session, Toolset* toolset, AstralToolChoiceMode choice_mode) {
+    if (session == nullptr || toolset == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    if (choice_mode != ASTRAL_TOOL_CHOICE_AUTO && choice_mode != ASTRAL_TOOL_CHOICE_REQUIRED &&
+        choice_mode != ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+
+    toolset_retain(toolset);
+    Toolset* old = session->toolset;
+    session->toolset = toolset;
+    session->tool_choice_mode = choice_mode;
+    if (old != nullptr) {
+        toolset_release(old);
+    }
+    return ASTRAL_OK;
+}
+
+AstralErr session_clear_toolset(Session* session) {
+    if (session == nullptr) {
+        return ASTRAL_E_INVALID;
+    }
+    const SessionState state = session->state.load(std::memory_order_acquire);
+    if (state == SessionState::Decoding) {
+        return ASTRAL_E_STATE;
+    }
+    Toolset* old = session->toolset;
+    session->toolset = nullptr;
+    session->tool_choice_mode = ASTRAL_TOOL_CHOICE_AUTO;
+    if (old != nullptr) {
+        toolset_release(old);
+    }
+    return ASTRAL_OK;
 }
 
 AstralErr session_set_slot(Session* session, uint32_t slot_id) {
@@ -1906,44 +2102,9 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
         return static_cast<int32_t>(n);
     }
 
-    // Try to read from token ring (fast path).
-    concurrency::StreamToken token{};
-    if (session->token_ring.pop(&token)) {
-        uint8_t* dst = out_buf.data;
-        uint32_t remaining = out_buf.len;
-        uint32_t total = 0;
-
-        for (;;) {
-            const uint32_t tok_len = token.utf8_len;
-            if (tok_len == 0) {
-                // Skip empty tokens (e.g. BOS/EOS detokenize to empty). Returning 0 is reserved for EOF.
-            } else if (tok_len <= remaining) {
-                std::memcpy(dst, token.utf8_data, tok_len);
-                dst += tok_len;
-                remaining -= tok_len;
-                total += tok_len;
-            } else {
-                // Partial token: copy what we can and store the remainder.
-                std::memcpy(dst, token.utf8_data, remaining);
-                std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
-                session->pending_len = static_cast<uint8_t>(tok_len);
-                session->pending_off = static_cast<uint8_t>(remaining);
-                total += remaining;
-                return static_cast<int32_t>(total);
-            }
-
-            if (remaining == 0) {
-                break;
-            }
-            if (!session->token_ring.pop(&token)) {
-                break;
-            }
-        }
-
-        if (total > 0) {
-            return static_cast<int32_t>(total);
-        }
-        // Only empty tokens were available; fall through to the regular empty-ring behavior.
+    int32_t drained = session_stream_drain(session, out_buf);
+    if (drained > 0) {
+        return drained;
     }
 
     // Ring is empty; check if decoding is complete
@@ -1967,43 +2128,9 @@ int32_t stream_read(Session* session, AstralMutSpanU8 out_buf, uint32_t timeout_
         uint32_t spins = 0;
 
         while (true) {
-            // Try to pop again
-            if (session->token_ring.pop(&token)) {
-                uint8_t* dst = out_buf.data;
-                uint32_t remaining = out_buf.len;
-                uint32_t total = 0;
-
-                for (;;) {
-                    const uint32_t tok_len = token.utf8_len;
-                    if (tok_len == 0) {
-                        // Skip empty tokens (e.g. BOS/EOS detokenize to empty). Returning 0 is reserved for EOF.
-                    } else if (tok_len <= remaining) {
-                        std::memcpy(dst, token.utf8_data, tok_len);
-                        dst += tok_len;
-                        remaining -= tok_len;
-                        total += tok_len;
-                    } else {
-                        std::memcpy(dst, token.utf8_data, remaining);
-                        std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
-                        session->pending_len = static_cast<uint8_t>(tok_len);
-                        session->pending_off = static_cast<uint8_t>(remaining);
-                        total += remaining;
-                        return static_cast<int32_t>(total);
-                    }
-
-                    if (remaining == 0) {
-                        break;
-                    }
-                    if (!session->token_ring.pop(&token)) {
-                        break;
-                    }
-                }
-
-                if (total > 0) {
-                    return static_cast<int32_t>(total);
-                }
-                // Only empty tokens were available; continue waiting.
-                continue;
+            drained = session_stream_drain(session, out_buf);
+            if (drained > 0) {
+                return drained;
             }
 
             // Check if completed

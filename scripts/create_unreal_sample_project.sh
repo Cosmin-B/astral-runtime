@@ -285,6 +285,9 @@ public:
     void RunSavedCacheDemo();
 
     UFUNCTION(BlueprintCallable, Category = "Astral")
+    void RunMemorySearchDemo();
+
+    UFUNCTION(BlueprintCallable, Category = "Astral")
     void RunErrorDemo();
 
 protected:
@@ -327,6 +330,7 @@ EOF
 cat > "${project_dir}/Source/AstralSample/AstralSampleActor.cpp" <<'EOF'
 #include "AstralSampleActor.h"
 
+#include "AstralBlueprintLibrary.h"
 #include "AstralEmbedder.h"
 #include "AstralMediaLibrary.h"
 #include "AstralModel.h"
@@ -401,6 +405,7 @@ void AAstralSampleActor::BeginPlay()
     RunMediaFeedDemo();
     RunPackagedMemorySourceDemo();
     RunSavedCacheDemo();
+    RunMemorySearchDemo();
     RunErrorDemo();
 
     if (FParse::Param(FCommandLine::Get(), TEXT("AstralSampleAutoQuit")))
@@ -451,6 +456,8 @@ void AAstralSampleActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
         SavedCacheModel->Release();
         SavedCacheModel = nullptr;
     }
+
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: clean shutdown"));
 
     Super::EndPlay(EndPlayReason);
 }
@@ -520,6 +527,7 @@ bool AAstralSampleActor::LoadGenerationModel()
         return false;
     }
 
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: generation model loaded backend=%s"), *BackendName);
     return true;
 }
 
@@ -580,7 +588,10 @@ void AAstralSampleActor::RunGenerationDemo()
     if (!Session->Decode())
     {
         UE_LOG(LogAstralSample, Error, TEXT("Astral sample: decode failed: %s"), UTF8_TO_TCHAR(astral_last_error()));
+        return;
     }
+
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: generation decode started"));
 }
 
 void AAstralSampleActor::CancelStreamingDemo()
@@ -803,6 +814,125 @@ void AAstralSampleActor::RunSavedCacheDemo()
     LoadMemoryModel(SavedCacheModel, CachedBytes, TEXT("saved cache"));
 }
 
+void AAstralSampleActor::RunMemorySearchDemo()
+{
+    constexpr int32 MemoryDim = 2;
+    constexpr int32 MemoryCapacity = 2;
+    constexpr int64 MemoryKeyA = 101;
+    constexpr int64 MemoryKeyB = 202;
+    constexpr int32 MemoryGroup = 7;
+    constexpr int32 MemoryDocument = 11;
+    constexpr int32 ChunkMaxWords = 2;
+    constexpr int32 ExpectedChunkCount = 2;
+    constexpr int32 FirstChunkIndex = 0;
+    constexpr int32 SecondChunkIndex = 1;
+    constexpr int32 TopK = 1;
+    constexpr int32 AnyGroup = -1;
+    constexpr float VectorOne = 1.0f;
+    constexpr float VectorZero = 0.0f;
+    const FString DocumentText(TEXT("alpha beta gamma delta"));
+
+    FAstralChunkerDesc ChunkDesc;
+    ChunkDesc.Mode = EAstralChunkMode::Word;
+    ChunkDesc.MaxUnits = ChunkMaxWords;
+    ChunkDesc.OverlapUnits = 0;
+    ChunkDesc.DocumentId = MemoryDocument;
+    ChunkDesc.GroupId = MemoryGroup;
+
+    TArray<FAstralChunkRange> ChunkRanges;
+    int32 ChunkError = 0;
+    if (!UAstralBlueprintLibrary::ChunkText(DocumentText, ChunkDesc, ChunkRanges, ChunkError) ||
+        ChunkRanges.Num() != ExpectedChunkCount)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: chunk %d"), ChunkError);
+        return;
+    }
+
+    FAstralMemoryIndexDesc MemoryDesc;
+    MemoryDesc.Dimension = MemoryDim;
+    MemoryDesc.Capacity = MemoryCapacity;
+    MemoryDesc.Metric = EAstralMemoryMetric::Cosine;
+
+    const FAstralOperationResult CreateResult = UAstralBlueprintLibrary::CreateMemoryIndexResult(MemoryDesc);
+    if (!CreateResult.bSuccess)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: create %d"), CreateResult.ErrorCode);
+        return;
+    }
+
+    TArray<FAstralMemoryRecord> Records;
+    Records.Reserve(MemoryCapacity);
+    FAstralMemoryRecord RecordA;
+    FAstralOperationResult RecordResult =
+        UAstralBlueprintLibrary::MakeMemoryRecordFromChunkResult(ChunkRanges[FirstChunkIndex], MemoryKeyA, 0, RecordA);
+    if (!RecordResult.bSuccess)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: record %d"), RecordResult.ErrorCode);
+        UAstralBlueprintLibrary::DestroyMemoryIndex(CreateResult.Handle);
+        return;
+    }
+    Records.Add(RecordA);
+
+    FAstralMemoryRecord RecordB;
+    RecordResult =
+        UAstralBlueprintLibrary::MakeMemoryRecordFromChunkResult(ChunkRanges[SecondChunkIndex], MemoryKeyB, 0, RecordB);
+    if (!RecordResult.bSuccess)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: record %d"), RecordResult.ErrorCode);
+        UAstralBlueprintLibrary::DestroyMemoryIndex(CreateResult.Handle);
+        return;
+    }
+    Records.Add(RecordB);
+
+    TArray<float> Vectors;
+    Vectors.Reserve(MemoryCapacity * MemoryDim);
+    Vectors.Add(VectorOne);
+    Vectors.Add(VectorZero);
+    Vectors.Add(VectorZero);
+    Vectors.Add(VectorOne);
+
+    const FAstralOperationResult AddResult =
+        UAstralBlueprintLibrary::AddMemoryBatchResult(CreateResult.Handle, Records, Vectors, MemoryDim);
+    if (!AddResult.bSuccess)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: add %d"), AddResult.ErrorCode);
+        UAstralBlueprintLibrary::DestroyMemoryIndex(CreateResult.Handle);
+        return;
+    }
+
+    TArray<float> Query;
+    Query.Reserve(MemoryDim);
+    Query.Add(VectorOne);
+    Query.Add(VectorZero);
+
+    TArray<FAstralMemorySearchResult> Results;
+    const FAstralOperationResult SearchResult =
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(CreateResult.Handle, Query, TopK, AnyGroup, Results);
+    if (!SearchResult.bSuccess || Results.Num() != TopK)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: search %d"), SearchResult.ErrorCode);
+        UAstralBlueprintLibrary::DestroyMemoryIndex(CreateResult.Handle);
+        return;
+    }
+
+    FString TopChunkText;
+    const FAstralOperationResult ChunkTextResult =
+        UAstralBlueprintLibrary::CopyChunkTextResult(DocumentText, ChunkRanges[Results[0].ChunkId], TopChunkText);
+    if (!ChunkTextResult.bSuccess)
+    {
+        UE_LOG(LogAstralSample, Error, TEXT("Astral sample: memory search demo failed: copy chunk %d"), ChunkTextResult.ErrorCode);
+        UAstralBlueprintLibrary::DestroyMemoryIndex(CreateResult.Handle);
+        return;
+    }
+
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: RAG chunk text %s"), *TopChunkText);
+    UE_LOG(LogAstralSample, Display, TEXT("Astral sample: RAG search top key %lld score %.3f group %d"),
+        Results[0].Key,
+        Results[0].Score,
+        Results[0].GroupId);
+    UAstralBlueprintLibrary::DestroyMemoryIndex(CreateResult.Handle);
+}
+
 void AAstralSampleActor::RunErrorDemo()
 {
     UAstralModel* BadModel = NewObject<UAstralModel>(this);
@@ -843,7 +973,8 @@ cmake --build --preset unreal-plugin -j
 Open `AstralSample.uproject` in UE 5.7 and run the default map. The sample
 GameMode spawns `AAstralSampleActor`, which demonstrates model load, streaming generation,
 cancellation, embeddings, image/audio media feed, packaged content bytes,
-Saved cache bytes, and expected error logging through `LogAstralSample`.
+Saved cache bytes, native memory search, and expected error logging through
+`LogAstralSample`.
 
 For real-model local runs, pass command-line overrides instead of editing the
 generated project:

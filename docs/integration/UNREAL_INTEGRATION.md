@@ -2,8 +2,9 @@
 
 This page describes the Unreal plugin that lives in
 `plugins/unreal/AstralRT`. It is a current integration guide, not a release
-sign-off. Real UE 5.7 container runs and UE 5.4+ compatibility editor runs are
-still required before the plugin can be called production-ready.
+sign-off. UE 5.7 Linux container and packaged-sample runs have current local
+evidence; UE 5.4, 5.5, and 5.6 compatibility editor runs still need dedicated
+validation before claiming that older-engine range.
 
 For the UE 5.7 container path, use
 [`UNREAL_57_QUICKSTART.md`](UNREAL_57_QUICKSTART.md).
@@ -31,6 +32,12 @@ setup and diagnostics:
   failed Astral call.
 - `ErrorCodeName` maps native integer error codes to stable symbolic names such
   as `ASTRAL_E_TIMEOUT`.
+- `RequestKindName` and `RequestStateName` convert async request enums into
+  compact labels for Blueprint logs and UI.
+- `FAstralAsyncResult` reports `bSuccess`, native `ErrorCode`, ticket, and
+  queue-state flags for ticketed Blueprint operations.
+- `FAstralOperationResult` reports native handle, count, and polling state for
+  tool, memory, and agent helpers that need more detail than a bool return.
 - `HasEmbeddings`, `HasSamplerControls`, `HasStopSequences`,
   `HasGpuOffload`, `HasLora`, `HasImageInput`, `HasAudioInput`,
   `HasMultimodalEmbeddings`, `HasGrammar`, `HasLogprobs`, `HasKvState`,
@@ -41,6 +48,63 @@ The factories do not load models or create native sessions by themselves. They
 only create wrapper objects; ownership, model lifetime, and session creation
 still follow the contracts on `UAstralModel`, `UAstralSession`, and
 `UAstralEmbedder`.
+
+For Blueprint graphs that manage native handles directly, prefer the
+result-returning helpers:
+
+- `UAstralModel::CountTokensResult`, `TokenizeResult`, and `DetokenizeResult`
+- `CreateToolsetResult` and `ParseToolCallResult`
+- `ChunkText`, `CopyChunkTextResult`, `MakeMemoryRecordFromChunkResult`, and
+  `ChunkTokens`
+- `CreateMemoryIndexResult`, `LoadMemoryIndexResult`,
+  `AddMemoryBatchResult`, `GetMemoryRecordCountResult`,
+  `RemoveMemoryRecordResult`,
+  `ClearMemoryIndexResult`, `SaveMemoryIndexResult`,
+  `SearchMemoryIndexResult`, `SearchMemoryIndexBatchResult`,
+  `BeginMemorySearchResult`, and `FetchMemorySearchResult`
+- `CreateSessionRequestResult`, `CreateConversationRequestResult`,
+  `CreateAgentChatRequestResult`, `CreateEmbeddingRequestResult`,
+  `CreateMemorySearchRequestResult`, `GetRequestStatusResult`,
+  `WaitRequestResult`, and `CancelRequestResult`
+- `CreatePromptCacheResult`, `LoadPromptCacheResult`,
+  `ClearPromptCacheResult`, `GetPromptCacheStatsResult`,
+  `MakePromptCacheKeyResult`, `PutPromptCacheTokensResult`,
+  `GetPromptCacheTokensResult`, and `SavePromptCacheResult`
+- `CreateAgentResult`, `SetAgentSystemPromptResult`,
+  `GetAgentSystemPromptResult`, `AddAgentMessageResult`,
+  `ClearAgentHistoryResult`, `GetAgentHistoryCountResult`,
+  `EnqueueAgentChatResult`, `CancelAgentChatResult`,
+  `ReadAgentChatResult`, and `GetAgentChatStatusResult`
+
+The older bool helpers remain compatibility wrappers over the same native calls.
+
+Prompt cache helpers are setup-time APIs for tokenized system prompts, tool
+prefixes, memory sections, and history fragments. `FAstralPromptCacheDesc`
+controls entry and token budgets, `FAstralPromptCacheKey` identifies one
+model-scoped section, and `FAstralPromptCacheStats` reports occupancy plus
+optional hit/miss counters. `MakePromptCacheKeyResult` derives the same native
+section key as C++ callers, so Blueprint graphs do not need to invent their own
+hashing. Agents can consume the resulting native cache handle through
+`FAstralAgentDesc::PromptCacheHandle`; Blueprint token arrays are copied only
+when `GetPromptCacheTokensResult` is called. Agent chat status also reports
+prompt-cache reused/new token counts and per-request hit/miss markers.
+
+Memory helpers expose the native flat vector index lifecycle, including
+snapshot save/load for staged RAG data. `SaveMemoryIndexResult` writes an
+engine-owned byte array, `LoadMemoryIndexResult` restores it with the same
+descriptor shape, `MakeMemoryRecordFromChunkResult` maps chunk ranges into
+records, and count/remove/clear helpers update the native index without
+rebuilding it from Blueprint arrays.
+
+Request status helpers expose the native `AstralRequestRef` /
+`AstralRequestStatus` shape to Blueprint. Sessions, conversations, agent chat,
+embedding tickets, and memory search cursors can be wrapped and then polled with
+`GetRequestStatusResult` or `WaitRequestResult`. Embedding refs carry the native
+ticket; memory search refs report remaining cursor results in `QueueDepth`.
+Cursor cancellation returns unsupported, and storage is still released with
+`EndMemorySearch`. Blueprint predicates such as `IsRequestActive`,
+`IsRequestTerminal`, and `IsRequestSuccessful` keep status checks consistent
+without duplicating enum comparisons in gameplay graphs.
 
 ## Layout
 
@@ -404,19 +468,32 @@ if (!Embedder->Create(Model))
 }
 
 TArray<uint8> Utf8Bytes;
-Utf8Bytes.Append(reinterpret_cast<const uint8*>("hello"), 5);
+constexpr ANSICHAR SampleText[] = "hello";
+Utf8Bytes.Append(reinterpret_cast<const uint8*>(SampleText), UE_ARRAY_COUNT(SampleText) - 1);
 
-int64 Ticket = 0;
-if (Embedder->EnqueueUtf8Bytes(Utf8Bytes, Ticket))
+FAstralAsyncResult Enqueue = Embedder->EnqueueUtf8BytesResult(Utf8Bytes);
+if (Enqueue.bSuccess)
 {
     TArray<float> Vector;
-    Embedder->Collect(Ticket, Vector);
+    FAstralAsyncResult Collect = Embedder->CollectResult(Enqueue.Ticket, Vector);
+    if (!Collect.bSuccess)
+    {
+        UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: collect failed %d"), Collect.ErrorCode);
+    }
+}
+else if (Enqueue.bBackpressure)
+{
+    UE_LOG(LogAstralRT, Warning, TEXT("AstralRT: embedding queue is full"));
 }
 ```
 
 `EmbedText` is the `FString` convenience path. `EmbedUtf8Bytes` keeps callers on
-the UTF-8 byte path. `Cancel` releases a queued ticket that has not started
-collecting yet, which lets batching callers shed work under queue pressure.
+the UTF-8 byte path. The result-returning enqueue, collect, and cancel helpers
+are preferred for Blueprint logic because they distinguish `ASTRAL_E_BUSY`,
+timeout, canceled, invalid-input, and unsupported-backend states without
+scraping log text. The older bool helpers remain as simple compatibility paths.
+`Cancel` releases a queued ticket that has not started collecting yet, which
+lets batching callers shed work under queue pressure.
 Image, audio, and multimodal embedding calls require media initialization when
 the backend needs a projector.
 

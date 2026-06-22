@@ -94,21 +94,12 @@ typedef struct AstralMutSpanU8 {
 #endif
 } AstralMutSpanU8;
 
-// Compile-time validation: Ensure struct sizes are correct
-// Use static_assert for C++ and _Static_assert for C
-#ifdef __cplusplus
-  #define ASTRAL_STATIC_ASSERT(expr, msg) static_assert(expr, msg)
-#else
-  #define ASTRAL_STATIC_ASSERT(expr, msg) _Static_assert(expr, msg)
-#endif
-
-#if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
-  ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 16, "AstralSpanU8 must be 16 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 16, "AstralMutSpanU8 must be 16 bytes on 64-bit");
-#else
-  ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 8, "AstralSpanU8 must be 8 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 8, "AstralMutSpanU8 must be 8 bytes on 32-bit");
-#endif
+typedef struct AstralTokenizeRequest {
+    AstralSpanU8 text;
+    uint8_t add_special;
+    uint8_t parse_special;
+    uint16_t _reserved;
+} AstralTokenizeRequest;
 
 /**
  * Opaque handle (model, session, embedder).
@@ -118,6 +109,309 @@ typedef struct AstralMutSpanU8 {
  * - 0 is always invalid.
  */
 typedef uint64_t AstralHandle;
+
+typedef uint32_t AstralPromptSectionKind;
+enum {
+    ASTRAL_PROMPT_SECTION_SYSTEM = 1,
+    ASTRAL_PROMPT_SECTION_TOOLS = 2,
+    ASTRAL_PROMPT_SECTION_MEMORY = 3,
+    ASTRAL_PROMPT_SECTION_HISTORY = 4,
+    ASTRAL_PROMPT_SECTION_USER = 5,
+    ASTRAL_PROMPT_SECTION_RAW = 6,
+};
+
+typedef uint32_t AstralPromptCacheEvictionPolicy;
+enum {
+    ASTRAL_PROMPT_CACHE_EVICT_FIFO = 0,
+};
+
+typedef uint32_t AstralPromptCacheFlags;
+enum {
+    ASTRAL_PROMPT_CACHE_FLAG_TRACK_STATS = 1u << 0,
+};
+
+typedef struct AstralPromptCacheDesc {
+    uint32_t size;
+    uint32_t max_entries;
+    uint32_t max_tokens;
+    uint32_t max_bytes;
+    AstralPromptCacheEvictionPolicy eviction_policy;
+    AstralPromptCacheFlags flags;
+} AstralPromptCacheDesc;
+
+typedef struct AstralPromptCacheKey {
+    uint32_t size;
+    uint32_t section_kind;
+    AstralHandle model;
+    uint64_t key;
+    uint32_t generation;
+    uint32_t _reserved0;
+} AstralPromptCacheKey;
+
+typedef struct AstralPromptCacheStats {
+    uint32_t size;
+    uint32_t entries;
+    uint32_t max_entries;
+    uint32_t tokens;
+    uint32_t max_tokens;
+    uint32_t bytes;
+    uint32_t max_bytes;
+    uint32_t _reserved0;
+    uint64_t hits;
+    uint64_t misses;
+    uint64_t evictions;
+} AstralPromptCacheStats;
+
+typedef uint32_t AstralToolChoiceMode;
+enum {
+    ASTRAL_TOOL_CHOICE_AUTO = 0,
+    ASTRAL_TOOL_CHOICE_REQUIRED = 1,
+    ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL = 2,
+};
+
+typedef struct AstralToolDesc {
+    uint32_t size;
+    uint32_t tool_id;
+    AstralSpanU8 name;
+    AstralSpanU8 description;
+    AstralSpanU8 json_schema;
+} AstralToolDesc;
+
+typedef struct AstralToolsetDesc {
+    uint32_t size;
+    uint32_t tool_count;
+    AstralToolChoiceMode choice_mode;
+    uint32_t _reserved0;
+    const AstralToolDesc* tools;
+} AstralToolsetDesc;
+
+typedef struct AstralToolInfo {
+    uint32_t size;
+    uint32_t tool_id;
+    AstralSpanU8 name;
+    AstralSpanU8 description;
+    AstralSpanU8 json_schema;
+} AstralToolInfo;
+
+typedef struct AstralToolCallResult {
+    uint32_t size;
+    uint32_t tool_id;
+    int32_t parse_status;
+    uint32_t _reserved0;
+    AstralSpanU8 name;
+    AstralSpanU8 arguments_json;
+} AstralToolCallResult;
+
+typedef uint32_t AstralChunkMode;
+enum {
+    ASTRAL_CHUNK_MODE_NONE = 0,
+    ASTRAL_CHUNK_MODE_CHAR = 1,
+    ASTRAL_CHUNK_MODE_WORD = 2,
+    ASTRAL_CHUNK_MODE_SENTENCE = 3,
+    ASTRAL_CHUNK_MODE_TOKEN = 4,
+};
+
+typedef uint32_t AstralChunkFlags;
+enum {
+    ASTRAL_CHUNK_FLAG_KEEP_EMPTY = 1u << 0,
+};
+
+typedef struct AstralChunkerDesc {
+    uint32_t size;
+    AstralChunkMode mode;
+    uint32_t max_units;
+    uint32_t overlap_units;
+    uint32_t document_id;
+    uint32_t group_id;
+    AstralChunkFlags flags;
+    uint32_t _reserved0;
+    AstralSpanU8 delimiters;
+} AstralChunkerDesc;
+
+typedef struct AstralChunkRange {
+    uint32_t size;
+    uint32_t document_id;
+    uint32_t chunk_id;
+    uint32_t group_id;
+    uint32_t byte_begin;
+    uint32_t byte_end;
+    uint32_t token_begin;
+    uint32_t token_end;
+} AstralChunkRange;
+
+typedef uint32_t AstralMemoryMetric;
+enum {
+    ASTRAL_MEMORY_METRIC_DOT = 0,
+    ASTRAL_MEMORY_METRIC_COSINE = 1,
+    ASTRAL_MEMORY_METRIC_L2 = 2,
+};
+
+typedef uint32_t AstralMemoryIndexKind;
+enum {
+    ASTRAL_MEMORY_INDEX_FLAT = 0,
+    ASTRAL_MEMORY_INDEX_GRAPH = 1,
+};
+
+typedef uint32_t AstralMemoryStorageKind;
+enum {
+  ASTRAL_MEMORY_STORAGE_F32 = 0,
+  ASTRAL_MEMORY_STORAGE_Q8 = 1,
+  ASTRAL_MEMORY_STORAGE_F6_E2M3 = 2,
+  ASTRAL_MEMORY_STORAGE_F8_E5M2 = 3,
+};
+
+enum {
+    ASTRAL_MEMORY_GROUP_ANY = 0xFFFFFFFFu,
+};
+
+typedef struct AstralMemoryIndexDesc {
+    uint32_t size;
+    uint32_t dim;
+    uint32_t capacity;
+    AstralMemoryMetric metric;
+    AstralMemoryIndexKind index_kind;
+    uint32_t graph_neighbors;
+    /* Graph construction expansion for ASTRAL_MEMORY_INDEX_GRAPH; 0 selects the runtime default. */
+    uint32_t graph_search;
+    /* Default query expansion for ASTRAL_MEMORY_INDEX_GRAPH; 0 selects graph_search. */
+    uint32_t graph_query_search;
+    AstralMemoryStorageKind storage_kind;
+} AstralMemoryIndexDesc;
+
+typedef struct AstralMemoryRecord {
+    uint32_t size;
+    uint32_t group_id;
+    uint64_t key;
+    uint32_t document_id;
+    uint32_t chunk_id;
+    uint32_t flags;
+    uint32_t _reserved0;
+} AstralMemoryRecord;
+
+typedef struct AstralMemorySearchDesc {
+    uint32_t size;
+    uint32_t top_k;
+    uint32_t group_id;
+    uint32_t flags;
+    /* Per-query graph expansion; 0 uses the index query expansion. */
+    uint32_t graph_search;
+} AstralMemorySearchDesc;
+
+typedef struct AstralMemorySearchResult {
+    uint32_t size;
+    uint32_t group_id;
+    uint64_t key;
+    uint32_t document_id;
+    uint32_t chunk_id;
+    float score;
+    uint32_t flags;
+} AstralMemorySearchResult;
+
+typedef struct AstralMemoryStats {
+    uint32_t size;
+    uint32_t dim;
+    uint32_t capacity;
+    uint32_t count;
+    AstralMemoryMetric metric;
+    AstralMemoryIndexKind index_kind;
+    uint32_t graph_neighbors;
+    uint32_t graph_search;
+    uint32_t graph_query_search;
+    uint32_t graph_levels;
+    AstralMemoryStorageKind storage_kind;
+    uint64_t vector_bytes;
+    uint64_t metadata_bytes;
+    uint64_t graph_bytes;
+    uint64_t graph_edges;
+    uint64_t graph_base_edges;
+    uint64_t graph_upper_edges;
+    uint64_t graph_build_score_evals;
+    uint64_t graph_build_candidate_visits;
+    uint64_t total_bytes;
+    uint64_t save_bytes;
+} AstralMemoryStats;
+
+typedef struct AstralMemorySnapshotInfo {
+  uint32_t size;
+  uint32_t version;
+  uint32_t dim;
+  uint32_t count;
+  AstralMemoryMetric metric;
+  AstralMemoryIndexKind index_kind;
+  AstralMemoryStorageKind storage_kind;
+  uint32_t flags;
+  uint64_t record_offset;
+  uint64_t record_stride;
+  uint64_t vector_offset;
+  uint64_t vector_stride;
+  uint64_t scale_offset;
+  uint64_t scale_stride;
+  uint64_t graph_offset;
+  uint64_t graph_bytes;
+  uint64_t total_bytes;
+} AstralMemorySnapshotInfo;
+
+// Compile-time validation: Ensure struct sizes are correct
+// Use static_assert for C++ and _Static_assert for C
+#ifdef __cplusplus
+#define ASTRAL_STATIC_ASSERT(expr, msg) static_assert(expr, msg)
+#else
+#define ASTRAL_STATIC_ASSERT(expr, msg) _Static_assert(expr, msg)
+#endif
+
+#if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
+ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 16, "AstralSpanU8 must be 16 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 16, "AstralMutSpanU8 must be 16 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralPromptCacheKey) == 32,
+                     "AstralPromptCacheKey must be 32 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralToolDesc) == 56, "AstralToolDesc must be 56 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralToolsetDesc) == 24,
+                     "AstralToolsetDesc must be 24 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralToolInfo) == 56, "AstralToolInfo must be 56 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 48,
+                     "AstralToolCallResult must be 48 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralChunkerDesc) == 48,
+                     "AstralChunkerDesc must be 48 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 36,
+                     "AstralMemoryIndexDesc must be 36 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryRecord) == 32,
+                     "AstralMemoryRecord must be 32 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 20,
+                     "AstralMemorySearchDesc must be 20 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32,
+                     "AstralMemorySearchResult must be 32 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 128,
+                     "AstralMemoryStats must be 128 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySnapshotInfo) == 104,
+                     "AstralMemorySnapshotInfo must be 104 bytes on 64-bit");
+#else
+ASTRAL_STATIC_ASSERT(sizeof(AstralSpanU8) == 8, "AstralSpanU8 must be 8 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMutSpanU8) == 8, "AstralMutSpanU8 must be 8 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralPromptCacheKey) == 32,
+                     "AstralPromptCacheKey must be 32 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralToolDesc) == 32, "AstralToolDesc must be 32 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralToolsetDesc) == 20,
+                     "AstralToolsetDesc must be 20 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralToolInfo) == 32, "AstralToolInfo must be 32 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralToolCallResult) == 32,
+                     "AstralToolCallResult must be 32 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralChunkerDesc) == 40,
+                     "AstralChunkerDesc must be 40 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralChunkRange) == 32, "AstralChunkRange must be 32 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryIndexDesc) == 36,
+                     "AstralMemoryIndexDesc must be 36 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryRecord) == 32,
+                     "AstralMemoryRecord must be 32 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchDesc) == 20,
+                     "AstralMemorySearchDesc must be 20 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySearchResult) == 32,
+                     "AstralMemorySearchResult must be 32 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemoryStats) == 128,
+                     "AstralMemoryStats must be 128 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMemorySnapshotInfo) == 104,
+                     "AstralMemorySnapshotInfo must be 104 bytes on 32-bit");
+#endif
 
 // ============================================================================
 // Media Types (Vision / Audio)
@@ -203,6 +497,9 @@ typedef struct AstralAudioDesc {
 // This keeps the meta side-channel fixed-size and allocation-free.
 #define ASTRAL_LOGPROBS_MAX 16u
 
+// Maximum number of LoRA/adapters attached to one session.
+#define ASTRAL_SESSION_ADAPTERS_MAX 8u
+
 /**
  * Error codes.
  * All functions return AstralErr (0 = success).
@@ -217,8 +514,9 @@ enum {
     ASTRAL_E_TIMEOUT = -4,  /** Operation timed out */
     ASTRAL_E_STATE = -5,    /** Invalid state (e.g., decode before feed) */
     ASTRAL_E_BACKEND = -6,  /** Backend error (llama.cpp failed) */
-    ASTRAL_E_CANCELED = -7, /** Operation canceled */
+    ASTRAL_E_CANCELED = -7,    /** Operation canceled */
     ASTRAL_E_UNSUPPORTED = -8, /** Operation unsupported */
+    ASTRAL_E_NOT_FOUND = -9,   /** Requested object or cache entry was not found */
 };
 
 // ============================================================================
@@ -464,6 +762,37 @@ enum {
     ASTRAL_MODEL_SOURCE_IO = 2,     // `io`
 };
 
+typedef uint32_t AstralModelPathRoot;
+enum {
+    ASTRAL_MODEL_PATH_ROOT_RAW = 0,
+    ASTRAL_MODEL_PATH_ROOT_CONTENT = 1,
+    ASTRAL_MODEL_PATH_ROOT_SAVED = 2,
+    ASTRAL_MODEL_PATH_ROOT_CACHE = 3,
+    ASTRAL_MODEL_PATH_ROOT_DOWNLOAD = 4,
+};
+
+typedef uint32_t AstralModelPathResolveFlags;
+enum {
+    ASTRAL_MODEL_PATH_RESOLVE_NONE = 0,
+};
+
+typedef struct AstralModelPathResolveDesc {
+    uint32_t size;
+    AstralModelPathRoot root;
+    AstralSpanU8 path;
+    AstralSpanU8 content_root;
+    AstralSpanU8 saved_root;
+    AstralSpanU8 cache_root;
+    AstralSpanU8 download_root;
+    AstralModelPathResolveFlags flags;
+    uint32_t _reserved0;
+} AstralModelPathResolveDesc;
+
+enum {
+    ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_64 = 96,
+    ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_32 = 56,
+};
+
 /**
  * Model IO interface for embedded builds (no filesystem required).
  *
@@ -686,6 +1015,39 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize(
 );
 
 /**
+ * Count tokens for UTF-8 text without writing token ids.
+ *
+ * Thread-safety: Safe to call from multiple threads on the same model.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_count(
+    AstralHandle model,
+    AstralSpanU8 text,
+    uint8_t add_special,
+    uint8_t parse_special,
+    uint32_t* out_count
+);
+
+/**
+ * Tokenize many UTF-8 spans into one caller-owned token buffer.
+ *
+ * `out_offsets` must have `request_count + 1` entries. On success,
+ * `out_offsets[i]` is the first token for request `i`, and the final entry is
+ * the total token count. If `out_tokens == NULL` and `max_tokens == 0`, this
+ * function only writes offsets and the required total token count.
+ *
+ * Thread-safety: Safe to call from multiple threads on the same model.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_batch(
+    AstralHandle model,
+    const AstralTokenizeRequest* requests,
+    uint32_t request_count,
+    uint32_t* out_offsets,
+    int32_t* out_tokens,
+    uint32_t max_tokens,
+    uint32_t* out_count
+);
+
+/**
  * Detokenize token ids to UTF-8.
  *
  * Thread-safety: Safe to call from multiple threads on the same model.
@@ -697,6 +1059,150 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize(
     AstralMutSpanU8 out_text,
     uint32_t* out_len
 );
+
+/**
+ * Count UTF-8 bytes required to detokenize token ids.
+ *
+ * Thread-safety: Safe to call from multiple threads on the same model.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize_count(
+    AstralHandle model,
+    const int32_t* tokens,
+    uint32_t count,
+    uint32_t* out_len
+);
+
+/**
+ * Count text chunks for a UTF-8 span without writing ranges.
+ *
+ * Thread-safety: Safe to call from multiple threads.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_chunk_count(
+    const AstralChunkerDesc* desc,
+    AstralSpanU8 text,
+    uint32_t* out_count
+);
+
+/**
+ * Write UTF-8 byte ranges into a caller-owned range buffer.
+ *
+ * `out_ranges` must contain at least `max_ranges` entries. `out_count` receives
+ * the required range count even when `max_ranges` is too small.
+ *
+ * Thread-safety: Safe to call from multiple threads.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_chunk_ranges(
+    const AstralChunkerDesc* desc,
+    AstralSpanU8 text,
+    AstralChunkRange* out_ranges,
+    uint32_t max_ranges,
+    uint32_t* out_count
+);
+
+/**
+ * Copy one text range to a caller-owned UTF-8 buffer.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_chunk_text_copy(
+    AstralSpanU8 text,
+    const AstralChunkRange* range,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+);
+
+/**
+ * Count token chunks for an already-tokenized sequence.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_token_chunk_count(
+    const AstralChunkerDesc* desc,
+    uint32_t token_count,
+    uint32_t* out_count
+);
+
+/**
+ * Write token chunk ranges for an already-tokenized sequence.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_token_chunk_ranges(
+    const AstralChunkerDesc* desc,
+    uint32_t token_count,
+    AstralChunkRange* out_ranges,
+    uint32_t max_ranges,
+    uint32_t* out_count
+);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_create(const AstralMemoryIndexDesc* desc, AstralHandle* out_index);
+ASTRAL_API void ASTRAL_CALL astral_memory_destroy(AstralHandle index);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_count(AstralHandle index, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_stats(AstralHandle index, AstralMemoryStats* out_stats);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_clear(AstralHandle index);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_get_record(AstralHandle index, uint64_t key, AstralMemoryRecord* out_record);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_update_record(AstralHandle index, uint64_t key, const AstralMemoryRecord* record);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_add_batch(
+    AstralHandle index,
+    const AstralMemoryRecord* records,
+    const float* vectors,
+    uint32_t count
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_remove(AstralHandle index, uint64_t key);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search(
+    AstralHandle index,
+    const AstralMemorySearchDesc* desc,
+    const float* query,
+    AstralMemorySearchResult* out_results,
+    uint32_t max_results,
+    uint32_t* out_count
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_batch(
+    AstralHandle index,
+    const AstralMemorySearchDesc* desc,
+    const float* queries,
+    uint32_t query_count,
+    AstralMemorySearchResult* out_results,
+    uint32_t max_results,
+    uint32_t* out_counts
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_begin(
+    AstralHandle index,
+    const AstralMemorySearchDesc* desc,
+    const float* query,
+    AstralHandle* out_cursor
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_search_fetch(
+    AstralHandle cursor,
+    AstralMemorySearchResult* out_results,
+    uint32_t max_results,
+    uint32_t* out_count
+);
+ASTRAL_API void ASTRAL_CALL astral_memory_search_end(AstralHandle cursor);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save_size(AstralHandle index, uint64_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_save(AstralHandle index, AstralMutSpanU8 out_bytes, uint64_t* out_written);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_info(AstralSpanU8 bytes,
+                                                             AstralMemorySnapshotInfo* out_info);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_search(
+    AstralSpanU8 bytes, const AstralMemorySearchDesc* desc, const float* query,
+    AstralMemorySearchResult* out_results, uint32_t max_results, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_map(AstralSpanU8 path,
+                                                            AstralMemorySnapshotInfo* out_info,
+                                                            AstralHandle* out_view);
+ASTRAL_API void ASTRAL_CALL astral_memory_snapshot_unmap(AstralHandle view);
+// clang-format off
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_view_info(AstralHandle view, AstralMemorySnapshotInfo* out_info);
+// clang-format on
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_snapshot_view_search(
+    AstralHandle view, const AstralMemorySearchDesc* desc, const float* query,
+    AstralMemorySearchResult* out_results, uint32_t max_results, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_load(const AstralMemoryIndexDesc* desc,
+                                                    AstralSpanU8 bytes, AstralHandle* out_index);
+ASTRAL_API AstralErr ASTRAL_CALL astral_memory_record_from_chunk(
+    const AstralChunkRange* range,
+    uint64_t key,
+    uint32_t flags,
+    AstralMemoryRecord* out_record
+);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_path_resolve(
+    const AstralModelPathResolveDesc* desc,
+    AstralMutSpanU8 out_path,
+    uint32_t* out_len);
 
 /**
  * Load a GGUF model.
@@ -865,10 +1371,18 @@ typedef struct AstralAdapterDesc {
     AstralSpanU8 path;  // UTF-8 path to adapter file
 } AstralAdapterDesc;
 
+typedef struct AstralAdapterInfo {
+    uint32_t size;
+    AstralHandle model;
+    uint32_t path_bytes;
+    uint32_t refcount;
+} AstralAdapterInfo;
+
 // Compile-time layout validation for configs.
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 64, "AstralInit must be 64 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 168, "AstralModelDesc must be 168 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralModelPathResolveDesc) == ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_64, "AstralModelPathResolveDesc must be 96 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
@@ -877,6 +1391,7 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 24, "AstralAdapterDesc must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 24, "AstralAdapterInfo must be 24 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 64, "AstralImageDesc must be 64 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 72, "AstralAudioDesc must be 72 bytes on 64-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 104, "AstralModelMediaDesc must be 104 bytes on 64-bit");
@@ -884,6 +1399,7 @@ typedef struct AstralAdapterDesc {
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 48, "AstralInit must be 48 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 116, "AstralModelDesc must be 116 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralModelPathResolveDesc) == ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_32, "AstralModelPathResolveDesc must be 56 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
@@ -892,6 +1408,7 @@ typedef struct AstralAdapterDesc {
   ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12, "AstralAdapterDesc must be 12 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 20, "AstralAdapterInfo must be 20 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 52, "AstralImageDesc must be 52 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 60, "AstralAudioDesc must be 60 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 72, "AstralModelMediaDesc must be 72 bytes on 32-bit");
@@ -911,6 +1428,198 @@ enum {
     ASTRAL_SESSION_CANCELED = 4,  /** Completed due to cancellation */
     ASTRAL_SESSION_FAILED = 5,    /** Completed due to error */
 };
+
+typedef uint32_t AstralRequestKind;
+enum {
+    ASTRAL_REQUEST_NONE = 0,
+    ASTRAL_REQUEST_SESSION = 1,
+    ASTRAL_REQUEST_CONVERSATION = 2,
+    ASTRAL_REQUEST_AGENT_CHAT = 3,
+    ASTRAL_REQUEST_EMBEDDING = 4,
+    ASTRAL_REQUEST_MEMORY_SEARCH = 5,
+};
+
+typedef uint32_t AstralRequestState;
+enum {
+    ASTRAL_REQUEST_INVALID = 0,
+    ASTRAL_REQUEST_QUEUED = 1,
+    ASTRAL_REQUEST_RUNNING = 2,
+    ASTRAL_REQUEST_COMPLETED = 3,
+    ASTRAL_REQUEST_CANCELED = 4,
+    ASTRAL_REQUEST_FAILED = 5,
+};
+
+typedef uint32_t AstralRequestFlags;
+enum {
+    ASTRAL_REQUEST_FLAG_STREAM = 1u << 0,
+    ASTRAL_REQUEST_FLAG_TICKET = 1u << 1,
+};
+
+typedef struct AstralRequestRef {
+    uint32_t size;
+    AstralRequestKind kind;
+    AstralHandle owner;
+    uint64_t ticket;
+} AstralRequestRef;
+
+typedef struct AstralRequestStatus {
+    uint32_t size;
+    AstralRequestKind kind;
+    AstralRequestState state;
+    AstralRequestFlags flags;
+    AstralHandle owner;
+    uint64_t ticket;
+    AstralErr result;
+    uint32_t queue_depth;
+} AstralRequestStatus;
+
+typedef uint32_t AstralAgentRole;
+enum {
+    ASTRAL_AGENT_ROLE_SYSTEM = 1,
+    ASTRAL_AGENT_ROLE_USER = 2,
+    ASTRAL_AGENT_ROLE_ASSISTANT = 3,
+    ASTRAL_AGENT_ROLE_TOOL = 4,
+};
+
+typedef uint32_t AstralAgentFlags;
+enum {
+    ASTRAL_AGENT_FLAG_NONE = 0,
+};
+
+enum {
+    ASTRAL_AGENT_SLOT_AUTO = 0,
+};
+
+typedef uint32_t AstralAgentChatFlags;
+enum {
+    ASTRAL_AGENT_CHAT_FLAG_NONE = 0,
+    ASTRAL_AGENT_CHAT_FLAG_WARMUP = 1u << 0,
+};
+
+typedef uint32_t AstralAgentOverflowPolicy;
+enum {
+    ASTRAL_AGENT_OVERFLOW_REJECT = 0,
+    ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST = 1,
+};
+
+typedef struct AstralAgentDesc {
+    uint32_t size;
+    AstralAgentFlags flags;
+    AstralHandle model;
+    AstralHandle prompt_cache;
+    AstralHandle memory_index;
+    AstralHandle toolset;
+    uint32_t max_tokens;
+    float temperature;
+    uint32_t top_k;
+    float top_p;
+    uint8_t stream_enabled;
+    uint8_t _padding0[3];
+    uint32_t seed;
+    AstralToolChoiceMode tool_choice_mode;
+    uint32_t max_messages;
+    uint32_t max_prompt_bytes;
+    AstralAgentOverflowPolicy overflow_policy;
+    uint32_t slot_affinity; // ASTRAL_AGENT_SLOT_AUTO or one-based executor slot
+    AstralSpanU8 system_prompt;
+    AstralSpanU8 summary;
+    AstralSpanU8 memory_context;
+} AstralAgentDesc;
+
+typedef struct AstralAgentMessage {
+    uint32_t size;
+    AstralAgentRole role;
+    AstralSpanU8 content;
+} AstralAgentMessage;
+
+typedef struct AstralAgentChatDesc {
+    uint32_t size;
+    AstralAgentChatFlags flags;
+    AstralSpanU8 user_message;
+} AstralAgentChatDesc;
+
+typedef struct AstralAgentMemoryContextDesc {
+    uint32_t size;
+    uint32_t result_count;
+    uint32_t chunk_count;
+    uint32_t max_bytes;
+    AstralSpanU8 document_text;
+    AstralSpanU8 separator;
+    const AstralChunkRange* chunks;
+    const AstralMemorySearchResult* results;
+} AstralAgentMemoryContextDesc;
+
+typedef struct AstralAgentChatResult {
+    uint32_t size;
+    AstralSessionState state;
+    uint32_t prompt_bytes;
+    uint32_t history_messages;
+    uint32_t prompt_tokens;
+    uint32_t prompt_cache_reused_tokens;
+    uint32_t prompt_cache_new_tokens;
+    uint32_t prompt_cache_hits;
+    uint32_t prompt_cache_misses;
+    AstralErr last_error;
+    double prompt_build_ms;
+    uint64_t generated_tokens;
+    double t_first_token_ms;
+    double tok_per_s;
+} AstralAgentChatResult;
+
+#if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestStatus) == 40, "AstralRequestStatus must be 40 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 136, "AstralAgentDesc must be 136 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 24, "AstralAgentMessage must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 24, "AstralAgentChatDesc must be 24 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMemoryContextDesc) == 64, "AstralAgentMemoryContextDesc must be 64 bytes on 64-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 72, "AstralAgentChatResult must be 72 bytes on 64-bit");
+#else
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralRequestStatus) == 40, "AstralRequestStatus must be 40 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 108, "AstralAgentDesc must be 108 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 16, "AstralAgentMessage must be 16 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 16, "AstralAgentChatDesc must be 16 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMemoryContextDesc) == 40, "AstralAgentMemoryContextDesc must be 40 bytes on 32-bit");
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatResult) == 72, "AstralAgentChatResult must be 72 bytes on 32-bit");
+#endif
+
+/**
+ * Build request references for existing async owners.
+ *
+ * `AstralRequestRef` is a small value type for engine queues. It does not own
+ * the underlying handle or embedding ticket.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_session(AstralHandle session, AstralRequestRef* out_request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_conversation(AstralHandle conv, AstralRequestRef* out_request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_agent_chat(AstralHandle agent, AstralRequestRef* out_request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_embedding(
+    AstralHandle emb,
+    uint64_t ticket,
+    AstralRequestRef* out_request
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_from_memory_search(
+    AstralHandle cursor,
+    AstralRequestRef* out_request
+);
+
+/**
+ * Query, cancel, or wait for a request through one API shape.
+ *
+ * Embedding requests are ticketed. `astral_request_wait()` reports the current
+ * embedding ticket state; collection still happens through `astral_embed_collect()`
+ * because the caller owns the vector buffer.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_state(
+    const AstralRequestRef* request,
+    AstralRequestStatus* out_status
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_cancel(const AstralRequestRef* request);
+ASTRAL_API AstralErr ASTRAL_CALL astral_request_wait(
+    const AstralRequestRef* request,
+    uint32_t timeout_ms,
+    AstralRequestStatus* out_status
+);
 
 /**
  * Request cancellation for an in-flight session decode.
@@ -1073,6 +1782,12 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_load(
     const AstralAdapterDesc* desc,
     AstralHandle* out_adapter
 );
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_info(AstralHandle adapter, AstralAdapterInfo* out_info);
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_adapter_path_copy(
+    AstralHandle adapter,
+    AstralMutSpanU8 out_path,
+    uint32_t* out_len
+);
 ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter);
 
 /**
@@ -1083,6 +1798,59 @@ ASTRAL_API void ASTRAL_CALL astral_model_adapter_release(AstralHandle adapter);
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_clear(AstralHandle session);
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_add(AstralHandle session, AstralHandle adapter, float scale);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_count(AstralHandle session, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_get(
+    AstralHandle session,
+    uint32_t index,
+    AstralHandle* out_adapter,
+    float* out_scale
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_set_scale(AstralHandle session, uint32_t index, float scale);
+
+/**
+ * Create a bounded token prompt cache.
+ *
+ * Prompt cache entries are setup-time objects used to reuse tokenized prompt
+ * sections. Lookups do not allocate; callers provide the output token buffer
+ * or request a cache-owned token view.
+ */
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_create(const AstralPromptCacheDesc* desc, AstralHandle* out_cache);
+ASTRAL_API void ASTRAL_CALL astral_prompt_cache_destroy(AstralHandle cache);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_clear(AstralHandle cache);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_stats(AstralHandle cache, AstralPromptCacheStats* out_stats);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_save_size(AstralHandle cache, uint32_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_save(AstralHandle cache, AstralMutSpanU8 out_bytes, uint32_t* out_len);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_load(
+    const AstralPromptCacheDesc* desc,
+    AstralSpanU8 bytes,
+    AstralHandle* out_cache
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_key_from_bytes(
+    AstralHandle model,
+    AstralPromptSectionKind section_kind,
+    uint32_t generation,
+    AstralSpanU8 bytes,
+    AstralPromptCacheKey* out_key
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_put_tokens(
+    AstralHandle cache,
+    const AstralPromptCacheKey* key,
+    const int32_t* tokens,
+    uint32_t token_count
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_get_tokens(
+    AstralHandle cache,
+    const AstralPromptCacheKey* key,
+    int32_t* out_tokens,
+    uint32_t max_tokens,
+    uint32_t* out_token_count
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_prompt_cache_get_token_view(
+    AstralHandle cache,
+    const AstralPromptCacheKey* key,
+    const int32_t** out_tokens,
+    uint32_t* out_token_count
+);
 
 /**
  * Configure grammar-constrained decoding (GBNF).
@@ -1096,6 +1864,22 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_adapters_add(AstralHandle sessio
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_gbnf(AstralHandle session, AstralSpanU8 gbnf, AstralSpanU8 root);
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_json_schema(AstralHandle session, AstralSpanU8 json_schema);
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_grammar(AstralHandle session);
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_create(const AstralToolsetDesc* desc, AstralHandle* out_toolset);
+ASTRAL_API void ASTRAL_CALL astral_toolset_destroy(AstralHandle toolset);
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_count(AstralHandle toolset, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_get(AstralHandle toolset, uint32_t index, AstralToolInfo* out_info);
+ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_parse_call(
+    AstralHandle toolset,
+    AstralSpanU8 generated_text,
+    AstralToolCallResult* out_result
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_toolset(
+    AstralHandle session,
+    AstralHandle toolset,
+    AstralToolChoiceMode choice_mode
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_toolset(AstralHandle session);
 
 /**
  * Set the session slot/sequence id (for providers that support parallel slots).
@@ -1134,6 +1918,13 @@ ASTRAL_API void ASTRAL_CALL astral_session_destroy(AstralHandle session);
  * @return ASTRAL_OK on success; ASTRAL_E_INVALID if session is NULL; error code on failure
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed(AstralHandle session, AstralSpanU8 prompt_chunk, uint8_t finalize);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed_tokens(
+    AstralHandle session,
+    const int32_t* tokens,
+    uint32_t token_count,
+    uint8_t finalize
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_system_prompt(AstralHandle session, AstralSpanU8 system_prompt);
 
 /**
  * Feed an image chunk into a session prompt.
@@ -1222,6 +2013,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_create(const AstralConvDesc* desc, 
 ASTRAL_API void ASTRAL_CALL astral_conv_destroy(AstralHandle conv);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed(AstralHandle conv, AstralSpanU8 prompt_chunk, uint8_t finalize);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed_tokens(
+    AstralHandle conv,
+    const int32_t* tokens,
+    uint32_t token_count,
+    uint8_t finalize
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_system_prompt(AstralHandle conv, AstralSpanU8 system_prompt);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed_image(
     AstralHandle conv,
@@ -1257,6 +2055,12 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_set_gbnf(
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_set_json_schema(
     AstralHandle conv, AstralSpanU8 json_schema);
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_grammar_clear(AstralHandle conv);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_toolset(
+    AstralHandle conv,
+    AstralHandle toolset,
+    AstralToolChoiceMode choice_mode
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_conv_clear_toolset(AstralHandle conv);
 
 ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read(AstralHandle conv, AstralMutSpanU8 out_buf, uint32_t timeout_ms);
 ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(
@@ -1268,6 +2072,63 @@ ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(
  * Thread-safety: Safe to call concurrently with decoding/streaming.
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stats(AstralHandle conv, AstralConvStats* out_stats);
+
+// ============================================================================
+// Agents
+// ============================================================================
+
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_create(const AstralAgentDesc* desc, AstralHandle* out_agent);
+ASTRAL_API void ASTRAL_CALL astral_agent_destroy(AstralHandle agent);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_assigned_slot(AstralHandle agent, uint32_t* out_slot);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_release_slot(AstralHandle agent);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_system_prompt(AstralHandle agent, AstralSpanU8 system_prompt);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt_size(AstralHandle agent, uint32_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_system_prompt(
+    AstralHandle agent,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_summary(AstralHandle agent, AstralSpanU8 summary);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_summary_size(AstralHandle agent, uint32_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_summary(
+    AstralHandle agent,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_memory_context(AstralHandle agent, AstralSpanU8 memory_context);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_set_memory_context_from_results(
+    AstralHandle agent,
+    const AstralAgentMemoryContextDesc* desc
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_memory_context_size(AstralHandle agent, uint32_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_memory_context(
+    AstralHandle agent,
+    AstralMutSpanU8 out_text,
+    uint32_t* out_len
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_parse_tool_call(
+    AstralHandle agent,
+    AstralSpanU8 generated_text,
+    AstralToolCallResult* out_result
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_message_add(AstralHandle agent, const AstralAgentMessage* message);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_clear(AstralHandle agent);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_count(AstralHandle agent, uint32_t* out_count);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_save_size(AstralHandle agent, uint32_t* out_bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_save(AstralHandle agent, AstralMutSpanU8 out_bytes, uint32_t* out_len);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_history_load(AstralHandle agent, AstralSpanU8 bytes);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_enqueue(AstralHandle agent, const AstralAgentChatDesc* desc);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_cancel(AstralHandle agent);
+ASTRAL_API int32_t ASTRAL_CALL astral_agent_chat_stream_read(
+    AstralHandle agent,
+    AstralMutSpanU8 out_buf,
+    uint32_t timeout_ms
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_tool_call_result(
+    AstralHandle agent,
+    AstralToolCallResult* out_result
+);
+ASTRAL_API AstralErr ASTRAL_CALL astral_agent_chat_result(AstralHandle agent, AstralAgentChatResult* out_result);
 
 // ============================================================================
 // Embeddings

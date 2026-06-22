@@ -4,11 +4,12 @@ Memory allocators used by Astral's frame, pool, and tracking gates.
 
 ## Overview
 
-This subsystem provides three core components:
+This subsystem provides four core components:
 
 1. **FrameAllocator** - Linear/bump allocator for per-frame short-lived objects
-2. **ObjectPool** - Lock-free freelist for fixed-size object recycling
-3. **MemoryStats** - POD structure for tracking allocator usage
+2. **ObjectPool** - Fixed-size shared recycling with a small spinlock-protected intrusive freelist
+3. **LocalObjectPool** - Fixed-size owner-local recycling with no atomics or locks
+4. **MemoryStats** - POD structure for tracking allocator usage
 
 ## Design Principles
 
@@ -56,12 +57,12 @@ void* p3 = alloc.alloc(64);           // p3 == p1
 
 ### ObjectPool
 
-Lock-free object pool using intrusive freelist and tagged pointers for ABA protection.
+Thread-safe object pool using an intrusive freelist protected by a small spinlock.
 
 **Features**:
-- Thread-safe lock-free acquire/release
-- CAS-based Treiber stack algorithm
-- ABA protection via generation counter (upper 16 bits of pointer)
+- Thread-safe acquire/release
+- No dynamic allocation after construction
+- No compare-and-swap loop in the pool path
 - Fixed capacity (template parameter)
 - Intrusive freelist (overwrites first 8 bytes on release)
 
@@ -92,12 +93,46 @@ if (tok) {
 - Object type must be at least sizeof(void*) bytes
 - Release overwrites first 8 bytes (do not rely on data preservation)
 - Only release objects acquired from the same pool
-- Platform must support lock-free 64-bit atomics
+- Best for cold/shared fixed-object recycling. Prefer thread-local pools or
+  frame allocators for hot owner-local paths.
 
 **Memory Ordering**:
-- `memory_order_acquire` on successful CAS pop (synchronizes-with prior push)
-- `memory_order_release` on successful CAS push (synchronizes-with subsequent pop)
-- `memory_order_relaxed` on failed CAS retry (no synchronization needed)
+- `memory_order_acquire` when taking the pool lock
+- `memory_order_release` when releasing the pool lock
+
+### LocalObjectPool
+
+Owner-local object pool using the same intrusive freelist layout without locks,
+atomics, syscalls, or dynamic allocation after construction.
+
+**Features**:
+- O(1) acquire and release
+- Fixed capacity
+- No synchronization
+- No null check on release; callers release objects acquired from the same pool
+
+**Usage**:
+```cpp
+#include "memory/object_pool.hpp"
+
+struct ScratchNode {
+    void* next;
+    uint64_t value;
+};
+
+constexpr size_t kScratchNodeCapacity = 1024;
+constexpr uint64_t kScratchValue = 42;
+
+LocalObjectPool<ScratchNode, kScratchNodeCapacity> pool;
+ScratchNode* node = pool.acquire();
+if (node != nullptr) {
+    node->value = kScratchValue;
+    pool.release(node);
+}
+```
+
+Use this for owner-local hot paths where ownership is already validated. Use
+`ObjectPool` when several threads must share the same backing storage.
 
 ### MemoryStats
 
@@ -128,14 +163,15 @@ uint64_t live = stats.alloc_count - stats.free_count; // 50
 Compile and run validation tests:
 
 ```bash
-cd src/memory
-g++ -std=c++20 -Wall -Wextra -O2 -pthread test_memory.cpp -o test_memory
-./test_memory
+ctest --preset release-with-tests -R '^test_memory$' --output-on-failure
+./build/release-test/benchmarks/astral_benchmarks --only alloc --alloc-iters 1000000 --alloc-size 64
+./scripts/run_allocator_perf_capture.sh --iters 1000000 --size 64 --threads 4
 ```
 
 Tests cover:
-- FrameAllocator: basic allocation, reset, alignment, out-of-memory
+- FrameAllocator: basic allocation, reset, aligned output from aligned and unaligned backing memory, out-of-memory
 - ObjectPool: basic acquire/release, capacity limits, thread-safety
+- LocalObjectPool: basic acquire/release, capacity limits, reuse order
 - MemoryStats: size validation, field access
 
 ## Performance Characteristics
@@ -147,11 +183,15 @@ Tests cover:
 - **Cache**: Sequential access pattern (optimal)
 
 ### ObjectPool
-- **Acquire (uncontended)**: ~2-3ns (relaxed load + CAS)
-- **Acquire (contended)**: ~10-20ns (retry loop with backoff)
-- **Release**: ~2-3ns (store + CAS)
+- **Acquire/release (uncontended)**: measured by `--only alloc`
+- **Acquire/release (contended)**: measured by `--only alloc --mpsc-producers <threads>`
 - **Overhead**: 0 bytes (intrusive freelist)
 - **Cache**: Random access pattern (pointer chasing)
+
+### LocalObjectPool
+- **Acquire/release**: measured by `--only alloc`
+- **Overhead**: 0 bytes (intrusive freelist)
+- **Cache**: Owner-local freelist, no cache-line transfer from synchronization
 
 ## Integration with Platform VM API
 
@@ -203,19 +243,6 @@ Alternative (non-intrusive):
 - **Con**: Extra allocation for freelist nodes
 
 Decision: Performance over data preservation (user must re-initialize after acquire).
-
-### Why Tagged Pointers?
-
-ObjectPool uses tagged pointers (pointer + ABA counter):
-- **ABA Problem**: Thread A pops node X, thread B pops X and pushes Y and X back, thread A's CAS succeeds incorrectly
-- **Solution**: Increment generation counter on each push/pop (16-bit counter wraps after 65536 operations)
-
-Alternative (hazard pointers):
-- **Pro**: No ABA problem
-- **Con**: Complex implementation (~200 LOC)
-- **Con**: Per-thread overhead
-
-Decision: Tagged pointers for simplicity (16-bit counter sufficient for game engine workloads).
 
 ## Future Work
 

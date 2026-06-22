@@ -81,6 +81,8 @@ Conversation::Conversation(Model* model_,
     , grammar_root_len(0)
     , grammar_json(nullptr)
     , grammar_json_len(0)
+    , toolset(nullptr)
+    , tool_choice_mode(ASTRAL_TOOL_CHOICE_AUTO)
     , pending_emit_stream{} {}
 
 } // namespace astral::inference

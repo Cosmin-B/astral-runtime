@@ -20,6 +20,8 @@ LogCsvProfiler: Display: Metadata set : commandline=\"\" AstralSample -NullRHI -
 LogPakFile: Display: Mounted IoStore container \"../../../AstralSample/Content/Paks/AstralSample-Linux.utoc\"
 LogPakFile: Display: Mounted Pak file '../../../AstralSample/Content/Paks/AstralSample-Linux.pak', mount point: '../../../'
 LogAstralSample: Display: Astral sample: backend=cpu memory_backend=mock media_backend=mock model=/workspace/astral/tests/models/Qwen3-0.6B-Q8_0.gguf embedding_model=/workspace/astral/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf media_path=<none> media_path_root=Raw
+LogAstralSample: Display: Astral sample: generation model loaded backend=cpu
+LogAstralSample: Display: Astral sample: generation decode started
 LogAstralSample: Display: Astral sample: canceled stream wait result -4
 LogAstralSample: Display: Astral sample: embedding dimension 1024
 LogAstralSample: Display: Astral sample: media feed demo loaded mock backend with RGBA byte image, texture image, and PCM16 audio
@@ -27,6 +29,9 @@ LogAstralSample: Display: Astral sample: packaged content bytes read from ../../
 LogAstralSample: Display: Astral sample: packaged content memory model loaded from 4 bytes
 LogAstralSample: Display: Astral sample: saved cache bytes read from ../../../AstralSample/Saved/AstralSample/mock-model-cache.bytes
 LogAstralSample: Display: Astral sample: saved cache memory model loaded from 4 bytes
+LogAstralSample: Display: Astral sample: RAG chunk text alpha beta
+LogAstralSample: Display: Astral sample: RAG search top key 101 score 1.000 group 7
+LogAstralSample: Display: Astral sample: clean shutdown
 ")
 
 execute_process(
@@ -49,11 +54,16 @@ file(WRITE "${missing_model_log}"
 "Command Line: -AstralSampleAutoQuit
 LogPakFile: Display: Mounted IoStore container \"../../../AstralSample/Content/Paks/AstralSample-Linux.utoc\"
 LogPakFile: Display: Mounted Pak file '../../../AstralSample/Content/Paks/AstralSample-Linux.pak'
+LogAstralSample: Display: Astral sample: generation model loaded backend=mock
+LogAstralSample: Display: Astral sample: generation decode started
 LogAstralSample: Display: Astral sample: media feed demo loaded mock backend with RGBA byte image, texture image, and PCM16 audio
 LogAstralSample: Display: Astral sample: packaged content bytes read from ../../../AstralSample/Content/AstralSample/Models/mock-model.bytes
 LogAstralSample: Display: Astral sample: packaged content memory model loaded from 4 bytes
 LogAstralSample: Display: Astral sample: saved cache bytes read from ../../../AstralSample/Saved/AstralSample/mock-model-cache.bytes
 LogAstralSample: Display: Astral sample: saved cache memory model loaded from 4 bytes
+LogAstralSample: Display: Astral sample: RAG chunk text alpha beta
+LogAstralSample: Display: Astral sample: RAG search top key 101 score 1.000 group 7
+LogAstralSample: Display: Astral sample: clean shutdown
 ")
 execute_process(
   COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${script}"
@@ -68,6 +78,33 @@ if(missing_model_result EQUAL 0)
 endif()
 if(NOT missing_model_error MATCHES "backend=cpu")
   message(FATAL_ERROR "validate_unreal_sample_runtime_log.py failed for the wrong missing-model reason: ${missing_model_error}")
+endif()
+
+set(package_only_log "${out_dir}/runtime-package-only.log")
+file(WRITE "${package_only_log}"
+"Command Line: -AstralSampleAutoQuit
+LogPakFile: Display: Mounted IoStore container \"../../../AstralSample/Content/Paks/AstralSample-Linux.utoc\"
+LogPakFile: Display: Mounted Pak file '../../../AstralSample/Content/Paks/AstralSample-Linux.pak'
+LogAstralSample: Display: Astral sample: media feed demo loaded mock backend with RGBA byte image, texture image, and PCM16 audio
+LogAstralSample: Display: Astral sample: packaged content bytes read from ../../../AstralSample/Content/AstralSample/Models/mock-model.bytes
+LogAstralSample: Display: Astral sample: packaged content memory model loaded from 4 bytes
+LogAstralSample: Display: Astral sample: saved cache bytes read from ../../../AstralSample/Saved/AstralSample/mock-model-cache.bytes
+LogAstralSample: Display: Astral sample: saved cache memory model loaded from 4 bytes
+LogAstralSample: Display: Astral sample: RAG chunk text alpha beta
+LogAstralSample: Display: Astral sample: RAG search top key 101 score 1.000 group 7
+LogAstralSample: Display: Astral sample: clean shutdown
+")
+execute_process(
+  COMMAND "${ASTRAL_PYTHON_EXECUTABLE}" "${script}" --log "${package_only_log}"
+  WORKING_DIRECTORY "${ASTRAL_SOURCE_DIR}"
+  RESULT_VARIABLE package_only_result
+  ERROR_VARIABLE package_only_error
+)
+if(package_only_result EQUAL 0)
+  message(FATAL_ERROR "validate_unreal_sample_runtime_log.py accepted a runtime log without generation evidence")
+endif()
+if(NOT package_only_error MATCHES "generation model loaded")
+  message(FATAL_ERROR "validate_unreal_sample_runtime_log.py failed for the wrong generation-marker reason: ${package_only_error}")
 endif()
 
 set(failure_log "${out_dir}/runtime-failure.log")

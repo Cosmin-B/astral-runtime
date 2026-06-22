@@ -145,8 +145,8 @@ target_link_libraries(your_target PRIVATE
 ### Manual Build
 
 ```bash
-g++ -std=c++20 -O2 -mavx2 -c src/utils/utf8.cpp
-g++ -std=c++20 -O2 -c src/utils/logging.cpp
+g++ -std=c++17 -O2 -mavx2 -c src/utils/utf8.cpp
+g++ -std=c++17 -O2 -c src/utils/logging.cpp
 ar rcs libastral_utils.a utf8.o logging.o
 ```
 
@@ -154,7 +154,7 @@ ar rcs libastral_utils.a utf8.o logging.o
 
 Run the test suite:
 ```bash
-g++ -std=c++20 -I./src -O2 -o test_utils \
+g++ -std=c++17 -I./src -O2 -o test_utils \
     src/utils/test_utils.cpp \
     src/utils/utf8.cpp \
     src/utils/logging.cpp

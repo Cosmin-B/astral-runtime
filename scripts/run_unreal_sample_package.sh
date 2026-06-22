@@ -277,6 +277,10 @@ if [[ ! -x "${sample_exe}" ]]; then
   exit 2
 fi
 
+if [[ -z "${sample_runtime_log}" ]]; then
+  sample_runtime_log="${archive_dir}/${platform}/AstralSample-runtime.log"
+fi
+
 runtime_args=(
   -NullRHI
   -Unattended
@@ -311,23 +315,25 @@ if [[ -n "${sample_media_path}" ]]; then
   echo "[unreal_sample] Runtime media path: ${sample_media_path}"
   echo "[unreal_sample] Runtime media path root: ${sample_media_path_root}"
 fi
-if [[ -n "${sample_runtime_log}" ]]; then
-  mkdir -p "$(dirname "${sample_runtime_log}")"
-  echo "[unreal_sample] Runtime log: ${sample_runtime_log}"
-  set +e
-  "${sample_exe}" "${runtime_args[@]}" 2>&1 | tee "${sample_runtime_log}"
-  runtime_status=${PIPESTATUS[0]}
-  set -e
-else
-  set +e
-  "${sample_exe}" "${runtime_args[@]}"
-  runtime_status=$?
-  set -e
-fi
+mkdir -p "$(dirname "${sample_runtime_log}")"
+echo "[unreal_sample] Runtime log: ${sample_runtime_log}"
+set +e
+"${sample_exe}" "${runtime_args[@]}" 2>&1 | tee "${sample_runtime_log}"
+runtime_status=${PIPESTATUS[0]}
+set -e
 
 if [[ "${runtime_status}" -ne 0 ]]; then
   echo "[unreal_sample] Runtime failed: ${runtime_status}" >&2
   exit "${runtime_status}"
 fi
+
+validate_args=(--log "${sample_runtime_log}")
+if [[ -n "${sample_model}" ]]; then
+  validate_args+=(--expect-model "${sample_model}")
+fi
+if [[ -n "${sample_embedding_model}" ]]; then
+  validate_args+=(--expect-embedding-model "${sample_embedding_model}")
+fi
+"${root_dir}/scripts/validate_unreal_sample_runtime_log.py" "${validate_args[@]}"
 
 echo "[unreal_sample] Runtime OK"

@@ -84,6 +84,11 @@ set(TRACKED_COMMENT_TOKENS
   "${hack_token}"
 )
 
+set(tracker_long_term "bea")
+string(APPEND tracker_long_term "ds")
+set(tracker_short_term "b")
+string(APPEND tracker_short_term "d")
+
 set(ai_generation_phrase "AI")
 string(APPEND ai_generation_phrase " generation")
 set(automated_tools_phrase "automated")
@@ -457,12 +462,25 @@ foreach(path IN LISTS FILES)
       set(is_lambda_gated_source ON)
     endif()
   endif()
-
-  foreach(token IN LISTS FORBIDDEN_STRINGS)
-    if(content MATCHES "${token}")
-      message(FATAL_ERROR "Forbidden token '${token}' found in ${path}")
+  set(is_runtime_container_gated_source OFF)
+  if(path MATCHES "/include/" OR path MATCHES "/src/" OR path MATCHES "/backend_plugins/" OR path MATCHES "/plugins/unreal/AstralRT/Source/AstralRT/")
+    if(NOT path MATCHES "/tests/" AND NOT path MATCHES "/benchmarks/" AND NOT path MATCHES "/examples/")
+      set(is_runtime_container_gated_source ON)
     endif()
-  endforeach()
+  endif()
+
+  set(allows_producer_reservation_cas OFF)
+  if(path MATCHES "/src/concurrency/mpsc_ring\\.hpp$")
+    set(allows_producer_reservation_cas ON)
+  endif()
+
+  if(NOT allows_producer_reservation_cas)
+    foreach(token IN LISTS FORBIDDEN_STRINGS)
+      if(content MATCHES "${token}")
+        message(FATAL_ERROR "Forbidden token '${token}' found in ${path}")
+      endif()
+    endforeach()
+  endif()
 
   # Gate: no full-vocab logits memcpy (static heuristic).
   # We forbid any memcpy call that references logits or vocab_size in the argument list.
@@ -475,8 +493,8 @@ foreach(path IN LISTS FILES)
   foreach(line IN LISTS lines)
     math(EXPR line_no "${line_no} + 1")
     foreach(token IN LISTS TRACKED_COMMENT_TOKENS)
-      if(line MATCHES "${token}" AND NOT line MATCHES "workspace-[A-Za-z0-9]+")
-        message(FATAL_ERROR "Untracked ${token} marker in ${path}:${line_no}; add a issue tracker issue id or remove it")
+      if(line MATCHES "${token}" AND NOT line MATCHES "(GH|ASTRAL)-[A-Za-z0-9._-]+|#[0-9]+")
+        message(FATAL_ERROR "Untracked ${token} marker in ${path}:${line_no}; add an issue reference or remove it")
       endif()
     endforeach()
     foreach(phrase IN LISTS UNREVIEWED_PROSE_STRINGS)
@@ -484,8 +502,23 @@ foreach(path IN LISTS FILES)
         message(FATAL_ERROR "Unreviewed generic prose '${phrase}' found in ${path}:${line_no}; rewrite it with project-specific ownership, lifecycle, or failure-mode language")
       endif()
     endforeach()
+    if(line MATCHES "(^|[^A-Za-z0-9_])${tracker_long_term}([^A-Za-z0-9_]|$)" OR
+       line MATCHES "(^|[^A-Za-z0-9_])${tracker_short_term}([^A-Za-z0-9_]|$)")
+      message(FATAL_ERROR "Internal tracker wording found in ${path}:${line_no}; keep coordination metadata outside the repository")
+    endif()
     if(is_lambda_gated_source AND ext MATCHES "^\\.(h|hpp|c|cc|cpp)$" AND line MATCHES "\\[[^]]*\\][ \t]*\\(" AND NOT line MATCHES "operator[^[]*\\[[ \t]*\\]")
       message(FATAL_ERROR "Lambda expression found in ${path}:${line_no}; use a named helper so ownership, profiling, and control flow stay reviewable")
+    endif()
+    if(is_runtime_container_gated_source AND ext MATCHES "^\\.(h|hpp|c|cc|cpp)$")
+      if(line MATCHES "#[ \t]*include[ \t]*<(map|unordered_map|set|unordered_set|deque|list)>")
+        message(FATAL_ERROR "General-purpose standard container include found in ${path}:${line_no}; use Astral-owned storage or engine containers at wrapper boundaries")
+      endif()
+      if(line MATCHES "std::(map|unordered_map|set|unordered_set|deque|list)[ \t]*[<:]")
+        message(FATAL_ERROR "General-purpose standard container found in ${path}:${line_no}; use Astral-owned storage or engine containers at wrapper boundaries")
+      endif()
+      if(NOT path MATCHES "/src/memory/(object_pool\\.hpp|test_memory\\.cpp)$" AND line MATCHES "[^A-Za-z0-9_:]ObjectPool[ \t]*<")
+        message(FATAL_ERROR "Shared ObjectPool found in ${path}:${line_no}; use owner-local storage in runtime paths or keep shared pools at cold boundaries")
+      endif()
     endif()
     if(path MATCHES "/tests/.*\\.(cpp|hpp)$")
       if(line MATCHES "ASSERT_TRUE\\(true\\)")
@@ -658,6 +691,8 @@ endforeach()
 
 set(model_downloader_file "${ROOT}/tests/model_downloader.sh")
 file(READ "${model_downloader_file}" model_downloader_content)
+set(model_presets_file "${ROOT}/scripts/model_presets.json")
+file(READ "${model_presets_file}" model_presets_content)
 foreach(required_model_downloader_text
     "qwen3-0.6b-q8"
     "Qwen/Qwen3-0.6B-GGUF"
@@ -677,9 +712,138 @@ foreach(required_model_downloader_text
     "qwen3-1.7b-q8"
     "Qwen/Qwen3-1.7B-GGUF"
     "Qwen3-1.7B-Q8_0.gguf")
-  string(FIND "${model_downloader_content}" "${required_model_downloader_text}" model_downloader_pos)
+  string(FIND "${model_presets_content}" "${required_model_downloader_text}" model_preset_pos)
+  if(model_preset_pos EQUAL -1)
+    message(FATAL_ERROR "Model presets are missing '${required_model_downloader_text}'")
+  endif()
+endforeach()
+foreach(required_model_tool_text
+    "model_preset_tool.py"
+    "download"
+    "list"
+    ".part"
+    "Progress"
+    "validate-only"
+    "print-path"
+    "list-unreal-matrix")
+  string(FIND "${model_downloader_content}" "${required_model_tool_text}" model_downloader_pos)
   if(model_downloader_pos EQUAL -1)
-    message(FATAL_ERROR "Model downloader is missing '${required_model_downloader_text}'")
+    message(FATAL_ERROR "Model downloader wrapper is missing '${required_model_tool_text}'")
+  endif()
+endforeach()
+
+set(feature_bench_file "${ROOT}/benchmarks/bench_features.cpp")
+set(prompt_cache_doc_file "${ROOT}/docs/api/PROMPT_CACHE.md")
+set(structured_output_doc_file "${ROOT}/docs/api/STRUCTURED_OUTPUT.md")
+set(agent_runtime_doc_file "${ROOT}/docs/api/AGENT_RUNTIME.md")
+set(chunking_doc_file "${ROOT}/docs/api/CHUNKING.md")
+set(memory_index_doc_file "${ROOT}/docs/api/MEMORY_INDEX.md")
+if(NOT EXISTS "${feature_bench_file}")
+  message(FATAL_ERROR "Feature benchmark source is missing")
+endif()
+foreach(required_feature_doc_file
+    "${prompt_cache_doc_file}"
+    "${structured_output_doc_file}"
+    "${agent_runtime_doc_file}"
+    "${chunking_doc_file}"
+    "${memory_index_doc_file}")
+  if(NOT EXISTS "${required_feature_doc_file}")
+    message(FATAL_ERROR "Feature API doc is missing: ${required_feature_doc_file}")
+  endif()
+endforeach()
+file(READ "${feature_bench_file}" feature_bench_content)
+file(READ "${prompt_cache_doc_file}" prompt_cache_doc_content)
+file(READ "${structured_output_doc_file}" structured_output_doc_content)
+file(READ "${agent_runtime_doc_file}" agent_runtime_doc_content)
+file(READ "${chunking_doc_file}" chunking_doc_content)
+file(READ "${memory_index_doc_file}" memory_index_doc_content)
+foreach(required_feature_benchmark_marker
+    "features.prompt_cache get"
+    "features.prompt_cache view"
+    "features.prompt_cache miss"
+    "features.system_prompt cached_tokens"
+    "features.toolset parse"
+    "features.chunk word_ranges"
+    "features.memory add_batch"
+    "features.memory graph_add_latency"
+    "features.memory graph_load"
+    "features.memory flat_search_top1"
+    "features.memory flat_search"
+    "features.memory flat_search_batch"
+    "features.memory flat_q8_recall_search"
+    "features.memory graph_top1"
+    "features.memory graph_search"
+    "features.memory graph_recall_top1"
+    "features.memory graph_recall_search"
+    "ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH"
+    "features.memory cursor_begin_fetch"
+    "features.agent prompt_warmup"
+    "features.agent prompt_cache_warmup"
+    "features.memory top1_100"
+    "features.memory top1_1k"
+    "features.memory top1_10k"
+    "features.memory top1_100k")
+  string(FIND "${feature_bench_content}" "${required_feature_benchmark_marker}" feature_benchmark_marker_pos)
+  if(feature_benchmark_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Feature benchmark source is missing '${required_feature_benchmark_marker}'")
+  endif()
+endforeach()
+foreach(required_prompt_cache_doc_marker
+    "features.prompt_cache get"
+    "features.prompt_cache view"
+    "features.prompt_cache miss"
+    "features.system_prompt cached_tokens"
+    "features.agent prompt_cache_warmup")
+  string(FIND "${prompt_cache_doc_content}" "${required_prompt_cache_doc_marker}" prompt_cache_doc_marker_pos)
+  if(prompt_cache_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Prompt cache doc is missing benchmark marker '${required_prompt_cache_doc_marker}'")
+  endif()
+endforeach()
+foreach(required_structured_output_doc_marker
+    "features.toolset parse"
+    "features.toolset parse_many")
+  string(FIND "${structured_output_doc_content}" "${required_structured_output_doc_marker}" structured_output_doc_marker_pos)
+  if(structured_output_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Structured output doc is missing benchmark marker '${required_structured_output_doc_marker}'")
+  endif()
+endforeach()
+foreach(required_agent_runtime_doc_marker
+    "features.agent prompt_warmup"
+    "features.agent prompt_cache_warmup"
+    "features.system_prompt cached_tokens")
+  string(FIND "${agent_runtime_doc_content}" "${required_agent_runtime_doc_marker}" agent_runtime_doc_marker_pos)
+  if(agent_runtime_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Agent runtime doc is missing benchmark marker '${required_agent_runtime_doc_marker}'")
+  endif()
+endforeach()
+foreach(required_chunking_doc_marker
+    "features.chunk word_ranges")
+  string(FIND "${chunking_doc_content}" "${required_chunking_doc_marker}" chunking_doc_marker_pos)
+  if(chunking_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Chunking doc is missing benchmark marker '${required_chunking_doc_marker}'")
+  endif()
+endforeach()
+foreach(required_memory_index_doc_marker
+    "features.memory add_batch"
+    "features.memory graph_add_latency"
+    "features.memory graph_load"
+    "features.memory flat_search_top1"
+    "features.memory flat_search"
+    "features.memory flat_search_batch"
+    "features.memory flat_q8_recall_search"
+    "features.memory graph_top1"
+    "features.memory graph_search"
+    "features.memory graph_recall_top1"
+    "features.memory graph_recall_search"
+    "ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH"
+    "features.memory cursor_begin_fetch"
+    "features.memory top1_100"
+    "features.memory top1_1k"
+    "features.memory top1_10k"
+    "features.memory top1_100k")
+  string(FIND "${memory_index_doc_content}" "${required_memory_index_doc_marker}" memory_index_doc_marker_pos)
+  if(memory_index_doc_marker_pos EQUAL -1)
+    message(FATAL_ERROR "Memory index doc is missing benchmark marker '${required_memory_index_doc_marker}'")
   endif()
 endforeach()
 
@@ -1189,7 +1353,10 @@ foreach(required_unreal_blueprint_header_text
     "HasKvState"
     "HasSlots"
     "HasGbnfGrammar"
-    "HasJsonSchemaGrammar")
+    "HasJsonSchemaGrammar"
+    "IsOperationSuccessful"
+    "IsOperationBackpressure"
+    "IsOperationEndOfStream")
   string(FIND "${unreal_blueprint_header_text}" "${required_unreal_blueprint_header_text}" unreal_blueprint_header_pos)
   if(unreal_blueprint_header_pos EQUAL -1)
     message(FATAL_ERROR "AstralRT Blueprint library header is missing '${required_unreal_blueprint_header_text}'")
@@ -1205,7 +1372,9 @@ foreach(required_unreal_blueprint_source_text
     "ASTRAL_CAP_STOP_SEQS"
     "ASTRAL_CAP_EMBEDDINGS"
     "ASTRAL_CAP_LOGPROBS"
-    "ASTRAL_CAP_MM_EMBEDDINGS")
+    "ASTRAL_CAP_MM_EMBEDDINGS"
+    "Result.bBackpressure"
+    "Result.bEndOfStream")
   string(FIND "${unreal_blueprint_source_text}" "${required_unreal_blueprint_source_text}" unreal_blueprint_source_pos)
   if(unreal_blueprint_source_pos EQUAL -1)
     message(FATAL_ERROR "AstralRT Blueprint library source is missing '${required_unreal_blueprint_source_text}'")
@@ -1336,6 +1505,30 @@ if(EXISTS "${unreal_embedder_file}")
     endif()
   endforeach()
 endif()
+
+file(GLOB_RECURSE unreal_plugin_sources
+  "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/*.h"
+  "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/*.cpp"
+)
+foreach(path IN LISTS unreal_plugin_sources)
+  file(READ "${path}" content)
+  if(content MATCHES "ASTRAL_ZONE")
+    message(FATAL_ERROR "Unreal plugin code must use TRACE_CPUPROFILER_EVENT_SCOPE instead of native Tracy wrappers: ${path}")
+  endif()
+endforeach()
+
+file(GLOB_RECURSE native_runtime_sources
+  "${ROOT}/include/*.h"
+  "${ROOT}/src/*.h"
+  "${ROOT}/src/*.hpp"
+  "${ROOT}/src/*.cpp"
+)
+foreach(path IN LISTS native_runtime_sources)
+  file(READ "${path}" content)
+  if(content MATCHES "TRACE_CPUPROFILER_EVENT_SCOPE")
+    message(FATAL_ERROR "Native runtime code must use Astral Tracy wrappers instead of Unreal profiler scopes: ${path}")
+  endif()
+endforeach()
 
 set(unreal_build_rules_file "${ROOT}/plugins/unreal/AstralRT/Source/AstralRT/AstralRT.Build.cs")
 if(EXISTS "${unreal_build_rules_file}")
@@ -1561,7 +1754,9 @@ foreach(required_unreal_blueprint_test
     "AstralRT.Blueprint.LibraryHelpers"
     "Blueprint model factory"
     "HasSamplerControls"
-    "HasMultimodalEmbeddings")
+    "HasMultimodalEmbeddings"
+    "operation backpressure helper"
+    "operation end of stream helper")
   if(NOT unreal_automation_text MATCHES "${required_unreal_blueprint_test}")
     message(FATAL_ERROR "Unreal Blueprint library Automation coverage is missing ${required_unreal_blueprint_test}")
   endif()

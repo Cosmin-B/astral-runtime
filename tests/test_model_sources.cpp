@@ -186,6 +186,9 @@ TEST(model_load2_io_mock_smoke) {
 }
 
 TEST(model_load2_memory_cpu_smoke) {
+#if !ASTRAL_ENABLE_VIRTUAL_MEMORY
+    SKIP_TEST("CPU MEMORY source requires virtual memory support");
+#endif
     alignas(64) static uint8_t arena[16u * 1024u * 1024u];
     const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
     ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
@@ -212,6 +215,9 @@ TEST(model_load2_memory_cpu_smoke) {
 }
 
 TEST(model_load2_io_cpu_smoke) {
+#if !ASTRAL_ENABLE_VIRTUAL_MEMORY
+    SKIP_TEST("CPU IO source requires virtual memory support");
+#endif
     alignas(64) static uint8_t arena[16u * 1024u * 1024u];
     const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
     ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);

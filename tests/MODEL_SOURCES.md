@@ -6,8 +6,8 @@ Astral tests and benchmarks use GGUF models downloaded from Hugging Face. The he
 - Preset: `gpt2-q2k`
 - Notes: small generative GGUF (good for CI and quick local runs).
 
-## Embeddings models (small)
-These are encoder/embedding GGUFs (typically 384-dim class):
+## Embeddings Models
+These are encoder/embedding GGUFs for local RAG and embedding smoke runs:
 - Preset: `embed-minilm-q2k`
   - Repo: `second-state/All-MiniLM-L6-v2-Embedding-GGUF`
   - File: `all-MiniLM-L6-v2-Q2_K.gguf`
@@ -17,6 +17,12 @@ These are encoder/embedding GGUFs (typically 384-dim class):
 - Preset: `embed-nomic-v1-5-q2k`
   - Repo: `nomic-ai/nomic-embed-text-v1.5-GGUF`
   - File: `nomic-embed-text-v1.5.Q2_K.gguf`
+- Preset: `qwen3-embed-0.6b-q8`
+  - Repo: `Qwen/Qwen3-Embedding-0.6B-GGUF`
+  - File: `Qwen3-Embedding-0.6B-Q8_0.gguf`
+- Preset: `embeddinggemma-300m-q4`
+  - Repo: `ggml-org/embeddinggemma-300M-qat-q4_0-GGUF`
+  - File: `embeddinggemma-300M-qat-Q4_0.gguf`
 
 ## LiquidAI (generative)
 These are “small” relative to multi-billions, but still much larger than GPT-2:
@@ -59,11 +65,27 @@ Download helpers:
 ### Presets (recommended)
 - `./tests/model_downloader.sh --preset gpt2-q2k`
 - `./tests/model_downloader.sh --preset embed-minilm-q2k`
+- `./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8`
+- `./tests/model_downloader.sh --preset embeddinggemma-300m-q4`
 - `./tests/model_downloader.sh --preset gemma3-270m-q4km`
 - `./tests/model_downloader.sh --preset gemma3-1b-it-q4km`
 - `./tests/model_downloader.sh --preset qwen3-0.6b-q8`
 - `./tests/model_downloader.sh --preset qwen3-1.7b-q8`
 - `./tests/model_downloader.sh --preset smollm3-3b-q4km`
+
+Preset inspection and local validation:
+- `./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run`
+- `./tests/model_downloader.sh --preset qwen3-0.6b-q8 --info`
+- `./tests/model_downloader.sh --preset qwen3-0.6b-q8 --print-path`
+- `./tests/model_downloader.sh --preset qwen3-0.6b-q8 --validate-only`
+
+`--validate-only` does not download. It verifies the existing local file against
+the preset size and SHA-256, so truncated or checksum-drifted files fail before
+tests or sample runners spend time configuring a build.
+
+`--info` prints machine-readable preset metadata for setup tools that need the
+resolved path, URL, checksum, model type, context length, embedding dimension,
+and repeatable download command without starting a network request.
 
 ### Environment variables
 Astral uses a single model for decode/stream gates and (optionally) a different model for embeddings tests:

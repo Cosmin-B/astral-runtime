@@ -18,7 +18,7 @@ graph TB
         CABI[Stable C ABI<br/>P/Invoke or Module Import]
     end
 
-    subgraph "Astral Core (C++20)"
+    subgraph "Astral Core (C++17)"
         SESSION[Session Manager]
         STREAMING[Streaming SPSC Rings]
         WORK[Work MPMC Queue]

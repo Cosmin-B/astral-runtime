@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines cross-platform low-level atomic operations, memory management primitives, and synchronization abstractions with **minimal to zero dependencies**. These patterns keep hot primitives explicit and measurable without relying on C++ standard library atomics or OS-specific APIs.
+This document outlines cross-platform low-level atomic operations, memory management primitives, CPU dispatch probes, and synchronization abstractions with **minimal to zero dependencies**. Astral's private native core is C++17 and uses explicit `std::atomic` memory orders, small platform intrinsics, and direct OS shims only where the runtime needs them.
 
 ## Architecture Overview
 
@@ -165,11 +165,23 @@ sequenceDiagram
 
 ## Core Philosophy
 
-1. **Zero Dependencies**: Implement primitives using compiler intrinsics and inline assembly where needed
+1. **Zero Dependencies**: Implement primitives using C++17, compiler intrinsics, and inline assembly where needed
 2. **Cross-Platform**: Support x86-64, ARM64, ARMv7, RISC-V, WebAssembly
 3. **Explicit Memory Order**: Always specify memory ordering; no hidden sequential consistency costs
 4. **Cache-Line Aware**: All hot data structures use explicit padding to avoid false sharing
-5. **Compile-Time Configuration**: Use feature detection and compile-time branching
+5. **Dispatch Once**: Detect x86_64 AVX2 and ARM NEON support at setup time, then call the selected private implementation directly
+
+## Current Private Foundation
+
+- `src/platform/compiler.hpp`: force-inline, no-inline, branch-hint, and restrict-like macros that remain valid under C++17.
+- `src/platform/cpu_features.hpp`: private CPU feature probe for the first dispatch tiers: x86_64 AVX2 and ARM NEON.
+- `src/platform/time.h`: tick clock backed by rdtsc, mach absolute time, ARM virtual counter, or monotonic nanoseconds.
+- `src/concurrency/spsc_ring.hpp`: bounded single-producer/single-consumer transfer path.
+- `src/concurrency/mpsc_ring.hpp`: bounded multi-producer/single-consumer fan-in path. Full queues return a boolean that maps to `ASTRAL_E_BUSY` at the C ABI boundary.
+- `src/concurrency/mpmc_queue.hpp`: bounded blocking work-dispatch queue used only when ownership cannot be reduced to SPSC or MPSC.
+
+The primitive order is intentional: prefer SPSC, then MPSC, then MPMC.
+Backpressure is explicit; there is no unbounded hot-path allocation.
 
 ## Platform Detection and Feature Macros
 
@@ -710,7 +722,7 @@ Modern CPUs have sophisticated branch predictors that track ~4096 unique branche
 
 | Branch Pattern | Predictability | Best Choice | Example |
 |---------------|----------------|-------------|---------|
-| Error paths | >95% | Branch with `[[unlikely]]` | Null checks, bounds checks |
+| Error paths | >95% | Branch with `ASTRAL_UNLIKELY` | Null checks, bounds checks |
 | Data-dependent | <70% | CMOV/CSEL | Token sampling, random access |
 | Configuration | 100% | Branch | Compile-time constants |
 
@@ -863,11 +875,11 @@ ASTRAL_FORCE_INLINE uint32_t validate_utf8_branchless(uint8_t byte, uint32_t sta
 ```cpp
 // BAD: Error path is highly predictable (>99% success)
 // Branch predictor handles this efficiently
-if (ptr == nullptr) [[unlikely]] {
+if (ptr == nullptr) ASTRAL_UNLIKELY {
     handle_error();  // Rare path
 }
 
-// GOOD: Use [[unlikely]] hint, not CMOV
+// GOOD: Use ASTRAL_UNLIKELY hint, not CMOV
 ```
 
 ## Memory Allocator Patterns
@@ -1350,7 +1362,7 @@ struct PaddedCounter {
 
 ### Aligned Memory Allocation with SIMD Hints
 
-**Why Alignment Matters for SIMD**: Modern compilers can auto-vectorize loops when they can prove memory is aligned. `std::assume_aligned` provides this proof to the compiler, enabling optimizations like:
+**Why Alignment Matters for SIMD**: Modern compilers can auto-vectorize loops when they can prove memory is aligned. Compiler alignment hints provide this proof, enabling optimizations like:
 - AVX-512 aligned loads (`vmovdqa32` vs `vmovdqu32` - 1 cycle saved per load)
 - ARM NEON aligned loads (`vld1.32` with alignment hint - enables prefetch)
 - Auto-vectorization of loops that would otherwise be scalar
@@ -1361,12 +1373,10 @@ struct PaddedCounter {
 // aligned_simd.h
 #pragma once
 
-#include <memory>  // std::assume_aligned (C++20)
-
 namespace astral {
 
 // Wrapper for engine-provided aligned allocator
-// Why: Enables SIMD auto-vectorization with std::assume_aligned hints
+// Why: Enables SIMD auto-vectorization with compiler alignment hints
 //
 // Engine allocators should provide:
 //   void* (*aligned_alloc)(void* ctx, size_t size, size_t alignment);
@@ -1416,9 +1426,7 @@ private:
   // SIMD-friendly accessors with compiler hints
   template<size_t Alignment, typename T>
   static T* get_aligned(void* ptr) {
-    #if __cplusplus >= 202002L  // C++20
-      return std::assume_aligned<Alignment, T>(static_cast<T*>(ptr));
-    #elif defined(__GNUC__) || defined(__clang__)
+    #if defined(__GNUC__) || defined(__clang__)
       return static_cast<T*>(__builtin_assume_aligned(ptr, Alignment));
     #elif defined(_MSC_VER)
       __assume((reinterpret_cast<uintptr_t>(ptr) & (Alignment - 1)) == 0);
@@ -1447,7 +1455,7 @@ ASTRAL_FORCE_INLINE bool validate_utf8_simd(
         AlignedBuffer::get_aligned<ALIGN, const uint8_t>(aligned_buffer);
 
     // Compiler can now auto-vectorize this loop
-    // Without std::assume_aligned, compiler must use unaligned loads
+    // Without an alignment hint, compiler must use unaligned loads
     bool valid = true;
     for (size_t i = 0; i < len; ++i) {
         uint8_t byte = aligned_ptr[i];
@@ -1503,7 +1511,7 @@ ASTRAL_FORCE_INLINE void gather_embeddings_simd(
 } // namespace astral
 ```
 
-**Performance Impact of std::assume_aligned:**
+**Performance Impact of alignment hints:**
 
 | Operation | Scalar | Unaligned SIMD | Aligned SIMD | Speedup |
 |-----------|--------|----------------|--------------|---------|
@@ -1566,7 +1574,7 @@ static_assert(std::is_trivially_copyable_v<TokenBuffer>);
 
 **Best Practices:**
 1. Always use aligned allocation (via engine allocator or platform fallback) for buffers >1KB that will be processed in loops
-2. Apply `std::assume_aligned` at the boundary between allocation and processing
+2. Apply compiler alignment hints at the boundary between allocation and processing
 3. Validate alignment in debug builds with `assert((uintptr_t)ptr % alignment == 0)`
 4. Document alignment requirements in function contracts
 5. Use `ASTRAL_FORCE_INLINE` for SIMD wrappers to eliminate call overhead

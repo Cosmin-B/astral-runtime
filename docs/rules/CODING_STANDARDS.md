@@ -12,24 +12,26 @@
 
 ## Language Features
 
-### C++20 Usage
+### C++17 Usage
 
 **Allowed**:
-- Concepts (for compile-time checks, not in ABI)
-- `constexpr`, `consteval` for compile-time computation
-- `std::bit_cast` (internal only)
-- `[[likely]]`, `[[unlikely]]` for branch hints
-- Designated initializers for POD structs
-- Three-way comparison (`<=>`) for internal types
+- `constexpr` for compile-time computation
 - Structured bindings
 - `if constexpr` for platform selection
+- Internal compiler macros from `src/platform/compiler.hpp` for force-inline,
+  no-inline, branch hints, and restrict-like annotations
 
 **Forbidden**:
 - Modules (not yet cross-platform stable)
 - Coroutines (allocation implications)
+- Concepts
 - Ranges (STL dependency)
 - `std::format` (allocation, binary size)
 - `std::span` (reimplemented as `Span` to avoid STL dependency)
+- `std::bit_cast`
+- `[[likely]]`, `[[unlikely]]`; use `ASTRAL_LIKELY` and `ASTRAL_UNLIKELY`
+- Designated initializers
+- Three-way comparison (`<=>`)
 - Any STL containers (`std::vector`, `std::string`, etc.)
 - Any STL allocators or memory facilities
 
@@ -520,10 +522,10 @@ clang-format -i include/*.h src/**/*.cpp
 1. **Measure, Don't Guess**: Profile before optimizing
 2. **Allocations Are Bugs**: Every allocation in the hot path must be justified in writing
 3. **Cache Lines Matter**: Align hot structures to 64 bytes
-4. **Branches Are Slow**: Use `[[likely]]` / `[[unlikely]]` after profiling
+4. **Branches Are Slow**: Use `ASTRAL_LIKELY` / `ASTRAL_UNLIKELY` after profiling
 5. **Data-Oriented Design**: Think in terms of data flow, not objects
 
-### Branch Hints: `[[likely]]` and `[[unlikely]]`
+### Branch Hints: `ASTRAL_LIKELY` and `ASTRAL_UNLIKELY`
 
 **When to Use**: Mark branches where one path is taken >95% of the time. Modern CPUs can predict up to 4096 unique branches; beyond that, misprediction rates increase dramatically.
 
@@ -537,17 +539,17 @@ clang-format -i include/*.h src/**/*.cpp
 #### Error Paths (Boundary Code Only)
 
 ```cpp
-// GOOD: Mark rare boundary failures as [[unlikely]] before entering the hot loop.
+// GOOD: Mark rare boundary failures before entering the hot loop.
 AstralErr decode_token_boundary(const uint8_t* input, uint32_t len, Token* out) {
-    if (input == nullptr) [[unlikely]] {
+    if (input == nullptr) ASTRAL_UNLIKELY {
         return ASTRAL_E_INVALID;
     }
 
-    if (len == 0) [[unlikely]] {
+    if (len == 0) ASTRAL_UNLIKELY {
         return ASTRAL_E_INVALID;
     }
 
-    if (len > MAX_TOKEN_LEN) [[unlikely]] {
+    if (len > MAX_TOKEN_LEN) ASTRAL_UNLIKELY {
         return ASTRAL_E_INVALID;
     }
 
@@ -560,16 +562,16 @@ AstralErr decode_token_boundary(const uint8_t* input, uint32_t len, Token* out) 
 #### Success vs Failure Patterns
 
 ```cpp
-// GOOD: Mark rare success as [[unlikely]]
-bool try_claim_slot(uint64_t* slot) {
-    // Claim via exchange (no CAS). Returns true only for the first claimer.
-    uint64_t prev = std::atomic_ref<uint64_t>(*slot).exchange(1, std::memory_order_acquire);
+// GOOD: Mark rare success as unlikely.
+bool try_claim_slot(std::atomic<uint64_t>& slot) {
+    // Claim via exchange. Returns true only for the first claimer.
+    uint64_t prev = slot.exchange(1, std::memory_order_acquire);
     return prev == 0;
 }
 
-// GOOD: Mark common success as [[likely]]
+// GOOD: Mark common success as likely.
 bool validate_token_id(uint32_t id, uint32_t vocab_size) {
-    if (id < vocab_size) [[likely]] {
+    if (id < vocab_size) ASTRAL_LIKELY {
         return true;  // >99% of tokens are valid
     }
     return false;
@@ -592,7 +594,7 @@ if (user_preference == MODE_A) {  // Could be 50/50
 
 // BAD: Already obvious to compiler
 for (size_t i = 0; i < len; ++i) {
-    if (i == 0) [[unlikely]] {  // Compiler already knows this!
+    if (i == 0) ASTRAL_UNLIKELY {  // Compiler already knows this!
         // Loop entry optimization
     }
 }
@@ -602,12 +604,12 @@ for (size_t i = 0; i < len; ++i) {
 
 | Branch Pattern | Hint | Justification |
 |---------------|------|---------------|
-| Null pointer checks | `[[unlikely]]` | >99% not null |
-| Bounds checks (valid input) | `[[likely]]` | >95% in bounds |
-| Error returns | `[[unlikely]]` | >95% success |
+| Null pointer checks | `ASTRAL_UNLIKELY` | >99% not null |
+| Bounds checks (valid input) | `ASTRAL_LIKELY` | >95% in bounds |
+| Error returns | `ASTRAL_UNLIKELY` | >95% success |
 | MPMC queue operations | None | Unpredictable under contention |
 | Token sampling (temp >0.5) | None | Use branchless CMOV |
-| Early loop exit | `[[unlikely]]` | Most loops complete |
+| Early loop exit | `ASTRAL_UNLIKELY` | Most loops complete |
 
 ### Trivially Copyable Types
 

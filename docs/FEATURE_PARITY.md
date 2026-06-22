@@ -2,8 +2,8 @@
 
 This document records product gaps against Unity-focused llama.cpp wrappers. It
 is not a release status page. Current support status lives in
-[`FEATURE_MATRIX.md`](FEATURE_MATRIX.md), and production blockers live in
-[`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
+[`FEATURE_MATRIX.md`](FEATURE_MATRIX.md). Release evidence requirements are
+captured by the release gates and integration runner docs.
 
 ## Competitor Baseline
 
@@ -17,9 +17,10 @@ Unity wrappers such as LLMUnity and LlamaCppUnity commonly provide:
 - Unity editor utilities for model management and samples.
 - Mobile package workflows for Android and iOS.
 
-LLMUnity also includes application-layer features that Astral should not pull
-into the core runtime by default, such as RAG indexing and remote-server
-workflows. Those belong behind optional layers or separate packages.
+LLMUnity also includes application-layer features that need strict boundaries
+in Astral: document memory, chunking, tool definitions, agents, model presets,
+and remote-server workflows. Native Astral owns the data-plane pieces that
+benefit from direct buffers and bounded memory; engine wrappers remain thin.
 
 ## Astral Maintained Surface
 
@@ -29,10 +30,15 @@ Astral already has maintained native surfaces for:
   error reporting.
 - CPU llama.cpp provider integration.
 - Provider registration and dynamic provider loading.
-- Grammar, logprobs, KV-state save/load, slots, LoRA/adapters, and embeddings
-  where the selected backend/model supports them.
-- Unity P/Invoke wrappers with `NativeArray` streaming.
-- Unreal runtime wrappers with bytes-first streaming and native ownership.
+- Tokenization/detokenization, prompt cache, grammar, toolsets, logprobs,
+  KV-state save/load, slots, LoRA/adapters, and embeddings where the selected
+  backend/model supports them.
+- Native chunking, vector memory search, continuous-batching conversations, and
+  agents with system prompt/history ownership.
+- Unity P/Invoke wrappers with `NativeArray` streaming, embeddings, prompt
+  cache, chunking, memory index, LoRA, toolsets, conversations, and agents.
+- Unreal runtime wrappers with bytes-first streaming, prompt cache, chunking,
+  memory index, toolsets, LoRA, and agent Blueprint surfaces.
 - Native release gates for ABI layout, shared exports, dependency pins, source
   prose, release metadata, allocation tracking, RSS, and syscall behavior.
 
@@ -47,10 +53,10 @@ These areas remain product work or release validation work:
 | Area | Status |
 |---|---|
 | Unity editor tooling | Basic validation helpers exist; richer model-management UI is not implemented. |
-| Chat templates | Roadmap item; no maintained template engine is part of the core runtime today. |
-| Function calling | Policy-layer work; grammar primitives exist, but tool dispatch is not a core runtime feature. |
-| RAG / ANN | Out of core scope unless introduced as an optional package. |
-| Remote server | Out of core scope; keep native runtime embeddable. |
+| Chat templates | Agents assemble bounded native prompts; a maintained template language is not part of the runtime. |
+| Function calling | Native toolsets and result parsing exist; final application dispatch remains in the caller. |
+| RAG / ANN | Exact flat search and bounded graph search exist; full workflow samples and release evidence still need tightening. |
+| Remote server | Native remote transport exists for health, tokenization, streaming completion chunks, auth failure, retry, timeout, and embeddings; TLS-enabled and production-service evidence remain open. |
 | CUDA release path | Build/runtime surface exists; real GPU parity/e2e evidence is required. |
 | Mobile release path | Artifact lanes exist; device/editor validation remains required. |
 | Unreal production path | Plugin and runners exist; UE 5.7 container and UE 5.4+ editor evidence remains required. |
@@ -58,8 +64,8 @@ These areas remain product work or release validation work:
 ## Strategy
 
 - Keep the core C ABI small and engine-neutral.
-- Put Unity and Unreal convenience APIs in their plugins, not in the native
-  runtime.
+- Put Unity and Unreal presentation APIs in their plugins, not in decode or
+  stream hot paths.
 - Treat GPU, media, mobile, and engine editor support as release-evidence
   requirements, not marketing checkboxes.
 - Add higher-level features only when they have a clear owner, tests, and a
@@ -69,6 +75,8 @@ These areas remain product work or release validation work:
 
 - [`FEATURE_MATRIX.md`](FEATURE_MATRIX.md): maintained capability map.
 - [`CUDA_PARITY.md`](CUDA_PARITY.md): CUDA parity policy and commands.
+- [`api/MODEL_PATHS.md`](api/MODEL_PATHS.md): packaged-content and first-run
+  download path resolution.
 - [`integration/UNREAL_57_QUICKSTART.md`](integration/UNREAL_57_QUICKSTART.md):
   UE 5.7 runner path and evidence list.
 - [`../plugins/unity/README.md`](../plugins/unity/README.md): current Unity

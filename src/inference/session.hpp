@@ -6,6 +6,7 @@
 #include "model.hpp"
 #include "sampler.hpp"
 #include "adapter.hpp"
+#include "tooling.hpp"
 #include "prompt_chunks.hpp"
 #include <atomic>
 #include <cstdint>
@@ -137,8 +138,13 @@ struct Session {
 
     // Adapters (fixed-size list; session-scoped).
     uint32_t adapter_count;
-    AstralHandle adapter_handles[8];
-    float adapter_scales[8];
+    AstralHandle adapter_handles[ASTRAL_SESSION_ADAPTERS_MAX];
+    Adapter* adapter_refs[ASTRAL_SESSION_ADAPTERS_MAX];
+    float adapter_scales[ASTRAL_SESSION_ADAPTERS_MAX];
+
+    // Structured output toolset (setup-time only; decode reads provider grammar state).
+    Toolset* toolset;
+    AstralToolChoiceMode tool_choice_mode;
 
     // Slot id (for providers that support parallel slots).
     uint32_t slot_id;
@@ -192,6 +198,7 @@ void session_destroy(Session* session);
 ///
 /// Thread-safety: Not thread-safe (single-threaded access per session)
 AstralErr session_feed(Session* session, AstralSpanU8 prompt_chunk, uint8_t finalize);
+AstralErr session_feed_tokens(Session* session, const int32_t* tokens, uint32_t token_count, uint8_t finalize);
 /// Feed an image prompt chunk.
 AstralErr session_feed_image(Session* session, const AstralImageDesc* image, uint8_t finalize);
 /// Feed an audio prompt chunk.
@@ -281,11 +288,16 @@ AstralErr session_state_load(Session* session, AstralSpanU8 state_bytes);
 /// Attach adapters to a session.
 AstralErr session_adapters_clear(Session* session);
 AstralErr session_adapters_add(Session* session, AstralHandle adapter, float scale);
+AstralErr session_adapters_count(Session* session, uint32_t* out_count);
+AstralErr session_adapters_get(Session* session, uint32_t index, AstralHandle* out_adapter, float* out_scale);
+AstralErr session_adapters_set_scale(Session* session, uint32_t index, float scale);
 
 /// Configure grammar-constrained decoding.
 AstralErr session_set_grammar_gbnf(Session* session, AstralSpanU8 gbnf, AstralSpanU8 root);
 AstralErr session_set_grammar_json_schema(Session* session, AstralSpanU8 json_schema);
 AstralErr session_clear_grammar(Session* session);
+AstralErr session_set_toolset(Session* session, Toolset* toolset, AstralToolChoiceMode choice_mode);
+AstralErr session_clear_toolset(Session* session);
 
 /// Set the session slot/sequence id.
 AstralErr session_set_slot(Session* session, uint32_t slot_id);

@@ -5,14 +5,15 @@ the production target. It builds the native Astral runtime, stages the
 ThirdParty files into the plugin, and runs the same Automation entrypoint used
 by CI.
 
-Real release sign-off still requires access to Epic's UE images or installed
-editors. The local native build proves the plugin package is current; it does
-not replace a real UnrealEditor run.
+Real UE 5.7 validation requires access to Epic's UE image or an installed
+editor. The local native build proves the plugin package is current; use the
+container or editor lane below when you need UnrealEditor evidence. UE 5.4,
+5.5, and 5.6 compatibility still require their own editor runs.
 
 ## Prerequisites
 
 - A checkout with submodules initialized.
-- CMake and a C++20 compiler for the native package build.
+- CMake and a C++17 compiler for the native package build.
 - Unreal Engine 5.7.4 for the production lane.
 - Access to Epic's GitHub Container Registry packages for the container lanes.
 - Unreal 5.4, 5.5, 5.6, and 5.7 editor paths for compatibility evidence.
@@ -63,7 +64,7 @@ To create a sidecar UE 5.7 sample project without committing generated files:
 The script creates `AstralSample.uproject`, links the local `AstralRT` plugin,
 stages a small mock model payload as UFS content, and writes C++ code that
 demonstrates model load, streaming, cancellation, embeddings, packaged content
-bytes, Saved cache bytes, and expected failure logging through
+bytes, Saved cache bytes, native memory search, and expected failure logging through
 `LogAstralSample`. Use `--plugin-mode copy` when the project must be packaged on
 a machine without access to the Astral checkout. Real sign-off still requires
 packaging that generated project in UE 5.7 and keeping the logs as release
@@ -85,7 +86,9 @@ For a packaged runtime smoke, launch the archived binary with
 `-NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit -log -stdout`.
 The sample GameMode spawns `AAstralSampleActor` on the default engine entry map;
 the log should include successful packaged-content and Saved-cache memory model
-loads before exit.
+loads plus `Astral sample: RAG search top key` before exit.
+The package runner validates the runtime log after `--run-sample`; the log must
+also include `Astral sample: clean shutdown`.
 
 To package and immediately launch the sample against local real text and
 embedding GGUFs:
@@ -161,6 +164,9 @@ on local GGUF files. Download the small fixtures first:
 ./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8
 ```
 
+Presets are resolved from `scripts/model_presets.json`; use `--dry-run` to see
+the pinned path, URL, byte size, and SHA-256 before downloading.
+
 Then run the slim container against the package built by the full UE SDK lane:
 
 ```bash
@@ -193,7 +199,8 @@ Use `--dry-run` to inspect the generated `run_unreal_sample_package.sh`
 commands before starting Unreal, or `--preset qwen3-0.6b-q8` to run one
 candidate. Add `--download-missing` when a known Gemma/Qwen/SmolLM preset is
 not present under `tests/models`; the runner downloads it through
-`tests/model_downloader.sh` and keeps the GGUF outside git.
+`tests/model_downloader.sh` and keeps the GGUF outside git. The known model list
+comes from the same preset manifest used by native and Unity smoke runs.
 
 When the editor is only available through the cached Epic container images, run
 the same matrix inside the container:
@@ -233,8 +240,8 @@ UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
   ./scripts/run_unreal_compatibility_matrix.sh
 ```
 
-The matrix is required release evidence for UE 5.4+ support. Do not mark Unreal
-support production-ready from the native package build alone.
+The matrix is required evidence for UE 5.4+ support. Do not claim that older
+engine range from the native package build alone.
 
 ## Evidence To Keep
 

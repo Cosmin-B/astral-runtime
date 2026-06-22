@@ -107,6 +107,7 @@ int main() {
     EMIT_STRUCT(AstralArenaDesc);
     EMIT_STRUCT(AstralInit2);
     EMIT_STRUCT(AstralModelIO);
+    EMIT_STRUCT(AstralModelPathResolveDesc);
     EMIT_STRUCT(AstralModelDesc);
     EMIT_STRUCT(AstralModelInfo);
     EMIT_STRUCT(AstralModelLimits);
@@ -120,6 +121,16 @@ int main() {
     EMIT_STRUCT(AstralSamplerDesc);
     EMIT_STRUCT(AstralTokenMeta);
     EMIT_STRUCT(AstralAdapterDesc);
+    EMIT_STRUCT(AstralToolDesc);
+    EMIT_STRUCT(AstralToolsetDesc);
+    EMIT_STRUCT(AstralToolInfo);
+    EMIT_STRUCT(AstralToolCallResult);
+    EMIT_STRUCT(AstralChunkerDesc);
+    EMIT_STRUCT(AstralChunkRange);
+    EMIT_STRUCT(AstralMemoryIndexDesc);
+    EMIT_STRUCT(AstralMemoryRecord);
+    EMIT_STRUCT(AstralMemorySearchDesc);
+    EMIT_STRUCT(AstralMemorySearchResult);
     EMIT_STRUCT(AstralStats);
 
     std::printf("\n  ],\n");
@@ -145,6 +156,7 @@ int main() {
     EMIT_CONST(ASTRAL_E_BACKEND);
     EMIT_CONST(ASTRAL_E_CANCELED);
     EMIT_CONST(ASTRAL_E_UNSUPPORTED);
+    EMIT_CONST(ASTRAL_E_NOT_FOUND);
     EMIT_CONST(ASTRAL_LOG_ERROR);
     EMIT_CONST(ASTRAL_LOG_WARN);
     EMIT_CONST(ASTRAL_LOG_INFO);
@@ -156,6 +168,12 @@ int main() {
     EMIT_CONST(ASTRAL_MODEL_SOURCE_PATH);
     EMIT_CONST(ASTRAL_MODEL_SOURCE_MEMORY);
     EMIT_CONST(ASTRAL_MODEL_SOURCE_IO);
+    EMIT_CONST(ASTRAL_MODEL_PATH_ROOT_RAW);
+    EMIT_CONST(ASTRAL_MODEL_PATH_ROOT_CONTENT);
+    EMIT_CONST(ASTRAL_MODEL_PATH_ROOT_SAVED);
+    EMIT_CONST(ASTRAL_MODEL_PATH_ROOT_CACHE);
+    EMIT_CONST(ASTRAL_MODEL_PATH_ROOT_DOWNLOAD);
+    EMIT_CONST(ASTRAL_MODEL_PATH_RESOLVE_NONE);
     EMIT_CONST(ASTRAL_GPU_SPLIT_NONE);
     EMIT_CONST(ASTRAL_GPU_SPLIT_LAYER);
     EMIT_CONST(ASTRAL_GPU_SPLIT_ROW);
@@ -186,6 +204,21 @@ int main() {
     EMIT_CONST(ASTRAL_SESSION_COMPLETED);
     EMIT_CONST(ASTRAL_SESSION_CANCELED);
     EMIT_CONST(ASTRAL_SESSION_FAILED);
+    EMIT_CONST(ASTRAL_SESSION_ADAPTERS_MAX);
+    EMIT_CONST(ASTRAL_TOOL_CHOICE_AUTO);
+    EMIT_CONST(ASTRAL_TOOL_CHOICE_REQUIRED);
+    EMIT_CONST(ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_NONE);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_CHAR);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_WORD);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_SENTENCE);
+    EMIT_CONST(ASTRAL_CHUNK_MODE_TOKEN);
+    EMIT_CONST(ASTRAL_CHUNK_FLAG_KEEP_EMPTY);
+    EMIT_CONST(ASTRAL_MEMORY_METRIC_DOT);
+    EMIT_CONST(ASTRAL_MEMORY_METRIC_COSINE);
+    EMIT_CONST(ASTRAL_MEMORY_METRIC_L2);
+    EMIT_CONST(ASTRAL_MEMORY_INDEX_FLAT);
+    EMIT_CONST(ASTRAL_MEMORY_GROUP_ANY);
 
     std::printf("\n  ]\n");
     std::printf("}\n");
@@ -193,7 +226,7 @@ int main() {
 }
 CPP
 
-"${compiler}" -std=c++20 -I"${root_dir}/include" "${src}" -o "${bin}"
+"${compiler}" -std=c++17 -I"${root_dir}/include" "${src}" -o "${bin}"
 "${bin}" > "${report}"
 
 if [[ "${check_only}" -eq 1 ]]; then
@@ -202,9 +235,17 @@ if [[ "${check_only}" -eq 1 ]]; then
   grep -q '"name":"AstralModelDesc"' "${report}"
   grep -q '"name":"AstralSessionDesc"' "${report}"
   grep -q '"name":"AstralStats"' "${report}"
+  grep -q '"name":"AstralToolCallResult"' "${report}"
   grep -q '"name":"ASTRAL_E_UNSUPPORTED","value":-8' "${report}"
+  grep -q '"name":"ASTRAL_E_NOT_FOUND","value":-9' "${report}"
   grep -q '"name":"ASTRAL_MODEL_SOURCE_IO","value":2' "${report}"
   grep -q '"name":"ASTRAL_SESSION_FAILED","value":5' "${report}"
+  grep -q '"name":"ASTRAL_SESSION_ADAPTERS_MAX","value":8' "${report}"
+  grep -q '"name":"ASTRAL_TOOL_CHOICE_TEXT_OR_TOOL","value":2' "${report}"
+  grep -q '"name":"AstralChunkRange"' "${report}"
+  grep -q '"name":"ASTRAL_CHUNK_MODE_TOKEN","value":4' "${report}"
+  grep -q '"name":"AstralMemorySearchResult"' "${report}"
+  grep -q '"name":"ASTRAL_MEMORY_METRIC_L2","value":2' "${report}"
   grep -q '"name":"ASTRAL_CAP_MM_EMBEDDINGS","value":134217728' "${report}"
   grep -q '"name":"ASTRAL_GPU_ROUTE_STREAM","value":4' "${report}"
   exit 0

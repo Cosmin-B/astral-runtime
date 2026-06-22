@@ -56,7 +56,7 @@ if [[ "${strict}" -eq 1 ]]; then
   export ASTRAL_TEST_CUDA_PARITY_STRICT=1
 fi
 
-if [[ "${allow_probes}" -ne 1 ]]; then
+if [[ "${allow_probes}" -ne 1 && "${check_runner}" -ne 1 ]]; then
   if [[ "${ASTRAL_TEST_CUDA_PARITY_INFER:-}" != "1" ]]; then
     echo "Missing ASTRAL_TEST_CUDA_PARITY_INFER=1; pass --allow-probes only for local build discovery." >&2
     exit 2

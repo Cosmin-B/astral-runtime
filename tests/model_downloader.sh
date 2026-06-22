@@ -1,377 +1,217 @@
-#!/bin/bash
-# model_downloader.sh - Download a GGUF model for integration tests
-#
-# Default: GPT-2 (Q2_K quantization, small download)
-#
-# Overrides (optional):
-# - ASTRAL_TEST_MODEL_URL / ASTRAL_MODEL_URL: GGUF download URL
-# - ASTRAL_TEST_MODEL_FILE / ASTRAL_MODEL_FILE: output filename (under tests/models/)
-# - ASTRAL_HF_REPO / ASTRAL_TEST_HF_REPO: Hugging Face repo id (org/name)
-# - ASTRAL_HF_FILE / ASTRAL_TEST_HF_FILE: Hugging Face filename (in repo)
-# - ASTRAL_HF_REVISION / ASTRAL_TEST_HF_REVISION: Hugging Face revision (default: main)
-# - HF_TOKEN: optional token for gated/private repos (used as Authorization header)
-# - ASTRAL_MODEL_MIN_BYTES: minimum expected file size (bytes)
-#
-# CLI overrides (take precedence over env):
-#   ./model_downloader.sh --url <url> --file <name.gguf> --min-bytes <N>
-#   ./model_downloader.sh --hf-repo <org/repo> --hf-file <name.gguf> [--hf-rev <rev>]
-#   ./model_downloader.sh --preset <name>
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-MODEL_DIR="${SCRIPT_DIR}/models"
-
-DEFAULT_MODEL_FILE="gpt2.Q2_K.gguf"
-DEFAULT_MODEL_URL="https://huggingface.co/RichardErkhov/openai-community_-_gpt2-gguf/resolve/main/gpt2.Q2_K.gguf"
-DEFAULT_MIN_BYTES=70000000
-
-HF_REPO="${ASTRAL_HF_REPO:-${ASTRAL_TEST_HF_REPO:-}}"
-HF_FILE="${ASTRAL_HF_FILE:-${ASTRAL_TEST_HF_FILE:-}}"
-HF_REVISION="${ASTRAL_HF_REVISION:-${ASTRAL_TEST_HF_REVISION:-main}}"
-
-MODEL_URL="${ASTRAL_MODEL_URL:-${ASTRAL_TEST_MODEL_URL:-}}"
-MODEL_FILE_NAME="${ASTRAL_MODEL_FILE:-${ASTRAL_TEST_MODEL_FILE:-$DEFAULT_MODEL_FILE}}"
-MODEL_MIN_BYTES="${ASTRAL_MODEL_MIN_BYTES:-$DEFAULT_MIN_BYTES}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root_dir="$(cd "${script_dir}/.." && pwd)"
+tool="${root_dir}/scripts/model_preset_tool.py"
+exit_ok=0
+exit_usage=2
 
 usage() {
-    cat <<EOF
-Usage: $0 [--preset <name>] [--url <url>] [--hf-repo <org/repo> --hf-file <file.gguf> [--hf-rev <rev>]] \\
-          [--file <name.gguf>] [--min-bytes <N>] [--dir <path>] [--list-presets]
+  cat <<'EOF'
+Usage: tests/model_downloader.sh [options]
 
-Environment overrides:
-  ASTRAL_TEST_MODEL_URL / ASTRAL_MODEL_URL
-  ASTRAL_TEST_MODEL_FILE / ASTRAL_MODEL_FILE
-  ASTRAL_TEST_HF_REPO / ASTRAL_HF_REPO
-  ASTRAL_TEST_HF_FILE / ASTRAL_HF_FILE
-  ASTRAL_TEST_HF_REVISION / ASTRAL_HF_REVISION
-  ASTRAL_MODEL_MIN_BYTES
-  HF_TOKEN (optional auth token for private/gated Hugging Face repos)
+Options:
+  --preset <name>       Download a named preset from scripts/model_presets.json
+  --dir <path>          Output directory (default: tests/models)
+  --dry-run             Print resolved preset, path, URL, checksum, and command
+  --validate-only       Validate an existing local preset file without downloading
+  --validate-metadata   Validate GGUF metadata against preset fields
+  --inspect-metadata    Print GGUF metadata summary for a local preset
+  --print-path          Print the resolved local path for a preset
+  --info                Print resolved preset metadata as JSON
+  --status              Print existing local file state as JSON
+  --status-all          Print local file state for selected presets as JSON
+  --status-summary      Print aggregate local file state for selected presets as JSON
+  --download-plan       Print commands for selected presets that are not ready
+  --status-format <fmt> Print --status/--status-all as json or text
+  --status-only <state> Filter --status-all by any, ready, missing, partial, invalid, or not-ready
+  --list-presets        Print available presets
+  --list-package        Print presets marked for packaged samples
+  --list-unreal-matrix  Print presets marked for Unreal sample matrix runs
+  --list-type <type>    Filter --list-presets by all, text, or embedding
+  --list-format <fmt>   Print --list-presets as text or json
+  --token <token>       Hugging Face token, otherwise HF_TOKEN/HUGGINGFACE_HUB_TOKEN is used
+  --url <url>           Custom GGUF URL; requires --file
+  --file <name.gguf>    Output filename for custom URL/HF downloads
+  --min-bytes <bytes>   Minimum accepted size for custom downloads
+  --sha256 <hex>        Optional checksum for custom downloads
+  --hf-repo <org/repo>  Custom Hugging Face repo
+  --hf-file <file>      Custom Hugging Face file
+  --hf-rev <revision>   Custom Hugging Face revision
+  -h, --help            Show help
 
-After download, point integration test at the model:
-  export ASTRAL_TEST_MODEL="\${PWD}/tests/models/<name.gguf>"
+Downloads resume incomplete .part files when the server supports ranges.
+Progress is printed to stderr during downloads.
 EOF
 }
 
-list_presets() {
-    cat <<EOF
-Presets:
-  gpt2-q2k
-    - Inference smoke default (small generative GGUF)
-  embed-minilm-q2k
-    - Embeddings model (BERT encoder; 384-dim class), small
-  embed-bge-small-q4km
-    - Embeddings model (BGE small; 384-dim class), small-ish
-  embed-nomic-v1-5-q2k
-    - Embeddings model (Nomic v1.5; larger than MiniLM/BGE)
-  liquid-lfm2-350m-q4km
-    - Small LiquidAI generative model (still hundreds of MB)
-  gemma3-270m-q4km
-    - Tiny Gemma 3 generative GGUF, useful for fast local and Unreal smoke runs
-  gemma3-1b-it-q4km
-    - Small Gemma 3 instruct GGUF, useful when the 270M fixture is too weak
-  smollm3-3b-q4km
-    - Small Hugging Face TB SmolLM3 GGUF, heavier than Gemma/Qwen 0.6B
-  qwen3-0.6b-q8
-    - Small Qwen3 generative GGUF from the official Qwen repo
-  qwen3-1.7b-q8
-    - Mid-small Qwen3 generative GGUF for stronger real-model smoke runs
-  qwen3-embed-0.6b-q8
-    - Small Qwen3 embeddings GGUF from the official Qwen repo
+args=()
+if [[ -n "${ASTRAL_MODEL_URL:-${ASTRAL_TEST_MODEL_URL:-}}" ]]; then
+  args+=(--url "${ASTRAL_MODEL_URL:-${ASTRAL_TEST_MODEL_URL:-}}")
+fi
+if [[ -n "${ASTRAL_MODEL_FILE:-${ASTRAL_TEST_MODEL_FILE:-}}" ]]; then
+  args+=(--file "${ASTRAL_MODEL_FILE:-${ASTRAL_TEST_MODEL_FILE:-}}")
+fi
+if [[ -n "${ASTRAL_HF_REPO:-${ASTRAL_TEST_HF_REPO:-}}" ]]; then
+  args+=(--hf-repo "${ASTRAL_HF_REPO:-${ASTRAL_TEST_HF_REPO:-}}")
+fi
+if [[ -n "${ASTRAL_HF_FILE:-${ASTRAL_TEST_HF_FILE:-}}" ]]; then
+  args+=(--hf-file "${ASTRAL_HF_FILE:-${ASTRAL_TEST_HF_FILE:-}}")
+fi
+if [[ -n "${ASTRAL_HF_REVISION:-${ASTRAL_TEST_HF_REVISION:-}}" ]]; then
+  args+=(--hf-revision "${ASTRAL_HF_REVISION:-${ASTRAL_TEST_HF_REVISION:-}}")
+fi
+if [[ -n "${ASTRAL_MODEL_MIN_BYTES:-}" ]]; then
+  args+=(--min-bytes "${ASTRAL_MODEL_MIN_BYTES}")
+fi
+if [[ -n "${ASTRAL_MODEL_SHA256:-}" ]]; then
+  args+=(--sha256 "${ASTRAL_MODEL_SHA256}")
+fi
 
-You can override any preset with --url/--hf-repo/--hf-file/--min-bytes.
-EOF
-}
+print_path=0
+print_info=0
+print_status=0
+print_status_all=0
+print_status_summary=0
+print_download_plan=0
+inspect_metadata=0
+list_presets=0
+list_package=0
+list_unreal_matrix=0
+preset_name=""
+output_dir="tests/models"
+list_type="all"
+list_format="text"
+status_format="json"
+status_only="any"
 
-apply_preset() {
-    case "$1" in
-        gpt2-q2k)
-            MODEL_FILE_NAME="gpt2.Q2_K.gguf"
-            MODEL_URL="https://huggingface.co/RichardErkhov/openai-community_-_gpt2-gguf/resolve/main/gpt2.Q2_K.gguf"
-            MODEL_MIN_BYTES=70000000
-            HF_REPO=""
-            HF_FILE=""
-            HF_REVISION="main"
-            ;;
-        embed-minilm-q2k)
-            MODEL_FILE_NAME="all-MiniLM-L6-v2-Q2_K.gguf"
-            HF_REPO="second-state/All-MiniLM-L6-v2-Embedding-GGUF"
-            HF_FILE="all-MiniLM-L6-v2-Q2_K.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=15000000
-            ;;
-        embed-bge-small-q4km)
-            MODEL_FILE_NAME="bge-small-en-v1.5-q4_k_m.gguf"
-            HF_REPO="CompendiumLabs/bge-small-en-v1.5-gguf"
-            HF_FILE="bge-small-en-v1.5-q4_k_m.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=25000000
-            ;;
-        embed-nomic-v1-5-q2k)
-            MODEL_FILE_NAME="nomic-embed-text-v1.5.Q2_K.gguf"
-            HF_REPO="nomic-ai/nomic-embed-text-v1.5-GGUF"
-            HF_FILE="nomic-embed-text-v1.5.Q2_K.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=80000000
-            ;;
-        liquid-lfm2-350m-q4km)
-            MODEL_FILE_NAME="LFM2-350M-Q4_K_M.gguf"
-            HF_REPO="LiquidAI/LFM2-350M-GGUF"
-            HF_FILE="LFM2-350M-Q4_K_M.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=200000000
-            ;;
-        gemma3-270m-q4km)
-            MODEL_FILE_NAME="gemma-3-270m-q4_k_m.gguf"
-            HF_REPO="gguf-org/gemma-3-270m-gguf"
-            HF_FILE="gemma-3-270m-q4_k_m.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=230000000
-            ;;
-        gemma3-1b-it-q4km)
-            MODEL_FILE_NAME="gemma-3-1b-it-Q4_K_M.gguf"
-            HF_REPO="ggml-org/gemma-3-1b-it-GGUF"
-            HF_FILE="gemma-3-1b-it-Q4_K_M.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=700000000
-            ;;
-        smollm3-3b-q4km)
-            MODEL_FILE_NAME="SmolLM3-Q4_K_M.gguf"
-            HF_REPO="ggml-org/SmolLM3-3B-GGUF"
-            HF_FILE="SmolLM3-Q4_K_M.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=1700000000
-            ;;
-        qwen3-0.6b-q8)
-            MODEL_FILE_NAME="Qwen3-0.6B-Q8_0.gguf"
-            HF_REPO="Qwen/Qwen3-0.6B-GGUF"
-            HF_FILE="Qwen3-0.6B-Q8_0.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=550000000
-            ;;
-        qwen3-1.7b-q8)
-            MODEL_FILE_NAME="Qwen3-1.7B-Q8_0.gguf"
-            HF_REPO="Qwen/Qwen3-1.7B-GGUF"
-            HF_FILE="Qwen3-1.7B-Q8_0.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=1600000000
-            ;;
-        qwen3-embed-0.6b-q8)
-            MODEL_FILE_NAME="Qwen3-Embedding-0.6B-Q8_0.gguf"
-            HF_REPO="Qwen/Qwen3-Embedding-0.6B-GGUF"
-            HF_FILE="Qwen3-Embedding-0.6B-Q8_0.gguf"
-            HF_REVISION="main"
-            MODEL_URL=""
-            MODEL_MIN_BYTES=550000000
-            ;;
-        *)
-            echo "Unknown preset: $1"
-            echo ""
-            list_presets
-            exit 1
-            ;;
-    esac
-}
-
-build_hf_url() {
-    local repo="$1"
-    local file="$2"
-    local rev="$3"
-    if [ -z "$repo" ] || [ -z "$file" ]; then
-        return 1
-    fi
-    if [ -z "$rev" ]; then
-        rev="main"
-    fi
-    echo "https://huggingface.co/${repo}/resolve/${rev}/${file}"
-}
-
-PRESET=""
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --list-presets)
-            list_presets
-            exit 0
-            ;;
-        --preset)
-            PRESET="$2"
-            shift 2
-            ;;
-        --url)
-            MODEL_URL="$2"
-            shift 2
-            ;;
-        --hf-repo)
-            HF_REPO="$2"
-            shift 2
-            ;;
-        --hf-file)
-            HF_FILE="$2"
-            shift 2
-            ;;
-        --hf-rev|--hf-revision)
-            HF_REVISION="$2"
-            shift 2
-            ;;
-        --file)
-            MODEL_FILE_NAME="$2"
-            shift 2
-            ;;
-        --min-bytes)
-            MODEL_MIN_BYTES="$2"
-            shift 2
-            ;;
-        --dir)
-            MODEL_DIR="$2"
-            shift 2
-            ;;
-        --help|-h)
-            usage
-            exit 0
-            ;;
-        *)
-            echo "Unknown argument: $1"
-            usage
-            exit 1
-            ;;
-    esac
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --preset) preset_name="${2:-}"; args+=(--preset "${preset_name}"); shift 2 ;;
+    --dir) output_dir="${2:-}"; args+=(--dir "${output_dir}"); shift 2 ;;
+    --dry-run) args+=(--dry-run); shift ;;
+    --validate-only) args+=(--validate-only); shift ;;
+    --validate-metadata) args+=(--validate-metadata); shift ;;
+    --inspect-metadata) inspect_metadata=1; shift ;;
+    --print-path) print_path=1; shift ;;
+    --info) print_info=1; shift ;;
+    --status) print_status=1; shift ;;
+    --status-all) print_status_all=1; shift ;;
+    --status-summary) print_status_summary=1; shift ;;
+    --download-plan) print_download_plan=1; shift ;;
+    --status-format) status_format="${2:-}"; shift 2 ;;
+    --status-only) status_only="${2:-}"; shift 2 ;;
+    --list-type) list_type="${2:-}"; shift 2 ;;
+    --list-format) list_format="${2:-}"; shift 2 ;;
+    --token) args+=(--token "${2:-}"); shift 2 ;;
+    --url) args+=(--url "${2:-}"); shift 2 ;;
+    --file) args+=(--file "${2:-}"); shift 2 ;;
+    --min-bytes) args+=(--min-bytes "${2:-}"); shift 2 ;;
+    --sha256) args+=(--sha256 "${2:-}"); shift 2 ;;
+    --hf-repo) args+=(--hf-repo "${2:-}"); shift 2 ;;
+    --hf-file) args+=(--hf-file "${2:-}"); shift 2 ;;
+    --hf-rev|--hf-revision) args+=(--hf-revision "${2:-}"); shift 2 ;;
+    --list-presets)
+      list_presets=1
+      shift
+      ;;
+    --list-package)
+      list_presets=1
+      list_package=1
+      shift
+      ;;
+    --list-unreal-matrix)
+      list_presets=1
+      list_unreal_matrix=1
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit "${exit_ok}"
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit "${exit_usage}"
+      ;;
+  esac
 done
 
-if [ -n "$PRESET" ]; then
-    apply_preset "$PRESET"
+if [[ "${list_presets}" -eq 1 && "${print_status_all}" -eq 0 && "${print_status_summary}" -eq 0 && "${print_download_plan}" -eq 0 ]]; then
+  list_args=(list --type "${list_type}" --format "${list_format}" --dir "${output_dir}")
+  if [[ "${list_package}" -eq 1 ]]; then
+    list_args+=(--package)
+  fi
+  if [[ "${list_unreal_matrix}" -eq 1 ]]; then
+    list_args+=(--unreal-matrix)
+  fi
+  exec python3 "${tool}" "${list_args[@]}"
 fi
 
-if [ -z "${MODEL_URL}" ]; then
-    # If URL wasn't provided, prefer HF repo+file if set; otherwise fall back to the default URL.
-    if [ -n "${HF_REPO}" ] && [ -n "${HF_FILE}" ]; then
-        MODEL_URL="$(build_hf_url "${HF_REPO}" "${HF_FILE}" "${HF_REVISION}")"
-    else
-        MODEL_URL="${DEFAULT_MODEL_URL}"
-    fi
+if [[ "${print_path}" -eq 1 ]]; then
+  if [[ -z "${preset_name}" ]]; then
+    echo "--print-path requires --preset" >&2
+    exit "${exit_usage}"
+  fi
+  exec python3 "${tool}" path "${preset_name}" --dir "${output_dir}"
 fi
 
-MODEL_FILE="${MODEL_DIR}/${MODEL_FILE_NAME}"
-
-# Color output helpers
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-NC='\033[0m' # No Color
-
-info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
-
-warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Check if model already exists
-if [ -f "$MODEL_FILE" ]; then
-    FILE_SIZE=$(stat -c%s "$MODEL_FILE" 2>/dev/null || stat -f%z "$MODEL_FILE" 2>/dev/null || echo "0")
-    if [ "$FILE_SIZE" -ge "$MODEL_MIN_BYTES" ]; then
-        info "Model already exists at: $MODEL_FILE"
-        info "File size: $(numfmt --to=iec-i --suffix=B $FILE_SIZE 2>/dev/null || echo "${FILE_SIZE} bytes")"
-        exit 0
-    else
-        warn "Model file exists but is too small ($FILE_SIZE bytes), re-downloading..."
-        rm -f "$MODEL_FILE"
-    fi
+if [[ "${print_info}" -eq 1 ]]; then
+  if [[ -z "${preset_name}" ]]; then
+    echo "--info requires --preset" >&2
+    exit "${exit_usage}"
+  fi
+  exec python3 "${tool}" info "${preset_name}" --dir "${output_dir}"
 fi
 
-# Create model directory
-mkdir -p "$MODEL_DIR"
-
-# Check for download tool (wget or curl)
-DOWNLOAD_TOOL=""
-if command -v wget >/dev/null 2>&1; then
-    DOWNLOAD_TOOL="wget"
-elif command -v curl >/dev/null 2>&1; then
-    DOWNLOAD_TOOL="curl"
-else
-    error "Neither wget nor curl is available"
-    error "Please install wget or curl and try again"
-    error "  Ubuntu/Debian: sudo apt-get install wget"
-    error "  macOS: brew install wget"
-    exit 1
+if [[ "${inspect_metadata}" -eq 1 ]]; then
+  if [[ -z "${preset_name}" ]]; then
+    echo "--inspect-metadata requires --preset" >&2
+    exit "${exit_usage}"
+  fi
+  exec python3 "${tool}" inspect "${preset_name}" --dir "${output_dir}" --validate
 fi
 
-info "Downloading model: ${MODEL_FILE_NAME}"
-info "URL: ${MODEL_URL}"
-info "This may take a few minutes depending on your connection..."
-
-# Optional Hugging Face token for gated/private models.
-AUTH_HEADER=""
-if [ -n "${HF_TOKEN:-}" ]; then
-    AUTH_HEADER="Authorization: Bearer ${HF_TOKEN}"
+if [[ "${print_status}" -eq 1 ]]; then
+  if [[ -z "${preset_name}" ]]; then
+    echo "--status requires --preset" >&2
+    exit "${exit_usage}"
+  fi
+  exec python3 "${tool}" status "${preset_name}" --dir "${output_dir}" --format "${status_format}"
 fi
 
-# Download with progress
-if [ "$DOWNLOAD_TOOL" = "wget" ]; then
-    WGET_HEADERS=()
-    if [ -n "${AUTH_HEADER}" ]; then
-        WGET_HEADERS+=(--header "${AUTH_HEADER}")
-    fi
-    wget --progress=bar:force:noscroll \
-         --timeout=30 \
-         --tries=3 \
-         "${WGET_HEADERS[@]}" \
-         -O "$MODEL_FILE.tmp" \
-         "$MODEL_URL" || {
-        error "Download failed"
-        rm -f "$MODEL_FILE.tmp"
-        exit 1
-    }
-elif [ "$DOWNLOAD_TOOL" = "curl" ]; then
-    CURL_HEADERS=()
-    if [ -n "${AUTH_HEADER}" ]; then
-        CURL_HEADERS+=(-H "${AUTH_HEADER}")
-    fi
-    curl -L \
-         --progress-bar \
-         --connect-timeout 30 \
-         --retry 3 \
-         "${CURL_HEADERS[@]}" \
-         -o "$MODEL_FILE.tmp" \
-         "$MODEL_URL" || {
-        error "Download failed"
-        rm -f "$MODEL_FILE.tmp"
-        exit 1
-    }
+if [[ "${print_status_all}" -eq 1 ]]; then
+  status_args=(status-all --type "${list_type}" --dir "${output_dir}" --format "${status_format}" --only "${status_only}")
+  if [[ "${list_package}" -eq 1 ]]; then
+    status_args+=(--package)
+  fi
+  if [[ "${list_unreal_matrix}" -eq 1 ]]; then
+    status_args+=(--unreal-matrix)
+  fi
+  exec python3 "${tool}" "${status_args[@]}"
 fi
 
-# Verify download
-if [ ! -f "$MODEL_FILE.tmp" ]; then
-    error "Downloaded file not found"
-    exit 1
+if [[ "${print_status_summary}" -eq 1 ]]; then
+  summary_args=(status-summary --type "${list_type}" --dir "${output_dir}" --format "${status_format}")
+  if [[ "${list_package}" -eq 1 ]]; then
+    summary_args+=(--package)
+  fi
+  if [[ "${list_unreal_matrix}" -eq 1 ]]; then
+    summary_args+=(--unreal-matrix)
+  fi
+  exec python3 "${tool}" "${summary_args[@]}"
 fi
 
-FILE_SIZE=$(stat -c%s "$MODEL_FILE.tmp" 2>/dev/null || stat -f%z "$MODEL_FILE.tmp" 2>/dev/null || echo "0")
-if [ "$FILE_SIZE" -lt "$MODEL_MIN_BYTES" ]; then
-    error "Downloaded file is too small ($FILE_SIZE bytes), expected >=${MODEL_MIN_BYTES}"
-    rm -f "$MODEL_FILE.tmp"
-    exit 1
+if [[ "${print_download_plan}" -eq 1 ]]; then
+  plan_args=(download-plan --type "${list_type}" --dir "${output_dir}" --format "${status_format}")
+  if [[ "${list_package}" -eq 1 ]]; then
+    plan_args+=(--package)
+  fi
+  if [[ "${list_unreal_matrix}" -eq 1 ]]; then
+    plan_args+=(--unreal-matrix)
+  fi
+  exec python3 "${tool}" "${plan_args[@]}"
 fi
 
-# Move to final location
-mv "$MODEL_FILE.tmp" "$MODEL_FILE"
-
-info "Model downloaded successfully!"
-info "Location: $MODEL_FILE"
-info "Size: $(numfmt --to=iec-i --suffix=B $FILE_SIZE 2>/dev/null || echo "${FILE_SIZE} bytes")"
-
-exit 0
+exec python3 "${tool}" download "${args[@]}"

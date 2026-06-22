@@ -1,8 +1,7 @@
 /**
  * gate_allocations.cpp - Hot-path allocation validation gate
  *
- * Goal:
- * - Fail the test suite if steady-state decode/stream performs any heap allocations.
+ * Fails the test suite if steady-state decode/stream performs any heap allocations.
  *
  * Strategy:
  * - Run a warmup decode first (to trigger any one-time lazy init in providers/libs).
@@ -19,6 +18,8 @@
  *   when explicitly enabled (env ASTRAL_GATE_CPU_ALLOC=1) and a GGUF model is available.
  * - Embeddings: always gated on mock; CPU embeddings gating is opt-in because provider
  *   embedding paths can allocate internally after warmup.
+ * - Conversations: always gated on mock; CPU conversation gating is opt-in because
+ *   provider batch-decode paths can allocate internally after warmup.
  */
 
 #include "test_framework.hpp"
@@ -38,6 +39,23 @@
 #endif
 
 namespace {
+
+constexpr uint64_t kRuntimeReserveBytes = 256ULL * 1024ULL * 1024ULL;
+constexpr uint64_t kEmbeddedArenaBytes = 64ULL * 1024ULL * 1024ULL;
+constexpr uint32_t kGateThreadCount = 4;
+constexpr uint32_t kAnyNumaNode = 0xFFFFFFFFu;
+constexpr uint32_t kEmbeddedSessionBlockBytes = 2u * 1024u * 1024u;
+constexpr uint32_t kEmbeddedSessionBlocks = 4;
+#if ASTRAL_ENABLE_THREADS
+constexpr bool kSteadyStateGateEnabled = true;
+#else
+constexpr bool kSteadyStateGateEnabled = false;
+#endif
+
+#if !ASTRAL_ENABLE_VIRTUAL_MEMORY
+constexpr size_t kEmbeddedArenaAlignmentBytes = 64;
+alignas(kEmbeddedArenaAlignmentBytes) static uint8_t g_embedded_arena[kEmbeddedArenaBytes];
+#endif
 
 // Allocation counters (count calls, not bytes-only).
 std::atomic<uint64_t> g_alloc_calls{0};
@@ -114,6 +132,34 @@ static bool parse_bool_env(const char* key, bool fallback) {
     return fallback;
 }
 
+static AstralErr init_gate_runtime() {
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
+    AstralInit cfg{};
+    cfg.reserve_bytes = kRuntimeReserveBytes;
+    cfg.thread_count = kGateThreadCount;
+    cfg.numa_node = kAnyNumaNode;
+    cfg.enable_hugepages = 0;
+    return astral_init(&cfg);
+#else
+    AstralInit2 cfg{};
+    cfg.base.thread_count = kGateThreadCount;
+    cfg.memory_mode = ASTRAL_MEMMODE_ARENA_BORROWED;
+    cfg.arena.base = g_embedded_arena;
+    cfg.arena.size = kEmbeddedArenaBytes;
+    cfg.arena.session_block_size = kEmbeddedSessionBlockBytes;
+    cfg.arena.session_block_count = kEmbeddedSessionBlocks;
+    return astral_init2(&cfg);
+#endif
+}
+
+static bool cpu_alloc_gate_default() {
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
+    return true;
+#else
+    return false;
+#endif
+}
+
 static const char* find_test_model_path() {
     // For auto-detection, match the integration test: rely on ASTRAL_MODEL_MIN_BYTES,
     // with a conservative default that covers the default downloader output.
@@ -180,6 +226,29 @@ static void drain_stream(AstralHandle session) {
 
     // Ensure terminal state observed.
     (void)astral_session_wait(session, 5000);
+}
+
+static void drain_conv_stream(AstralHandle conv) {
+    constexpr uint32_t kStreamBufferBytes = 256;
+    constexpr uint32_t kStreamPollTimeoutMs = 10;
+    constexpr uint32_t kCompletionTimeoutMs = 5000;
+
+    uint8_t buf[kStreamBufferBytes];
+    for (;;) {
+        AstralMutSpanU8 out{};
+        out.data = buf;
+        out.len = sizeof(buf);
+
+        const int32_t n = astral_conv_stream_read(conv, out, kStreamPollTimeoutMs);
+        if (n == ASTRAL_E_TIMEOUT) {
+            continue;
+        }
+        if (n <= ASTRAL_OK) {
+            break;
+        }
+    }
+
+    (void)astral_conv_wait(conv, kCompletionTimeoutMs);
 }
 
 static void run_no_alloc_gate_for_backend(const char* backend_name, const char* model_path) {
@@ -275,6 +344,119 @@ static void run_no_alloc_gate_for_backend(const char* backend_name, const char* 
     }
 
     astral_session_destroy(session);
+    astral_model_release(model);
+}
+
+static void run_no_alloc_conv_gate_for_backend(const char* backend_name, const char* model_path) {
+    constexpr uint32_t kModelContextTokens = 256;
+    constexpr uint32_t kModelBatchTokens = 128;
+    constexpr uint32_t kBackendThreadCount = 2;
+    constexpr uint32_t kConversationMaxTokens = 256;
+    constexpr uint32_t kExecutorSlots = 2;
+    constexpr uint32_t kExecutorBatchTokens = 64;
+    constexpr uint32_t kCpuOnlyGpuLayers = 0;
+    constexpr uint8_t kStreamEnabled = 1;
+    constexpr uint8_t kFinalizePrompt = 1;
+    constexpr float kGreedyTemperature = 0.0f;
+    constexpr float kFullTopP = 1.0f;
+    constexpr uint32_t kDisabledTopK = 0;
+    constexpr uint32_t kDeterministicSeed = 1;
+    constexpr uint32_t kAutoWorker = 0;
+    constexpr AstralHandle kInvalidHandle = 0;
+    constexpr uint64_t kNoAllocations = 0ULL;
+    constexpr size_t kErrorMessageBytes = 256;
+    constexpr const char* kPromptText = "allocation gate";
+
+    AstralModelDesc model_desc{};
+    model_desc.size = sizeof(AstralModelDesc);
+    model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+    if (backend_name != nullptr) {
+        model_desc.backend_name.data = reinterpret_cast<const uint8_t*>(backend_name);
+        model_desc.backend_name.len = static_cast<uint32_t>(std::strlen(backend_name));
+    }
+
+    if (model_path != nullptr) {
+        model_desc.model_path.data = reinterpret_cast<const uint8_t*>(model_path);
+        model_desc.model_path.len = static_cast<uint32_t>(std::strlen(model_path));
+    }
+
+    model_desc.n_ctx = kModelContextTokens;
+    model_desc.n_batch = kModelBatchTokens;
+    model_desc.n_threads = kBackendThreadCount;
+    model_desc.gpu_layers = kCpuOnlyGpuLayers;
+
+    AstralHandle model = kInvalidHandle;
+    AstralErr err = astral_model_load(&model_desc, &model);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(model));
+
+    AstralExecutorDesc ex{};
+    ex.size = sizeof(AstralExecutorDesc);
+    ex.max_slots = kExecutorSlots;
+    ex.max_batch_tokens = kExecutorBatchTokens;
+    ex.worker_hint = kAutoWorker;
+    err = astral_model_executor_configure(model, &ex);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    AstralConvDesc conv_desc{};
+    conv_desc.size = sizeof(AstralConvDesc);
+    conv_desc.model = model;
+    conv_desc.max_tokens = kConversationMaxTokens;
+    conv_desc.temperature = kGreedyTemperature;
+    conv_desc.top_k = kDisabledTopK;
+    conv_desc.top_p = kFullTopP;
+    conv_desc.stream_enabled = kStreamEnabled;
+    conv_desc.seed = kDeterministicSeed;
+
+    AstralHandle conv = kInvalidHandle;
+    err = astral_conv_create(&conv_desc, &conv);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_TRUE(astral_handle_valid(conv));
+
+    AstralSpanU8 chunk{};
+    chunk.data = reinterpret_cast<const uint8_t*>(kPromptText);
+    chunk.len = static_cast<uint32_t>(std::strlen(kPromptText));
+    err = astral_conv_feed(conv, chunk, kFinalizePrompt);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_conv_decode(conv);
+    ASSERT_EQ(err, ASTRAL_OK);
+    drain_conv_stream(conv);
+
+    err = astral_conv_reset(conv, &conv_desc);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    err = astral_conv_feed(conv, chunk, kFinalizePrompt);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    tracking_reset();
+    tracking_set_enabled(true);
+
+    err = astral_conv_decode(conv);
+    ASSERT_EQ(err, ASTRAL_OK);
+    drain_conv_stream(conv);
+
+    tracking_set_enabled(false);
+
+    const uint64_t alloc_calls = g_alloc_calls.load(std::memory_order_relaxed);
+    const uint64_t alloc_bytes = g_alloc_bytes.load(std::memory_order_relaxed);
+    const uint64_t new_calls = g_new_calls.load(std::memory_order_relaxed);
+    const uint64_t new_bytes = g_new_bytes.load(std::memory_order_relaxed);
+    const uint64_t total_calls = alloc_calls + new_calls;
+
+    if (total_calls != kNoAllocations) {
+        char msg[kErrorMessageBytes];
+        std::snprintf(msg, sizeof(msg),
+                      "allocation gate (conversation): total=%llu malloc=%llu (%llu bytes) new=%llu (%llu bytes)",
+                      static_cast<unsigned long long>(total_calls),
+                      static_cast<unsigned long long>(alloc_calls),
+                      static_cast<unsigned long long>(alloc_bytes),
+                      static_cast<unsigned long long>(new_calls),
+                      static_cast<unsigned long long>(new_bytes));
+        ::astral::testing::test_fail_msg(__FILE__, __LINE__, msg);
+    }
+
+    astral_conv_destroy(conv);
     astral_model_release(model);
 }
 
@@ -578,25 +760,29 @@ extern "C" int __wrap_posix_memalign(void** memptr, std::size_t alignment, std::
 TEST(gate_no_alloc_decode_stream_hotpath) {
     tracking_set_enabled(false);
 
-    AstralInit cfg{};
-    cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
-    cfg.thread_count = 4;
-    cfg.numa_node = 0xFFFFFFFFu;
-    cfg.enable_hugepages = 0;
-    AstralErr err = astral_init(&cfg);
+    AstralErr err = init_gate_runtime();
     ASSERT_EQ(err, ASTRAL_OK);
+
+    if (!kSteadyStateGateEnabled) {
+        astral_shutdown();
+        return;
+    }
 
     // Always gate against mock backend (deterministic, no model file required).
     // Use the "infinite" mode so we exercise steady-state token generation.
     run_no_alloc_gate_for_backend("mock", "infinite");
+    run_no_alloc_conv_gate_for_backend("mock", "infinite");
     run_no_alloc_gate_for_embeddings("mock", "infinite");
 
     // CPU backend: enforce steady-state no-alloc when a GGUF is available.
     // You can disable this locally via ASTRAL_GATE_CPU_ALLOC=0.
-    if (parse_bool_env("ASTRAL_GATE_CPU_ALLOC", true)) {
+    if (parse_bool_env("ASTRAL_GATE_CPU_ALLOC", cpu_alloc_gate_default())) {
         const char* gguf_path = find_test_model_path();
         if (gguf_path != nullptr) {
             run_no_alloc_gate_for_backend("cpu", gguf_path);
+            if (parse_bool_env("ASTRAL_GATE_CPU_CONV_ALLOC", false)) {
+                run_no_alloc_conv_gate_for_backend("cpu", gguf_path);
+            }
             // CPU embeddings gating is optional (enabled via ASTRAL_GATE_CPU_EMB_ALLOC=1).
             if (parse_bool_env("ASTRAL_GATE_CPU_EMB_ALLOC", false)) {
                 run_no_alloc_gate_for_embeddings("cpu", gguf_path);

@@ -150,6 +150,47 @@ Build a profiling preset and run a small workload so you can attach the Tracy UI
 ./scripts/run_tracy_capture.sh --preset dev-prof
 ```
 
+## Primitive Perf Capture
+
+Capture concurrency benchmark output, perf counters, symbols, disassembly, and
+a target-range comparison into an out-of-repo artifact directory:
+
+```bash
+./scripts/run_primitive_perf_capture.sh --pin --items 1000000
+```
+
+The script writes to `../astral-perf-runs/<timestamp>` by default. Use
+`--out <dir>` for a specific artifact path, `--require-perf` when perf counters
+must be present, `--perf-bin <path>` for a kernel-specific perf binary,
+`--perf-events <csv>` to tune the counter set, and `--require-targets` to fail
+the batch when the target report contains review rows.
+
+## Allocator Perf Capture
+
+Capture allocator benchmark output, target ranges, symbols, and disassembly into
+an out-of-repo artifact directory:
+
+```bash
+./scripts/run_allocator_perf_capture.sh --iters 1000000 --size 64 --threads 4
+```
+
+The script writes to `../astral-alloc-runs/<timestamp>` by default. Use
+`--out <dir>` for a specific artifact path and `--require-targets` to fail the
+batch when the target report contains review rows.
+
+## ARM64 Hardware Validation
+
+On a native ARM64 Linux host, run the primitive, embedded, perf, and
+disassembly evidence batch into an out-of-repo directory:
+
+```bash
+./scripts/run_arm64_hardware_validation.sh --jobs 4 --items 1000000
+```
+
+This script exits on non-ARM64 hosts unless `--allow-non-arm64` is used for a
+script smoke. It intentionally does not power off the machine; remote automation
+should copy the evidence directory first, then shut down the cloud instance.
+
 ---
 
 ## Comment Inventory
@@ -162,9 +203,10 @@ python3 ./scripts/inventory_comments.py --format review-tsv > build/comment-revi
 python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers
 ```
 
-Use `review-tsv` for the human pass from the moonshot plan. Fill `decision`
+Use `review-tsv` for the maintained comment review pass. Fill `decision`
 with `keep`, `rewrite`, `delete`, or `issue`; use `issue` for comments that
-identify real follow-up work and record the issue tracker ID in the `issue` column.
+identify real follow-up work and record the public issue reference in the
+`issue` column.
 The inventory output is a local review artifact. Keep it out of git unless a
 specific excerpt is promoted into maintained documentation.
 
@@ -347,7 +389,6 @@ UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
-UNITY_EDITOR=/opt/Unity/Editor/Unity \
   ./scripts/run_release_required_gates.sh --cuda-arch native --cuda-strict --mtmd-bench
 ```
 
@@ -371,7 +412,6 @@ UNREAL_55_EDITOR=/opt/Unreal-5.5/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_56_EDITOR=/opt/Unreal-5.6/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
 UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
-UNITY_EDITOR=/opt/Unity/Editor/Unity \
   ./scripts/run_release_required_gates.sh --print-plan --cuda-arch native --cuda-strict --mtmd-bench
 ```
 
@@ -417,6 +457,30 @@ The HF GGUF matrix is fail-hard by default: any `[bench] FAILED` row makes
 `run_hf_bench_matrix.sh` exit non-zero. Use `--allow-failures` only for local
 investigation, not for release evidence.
 
+Small model presets are pinned in `scripts/model_presets.json`. The manifest is
+the source of truth for preset names, filenames, byte sizes, SHA-256 checksums,
+model type, context length, embedding dimension, and whether the preset belongs
+in the Unreal packaged-sample matrix.
+
+```bash
+./tests/model_downloader.sh --list-presets
+./tests/model_downloader.sh --preset qwen3-0.6b-q8 --dry-run
+./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --dry-run
+./tests/model_downloader.sh --preset qwen3-embed-0.6b-q8 --inspect-metadata
+python3 ./scripts/model_preset_tool.py validate-manifest
+python3 ./scripts/model_preset_tool.py inspect qwen3-embed-0.6b-q8 --dir tests/models --validate
+./scripts/run_feature_bench_suite.sh --preset release-with-tests --models-dir tests/models --model-presets qwen3-0.6b-q8,qwen3-embed-0.6b-q8 --tokenize-only --skip-missing --out /tmp/astral-tokenizers.txt
+```
+
+Existing files are validated against the pinned byte size and SHA-256 before
+they are reused. Incomplete downloads resume from the `.part` file when the
+server accepts range requests. Metadata validation reads only the GGUF header
+and checks context length, embedding dimension, and embedding pooling support
+against the manifest. The feature benchmark suite can also select presets from
+the same manifest by name, type, packaged-sample flag, or Unreal matrix flag, so
+tokenizer and feature sweeps use the pinned model list instead of ad hoc file
+globs.
+
 `hetzner_watchdog.sh` can keep long-running HF downloads and wait+bench jobs
 alive on a remote runner. Use `--dry-run` to inspect the exact commands before
 letting it start background jobs.
@@ -431,7 +495,8 @@ use:
 ./scripts/run_unreal_small_model_matrix.sh --runuat "$UNREAL_RUNUAT" --skip-native-build
 ```
 
-The runner is intentionally a thin wrapper around
+The runner reads matrix presets from `scripts/model_presets.json` and is
+otherwise a thin wrapper around
 `run_unreal_sample_package.sh`: it chooses the local GGUF paths, creates
 per-model output directories, keeps runtime logs out of the repo, and validates
 each runtime log after a real sample launch. Use `--skip-runtime-validation`
@@ -483,6 +548,11 @@ under the `windows_large_pages` lane.
 `run_unity_ci_tests.sh` validates `editmode-results.xml` after Unity exits. The
 XML must be well-formed, report zero failures, and include at least one passing
 test case.
+
+`run_unity_gameci_tests.sh` runs the same EditMode ABI lane through the GameCI
+Unity Editor container for the pinned Unity 6 CI project. Use `--dry-run` to
+inspect the resolved `unityci/editor` image and Docker command without launching
+the container.
 
 ## Interpreting Results
 
@@ -637,7 +707,6 @@ Note: This is an illustrative snippet. The repo’s actual CI is in `.github/wor
 ## Future Enhancements
 
 - [ ] Add `strace` wrapper to count syscalls in hot path
-- [ ] Add `perf stat` wrapper for CPU metrics
 - [ ] Add automated regression testing
 - [ ] Add HTML report generation
 - [ ] Add benchmark comparison (before/after)
@@ -648,9 +717,9 @@ Note: This is an illustrative snippet. The repo’s actual CI is in `.github/wor
 
 **Astral Documentation**:
 - `tests/MEMORY_VALIDATION.md` - Current memory validation gates
-- `/home/user/workspace/astral/docs/release/RELEASE_ACCEPTANCE_MATRIX.md` - Release acceptance evidence
-- `/home/user/workspace/astral/docs/FEATURE_MATRIX.md` - Supported feature surface and required evidence
-- `/home/user/workspace/astral/docs/rules/CODING_STANDARDS.md` - Memory rules
+- `docs/release/RELEASE_ACCEPTANCE_MATRIX.md` - Release acceptance evidence
+- `docs/FEATURE_MATRIX.md` - Supported feature surface and required evidence
+- `docs/rules/CODING_STANDARDS.md` - Memory rules
 
 **Valgrind Documentation**:
 - https://valgrind.org/docs/manual/manual.html

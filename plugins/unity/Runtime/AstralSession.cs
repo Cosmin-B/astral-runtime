@@ -21,6 +21,8 @@ namespace Astral.Runtime
     /// </summary>
     public class AstralSession : IDisposable
     {
+        public const float DefaultAdapterScale = 1.0f;
+
         private AstralNative.AstralHandle m_handle;
         private bool m_disposed = false;
         private AstralSessionConfig m_config;
@@ -382,8 +384,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Feed a prompt from NativeArray (zero-copy).
-        ///  No GC allocations.
+        /// Feed UTF-8 prompt bytes from a caller-owned NativeArray.
         /// </summary>
         /// <param name="promptChunk">UTF-8 prompt data</param>
         /// <param name="finalize">True if this is the last chunk</param>
@@ -528,7 +529,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Add a UTF-8 stop sequence (zero-copy).
+        /// Add a UTF-8 stop sequence from a caller-owned NativeArray.
         /// Preconditions: Must not be decoding (Cancel + Wait first).
         /// </summary>
         public void StopAdd(NativeArray<byte> utf8)
@@ -547,20 +548,199 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Remove every adapter attached to this session.
+        /// </summary>
+        public void ClearAdapters()
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_adapters_clear(m_handle);
+            ThrowIfError(err, "astral_session_adapters_clear");
+        }
+
+        /// <summary>
+        /// Attach a model-scoped adapter between requests.
+        /// </summary>
+        public void AddAdapter(AstralAdapter adapter, float scale = DefaultAdapterScale)
+        {
+            ThrowIfDisposed();
+            if (adapter == null)
+            {
+                throw new ArgumentNullException(nameof(adapter));
+            }
+            if (!adapter.IsValid)
+            {
+                throw new ArgumentException("adapter must be valid", nameof(adapter));
+            }
+
+            int err = AstralNative.astral_session_adapters_add(m_handle, adapter.Handle, scale);
+            ThrowIfError(err, "astral_session_adapters_add");
+        }
+
+        /// <summary>
+        /// Return the number of adapters currently attached to this session.
+        /// </summary>
+        public uint GetAdapterCount()
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_adapters_count(m_handle, out uint count);
+            ThrowIfError(err, "astral_session_adapters_count");
+            return count;
+        }
+
+        /// <summary>
+        /// Return one attached adapter handle and scale by index.
+        /// </summary>
+        public AstralSessionAdapterInfo GetAdapter(uint index)
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_adapters_get(m_handle, index, out var adapter, out float scale);
+            ThrowIfError(err, "astral_session_adapters_get");
+            return new AstralSessionAdapterInfo
+            {
+                adapter = adapter,
+                scale = scale
+            };
+        }
+
+        /// <summary>
+        /// Update one attached adapter scale between requests.
+        /// </summary>
+        public void SetAdapterScale(uint index, float scale)
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_adapters_set_scale(m_handle, index, scale);
+            ThrowIfError(err, "astral_session_adapters_set_scale");
+        }
+
+        /// <summary>
+        /// Bind a native structured-output toolset between requests.
+        /// </summary>
+        public void SetToolset(
+            AstralToolset toolset,
+            AstralNative.AstralToolChoiceMode choiceMode = AstralNative.AstralToolChoiceMode.Auto)
+        {
+            ThrowIfDisposed();
+            if (toolset == null)
+            {
+                throw new ArgumentNullException(nameof(toolset));
+            }
+            if (!toolset.IsValid)
+            {
+                throw new ArgumentException("toolset must be valid", nameof(toolset));
+            }
+
+            int err = AstralNative.astral_session_set_toolset(m_handle, toolset.Handle, (uint)choiceMode);
+            ThrowIfError(err, "astral_session_set_toolset");
+        }
+
+        /// <summary>
+        /// Clear any structured-output toolset binding.
+        /// </summary>
+        public void ClearToolset()
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_clear_toolset(m_handle);
+            ThrowIfError(err, "astral_session_clear_toolset");
+        }
+
+        /// <summary>
+        /// Configure a GBNF grammar between requests.
+        /// </summary>
+        public void SetGrammarGbnf(string grammar, string rootSymbol)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrEmpty(grammar))
+            {
+                throw new ArgumentNullException(nameof(grammar));
+            }
+
+            NativeArray<byte> grammarArray;
+            NativeArray<byte> rootArray;
+            var grammarSpan = AstralNative.AstralSpanU8.FromString(grammar, out grammarArray);
+            var rootSpan = AstralNative.AstralSpanU8.FromString(rootSymbol, out rootArray);
+            try
+            {
+                int err = AstralNative.astral_session_set_grammar_gbnf(m_handle, grammarSpan, rootSpan);
+                ThrowIfError(err, "astral_session_set_grammar_gbnf");
+            }
+            finally
+            {
+                if (grammarArray.IsCreated)
+                {
+                    grammarArray.Dispose();
+                }
+                if (rootArray.IsCreated)
+                {
+                    rootArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Configure a JSON schema grammar between requests.
+        /// </summary>
+        public void SetGrammarJsonSchema(string jsonSchema)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrEmpty(jsonSchema))
+            {
+                throw new ArgumentNullException(nameof(jsonSchema));
+            }
+
+            NativeArray<byte> schemaArray;
+            var schemaSpan = AstralNative.AstralSpanU8.FromString(jsonSchema, out schemaArray);
+            try
+            {
+                int err = AstralNative.astral_session_set_grammar_json_schema(m_handle, schemaSpan);
+                ThrowIfError(err, "astral_session_set_grammar_json_schema");
+            }
+            finally
+            {
+                if (schemaArray.IsCreated)
+                {
+                    schemaArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Clear any grammar binding.
+        /// </summary>
+        public void ClearGrammar()
+        {
+            ThrowIfDisposed();
+            int err = AstralNative.astral_session_clear_grammar(m_handle);
+            ThrowIfError(err, "astral_session_clear_grammar");
+        }
+
+        /// <summary>
         /// Request cancellation for an in-flight decode.
         /// Thread-safety: Safe to call from any thread, but this wrapper is not synchronized.
         /// </summary>
         public void Cancel()
         {
-            if (m_disposed)
-            {
-                throw new ObjectDisposedException(nameof(AstralSession));
-            }
+            ThrowIfDisposed();
 
             int err = AstralNative.astral_session_cancel(m_handle);
             if (err != AstralNative.ASTRAL_OK)
             {
                 throw new AstralException($"Failed to cancel session: {AstralRuntime.GetErrorString(err)}", err);
+            }
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (m_disposed)
+            {
+                throw new ObjectDisposedException(nameof(AstralSession));
+            }
+        }
+
+        private static void ThrowIfError(int err, string call)
+        {
+            if (err != AstralNative.ASTRAL_OK)
+            {
+                throw new AstralException($"{call} failed: {AstralRuntime.GetErrorString(err)}", err);
             }
         }
 
@@ -664,14 +844,7 @@ namespace Astral.Runtime
 
             if (bytesRead > 0)
             {
-                // Convert UTF-8 to string (GC allocation)
-                unsafe
-                {
-                    fixed (byte* ptr = &m_streamBuffer[0])
-                    {
-                        return Encoding.UTF8.GetString(ptr, bytesRead);
-                    }
-                }
+                return new NativeSlice<byte>(m_streamBuffer, 0, bytesRead).ToUtf8String();
             }
             else if (bytesRead == AstralNative.ASTRAL_E_TIMEOUT)
             {
@@ -710,14 +883,8 @@ namespace Astral.Runtime
 
                 if (bytesRead > 0)
                 {
-                    unsafe
-                    {
-                        fixed (byte* ptr = &m_streamBuffer[0])
-                        {
-                            string token = Encoding.UTF8.GetString(ptr, bytesRead);
-                            onToken?.Invoke(token);
-                        }
-                    }
+                    string token = new NativeSlice<byte>(m_streamBuffer, 0, bytesRead).ToUtf8String();
+                    onToken?.Invoke(token);
                     continue;
                 }
 
@@ -758,15 +925,8 @@ namespace Astral.Runtime
 
                 if (bytesRead > 0)
                 {
-                    // Convert UTF-8 to string
-                    unsafe
-                    {
-                        fixed (byte* ptr = &m_streamBuffer[0])
-                        {
-                            string token = Encoding.UTF8.GetString(ptr, bytesRead);
-                            onToken?.Invoke(token);
-                        }
-                    }
+                    string token = new NativeSlice<byte>(m_streamBuffer, 0, bytesRead).ToUtf8String();
+                    onToken?.Invoke(token);
                 }
                 else if (bytesRead == AstralNative.ASTRAL_E_TIMEOUT)
                 {
@@ -860,46 +1020,63 @@ namespace Astral.Runtime
     [Serializable]
     public class AstralSessionConfig
     {
+        public const uint DefaultMaxTokens = 512;
+        public const float DefaultTemperature = 0.7f;
+        public const uint DefaultTopK = 40;
+        public const float DefaultTopP = 0.9f;
+        public const bool DefaultStreamEnabled = true;
+        public const uint AutoSeed = 0;
+
+        public const float GreedyTemperature = 0.1f;
+        public const uint GreedyTopK = 1;
+        public const float GreedyTopP = 1.0f;
+        public const uint GreedySeed = 1;
+
+        public const uint CreativeMaxTokens = 1024;
+        public const float CreativeTemperature = 1.0f;
+        public const uint CreativeTopK = 80;
+        public const float CreativeTopP = 0.95f;
+
         /// <summary>
         /// Maximum tokens to generate.
         ///  Higher values allow longer responses but take more time.
         /// Recommended: 256 (short); 512 (medium); 1024 (long); 2048 (very long)
         /// </summary>
-        public uint maxTokens = 512;
+        public uint maxTokens = DefaultMaxTokens;
 
         /// <summary>
         /// Sampling temperature (0.0 = greedy, 1.0 = diverse).
         ///  Lower = more deterministic; higher = more creative.
         /// Recommended: 0.7 (balanced); 0.1 (factual); 1.0 (creative)
         /// </summary>
-        public float temperature = 0.7f;
+        public float temperature = DefaultTemperature;
 
         /// <summary>
         /// Top-K sampling (0 = disabled).
         /// Only consider top K tokens by probability.
         /// Recommended: 40 (balanced); 1 (greedy); 80 (diverse)
         /// </summary>
-        public uint topK = 40;
+        public uint topK = DefaultTopK;
 
         /// <summary>
         /// Top-P (nucleus) sampling (0.0-1.0).
         /// Only consider tokens with cumulative probability > P.
         /// Recommended: 0.9 (balanced); 1.0 (disabled); 0.5 (focused)
         /// </summary>
-        public float topP = 0.9f;
+        public float topP = DefaultTopP;
 
         /// <summary>
         /// Enable token streaming.
         /// If true, tokens are emitted as they are generated (use ReadStream/StreamAll).
         /// If false, all tokens are buffered until generation completes.
         /// </summary>
-        public bool streamEnabled = true;
+        public bool streamEnabled = DefaultStreamEnabled;
 
         /// <summary>
         /// RNG seed for sampling (0 = auto).
         /// Set to a non-zero value for deterministic generation (given same prompt + model).
         /// </summary>
-        public uint seed = 0;
+        public uint seed = AutoSeed;
 
         /// <summary>
         /// Default configuration.
@@ -911,12 +1088,12 @@ namespace Astral.Runtime
         /// </summary>
         public static AstralSessionConfig Greedy => new AstralSessionConfig
         {
-            maxTokens = 512,
-            temperature = 0.1f,
-            topK = 1,
-            topP = 1.0f,
-            streamEnabled = true,
-            seed = 1
+            maxTokens = DefaultMaxTokens,
+            temperature = GreedyTemperature,
+            topK = GreedyTopK,
+            topP = GreedyTopP,
+            streamEnabled = DefaultStreamEnabled,
+            seed = GreedySeed
         };
 
         /// <summary>
@@ -924,11 +1101,11 @@ namespace Astral.Runtime
         /// </summary>
         public static AstralSessionConfig Creative => new AstralSessionConfig
         {
-            maxTokens = 1024,
-            temperature = 1.0f,
-            topK = 80,
-            topP = 0.95f,
-            streamEnabled = true
+            maxTokens = CreativeMaxTokens,
+            temperature = CreativeTemperature,
+            topK = CreativeTopK,
+            topP = CreativeTopP,
+            streamEnabled = DefaultStreamEnabled
         };
     }
 

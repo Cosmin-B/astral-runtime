@@ -11,6 +11,8 @@ BASE_TOKENS = (
     "AstralSampleAutoQuit",
     "Mounted IoStore container",
     "Mounted Pak file",
+    "Astral sample: generation model loaded",
+    "Astral sample: generation decode started",
     "Astral sample: media feed demo loaded",
     "texture image",
     "PCM16 audio",
@@ -18,6 +20,9 @@ BASE_TOKENS = (
     "Astral sample: packaged content memory model loaded",
     "Astral sample: saved cache bytes read",
     "Astral sample: saved cache memory model loaded",
+    "Astral sample: RAG chunk text",
+    "Astral sample: RAG search top key",
+    "Astral sample: clean shutdown",
 )
 
 REAL_MODEL_TOKENS = (
@@ -36,10 +41,18 @@ FAILURE_TOKENS = (
     "Assertion failed",
     "Ensure condition failed",
     "AutomationTool exiting with ExitCode=1",
+    "model load failed",
+    "prompt feed failed",
+    "decode failed",
+    "embedding failed",
     "packaged content model read failed",
     "saved cache write failed",
     "saved cache read failed",
     "memory model load failed",
+    "memory search demo failed: chunk",
+    "memory search demo failed: record",
+    "memory search demo failed: copy chunk",
+    "memory search demo failed",
     "media feed demo failed",
 )
 

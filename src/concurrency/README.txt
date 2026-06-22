@@ -123,8 +123,8 @@ BUILDING
 --------
 
 Compile test suite:
-    g++ -std=c++20 -Wall -Wextra -Werror -O2 -o test_concurrency test_concurrency.cpp
-    clang++ -std=c++20 -Wall -Wextra -Werror -O2 -o test_concurrency test_concurrency.cpp
+    g++ -std=c++17 -Wall -Wextra -Werror -O2 -o test_concurrency test_concurrency.cpp
+    clang++ -std=c++17 -Wall -Wextra -Werror -O2 -o test_concurrency test_concurrency.cpp
 
 Run tests:
     ./test_concurrency
