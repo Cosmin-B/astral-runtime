@@ -4062,7 +4062,7 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
                              &top_count);
   }
 
-  if (q8_f32_rerank_storage(index)) {
+  if (f32_rerank_storage(index)) {
     const uint32_t rerank_capacity = graph_f32_rerank_capacity(desc->top_k, top_count);
     trim_graph_query_top_candidates(index, scratch, &top_count, rerank_capacity);
   }
