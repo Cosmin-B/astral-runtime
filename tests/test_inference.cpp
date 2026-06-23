@@ -2737,7 +2737,7 @@ TEST(inference_memory_index_graph_defaults_split_query_from_build_mock) {
   constexpr uint32_t kDefaultGraphBuildSearch = 128;
   constexpr uint32_t kDefaultGraphQuerySearch = 64;
   constexpr uint32_t kLargeDefaultGraphQuerySearch = 128;
-  constexpr uint32_t kLargeRerankDefaultGraphQuerySearch = 384;
+  constexpr uint32_t kLargeRerankDefaultGraphQuerySearch = 256;
 
   AstralMemoryIndexDesc desc{};
   desc.size = sizeof(AstralMemoryIndexDesc);
