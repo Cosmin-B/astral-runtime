@@ -2323,7 +2323,7 @@ struct MemoryIndex {
   uint32_t* key_table;
   uint32_t* graph_neighbors;
   float* graph_neighbor_scores;
-  uint32_t* graph_neighbor_counts;
+  uint8_t* graph_neighbor_counts;
   uint8_t* graph_levels;
   uint32_t* graph_candidates;
   float* graph_candidate_scores;
@@ -2766,7 +2766,7 @@ inline uint32_t graph_neighbor_count_at_level(const MemoryIndex* index, uint32_t
   return index->graph_neighbor_counts[static_cast<size_t>(level) * index->capacity + slot];
 }
 
-inline uint32_t& graph_neighbor_count_ref(MemoryIndex* index, uint32_t slot, uint32_t level) {
+inline uint8_t& graph_neighbor_count_ref(MemoryIndex* index, uint32_t slot, uint32_t level) {
   return index->graph_neighbor_counts[static_cast<size_t>(level) * index->capacity + slot];
 }
 
@@ -3152,7 +3152,7 @@ void refine_graph_neighbor_list(MemoryIndex* index, uint32_t owner_slot, uint32_
 
   uint32_t* neighbors = graph_neighbors_at_level(index, owner_slot, level);
   float* scores = graph_neighbor_scores_at_level(index, owner_slot, level);
-  uint32_t& count = graph_neighbor_count_ref(index, owner_slot, level);
+  uint8_t& count = graph_neighbor_count_ref(index, owner_slot, level);
   const uint32_t capacity = graph_neighbor_capacity_at_level(index, level);
   for (uint32_t i = 0; i < count; ++i) {
     if (neighbors[i] == candidate_slot) {
@@ -3202,7 +3202,7 @@ void force_graph_neighbor(MemoryIndex* index, uint32_t owner_slot, uint32_t neig
   }
   uint32_t* neighbors = graph_neighbors_at_level(index, owner_slot, level);
   float* scores = graph_neighbor_scores_at_level(index, owner_slot, level);
-  uint32_t& count = graph_neighbor_count_ref(index, owner_slot, level);
+  uint8_t& count = graph_neighbor_count_ref(index, owner_slot, level);
   for (uint32_t i = 0; i < count; ++i) {
     if (neighbors[i] == neighbor_slot) {
       return;
@@ -3765,7 +3765,7 @@ void graph_connect_slot(MemoryIndex* index, uint32_t slot) {
     float* neighbor_scores = graph_neighbor_scores_at_level(index, slot, level);
     graph_select_neighbors(index, slot, level, candidate_count, neighbors, neighbor_scores, &filled,
                            outgoing_capacity);
-    graph_neighbor_count_ref(index, slot, level) = filled;
+    graph_neighbor_count_ref(index, slot, level) = static_cast<uint8_t>(filled);
     for (uint32_t i = 0; i < filled; ++i) {
       refine_graph_neighbor_list(index, neighbors[i], slot, neighbor_scores[i], level);
     }
@@ -3801,7 +3801,7 @@ void graph_rebuild(MemoryIndex* index) {
     return;
   }
   std::memset(index->graph_neighbor_counts, 0,
-              sizeof(uint32_t) * index->capacity * index->graph_level_capacity);
+              sizeof(uint8_t) * index->capacity * index->graph_level_capacity);
   std::memset(index->graph_neighbor_scores, 0, sizeof(float) * graph_neighbor_storage_count(index));
   index->graph_entry_slot = kU32Max;
   index->graph_max_level = 0;
@@ -5585,7 +5585,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     index->graph_neighbor_scores =
         core::runtime_alloc_array<float>(static_cast<uint32_t>(graph_neighbor_slots));
     index->graph_neighbor_counts =
-        core::runtime_alloc_array<uint32_t>(desc->capacity * graph_level_capacity);
+        core::runtime_alloc_array<uint8_t>(desc->capacity * graph_level_capacity);
     index->graph_levels = core::runtime_alloc_array<uint8_t>(desc->capacity);
     index->graph_candidates = core::runtime_alloc_array<uint32_t>(graph_candidate_capacity);
     index->graph_candidate_scores = core::runtime_alloc_array<float>(graph_candidate_capacity);
@@ -5656,7 +5656,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     std::memset(index->graph_neighbor_scores, 0,
                 sizeof(float) * graph_neighbor_storage_count(index));
     std::memset(index->graph_neighbor_counts, 0,
-                sizeof(uint32_t) * desc->capacity * graph_level_capacity);
+                sizeof(uint8_t) * desc->capacity * graph_level_capacity);
     std::memset(index->graph_levels, 0, sizeof(uint8_t) * desc->capacity);
     std::memset(index->graph_candidates, 0, sizeof(uint32_t) * graph_candidate_capacity);
     std::memset(index->graph_candidate_scores, 0, sizeof(float) * graph_candidate_capacity);
@@ -5717,7 +5717,7 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
   if (graph_enabled(index)) {
     graph_bytes += static_cast<uint64_t>(graph_neighbor_storage_count(index)) * sizeof(uint32_t);
     graph_bytes +=
-        static_cast<uint64_t>(index->capacity) * index->graph_level_capacity * sizeof(uint32_t);
+        static_cast<uint64_t>(index->capacity) * index->graph_level_capacity * sizeof(uint8_t);
     graph_bytes += static_cast<uint64_t>(index->capacity) * sizeof(uint8_t);
     graph_bytes += static_cast<uint64_t>(index->graph_candidate_capacity) * sizeof(uint32_t);
     graph_bytes += static_cast<uint64_t>(index->graph_candidate_capacity) * sizeof(float);
@@ -5765,7 +5765,7 @@ AstralErr memory_clear(MemoryIndex* index) {
   std::memset(index->key_table, 0, sizeof(uint32_t) * index->key_table_capacity);
   if (graph_enabled(index)) {
     std::memset(index->graph_neighbor_counts, 0,
-                sizeof(uint32_t) * index->capacity * index->graph_level_capacity);
+                sizeof(uint8_t) * index->capacity * index->graph_level_capacity);
     std::memset(index->graph_levels, 0, sizeof(uint8_t) * index->capacity);
     std::memset(index->graph_visited, 0, sizeof(uint16_t) * index->capacity);
     index->graph_entry_slot = kU32Max;
@@ -7592,7 +7592,7 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
             memory_destroy(index);
             return ASTRAL_E_INVALID;
           }
-          graph_neighbor_count_ref(index, active_pos, level) = count;
+          graph_neighbor_count_ref(index, active_pos, level) = static_cast<uint8_t>(count);
         }
       }
       for (uint32_t level = 0; level < index->graph_level_capacity; ++level) {
