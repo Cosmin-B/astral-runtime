@@ -67,6 +67,7 @@ constexpr uint32_t kGraphF32RerankMinCandidates = 256;
 constexpr uint32_t kGraphF32RerankTopKMultiplier = 32;
 constexpr uint32_t kGraphDefaultQueryCapacityMultiplier = 1;
 constexpr uint32_t kGraphRerankDefaultQueryCapacityMultiplier = 3;
+constexpr uint16_t kGraphVisitGenerationStart = 1;
 constexpr uint64_t kBytesPerKiB = 1024;
 constexpr uint64_t kBytesPerMiB = kBytesPerKiB * kBytesPerKiB;
 constexpr uint64_t kGraphCompactExactSearchMaxBytes = 16 * kBytesPerMiB;
@@ -2295,8 +2296,8 @@ struct GraphSearchScratch {
   float* candidate_scores;
   uint32_t* top_slots;
   float* top_scores;
-  uint32_t* visited;
-  uint32_t visit_generation;
+  uint16_t* visited;
+  uint16_t visit_generation;
   uint32_t candidate_worst_pos;
   uint32_t candidate_worst_slot;
   float candidate_worst_score;
@@ -2328,7 +2329,7 @@ struct MemoryIndex {
   float* graph_candidate_scores;
   uint32_t* graph_scratch_slots;
   float* graph_scratch_scores;
-  uint32_t* graph_visited;
+  uint16_t* graph_visited;
   GraphSearchScratch graph_batch_scratch[kMemorySearchBatchParallelMaxWorkers];
   uint32_t key_table_capacity;
   uint32_t key_table_mask;
@@ -2341,7 +2342,7 @@ struct MemoryIndex {
   uint32_t graph_level_capacity;
   uint32_t graph_entry_slot;
   uint32_t graph_max_level;
-  uint32_t graph_visit_generation;
+  uint16_t graph_visit_generation;
   uint64_t graph_build_score_evals;
   uint64_t graph_build_candidate_visits;
   uint32_t free_slot_hint;
@@ -3842,8 +3843,8 @@ inline bool graph_was_visited(const MemoryIndex* index, uint32_t slot) {
 void graph_begin_visit(MemoryIndex* index) {
   ++index->graph_visit_generation;
   if (index->graph_visit_generation == 0) {
-    std::memset(index->graph_visited, 0, sizeof(uint32_t) * index->capacity);
-    index->graph_visit_generation = 1;
+    std::memset(index->graph_visited, 0, sizeof(uint16_t) * index->capacity);
+    index->graph_visit_generation = kGraphVisitGenerationStart;
   }
 }
 
@@ -3973,8 +3974,8 @@ void graph_query_begin_visit(const MemoryIndex* index, GraphSearchScratch* scrat
   ++scratch->visit_generation;
   scratch->candidate_worst_valid = 0;
   if (scratch->visit_generation == 0) {
-    std::memset(scratch->visited, 0, sizeof(uint32_t) * index->capacity);
-    scratch->visit_generation = 1;
+    std::memset(scratch->visited, 0, sizeof(uint16_t) * index->capacity);
+    scratch->visit_generation = kGraphVisitGenerationStart;
   }
 }
 
@@ -4253,14 +4254,14 @@ bool graph_search_scratch_alloc(const MemoryIndex* index, GraphSearchScratch* sc
   scratch->candidate_scores = core::runtime_alloc_array<float>(index->graph_candidate_capacity);
   scratch->top_slots = core::runtime_alloc_array<uint32_t>(index->graph_scratch_capacity);
   scratch->top_scores = core::runtime_alloc_array<float>(index->graph_scratch_capacity);
-  scratch->visited = core::runtime_alloc_array<uint32_t>(index->capacity);
+  scratch->visited = core::runtime_alloc_array<uint16_t>(index->capacity);
   if (scratch->candidates == nullptr || scratch->candidate_scores == nullptr ||
       scratch->top_slots == nullptr || scratch->top_scores == nullptr ||
       scratch->visited == nullptr) {
     graph_search_scratch_free(index, scratch);
     return false;
   }
-  std::memset(scratch->visited, 0, sizeof(uint32_t) * index->capacity);
+  std::memset(scratch->visited, 0, sizeof(uint16_t) * index->capacity);
   return true;
 }
 
@@ -4296,14 +4297,14 @@ bool snapshot_graph_scratch_alloc(const AstralMemorySnapshotInfo* info,
   scratch->candidate_scores = core::runtime_alloc_array<float>(graph->candidate_capacity);
   scratch->top_slots = core::runtime_alloc_array<uint32_t>(graph->scratch_capacity);
   scratch->top_scores = core::runtime_alloc_array<float>(graph->scratch_capacity);
-  scratch->visited = core::runtime_alloc_array<uint32_t>(info->count);
+  scratch->visited = core::runtime_alloc_array<uint16_t>(info->count);
   if (scratch->candidates == nullptr || scratch->candidate_scores == nullptr ||
       scratch->top_slots == nullptr || scratch->top_scores == nullptr ||
       scratch->visited == nullptr) {
     snapshot_graph_scratch_free(info, graph, scratch);
     return false;
   }
-  std::memset(scratch->visited, 0, sizeof(uint32_t) * info->count);
+  std::memset(scratch->visited, 0, sizeof(uint16_t) * info->count);
   return true;
 }
 
@@ -5590,7 +5591,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     index->graph_candidate_scores = core::runtime_alloc_array<float>(graph_candidate_capacity);
     index->graph_scratch_slots = core::runtime_alloc_array<uint32_t>(graph_scratch_capacity);
     index->graph_scratch_scores = core::runtime_alloc_array<float>(graph_scratch_capacity);
-    index->graph_visited = core::runtime_alloc_array<uint32_t>(desc->capacity);
+    index->graph_visited = core::runtime_alloc_array<uint16_t>(desc->capacity);
     if (core::runtime_initialized()) {
       uint32_t scratch_count = core::runtime_thread_count();
       if (scratch_count > kMemorySearchBatchParallelMaxWorkers) {
@@ -5661,7 +5662,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     std::memset(index->graph_candidate_scores, 0, sizeof(float) * graph_candidate_capacity);
     std::memset(index->graph_scratch_slots, 0, sizeof(uint32_t) * graph_scratch_capacity);
     std::memset(index->graph_scratch_scores, 0, sizeof(float) * graph_scratch_capacity);
-    std::memset(index->graph_visited, 0, sizeof(uint32_t) * desc->capacity);
+    std::memset(index->graph_visited, 0, sizeof(uint16_t) * desc->capacity);
   }
   const AstralHandle handle = core::register_handle(core::HandleKind::MemoryIndex, index);
   if (handle == 0) {
@@ -5722,7 +5723,7 @@ AstralErr memory_stats(MemoryIndex* index, AstralMemoryStats* out_stats) {
     graph_bytes += static_cast<uint64_t>(index->graph_candidate_capacity) * sizeof(float);
     graph_bytes += static_cast<uint64_t>(index->graph_scratch_capacity) * sizeof(uint32_t);
     graph_bytes += static_cast<uint64_t>(index->graph_scratch_capacity) * sizeof(float);
-    graph_bytes += static_cast<uint64_t>(index->capacity) * sizeof(uint32_t);
+    graph_bytes += static_cast<uint64_t>(index->capacity) * sizeof(uint16_t);
     for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
       const uint32_t slot = active_slot_at(index, active_pos);
       graph_base_edges += graph_neighbor_count_at_level(index, slot, 0);
@@ -5766,7 +5767,7 @@ AstralErr memory_clear(MemoryIndex* index) {
     std::memset(index->graph_neighbor_counts, 0,
                 sizeof(uint32_t) * index->capacity * index->graph_level_capacity);
     std::memset(index->graph_levels, 0, sizeof(uint8_t) * index->capacity);
-    std::memset(index->graph_visited, 0, sizeof(uint32_t) * index->capacity);
+    std::memset(index->graph_visited, 0, sizeof(uint16_t) * index->capacity);
     index->graph_entry_slot = kU32Max;
     index->graph_max_level = 0;
     index->graph_visit_generation = 0;
@@ -6980,8 +6981,8 @@ void snapshot_graph_begin_visit(const AstralMemorySnapshotInfo* info, GraphSearc
   ++scratch->visit_generation;
   scratch->candidate_worst_valid = 0;
   if (scratch->visit_generation == 0) {
-    std::memset(scratch->visited, 0, sizeof(uint32_t) * info->count);
-    scratch->visit_generation = 1;
+    std::memset(scratch->visited, 0, sizeof(uint16_t) * info->count);
+    scratch->visit_generation = kGraphVisitGenerationStart;
   }
 }
 
