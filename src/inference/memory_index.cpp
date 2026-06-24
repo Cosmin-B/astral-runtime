@@ -2980,25 +2980,38 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
   return l2_score_f32(query, vector_at(index, slot), index->dim);
 }
 
+enum class CompactByteQueryStorage : uint8_t {
+  q8,
+  e5m2,
+};
+
+template <CompactByteQueryStorage Storage>
 inline float score_slot_compact_query(MemoryIndex* index, const int8_t* query, int32_t query_sum,
                                       float query_scale, uint32_t slot, float cosine_query_scale) {
   const int8_t* q8 = q8_vector_at(index, slot);
   const float scale = index->compact_score_scales[slot];
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
-    return (e5m2_storage(index) ? dot_e5m2_e5m2(q8, query, index->dim)
-                                : dot_q8_q8_query(q8, query, index->dim, query_sum)) *
-           scale * query_scale;
+    if constexpr (Storage == CompactByteQueryStorage::e5m2) {
+      return dot_e5m2_e5m2(q8, query, index->dim) * scale * query_scale;
+    } else {
+      return dot_q8_q8_query(q8, query, index->dim, query_sum) * scale * query_scale;
+    }
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-    return (e5m2_storage(index) ? dot_e5m2_e5m2(q8, query, index->dim)
-                                : dot_q8_q8_query(q8, query, index->dim, query_sum)) *
-           scale * query_scale * cosine_query_scale;
+    if constexpr (Storage == CompactByteQueryStorage::e5m2) {
+      return dot_e5m2_e5m2(q8, query, index->dim) * scale * query_scale * cosine_query_scale;
+    } else {
+      return dot_q8_q8_query(q8, query, index->dim, query_sum) * scale * query_scale *
+             cosine_query_scale;
+    }
   }
-  return e5m2_storage(index)
-             ? l2_score_e5m2_e5m2(q8, compact_value_scale(index, index->q8_scales[slot]), query,
-                                  query_scale, index->dim)
-             : l2_score_q8_q8(q8, compact_value_scale(index, index->q8_scales[slot]), query,
+  if constexpr (Storage == CompactByteQueryStorage::e5m2) {
+    return l2_score_e5m2_e5m2(q8, compact_value_scale(index, index->q8_scales[slot]), query,
                               query_scale, index->dim);
+  } else {
+    return l2_score_q8_q8(q8, compact_value_scale(index, index->q8_scales[slot]), query,
+                          query_scale, index->dim);
+  }
 }
 
 inline float score_slot_compact_query_i16(MemoryIndex* index, const int16_t* query,
@@ -3544,6 +3557,7 @@ void graph_search_layer_query(MemoryIndex* index, GraphSearchScratch* scratch, c
   *out_top_count = top_count;
 }
 
+template <CompactByteQueryStorage Storage>
 void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* scratch,
                                       const int8_t* query, int32_t query_sum, float query_scale,
                                       float cosine_query_scale, uint32_t entry, uint32_t capacity,
@@ -3552,8 +3566,8 @@ void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* sc
   uint32_t top_count = 0;
   const uint32_t candidate_capacity = graph_candidate_search_capacity(index, capacity);
   graph_query_mark_visited(scratch, entry);
-  const float entry_score =
-      score_slot_compact_query(index, query, query_sum, query_scale, entry, cosine_query_scale);
+  const float entry_score = score_slot_compact_query<Storage>(index, query, query_sum, query_scale,
+                                                              entry, cosine_query_scale);
   insert_graph_query_top_candidate(index, scratch, capacity, &top_count, entry, entry_score);
   graph_query_add_candidate(index, scratch, candidate_capacity, entry, entry_score,
                             &candidate_count);
@@ -3581,8 +3595,8 @@ void graph_search_layer_compact_query(MemoryIndex* index, GraphSearchScratch* sc
         continue;
       }
       graph_query_mark_visited(scratch, neighbor);
-      const float score = score_slot_compact_query(index, query, query_sum, query_scale, neighbor,
-                                                   cosine_query_scale);
+      const float score = score_slot_compact_query<Storage>(index, query, query_sum, query_scale,
+                                                            neighbor, cosine_query_scale);
       if (insert_graph_query_top_candidate(index, scratch, capacity, &top_count, neighbor, score)) {
         graph_query_add_candidate(index, scratch, candidate_capacity, neighbor, score,
                                   &candidate_count);
@@ -3700,13 +3714,14 @@ uint32_t graph_greedy_closest_compact_query_i16(MemoryIndex* index, const int16_
   return closest;
 }
 
+template <CompactByteQueryStorage Storage>
 uint32_t graph_greedy_closest_compact_query(MemoryIndex* index, const int8_t* query,
                                             int32_t query_sum, float query_scale,
                                             float cosine_query_scale, uint32_t entry,
                                             uint32_t begin_level, uint32_t end_level) {
   uint32_t closest = entry;
-  float closest_score =
-      score_slot_compact_query(index, query, query_sum, query_scale, closest, cosine_query_scale);
+  float closest_score = score_slot_compact_query<Storage>(index, query, query_sum, query_scale,
+                                                          closest, cosine_query_scale);
   for (uint32_t level = begin_level; level > end_level; --level) {
     bool changed = true;
     while (changed) {
@@ -3718,8 +3733,8 @@ uint32_t graph_greedy_closest_compact_query(MemoryIndex* index, const int8_t* qu
         if (index->slots[candidate].occupied == 0 || index->graph_levels[candidate] < level) {
           continue;
         }
-        const float score = score_slot_compact_query(index, query, query_sum, query_scale,
-                                                     candidate, cosine_query_scale);
+        const float score = score_slot_compact_query<Storage>(index, query, query_sum, query_scale,
+                                                              candidate, cosine_query_scale);
         if (score > closest_score) {
           closest = candidate;
           closest_score = score;
@@ -4153,16 +4168,28 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
     float compact_query_scale = 1.0f;
     float compact_cosine_query_scale = query_scale;
     quantize_compact_query(index, compact_query, &compact_query_scale, query);
-    const int32_t compact_query_sum = e5m2_storage(index) ? 0 : sum_i8(compact_query, index->dim);
-    const uint32_t entry =
-        index->graph_max_level != 0
-            ? graph_greedy_closest_compact_query(index, compact_query, compact_query_sum,
-                                                 compact_query_scale, compact_cosine_query_scale,
-                                                 index->graph_entry_slot, index->graph_max_level, 0)
-            : index->graph_entry_slot;
-    graph_search_layer_compact_query(index, scratch, compact_query, compact_query_sum,
-                                     compact_query_scale, compact_cosine_query_scale, entry,
-                                     search_capacity, &top_count);
+    if (e5m2_storage(index)) {
+      const uint32_t entry =
+          index->graph_max_level != 0
+              ? graph_greedy_closest_compact_query<CompactByteQueryStorage::e5m2>(
+                    index, compact_query, 0, compact_query_scale, compact_cosine_query_scale,
+                    index->graph_entry_slot, index->graph_max_level, 0)
+              : index->graph_entry_slot;
+      graph_search_layer_compact_query<CompactByteQueryStorage::e5m2>(
+          index, scratch, compact_query, 0, compact_query_scale, compact_cosine_query_scale, entry,
+          search_capacity, &top_count);
+    } else {
+      const int32_t compact_query_sum = sum_i8(compact_query, index->dim);
+      const uint32_t entry =
+          index->graph_max_level != 0
+              ? graph_greedy_closest_compact_query<CompactByteQueryStorage::q8>(
+                    index, compact_query, compact_query_sum, compact_query_scale,
+                    compact_cosine_query_scale, index->graph_entry_slot, index->graph_max_level, 0)
+              : index->graph_entry_slot;
+      graph_search_layer_compact_query<CompactByteQueryStorage::q8>(
+          index, scratch, compact_query, compact_query_sum, compact_query_scale,
+          compact_cosine_query_scale, entry, search_capacity, &top_count);
+    }
   } else {
     const uint32_t entry =
         index->graph_max_level != 0
