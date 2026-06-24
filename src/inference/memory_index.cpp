@@ -4148,7 +4148,7 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
                                : index->graph_entry_slot;
     graph_search_layer_compact_query_i16(index, scratch, compact_query, compact_query_scale,
                                          query_scale, entry, search_capacity, &top_count);
-  } else if (compact_storage(index) && !i16_storage(index) && !f8_f32_rerank_storage(index)) {
+  } else if (compact_storage(index) && !i16_storage(index)) {
     int8_t compact_query[kMaxDim];
     float compact_query_scale = 1.0f;
     float compact_cosine_query_scale = query_scale;
@@ -6551,7 +6551,10 @@ void snapshot_prepare_query(const AstralMemorySnapshotInfo* info, const float* q
                           info->storage_kind == ASTRAL_MEMORY_STORAGE_F6_E3M2_F32_RERANK)
                              ? 1u
                              : 0u;
-  prepared->use_f8 = info->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2 ? 1u : 0u;
+  prepared->use_f8 = (info->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2 ||
+                      info->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2_F32_RERANK)
+                         ? 1u
+                         : 0u;
   if (info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK) {
     quantize_q8_vector(prepared->compact_query, &prepared->compact_query_scale, prepared->query,
                        info->dim);
@@ -6654,6 +6657,24 @@ float snapshot_graph_score_active(SnapshotBytes bytes, const AstralMemorySnapsho
     }
     return l2_score_q8_q8(vector, scale, prepared->compact_query, prepared->compact_query_scale,
                           info->dim);
+  }
+  if (info->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2_F32_RERANK) {
+    const float stored_scale = snapshot_stored_scale(bytes, info, active_pos);
+    const int8_t* vector =
+        reinterpret_cast<const int8_t*>(snapshot_vector_ptr(bytes, info, active_pos));
+    const float scale = prepared->compact_score_scale_stride != 0
+                            ? snapshot_compact_score_scale(bytes, prepared, active_pos)
+                            : compact_value_scale_kind(info->storage_kind, stored_scale);
+    if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
+      return dot_e5m2_e5m2(vector, prepared->compact_query, info->dim) * scale *
+             prepared->compact_query_scale;
+    }
+    if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      return dot_e5m2_e5m2(vector, prepared->compact_query, info->dim) * scale *
+             prepared->compact_query_scale * prepared->query_scale;
+    }
+    return l2_score_e5m2_e5m2(vector, scale, prepared->compact_query, prepared->compact_query_scale,
+                              info->dim);
   }
   return snapshot_score_active(bytes, info, prepared, active_pos);
 }
