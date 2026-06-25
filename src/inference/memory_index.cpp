@@ -459,6 +459,47 @@ __attribute__((target("avxvnni"))) int32_t dot_q8_q8_avx_vnni_i32(const int8_t* 
   acc0 = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
   return reduce_avx2_i32(acc0) - b_sum * kAvxVnniSignOffset;
 }
+
+__attribute__((target("avxvnni"))) int32_t dot_q8_q8_avx_vnni_aligned_i32(const int8_t* a,
+                                                                          const int8_t* b,
+                                                                          uint32_t dim,
+                                                                          int32_t b_sum) {
+  __m256i acc0 = _mm256_setzero_si256();
+  __m256i acc1 = _mm256_setzero_si256();
+  __m256i acc2 = _mm256_setzero_si256();
+  __m256i acc3 = _mm256_setzero_si256();
+  const __m256i sign_offset = _mm256_set1_epi8(static_cast<char>(0x80));
+  uint32_t i = 0;
+  for (; i + kAvxVnniUnrollI8 <= dim; i += kAvxVnniUnrollI8) {
+    const __m256i a0 =
+        _mm256_xor_si256(_mm256_load_si256(reinterpret_cast<const __m256i*>(a + i)), sign_offset);
+    const __m256i a1 = _mm256_xor_si256(
+        _mm256_load_si256(reinterpret_cast<const __m256i*>(a + i + kAvxVnniI8Offset1)),
+        sign_offset);
+    const __m256i a2 = _mm256_xor_si256(
+        _mm256_load_si256(reinterpret_cast<const __m256i*>(a + i + kAvxVnniI8Offset2)),
+        sign_offset);
+    const __m256i a3 = _mm256_xor_si256(
+        _mm256_load_si256(reinterpret_cast<const __m256i*>(a + i + kAvxVnniI8Offset3)),
+        sign_offset);
+    acc0 =
+        _mm256_dpbusd_epi32(acc0, a0, _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i)));
+    acc1 = _mm256_dpbusd_epi32(
+        acc1, a1, _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i + kAvxVnniI8Offset1)));
+    acc2 = _mm256_dpbusd_epi32(
+        acc2, a2, _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i + kAvxVnniI8Offset2)));
+    acc3 = _mm256_dpbusd_epi32(
+        acc3, a3, _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i + kAvxVnniI8Offset3)));
+  }
+  for (; i + kAvxVnniI8Lanes <= dim; i += kAvxVnniI8Lanes) {
+    const __m256i av =
+        _mm256_xor_si256(_mm256_load_si256(reinterpret_cast<const __m256i*>(a + i)), sign_offset);
+    acc0 =
+        _mm256_dpbusd_epi32(acc0, av, _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i)));
+  }
+  acc0 = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
+  return reduce_avx2_i32(acc0) - b_sum * kAvxVnniSignOffset;
+}
 #endif
 
 inline void quantize_q8_store8_avx2(int8_t* dst, const float* src, __m256 inv_scale,
@@ -962,6 +1003,18 @@ float dot_q8_q8_query(const int8_t* a, const int8_t* b, uint32_t dim, int32_t b_
     (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
   if ((dim & 31u) == 0 && cpu_supports_avx_vnni()) {
     return static_cast<float>(dot_q8_q8_avx_vnni_i32(a, b, dim, b_sum));
+  }
+#else
+  (void)b_sum;
+#endif
+  return dot_q8_q8(a, b, dim);
+}
+
+float dot_q8_q8_query_aligned(const int8_t* a, const int8_t* b, uint32_t dim, int32_t b_sum) {
+#if defined(__AVX2__) && (defined(__GNUC__) || defined(__clang__)) &&                              \
+    (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
+  if ((dim & 31u) == 0 && cpu_supports_avx_vnni()) {
+    return static_cast<float>(dot_q8_q8_avx_vnni_aligned_i32(a, b, dim, b_sum));
   }
 #else
   (void)b_sum;
@@ -2989,14 +3042,14 @@ inline float score_slot_compact_query(MemoryIndex* index, const int8_t* query, i
     if constexpr (Storage == CompactByteQueryStorage::e5m2) {
       return dot_e5m2_e5m2(q8, query, index->dim) * scale * query_scale;
     } else {
-      return dot_q8_q8_query(q8, query, index->dim, query_sum) * scale * query_scale;
+      return dot_q8_q8_query_aligned(q8, query, index->dim, query_sum) * scale * query_scale;
     }
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
     if constexpr (Storage == CompactByteQueryStorage::e5m2) {
       return dot_e5m2_e5m2(q8, query, index->dim) * scale * query_scale * cosine_query_scale;
     } else {
-      return dot_q8_q8_query(q8, query, index->dim, query_sum) * scale * query_scale *
+      return dot_q8_q8_query_aligned(q8, query, index->dim, query_sum) * scale * query_scale *
              cosine_query_scale;
     }
   }
