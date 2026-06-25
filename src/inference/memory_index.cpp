@@ -4108,7 +4108,7 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
     return;
   }
 
-  float normalized_query[kMaxDim];
+  alignas(kVectorStorageAlign) float normalized_query[kMaxDim];
   if (!compact_storage(index) && index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
     normalize_f32_vector(normalized_query, query, index->dim);
     query = normalized_query;
@@ -4125,7 +4125,7 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
   uint32_t filled = 0;
   uint32_t top_count = 0;
   if (compact_storage(index) && i16_storage(index)) {
-    int16_t compact_query[kMaxDim];
+    alignas(kVectorStorageAlign) int16_t compact_query[kMaxDim];
     float compact_query_scale = 1.0f;
     quantize_e3m2_vector(compact_query, &compact_query_scale, query, index->dim);
     compact_query_scale *= kE3M2InvScale;
@@ -4137,7 +4137,7 @@ void memory_search_graph_with_scratch(MemoryIndex* index, const AstralMemorySear
     graph_search_layer_compact_query_i16(index, scratch, compact_query, compact_query_scale,
                                          query_scale, entry, search_capacity, &top_count);
   } else if (compact_storage(index) && !i16_storage(index)) {
-    int8_t compact_query[kMaxDim];
+    alignas(kVectorStorageAlign) int8_t compact_query[kMaxDim];
     float compact_query_scale = 1.0f;
     float compact_cosine_query_scale = query_scale;
     quantize_compact_query(index, compact_query, &compact_query_scale, query);
@@ -4625,7 +4625,7 @@ void memory_search_cosine(MemoryIndex* index, const AstralMemorySearchDesc* desc
                           const float* query, AstralMemorySearchResult* out_results,
                           uint32_t* out_count) {
   uint32_t filled = 0;
-  float normalized_query[kMaxDim];
+  alignas(kVectorStorageAlign) float normalized_query[kMaxDim];
   normalize_f32_vector(normalized_query, query, index->dim);
   for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
     const uint32_t slot = active_slot_at(index, active_pos);
@@ -4752,7 +4752,7 @@ void memory_search_dot_top1(MemoryIndex* index, const AstralMemorySearchDesc* de
 void memory_search_cosine_top1(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                                const float* query, AstralMemorySearchResult* out_results,
                                uint32_t* out_count) {
-  float normalized_query[kMaxDim];
+  alignas(kVectorStorageAlign) float normalized_query[kMaxDim];
   normalize_f32_vector(normalized_query, query, index->dim);
   if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY) {
     if (index->count == 0) {
@@ -6478,9 +6478,9 @@ inline uint32_t snapshot_graph_neighbor_at_base(const uint8_t* bytes, uint64_t n
 }
 
 struct SnapshotPreparedQuery {
-  float query[kMaxDim];
-  int8_t compact_query[kMaxDim];
-  int16_t compact_query_i16[kMaxDim];
+  alignas(kVectorStorageAlign) float query[kMaxDim];
+  alignas(kVectorStorageAlign) int8_t compact_query[kMaxDim];
+  alignas(kVectorStorageAlign) int16_t compact_query_i16[kMaxDim];
   uint64_t score_vector_offset;
   uint64_t score_vector_stride;
   uint64_t compact_score_scale_offset;
