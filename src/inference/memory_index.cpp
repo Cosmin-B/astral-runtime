@@ -2379,6 +2379,10 @@ struct MemoryIndex {
   uint8_t* graph_levels;
   uint32_t* graph_candidates;
   float* graph_candidate_scores;
+  uint32_t graph_candidate_worst_pos;
+  uint32_t graph_candidate_worst_slot;
+  float graph_candidate_worst_score;
+  uint8_t graph_candidate_worst_valid;
   uint32_t* graph_scratch_slots;
   float* graph_scratch_scores;
   uint16_t* graph_visited;
@@ -3883,10 +3887,27 @@ inline bool graph_was_visited(const MemoryIndex* index, uint32_t slot) {
 
 void graph_begin_visit(MemoryIndex* index) {
   ++index->graph_visit_generation;
+  index->graph_candidate_worst_valid = 0;
   if (index->graph_visit_generation == 0) {
     std::memset(index->graph_visited, 0, sizeof(uint16_t) * index->capacity);
     index->graph_visit_generation = kGraphVisitGenerationStart;
   }
+}
+
+void graph_refresh_worst_candidate(MemoryIndex* index, uint32_t count) {
+  uint32_t worst_pos = 0;
+  float worst_score = index->graph_candidate_scores[0];
+  for (uint32_t i = 1; i < count; ++i) {
+    if (graph_candidate_worse(index, index->graph_candidate_scores[i], index->graph_candidates[i],
+                              worst_score, index->graph_candidates[worst_pos])) {
+      worst_score = index->graph_candidate_scores[i];
+      worst_pos = i;
+    }
+  }
+  index->graph_candidate_worst_pos = worst_pos;
+  index->graph_candidate_worst_slot = index->graph_candidates[worst_pos];
+  index->graph_candidate_worst_score = worst_score;
+  index->graph_candidate_worst_valid = 1;
 }
 
 void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, float score,
@@ -3910,17 +3931,12 @@ void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, f
     return;
   }
 
-  uint32_t worst_pos = 0;
-  float worst_score = index->graph_candidate_scores[0];
-  for (uint32_t i = 1; i < count; ++i) {
-    if (graph_candidate_worse(index, index->graph_candidate_scores[i], index->graph_candidates[i],
-                              worst_score, index->graph_candidates[worst_pos])) {
-      worst_score = index->graph_candidate_scores[i];
-      worst_pos = i;
-    }
+  if (index->graph_candidate_worst_valid == 0) {
+    graph_refresh_worst_candidate(index, count);
   }
-  if (graph_candidate_better(index, score, slot, worst_score, index->graph_candidates[worst_pos])) {
-    uint32_t pos = worst_pos;
+  if (graph_candidate_better(index, score, slot, index->graph_candidate_worst_score,
+                             index->graph_candidate_worst_slot)) {
+    uint32_t pos = index->graph_candidate_worst_pos;
     bool moved_up = false;
     while (pos > 0) {
       const uint32_t parent = (pos - 1u) >> 1u;
@@ -3958,6 +3974,7 @@ void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, f
     }
     index->graph_candidates[pos] = slot;
     index->graph_candidate_scores[pos] = score;
+    index->graph_candidate_worst_valid = 0;
   }
 }
 
@@ -4000,6 +4017,7 @@ bool graph_pop_candidate(MemoryIndex* index, uint32_t* candidate_count, uint32_t
     index->graph_candidate_scores[pos] = score;
   }
   *candidate_count = count;
+  index->graph_candidate_worst_valid = 0;
   return true;
 }
 
@@ -5609,6 +5627,10 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->graph_entry_slot = kU32Max;
   index->graph_max_level = 0;
   index->graph_visit_generation = 0;
+  index->graph_candidate_worst_pos = 0;
+  index->graph_candidate_worst_slot = kU32Max;
+  index->graph_candidate_worst_score = kWorstScore;
+  index->graph_candidate_worst_valid = 0;
   index->graph_build_score_evals = 0;
   index->graph_build_candidate_visits = 0;
   index->graph_batch_scratch_claimed.store(0u, std::memory_order_relaxed);
