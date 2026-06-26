@@ -67,6 +67,7 @@ constexpr uint32_t kGraphNeighborPrefetchDistance = 2;
 constexpr uint32_t kGraphF32RerankMinCandidates = 256;
 constexpr uint32_t kGraphF32RerankTopKMultiplier = 32;
 constexpr uint32_t kGraphDefaultQueryCapacityMultiplier = 1;
+constexpr uint32_t kGraphQ8RerankDefaultQueryCapacityMultiplier = 1;
 constexpr uint32_t kGraphRerankDefaultQueryCapacityMultiplier = 2;
 constexpr uint16_t kGraphVisitGenerationStart = 1;
 constexpr uint64_t kBytesPerKiB = 1024;
@@ -323,9 +324,11 @@ inline uint32_t graph_default_query_search_from_desc(const AstralMemoryIndexDesc
   if ((desc->capacity % neighbors) != 0) {
     ++scaled;
   }
-  const uint32_t multiplier = f32_rerank_storage_kind(desc->storage_kind)
-                                  ? kGraphRerankDefaultQueryCapacityMultiplier
-                                  : kGraphDefaultQueryCapacityMultiplier;
+  const uint32_t multiplier = desc->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK
+                                  ? kGraphQ8RerankDefaultQueryCapacityMultiplier
+                                  : (f32_rerank_storage_kind(desc->storage_kind)
+                                         ? kGraphRerankDefaultQueryCapacityMultiplier
+                                         : kGraphDefaultQueryCapacityMultiplier);
   if (scaled <= kU32Max / multiplier) {
     scaled *= multiplier;
   } else {
