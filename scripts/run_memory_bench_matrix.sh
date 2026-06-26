@@ -27,6 +27,8 @@ Options:
   --query-searches <list>
                         Comma-separated per-query graph search budgets
   --graph-neighbors <N> Graph neighbor budget (default: 32)
+  --batch-queries <N>   ASTRAL_BENCH_MEMORY_BATCH_QUERIES for batch cases
+  --runtime-threads <N> ASTRAL_BENCH_RUNTIME_THREADS for benchmark worker lanes
   --recall-queries <N>  Graph recall queries (default: 32)
   --perf                Wrap each benchmark invocation with perf stat
   --perf-bin <path>     Perf executable to use (default: perf from PATH)
@@ -55,6 +57,8 @@ graph_search="64"
 query_search=""
 query_searches=""
 graph_neighbors="32"
+batch_queries=""
+runtime_threads=""
 recall_queries="32"
 perf_enabled="0"
 require_perf="0"
@@ -77,6 +81,8 @@ while [[ $# -gt 0 ]]; do
     --query-search) query_search="${2:-}"; shift 2 ;;
     --query-searches) query_searches="${2:-}"; shift 2 ;;
     --graph-neighbors) graph_neighbors="${2:-}"; shift 2 ;;
+    --batch-queries) batch_queries="${2:-}"; shift 2 ;;
+    --runtime-threads) runtime_threads="${2:-}"; shift 2 ;;
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
     --perf) perf_enabled="1"; shift ;;
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
@@ -184,6 +190,8 @@ fi
   echo "# query_search: ${query_search}"
   echo "# query_searches: ${query_searches}"
   echo "# graph_neighbors: ${graph_neighbors}"
+  echo "# batch_queries: ${batch_queries}"
+  echo "# runtime_threads: ${runtime_threads}"
   echo "# recall_queries: ${recall_queries}"
   echo "# perf_enabled: ${perf_enabled}"
   echo "# perf_bin: ${perf_bin}"
@@ -224,6 +232,12 @@ for metric in "${metric_values[@]}"; do
             --only
             features
           )
+          if [[ -n "${batch_queries}" ]]; then
+            bench_cmd=(env "ASTRAL_BENCH_MEMORY_BATCH_QUERIES=${batch_queries}" "${bench_cmd[@]:1}")
+          fi
+          if [[ -n "${runtime_threads}" ]]; then
+            bench_cmd=(env "ASTRAL_BENCH_RUNTIME_THREADS=${runtime_threads}" "${bench_cmd[@]:1}")
+          fi
           if [[ "${perf_enabled}" == "1" ]]; then
             perf_prefix="${perf_dir}/${metric}-${storage_value}-d${dim}-n${capacity}-q${query_search_value}"
             if ! "${perf_bin}" stat -x, -e "${perf_events}" -o "${perf_prefix}.csv" -- "${bench_cmd[@]}" \
