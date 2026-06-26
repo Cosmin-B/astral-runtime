@@ -37,7 +37,8 @@ constexpr uint32_t kSaveVersionModernLayout = 5;
 constexpr uint32_t kSaveVersionNormalizedF32Cosine = 6;
 constexpr uint32_t kSaveVersionGraphQuerySearch = 7;
 constexpr uint32_t kSaveVersionCompactScoreScales = 8;
-constexpr uint32_t kSaveVersion = kSaveVersionCompactScoreScales;
+constexpr uint32_t kSaveVersionCompactGraphCounts = 9;
+constexpr uint32_t kSaveVersion = kSaveVersionCompactGraphCounts;
 constexpr uint32_t kSaveGraphTopologyFlag = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
@@ -2481,6 +2482,10 @@ struct MemoryGraphSearchBatchJob {
   GraphSearchScratch* scratch;
 };
 
+inline uint32_t save_graph_count_bytes(uint32_t version) {
+  return version >= kSaveVersionCompactGraphCounts ? sizeof(uint8_t) : sizeof(uint32_t);
+}
+
 inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
   const uint64_t vector_bytes =
       compact_storage_kind(index->storage_kind)
@@ -2501,7 +2506,8 @@ inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
         count * (index->graph_level_capacity - 1u) * index->graph_neighbor_capacity;
     bytes += sizeof(SaveGraphHeader);
     bytes += static_cast<uint64_t>(index->count) * sizeof(uint8_t);
-    bytes += static_cast<uint64_t>(index->count) * index->graph_level_capacity * sizeof(uint32_t);
+    bytes += static_cast<uint64_t>(index->count) * index->graph_level_capacity *
+             save_graph_count_bytes(kSaveVersion);
     bytes += neighbor_slots * sizeof(uint32_t);
   }
   return bytes;
@@ -2567,9 +2573,10 @@ bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
     const uint64_t neighbor_slots =
         static_cast<uint64_t>(count) * graph_base_neighbors +
         static_cast<uint64_t>(count) * (graph_levels - 1u) * graph_neighbors;
-    layout.graph_bytes = graph_header_bytes + static_cast<uint64_t>(count) * sizeof(uint8_t) +
-                         static_cast<uint64_t>(count) * graph_levels * sizeof(uint32_t) +
-                         neighbor_slots * sizeof(uint32_t);
+    layout.graph_bytes =
+        graph_header_bytes + static_cast<uint64_t>(count) * sizeof(uint8_t) +
+        static_cast<uint64_t>(count) * graph_levels * save_graph_count_bytes(version) +
+        neighbor_slots * sizeof(uint32_t);
   }
   layout.total_bytes = layout.graph_offset + layout.graph_bytes;
   *out_layout = layout;
@@ -6283,7 +6290,8 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
     for (uint32_t level = 0; level < index->graph_level_capacity; ++level) {
       for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
         const uint32_t slot = active_slot_at(index, active_pos);
-        const uint32_t count = graph_neighbor_count_at_level(index, slot, level);
+        const uint8_t count =
+            static_cast<uint8_t>(graph_neighbor_count_at_level(index, slot, level));
         std::memcpy(cursor, &count, sizeof(count));
         cursor += sizeof(count);
       }
@@ -6328,7 +6336,8 @@ AstralErr memory_snapshot_info_bytes(SnapshotBytes bytes, AstralMemorySnapshotIn
       header.version == kSaveVersionGraphTopology || header.version == kSaveVersionLegacyLayout ||
       header.version == kSaveVersionModernLayout ||
       header.version == kSaveVersionNormalizedF32Cosine ||
-      header.version == kSaveVersionGraphQuerySearch || header.version == kSaveVersion;
+      header.version == kSaveVersionGraphQuerySearch ||
+      header.version == kSaveVersionCompactScoreScales || header.version == kSaveVersion;
   AstralMemoryStorageKind storage = static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version >= kSaveVersionCompactStorage) {
     storage = static_cast<AstralMemoryStorageKind>(header._reserved0);
@@ -6424,8 +6433,9 @@ bool snapshot_graph_layout(SnapshotBytes bytes, const AstralMemorySnapshotInfo* 
       static_cast<uint64_t>(info->count) * graph_header.base_neighbor_capacity +
       static_cast<uint64_t>(info->count) * (graph_header.level_capacity - 1u) *
           graph_header.neighbor_capacity;
+  const uint32_t graph_count_bytes = save_graph_count_bytes(info->version);
   const uint64_t graph_bytes = graph_header_bytes + static_cast<uint64_t>(info->count) +
-                               level_count * sizeof(uint32_t) + neighbor_slots * sizeof(uint32_t);
+                               level_count * graph_count_bytes + neighbor_slots * sizeof(uint32_t);
   if (bytes.len < info->graph_offset + graph_bytes) {
     return false;
   }
@@ -6434,7 +6444,7 @@ bool snapshot_graph_layout(SnapshotBytes bytes, const AstralMemorySnapshotInfo* 
   graph.header = graph_header;
   graph.levels_offset = info->graph_offset + graph_header_bytes;
   graph.counts_offset = graph.levels_offset + static_cast<uint64_t>(info->count);
-  graph.neighbors_offset = graph.counts_offset + level_count * sizeof(uint32_t);
+  graph.neighbors_offset = graph.counts_offset + level_count * graph_count_bytes;
   for (uint32_t active_pos = 0; active_pos < info->count; ++active_pos) {
     if (bytes.data[graph.levels_offset + active_pos] >= graph_header.level_capacity) {
       return false;
@@ -6445,10 +6455,14 @@ bool snapshot_graph_layout(SnapshotBytes bytes, const AstralMemorySnapshotInfo* 
         level == 0 ? graph_header.base_neighbor_capacity : graph_header.neighbor_capacity;
     for (uint32_t active_pos = 0; active_pos < info->count; ++active_pos) {
       uint32_t count = 0;
-      std::memcpy(&count,
-                  bytes.data + graph.counts_offset +
-                      (static_cast<uint64_t>(level) * info->count + active_pos) * sizeof(uint32_t),
-                  sizeof(count));
+      const uint8_t* count_ptr =
+          bytes.data + graph.counts_offset +
+          (static_cast<uint64_t>(level) * info->count + active_pos) * graph_count_bytes;
+      if (graph_count_bytes == sizeof(uint8_t)) {
+        count = *count_ptr;
+      } else {
+        std::memcpy(&count, count_ptr, sizeof(count));
+      }
       if (count > level_capacity) {
         return false;
       }
@@ -6524,10 +6538,15 @@ inline uint32_t snapshot_graph_neighbor_count(const uint8_t* bytes,
                                               const SnapshotGraphLayout* graph, uint32_t slot,
                                               uint32_t level) {
   uint32_t count = 0;
-  std::memcpy(&count,
-              bytes + graph->counts_offset +
-                  (static_cast<uint64_t>(level) * info->count + slot) * sizeof(uint32_t),
-              sizeof(count));
+  const uint32_t graph_count_bytes = save_graph_count_bytes(info->version);
+  const uint8_t* count_ptr =
+      bytes + graph->counts_offset +
+      (static_cast<uint64_t>(level) * info->count + slot) * graph_count_bytes;
+  if (graph_count_bytes == sizeof(uint8_t)) {
+    count = *count_ptr;
+  } else {
+    std::memcpy(&count, count_ptr, sizeof(count));
+  }
   return count;
 }
 
@@ -7430,7 +7449,8 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
       header.version == kSaveVersionGraphTopology || header.version == kSaveVersionLegacyLayout ||
       header.version == kSaveVersionModernLayout ||
       header.version == kSaveVersionNormalizedF32Cosine ||
-      header.version == kSaveVersionGraphQuerySearch || header.version == kSaveVersion;
+      header.version == kSaveVersionGraphQuerySearch ||
+      header.version == kSaveVersionCompactScoreScales || header.version == kSaveVersion;
   AstralMemoryStorageKind saved_storage =
       static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version >= kSaveVersionCompactStorage) {
@@ -7643,9 +7663,10 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
         static_cast<uint64_t>(header.count) * graph_header.base_neighbor_capacity +
         static_cast<uint64_t>(header.count) * (graph_header.level_capacity - 1u) *
             graph_header.neighbor_capacity;
-    const uint64_t graph_bytes = saved_graph_header_bytes +
-                                 static_cast<uint64_t>(header.count) * sizeof(uint8_t) +
-                                 level_count * sizeof(uint32_t) + neighbor_slots * sizeof(uint32_t);
+    const uint32_t graph_count_bytes = save_graph_count_bytes(header.version);
+    const uint64_t graph_bytes =
+        saved_graph_header_bytes + static_cast<uint64_t>(header.count) * sizeof(uint8_t) +
+        level_count * graph_count_bytes + neighbor_slots * sizeof(uint32_t);
     const uint64_t graph_begin = layout.graph_offset;
     if (graph_header.flags != kSaveGraphTopologyFlag || bytes.len < graph_begin + graph_bytes) {
       memory_destroy(index);
@@ -7671,8 +7692,12 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
       for (uint32_t level = 0; level < index->graph_level_capacity; ++level) {
         for (uint32_t active_pos = 0; active_pos < header.count; ++active_pos) {
           uint32_t count = 0;
-          std::memcpy(&count, cursor, sizeof(count));
-          cursor += sizeof(count);
+          if (graph_count_bytes == sizeof(uint8_t)) {
+            count = *cursor;
+          } else {
+            std::memcpy(&count, cursor, sizeof(count));
+          }
+          cursor += graph_count_bytes;
           if (count > graph_neighbor_capacity_at_level(index, level)) {
             memory_destroy(index);
             return ASTRAL_E_INVALID;
