@@ -5979,6 +5979,9 @@ AstralErr memory_add_batch(MemoryIndex* index, const AstralMemoryRecord* records
     if (slot == kU32Max) {
       slot = find_free_slot(index);
       if (slot == kU32Max) {
+        if (!use_stack_slots) {
+          core::runtime_free_array(batch_slots, count);
+        }
         return ASTRAL_E_NOMEM;
       }
       if (index->dense_active != 0 && slot != index->count) {
