@@ -2737,6 +2737,7 @@ TEST(inference_memory_index_graph_defaults_split_query_from_build_mock) {
   constexpr uint32_t kDefaultGraphBuildSearch = 128;
   constexpr uint32_t kDefaultGraphQuerySearch = 64;
   constexpr uint32_t kLargeDefaultGraphQuerySearch = 128;
+  constexpr uint32_t kLargeQ8RerankDefaultGraphQuerySearch = 128;
   constexpr uint32_t kLargeRerankDefaultGraphQuerySearch = 256;
 
   AstralMemoryIndexDesc desc{};
@@ -2770,6 +2771,17 @@ TEST(inference_memory_index_graph_defaults_split_query_from_build_mock) {
   ASSERT_EQ(stats.graph_neighbors, kDefaultGraphNeighbors);
   ASSERT_EQ(stats.graph_search, kDefaultGraphBuildSearch);
   ASSERT_EQ(stats.graph_query_search, kLargeDefaultGraphQuerySearch);
+
+  astral_memory_destroy(index);
+
+  desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK;
+  err = astral_memory_create(&desc, &index);
+  ASSERT_EQ(err, ASTRAL_OK);
+  stats = {};
+  stats.size = sizeof(AstralMemoryStats);
+  err = astral_memory_stats(index, &stats);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(stats.graph_query_search, kLargeQ8RerankDefaultGraphQuerySearch);
 
   astral_memory_destroy(index);
 
