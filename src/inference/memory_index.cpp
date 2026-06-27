@@ -3123,7 +3123,7 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       return (e5m2_storage(index)
                   ? dot_e5m2_e5m2(va, vb, index->dim)
-                  : dot_q8_q8_query(va, vb, index->dim, index->compact_vector_sums[b])) *
+                  : dot_q8_q8_query_aligned(va, vb, index->dim, index->compact_vector_sums[b])) *
              scale_a * scale_b;
     }
     if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
@@ -3135,7 +3135,7 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
     }
     return (e5m2_storage(index)
                 ? dot_e5m2_e5m2(va, vb, index->dim)
-                : dot_q8_q8_query(va, vb, index->dim, index->compact_vector_sums[b])) *
+                : dot_q8_q8_query_aligned(va, vb, index->dim, index->compact_vector_sums[b])) *
            scale_a * scale_b;
   }
   const float* va = vector_at(index, a);
