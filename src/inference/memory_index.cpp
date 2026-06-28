@@ -3360,7 +3360,7 @@ void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t le
   for (uint32_t i = 0; i < candidate_count && selected < capacity; ++i) {
     const uint32_t candidate = index->graph_scratch_slots[i];
     const float candidate_score = index->graph_scratch_scores[i];
-    if (candidate == owner_slot || graph_neighbor_selected(neighbors, selected, candidate)) {
+    if (candidate == owner_slot) {
       continue;
     }
     if (graph_neighbor_diverse(index, candidate, candidate_score, neighbors, selected)) {
