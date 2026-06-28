@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <string>
 
@@ -38,7 +39,8 @@ constexpr uint32_t kSaveVersionNormalizedF32Cosine = 6;
 constexpr uint32_t kSaveVersionGraphQuerySearch = 7;
 constexpr uint32_t kSaveVersionCompactScoreScales = 8;
 constexpr uint32_t kSaveVersionCompactGraphCounts = 9;
-constexpr uint32_t kSaveVersion = kSaveVersionCompactGraphCounts;
+constexpr uint32_t kSaveVersionAlignedVectorData = 10;
+constexpr uint32_t kSaveVersion = kSaveVersionAlignedVectorData;
 constexpr uint32_t kSaveGraphTopologyFlag = 1;
 constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 constexpr uint32_t kNoResults = 0;
@@ -157,6 +159,7 @@ constexpr uint32_t kAvxVnniI8Offset2 = kAvxVnniI8Lanes * 2u;
 constexpr uint32_t kAvxVnniI8Offset3 = kAvxVnniI8Lanes * 3u;
 constexpr int32_t kAvxVnniSignOffset = 128;
 #endif
+
 #if defined(__aarch64__) && defined(__ARM_NEON)
 constexpr uint32_t kNeonF32Lanes = 4;
 constexpr uint32_t kNeonI8Lanes = 16;
@@ -172,6 +175,15 @@ constexpr uint32_t kNeonI8Offset1 = kNeonI8HalfLanes;
 #if !defined(__AVX2__) && !(defined(__aarch64__) && defined(__ARM_NEON))
 constexpr size_t kVectorStorageAlign = alignof(float);
 #endif
+
+inline uint64_t align_up_u64(uint64_t value, uint64_t alignment) {
+  const uint64_t mask = alignment - 1u;
+  return (value + mask) & ~mask;
+}
+
+inline uint64_t save_payload_align(uint32_t version) {
+  return version >= kSaveVersionAlignedVectorData ? static_cast<uint64_t>(kVectorStorageAlign) : 1u;
+}
 
 struct MemorySlot {
   AstralMemoryRecord record;
@@ -2489,31 +2501,24 @@ inline uint32_t save_graph_count_bytes(uint32_t version) {
   return version >= kSaveVersionCompactGraphCounts ? sizeof(uint8_t) : sizeof(uint32_t);
 }
 
+bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
+                        AstralMemoryStorageKind storage, uint32_t index_kind,
+                        uint32_t graph_base_neighbors, uint32_t graph_neighbors,
+                        uint32_t graph_levels, SaveLayout* out_layout);
+
 inline uint64_t memory_save_byte_count(const MemoryIndex* index) {
-  const uint64_t vector_bytes =
-      compact_storage_kind(index->storage_kind)
-          ? static_cast<uint64_t>(index->count) *
-                (sizeof(float) + sizeof(float) +
-                 static_cast<uint64_t>(index->dim) *
-                     (i16_storage_kind(index->storage_kind) ? sizeof(int16_t) : sizeof(int8_t)) +
-                 (f32_rerank_storage_kind(index->storage_kind)
-                      ? static_cast<uint64_t>(index->dim) * sizeof(float)
-                      : 0u))
-          : static_cast<uint64_t>(index->count) * index->dim * sizeof(float);
-  uint64_t bytes = sizeof(SaveHeader) +
-                   static_cast<uint64_t>(index->count) * sizeof(AstralMemoryRecord) + vector_bytes;
-  if (index->index_kind == ASTRAL_MEMORY_INDEX_GRAPH && index->graph_neighbor_capacity != 0) {
-    const uint64_t count = index->count;
-    const uint64_t neighbor_slots =
-        count * index->graph_base_neighbor_capacity +
-        count * (index->graph_level_capacity - 1u) * index->graph_neighbor_capacity;
-    bytes += sizeof(SaveGraphHeader);
-    bytes += static_cast<uint64_t>(index->count) * sizeof(uint8_t);
-    bytes += static_cast<uint64_t>(index->count) * index->graph_level_capacity *
-             save_graph_count_bytes(kSaveVersion);
-    bytes += neighbor_slots * sizeof(uint32_t);
+  SaveLayout layout{};
+  const bool has_graph =
+      index->index_kind == ASTRAL_MEMORY_INDEX_GRAPH && index->graph_neighbor_capacity != 0;
+  const uint32_t graph_base_neighbors = has_graph ? index->graph_base_neighbor_capacity : 0u;
+  const uint32_t graph_neighbors = has_graph ? index->graph_neighbor_capacity : 0u;
+  const uint32_t graph_levels = has_graph ? index->graph_level_capacity : 0u;
+  if (!memory_save_layout(kSaveVersion, index->dim, index->count, index->storage_kind,
+                          index->index_kind, graph_base_neighbors, graph_neighbors, graph_levels,
+                          &layout)) {
+    return 0;
   }
-  return bytes;
+  return layout.total_bytes;
 }
 
 bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
@@ -2532,6 +2537,7 @@ bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
   if (version >= kSaveVersionModernLayout) {
     uint64_t cursor =
         layout.record_offset + static_cast<uint64_t>(count) * sizeof(AstralMemoryRecord);
+    const uint64_t payload_align = save_payload_align(version);
     if (compact) {
       layout.scale_offset = cursor;
       layout.scale_stride = sizeof(float);
@@ -2541,19 +2547,23 @@ bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
         layout.compact_score_scale_stride = sizeof(float);
         cursor += static_cast<uint64_t>(count) * sizeof(float);
       }
+      cursor = align_up_u64(cursor, payload_align);
       layout.vector_offset = cursor;
       layout.vector_stride = static_cast<uint64_t>(dim) * compact_element_bytes;
       cursor += static_cast<uint64_t>(count) * layout.vector_stride;
       if (f32_rerank_storage_kind(storage)) {
+        cursor = align_up_u64(cursor, payload_align);
         layout.rerank_vector_offset = cursor;
         layout.rerank_vector_stride = static_cast<uint64_t>(dim) * sizeof(float);
         cursor += static_cast<uint64_t>(count) * layout.rerank_vector_stride;
       }
     } else {
+      cursor = align_up_u64(cursor, payload_align);
       layout.vector_offset = cursor;
       layout.vector_stride = static_cast<uint64_t>(dim) * sizeof(float);
       cursor += static_cast<uint64_t>(count) * layout.vector_stride;
     }
+    cursor = align_up_u64(cursor, payload_align);
     layout.graph_offset = cursor;
   } else {
     layout.scale_offset = compact ? layout.record_offset + sizeof(AstralMemoryRecord) : 0;
@@ -2590,6 +2600,13 @@ inline uint32_t save_graph_header_bytes(uint32_t version) {
   return version >= kSaveVersionGraphQuerySearch ? sizeof(SaveGraphHeader)
          : version >= kSaveVersionLegacyLayout   ? sizeof(SaveGraphHeaderV6)
                                                  : sizeof(SaveGraphHeaderV3);
+}
+
+inline void memory_save_skip_to(uint8_t** cursor, uint8_t* target) {
+  if (*cursor < target) {
+    std::memset(*cursor, 0, static_cast<size_t>(target - *cursor));
+    *cursor = target;
+  }
 }
 
 void read_save_graph_header(uint32_t version, const uint8_t* bytes, SaveGraphHeader* out_header) {
@@ -6259,6 +6276,14 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
   if (out_bytes.data == nullptr || out_bytes.len < need) {
     return ASTRAL_E_NOMEM;
   }
+  SaveLayout layout{};
+  if (!memory_save_layout(kSaveVersion, index->dim, index->count, index->storage_kind,
+                          index->index_kind,
+                          graph_enabled(index) ? index->graph_base_neighbor_capacity : 0u,
+                          graph_enabled(index) ? index->graph_neighbor_capacity : 0u,
+                          graph_enabled(index) ? index->graph_level_capacity : 0u, &layout)) {
+    return ASTRAL_E_INVALID;
+  }
 
   SaveHeader header{};
   header.magic = kSaveMagic;
@@ -6292,6 +6317,7 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
       std::memcpy(cursor, &scale, sizeof(float));
       cursor += sizeof(float);
     }
+    memory_save_skip_to(&cursor, out_bytes.data + layout.vector_offset);
     for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
       const uint32_t slot = active_slot_at(index, active_pos);
       const size_t bytes =
@@ -6303,6 +6329,7 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
       cursor += bytes;
     }
     if (f32_rerank_storage(index)) {
+      memory_save_skip_to(&cursor, out_bytes.data + layout.rerank_vector_offset);
       for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
         const uint32_t slot = active_slot_at(index, active_pos);
         std::memcpy(cursor, vector_at(index, slot), sizeof(float) * index->dim);
@@ -6310,6 +6337,7 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
       }
     }
   } else {
+    memory_save_skip_to(&cursor, out_bytes.data + layout.vector_offset);
     for (uint32_t active_pos = 0; active_pos < index->count; ++active_pos) {
       const uint32_t slot = active_slot_at(index, active_pos);
       std::memcpy(cursor, vector_at(index, slot), sizeof(float) * index->dim);
@@ -6317,6 +6345,7 @@ AstralErr memory_save(MemoryIndex* index, AstralMutSpanU8 out_bytes, uint64_t* o
     }
   }
 
+  memory_save_skip_to(&cursor, out_bytes.data + layout.graph_offset);
   if (graph_enabled(index)) {
     SaveGraphHeader graph_header{};
     graph_header.flags = kSaveGraphTopologyFlag;
@@ -6387,7 +6416,8 @@ AstralErr memory_snapshot_info_bytes(SnapshotBytes bytes, AstralMemorySnapshotIn
       header.version == kSaveVersionModernLayout ||
       header.version == kSaveVersionNormalizedF32Cosine ||
       header.version == kSaveVersionGraphQuerySearch ||
-      header.version == kSaveVersionCompactScoreScales || header.version == kSaveVersion;
+      header.version == kSaveVersionCompactScoreScales ||
+      header.version == kSaveVersionCompactGraphCounts || header.version == kSaveVersion;
   AstralMemoryStorageKind storage = static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version >= kSaveVersionCompactStorage) {
     storage = static_cast<AstralMemoryStorageKind>(header._reserved0);
@@ -6636,11 +6666,12 @@ struct SnapshotPreparedQuery {
   uint8_t use_f6;
   uint8_t use_f6_i16;
   uint8_t use_f8;
+  uint8_t compact_i8_vectors_aligned;
   uint8_t normalized_f32_cosine;
 };
 
-void snapshot_prepare_query(const AstralMemorySnapshotInfo* info, const float* query,
-                            SnapshotPreparedQuery* prepared) {
+void snapshot_prepare_query(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
+                            const float* query, SnapshotPreparedQuery* prepared) {
   *prepared = {};
   prepared->score_vector_offset = info->vector_offset;
   prepared->score_vector_stride = info->vector_stride;
@@ -6688,6 +6719,13 @@ void snapshot_prepare_query(const AstralMemorySnapshotInfo* info, const float* q
                       info->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2_F32_RERANK)
                          ? 1u
                          : 0u;
+  if (!i16_storage_kind(info->storage_kind) && compact_storage_kind(info->storage_kind) &&
+      info->version >= kSaveVersionAlignedVectorData &&
+      (info->vector_stride & static_cast<uint64_t>(kVectorStorageAlign - 1u)) == 0) {
+    const uintptr_t vector_address = reinterpret_cast<uintptr_t>(bytes.data + info->vector_offset);
+    prepared->compact_i8_vectors_aligned =
+        (vector_address & static_cast<uintptr_t>(kVectorStorageAlign - 1u)) == 0 ? 1u : 0u;
+  }
   if (info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK) {
     quantize_q8_vector(prepared->compact_query, &prepared->compact_query_scale, prepared->query,
                        info->dim);
@@ -6775,18 +6813,19 @@ float snapshot_graph_score_active(SnapshotBytes bytes, const AstralMemorySnapsho
     const float scale = prepared->compact_score_scale_stride != 0
                             ? snapshot_compact_score_scale(bytes, prepared, active_pos)
                             : compact_value_scale_kind(info->storage_kind, stored_scale);
+    const float dot = prepared->compact_i8_vectors_aligned != 0
+                          ? dot_q8_q8_query_aligned(vector, prepared->compact_query, info->dim,
+                                                    prepared->compact_query_sum)
+                          : dot_q8_q8_query(vector, prepared->compact_query, info->dim,
+                                            prepared->compact_query_sum);
     if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
-      return dot_q8_q8_query(vector, prepared->compact_query, info->dim,
-                             prepared->compact_query_sum) *
-             scale * prepared->compact_query_scale;
+      return dot * scale * prepared->compact_query_scale;
     }
     if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       const float vector_scale = prepared->compact_score_scale_stride == 0
                                      ? cosine_scale_q8(vector, stored_scale, info->dim)
                                      : 1.0f;
-      return dot_q8_q8_query(vector, prepared->compact_query, info->dim,
-                             prepared->compact_query_sum) *
-             scale * prepared->compact_query_scale * prepared->query_scale * vector_scale;
+      return dot * scale * prepared->compact_query_scale * prepared->query_scale * vector_scale;
     }
     return l2_score_q8_q8(vector, scale, prepared->compact_query, prepared->compact_query_scale,
                           info->dim);
@@ -6833,9 +6872,13 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
     const int16_t* vector_i16 =
         reinterpret_cast<const int16_t*>(snapshot_vector_ptr(bytes, info, active_pos));
     if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
-      return prepared->use_f6 != 0 ? dot_q8_q8_query(vector, prepared->compact_query, info->dim,
-                                                     prepared->compact_query_sum) *
-                                         scale * prepared->compact_query_scale
+      return prepared->use_f6 != 0
+                 ? (prepared->compact_i8_vectors_aligned != 0
+                        ? dot_q8_q8_query_aligned(vector, prepared->compact_query, info->dim,
+                                                  prepared->compact_query_sum)
+                        : dot_q8_q8_query(vector, prepared->compact_query, info->dim,
+                                          prepared->compact_query_sum)) *
+                       scale * prepared->compact_query_scale
              : prepared->use_f6_i16 != 0
                  ? dot_i16_i16(vector_i16, prepared->compact_query_i16, info->dim) * scale *
                        prepared->compact_query_scale
@@ -6845,9 +6888,12 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
     }
     if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       if (prepared->use_f6 != 0) {
-        return dot_q8_q8_query(vector, prepared->compact_query, info->dim,
-                               prepared->compact_query_sum) *
-               scale * prepared->compact_query_scale * prepared->query_scale;
+        const float dot = prepared->compact_i8_vectors_aligned != 0
+                              ? dot_q8_q8_query_aligned(vector, prepared->compact_query, info->dim,
+                                                        prepared->compact_query_sum)
+                              : dot_q8_q8_query(vector, prepared->compact_query, info->dim,
+                                                prepared->compact_query_sum);
+        return dot * scale * prepared->compact_query_scale * prepared->query_scale;
       }
       if (prepared->use_f6_i16 != 0) {
         return dot_i16_i16(vector_i16, prepared->compact_query_i16, info->dim) * scale *
@@ -7300,7 +7346,7 @@ AstralErr memory_snapshot_view_search_graph(MemorySnapshotView* view,
   }
   SnapshotBytes bytes{view->map.data, view->map.size};
   SnapshotPreparedQuery prepared{};
-  snapshot_prepare_query(&view->info, query, &prepared);
+  snapshot_prepare_query(bytes, &view->info, query, &prepared);
   GraphSearchScratch* scratch = &view->graph_scratch;
   snapshot_graph_begin_visit(&view->info, scratch);
   const uint32_t search_capacity = snapshot_graph_search_capacity(view, desc);
@@ -7355,7 +7401,7 @@ AstralErr memory_snapshot_search_with_info(SnapshotBytes bytes,
   }
 
   SnapshotPreparedQuery prepared{};
-  snapshot_prepare_query(info, query, &prepared);
+  snapshot_prepare_query(bytes, info, query, &prepared);
   uint32_t filled = 0;
   for (uint32_t i = 0; i < info->count; ++i) {
 #if defined(__GNUC__) || defined(__clang__)
@@ -7515,7 +7561,8 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
       header.version == kSaveVersionModernLayout ||
       header.version == kSaveVersionNormalizedF32Cosine ||
       header.version == kSaveVersionGraphQuerySearch ||
-      header.version == kSaveVersionCompactScoreScales || header.version == kSaveVersion;
+      header.version == kSaveVersionCompactScoreScales ||
+      header.version == kSaveVersionCompactGraphCounts || header.version == kSaveVersion;
   AstralMemoryStorageKind saved_storage =
       static_cast<AstralMemoryStorageKind>(ASTRAL_MEMORY_STORAGE_F32);
   if (header.version >= kSaveVersionCompactStorage) {
