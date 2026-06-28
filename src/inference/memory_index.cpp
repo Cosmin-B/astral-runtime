@@ -389,6 +389,11 @@ inline int16_t* alloc_i16_vector_storage(uint32_t capacity, uint32_t dim) {
   return static_cast<int16_t*>(core::runtime_alloc(count * sizeof(int16_t), kVectorStorageAlign));
 }
 
+inline bool i16_vector_stride_aligned(uint32_t dim) {
+  return ((static_cast<uint64_t>(dim) * sizeof(int16_t)) &
+          static_cast<uint64_t>(kVectorStorageAlign - 1u)) == 0;
+}
+
 inline void free_vector_storage(float* ptr, uint32_t capacity, uint32_t dim) {
   core::runtime_free(ptr, static_cast<size_t>(capacity) * dim * sizeof(float), kVectorStorageAlign);
 }
@@ -1103,6 +1108,46 @@ float dot_i16_i16(const int16_t* a, const int16_t* b, uint32_t dim) {
     sum += static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
   }
   return static_cast<float>(sum);
+#endif
+}
+
+float dot_i16_i16_aligned(const int16_t* a, const int16_t* b, uint32_t dim) {
+#if defined(__AVX2__)
+  __m256i acc0 = _mm256_setzero_si256();
+  __m256i acc1 = _mm256_setzero_si256();
+  __m256i acc2 = _mm256_setzero_si256();
+  __m256i acc3 = _mm256_setzero_si256();
+  uint32_t i = 0;
+  for (; i + kAvx2UnrollI8 <= dim; i += kAvx2UnrollI8) {
+    acc0 = _mm256_add_epi32(
+        acc0, _mm256_madd_epi16(_mm256_load_si256(reinterpret_cast<const __m256i*>(a + i)),
+                                _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i))));
+    acc1 = _mm256_add_epi32(
+        acc1, _mm256_madd_epi16(
+                  _mm256_load_si256(reinterpret_cast<const __m256i*>(a + i + kAvx2I8Offset1)),
+                  _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i + kAvx2I8Offset1))));
+    acc2 = _mm256_add_epi32(
+        acc2, _mm256_madd_epi16(
+                  _mm256_load_si256(reinterpret_cast<const __m256i*>(a + i + kAvx2I8Offset2)),
+                  _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i + kAvx2I8Offset2))));
+    acc3 = _mm256_add_epi32(
+        acc3, _mm256_madd_epi16(
+                  _mm256_load_si256(reinterpret_cast<const __m256i*>(a + i + kAvx2I8Offset3)),
+                  _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i + kAvx2I8Offset3))));
+  }
+  for (; i + kAvx2I8Lanes <= dim; i += kAvx2I8Lanes) {
+    acc0 = _mm256_add_epi32(
+        acc0, _mm256_madd_epi16(_mm256_load_si256(reinterpret_cast<const __m256i*>(a + i)),
+                                _mm256_load_si256(reinterpret_cast<const __m256i*>(b + i))));
+  }
+  acc0 = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
+  int32_t sum = reduce_avx2_i32(acc0);
+  for (; i < dim; ++i) {
+    sum += static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
+  }
+  return static_cast<float>(sum);
+#else
+  return dot_i16_i16(a, b, dim);
 #endif
 }
 
@@ -2421,6 +2466,7 @@ struct MemoryIndex {
   std::atomic<uint32_t> graph_batch_scratch_claimed;
   uint8_t graph_batch_scratch_count;
   uint8_t dense_active;
+  uint8_t i16_vectors_aligned;
 };
 
 struct MemorySearchCursor {
@@ -3099,10 +3145,14 @@ inline float score_slot_compact_query_i16(MemoryIndex* index, const int16_t* que
   const int16_t* v = i16_vector_at(index, slot);
   const float scale = index->compact_score_scales[slot];
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
-    return dot_i16_i16(v, query, index->dim) * scale * query_scale;
+    const float dot = index->i16_vectors_aligned != 0 ? dot_i16_i16_aligned(v, query, index->dim)
+                                                      : dot_i16_i16(v, query, index->dim);
+    return dot * scale * query_scale;
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-    return dot_i16_i16(v, query, index->dim) * scale * query_scale * cosine_query_scale;
+    const float dot = index->i16_vectors_aligned != 0 ? dot_i16_i16_aligned(v, query, index->dim)
+                                                      : dot_i16_i16(v, query, index->dim);
+    return dot * scale * query_scale * cosine_query_scale;
   }
   return l2_score_i16_i16(v, compact_value_scale(index, index->q8_scales[slot]), query, query_scale,
                           index->dim);
@@ -3127,13 +3177,17 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
       const int16_t* va = i16_vector_at(index, a);
       const int16_t* vb = i16_vector_at(index, b);
       if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-        return dot_i16_i16(va, vb, index->dim) * scale_a * scale_b;
+        const float dot = index->i16_vectors_aligned != 0 ? dot_i16_i16_aligned(va, vb, index->dim)
+                                                          : dot_i16_i16(va, vb, index->dim);
+        return dot * scale_a * scale_b;
       }
       if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
         return l2_score_i16_i16(va, compact_value_scale(index, index->q8_scales[a]), vb,
                                 compact_value_scale(index, index->q8_scales[b]), index->dim);
       }
-      return dot_i16_i16(va, vb, index->dim) * scale_a * scale_b;
+      const float dot = index->i16_vectors_aligned != 0 ? dot_i16_i16_aligned(va, vb, index->dim)
+                                                        : dot_i16_i16(va, vb, index->dim);
+      return dot * scale_a * scale_b;
     }
     const int8_t* va = q8_vector_at(index, a);
     const int8_t* vb = q8_vector_at(index, b);
@@ -5701,6 +5755,8 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
   index->graph_batch_scratch_claimed.store(0u, std::memory_order_relaxed);
   index->graph_batch_scratch_count = 0;
   index->dense_active = 1u;
+  index->i16_vectors_aligned =
+      i16_storage_kind(desc->storage_kind) && i16_vector_stride_aligned(desc->dim) ? 1u : 0u;
   if (graph_neighbor_capacity != 0) {
     const uint64_t graph_neighbor_slots =
         static_cast<uint64_t>(desc->capacity) * graph_base_neighbor_capacity +
@@ -6661,6 +6717,7 @@ struct SnapshotPreparedQuery {
   uint8_t use_f6_i16;
   uint8_t use_f8;
   uint8_t compact_i8_vectors_aligned;
+  uint8_t compact_i16_vectors_aligned;
   uint8_t normalized_f32_cosine;
 };
 
@@ -6718,6 +6775,12 @@ void snapshot_prepare_query(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
       (info->vector_stride & static_cast<uint64_t>(kVectorStorageAlign - 1u)) == 0) {
     const uintptr_t vector_address = reinterpret_cast<uintptr_t>(bytes.data + info->vector_offset);
     prepared->compact_i8_vectors_aligned =
+        (vector_address & static_cast<uintptr_t>(kVectorStorageAlign - 1u)) == 0 ? 1u : 0u;
+  }
+  if (i16_storage_kind(info->storage_kind) && info->version >= kSaveVersionAlignedVectorData &&
+      (info->vector_stride & static_cast<uint64_t>(kVectorStorageAlign - 1u)) == 0) {
+    const uintptr_t vector_address = reinterpret_cast<uintptr_t>(bytes.data + info->vector_offset);
+    prepared->compact_i16_vectors_aligned =
         (vector_address & static_cast<uintptr_t>(kVectorStorageAlign - 1u)) == 0 ? 1u : 0u;
   }
   if (info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK) {
@@ -6790,12 +6853,16 @@ float snapshot_graph_score_active(SnapshotBytes bytes, const AstralMemorySnapsho
                             ? snapshot_compact_score_scale(bytes, prepared, active_pos)
                             : compact_value_scale_kind(info->storage_kind, stored_scale);
     if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
-      return dot_i16_i16(vector, prepared->compact_query_i16, info->dim) * scale *
-             prepared->compact_query_scale;
+      const float dot = prepared->compact_i16_vectors_aligned != 0
+                            ? dot_i16_i16_aligned(vector, prepared->compact_query_i16, info->dim)
+                            : dot_i16_i16(vector, prepared->compact_query_i16, info->dim);
+      return dot * scale * prepared->compact_query_scale;
     }
     if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-      return dot_i16_i16(vector, prepared->compact_query_i16, info->dim) * scale *
-             prepared->compact_query_scale * prepared->query_scale;
+      const float dot = prepared->compact_i16_vectors_aligned != 0
+                            ? dot_i16_i16_aligned(vector, prepared->compact_query_i16, info->dim)
+                            : dot_i16_i16(vector, prepared->compact_query_i16, info->dim);
+      return dot * scale * prepared->compact_query_scale * prepared->query_scale;
     }
     return l2_score_i16_i16(vector, scale, prepared->compact_query_i16,
                             prepared->compact_query_scale, info->dim);
@@ -6874,8 +6941,10 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
                                           prepared->compact_query_sum)) *
                        scale * prepared->compact_query_scale
              : prepared->use_f6_i16 != 0
-                 ? dot_i16_i16(vector_i16, prepared->compact_query_i16, info->dim) * scale *
-                       prepared->compact_query_scale
+                 ? (prepared->compact_i16_vectors_aligned != 0
+                        ? dot_i16_i16_aligned(vector_i16, prepared->compact_query_i16, info->dim)
+                        : dot_i16_i16(vector_i16, prepared->compact_query_i16, info->dim)) *
+                       scale * prepared->compact_query_scale
              : prepared->use_f8 != 0 ? dot_e5m2_e5m2(vector, prepared->compact_query, info->dim) *
                                            scale * prepared->compact_query_scale
                                      : dot_q8_f32(vector, prepared->query, info->dim) * scale;
@@ -6890,8 +6959,11 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
         return dot * scale * prepared->compact_query_scale * prepared->query_scale;
       }
       if (prepared->use_f6_i16 != 0) {
-        return dot_i16_i16(vector_i16, prepared->compact_query_i16, info->dim) * scale *
-               prepared->compact_query_scale * prepared->query_scale;
+        const float dot =
+            prepared->compact_i16_vectors_aligned != 0
+                ? dot_i16_i16_aligned(vector_i16, prepared->compact_query_i16, info->dim)
+                : dot_i16_i16(vector_i16, prepared->compact_query_i16, info->dim);
+        return dot * scale * prepared->compact_query_scale * prepared->query_scale;
       }
       if (prepared->use_f8 != 0) {
         return dot_e5m2_e5m2(vector, prepared->compact_query, info->dim) * scale *
