@@ -3256,15 +3256,14 @@ void refine_graph_neighbor_list(MemoryIndex* index, uint32_t owner_slot, uint32_
     return;
   }
 
-  uint32_t weakest_slot = neighbors[0];
+  uint32_t weakest_pos = 0;
+  uint32_t weakest_slot = neighbors[weakest_pos];
   float weakest_score = score_pair(index, owner_slot, weakest_slot);
-  for (uint32_t i = 0; i < count; ++i) {
-    if (i == 0) {
-      continue;
-    }
+  for (uint32_t i = 1; i < count; ++i) {
     const uint32_t neighbor = neighbors[i];
     const float score = score_pair(index, owner_slot, neighbor);
     if (graph_candidate_worse(index, score, neighbor, weakest_score, weakest_slot)) {
+      weakest_pos = i;
       weakest_score = score;
       weakest_slot = neighbor;
     }
@@ -3277,12 +3276,7 @@ void refine_graph_neighbor_list(MemoryIndex* index, uint32_t owner_slot, uint32_
                                      weakest_slot)) {
     return;
   }
-  for (uint32_t i = 0; i < count; ++i) {
-    if (neighbors[i] == weakest_slot) {
-      neighbors[i] = candidate_slot;
-      return;
-    }
-  }
+  neighbors[weakest_pos] = candidate_slot;
 }
 
 void force_graph_neighbor(MemoryIndex* index, uint32_t owner_slot, uint32_t neighbor_slot,
