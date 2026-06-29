@@ -6663,21 +6663,18 @@ inline uint8_t snapshot_graph_level(const uint8_t* bytes, const SnapshotGraphLay
   return bytes[graph->levels_offset + active_pos];
 }
 
-inline uint32_t snapshot_graph_neighbor_count(const uint8_t* bytes,
-                                              const AstralMemorySnapshotInfo* info,
-                                              const SnapshotGraphLayout* graph, uint32_t slot,
-                                              uint32_t level) {
-  uint32_t count = 0;
-  const uint32_t graph_count_bytes = save_graph_count_bytes(info->version);
-  const uint8_t* count_ptr =
-      bytes + graph->counts_offset +
-      (static_cast<uint64_t>(level) * info->count + slot) * graph_count_bytes;
-  if (graph_count_bytes == sizeof(uint8_t)) {
-    count = *count_ptr;
+template <bool CompactCounts>
+inline uint32_t
+snapshot_graph_neighbor_count(const uint8_t* bytes, const AstralMemorySnapshotInfo* info,
+                              const SnapshotGraphLayout* graph, uint32_t slot, uint32_t level) {
+  const uint64_t ordinal = static_cast<uint64_t>(level) * info->count + slot;
+  if constexpr (CompactCounts) {
+    return bytes[graph->counts_offset + ordinal];
   } else {
-    std::memcpy(&count, count_ptr, sizeof(count));
+    uint32_t count = 0;
+    std::memcpy(&count, bytes + graph->counts_offset + ordinal * sizeof(uint32_t), sizeof(count));
+    return count;
   }
-  return count;
 }
 
 inline uint32_t snapshot_graph_neighbor_at(const uint8_t* bytes,
@@ -7282,6 +7279,7 @@ inline uint32_t snapshot_graph_candidate_search_capacity(const SnapshotGraphLayo
   return requested < graph->candidate_capacity ? requested : graph->candidate_capacity;
 }
 
+template <bool CompactCounts>
 uint32_t snapshot_graph_greedy_closest(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
                                        const SnapshotGraphLayout* graph,
                                        const SnapshotPreparedQuery* prepared, uint32_t entry,
@@ -7293,7 +7291,7 @@ uint32_t snapshot_graph_greedy_closest(SnapshotBytes bytes, const AstralMemorySn
     while (changed) {
       changed = false;
       const uint32_t neighbor_count =
-          snapshot_graph_neighbor_count(bytes.data, info, graph, closest, level);
+          snapshot_graph_neighbor_count<CompactCounts>(bytes.data, info, graph, closest, level);
       const uint64_t neighbor_base = snapshot_graph_level_offset(info, graph, closest, level);
       for (uint32_t i = 0; i < neighbor_count; ++i) {
         const uint32_t candidate = snapshot_graph_neighbor_at_base(bytes.data, neighbor_base, i);
@@ -7313,6 +7311,7 @@ uint32_t snapshot_graph_greedy_closest(SnapshotBytes bytes, const AstralMemorySn
   return closest;
 }
 
+template <bool CompactCounts>
 void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
                                  const SnapshotGraphLayout* graph,
                                  const SnapshotPreparedQuery* prepared, GraphSearchScratch* scratch,
@@ -7339,7 +7338,8 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
                                scratch->top_slots[0])) {
       break;
     }
-    const uint32_t neighbor_count = snapshot_graph_neighbor_count(bytes.data, info, graph, slot, 0);
+    const uint32_t neighbor_count =
+        snapshot_graph_neighbor_count<CompactCounts>(bytes.data, info, graph, slot, 0);
     const uint64_t neighbor_base = snapshot_graph_level_offset(info, graph, slot, 0);
     const uint32_t prefetch_limit = neighbor_count > kGraphNeighborPrefetchDistance
                                         ? neighbor_count - kGraphNeighborPrefetchDistance
@@ -7416,15 +7416,26 @@ AstralErr memory_snapshot_view_search_graph(MemorySnapshotView* view,
   GraphSearchScratch* scratch = &view->graph_scratch;
   snapshot_graph_begin_visit(&view->info, scratch);
   const uint32_t search_capacity = snapshot_graph_search_capacity(view, desc);
-  const uint32_t entry =
-      view->graph.header.max_level != 0
-          ? snapshot_graph_greedy_closest(bytes, &view->info, &view->graph, &prepared,
-                                          view->graph.header.entry_active_pos,
-                                          view->graph.header.max_level, 0)
-          : view->graph.header.entry_active_pos;
   uint32_t top_count = 0;
-  snapshot_graph_search_layer(bytes, &view->info, &view->graph, &prepared, scratch, entry,
-                              search_capacity, &top_count);
+  if (save_graph_count_bytes(view->info.version) == sizeof(uint8_t)) {
+    const uint32_t entry =
+        view->graph.header.max_level != 0
+            ? snapshot_graph_greedy_closest<true>(bytes, &view->info, &view->graph, &prepared,
+                                                  view->graph.header.entry_active_pos,
+                                                  view->graph.header.max_level, 0)
+            : view->graph.header.entry_active_pos;
+    snapshot_graph_search_layer<true>(bytes, &view->info, &view->graph, &prepared, scratch, entry,
+                                      search_capacity, &top_count);
+  } else {
+    const uint32_t entry =
+        view->graph.header.max_level != 0
+            ? snapshot_graph_greedy_closest<false>(bytes, &view->info, &view->graph, &prepared,
+                                                   view->graph.header.entry_active_pos,
+                                                   view->graph.header.max_level, 0)
+            : view->graph.header.entry_active_pos;
+    snapshot_graph_search_layer<false>(bytes, &view->info, &view->graph, &prepared, scratch, entry,
+                                       search_capacity, &top_count);
+  }
   if (f32_rerank_storage_kind(view->info.storage_kind)) {
     const uint32_t rerank_capacity = graph_f32_rerank_capacity(desc->top_k, top_count);
     trim_snapshot_graph_top_candidates(bytes, &view->info, scratch, &top_count, rerank_capacity);
