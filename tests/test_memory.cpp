@@ -257,7 +257,7 @@ TEST(object_pool_capacity) {
 TEST(object_pool_thread_safety) {
     constexpr size_t kPoolSize = 256;
     constexpr size_t kThreads = 4;
-    constexpr size_t kIterations = 10000;
+    static constexpr size_t kIterations = 10000;
 
     ObjectPool<Token, kPoolSize> pool;
     std::atomic<size_t> successful_acquires{0};
@@ -318,7 +318,7 @@ TEST(object_pool_release_nullptr) {
 TEST(object_pool_stress_test) {
     constexpr size_t kPoolSize = 128;
     constexpr size_t kThreads = 8;
-    constexpr size_t kIterations = 5000;
+    static constexpr size_t kIterations = 5000;
 
     ObjectPool<Token, kPoolSize> pool;
     std::atomic<size_t> total_ops{0};

@@ -248,6 +248,10 @@ endif()
 
 # Source-level validation gates (provider-agnostic hard rules)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_source_scans.cmake)
+    set(ASTRAL_GATE_SOURCE_SCAN_TIMEOUT 30)
+    if(WIN32)
+        set(ASTRAL_GATE_SOURCE_SCAN_TIMEOUT 120)
+    endif()
     add_test(
         NAME gate_source_scans
         COMMAND ${CMAKE_COMMAND}
@@ -255,7 +259,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_source_scans.cmake)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_source_scans.cmake
     )
     set_tests_properties(gate_source_scans PROPERTIES
-        TIMEOUT 30
+        TIMEOUT ${ASTRAL_GATE_SOURCE_SCAN_TIMEOUT}
         LABELS "gate"
     )
     message(STATUS "Configured test: gate_source_scans")

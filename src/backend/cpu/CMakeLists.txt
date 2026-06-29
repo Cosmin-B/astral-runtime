@@ -37,6 +37,10 @@ target_compile_options(cpu_backend PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
 )
 
+if(MSVC)
+    target_compile_definitions(cpu_backend PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # Add CPU backend to parent library
 # Note: Main CMakeLists.txt already includes backend/*.cpp via glob
 # This file is for explicit linking and configuration only

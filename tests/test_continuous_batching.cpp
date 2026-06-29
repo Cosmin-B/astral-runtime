@@ -122,7 +122,7 @@ TEST(continuous_batching_mock_slot_fairness) {
     overflow_desc.stream_enabled = 1;
     AstralHandle overflow = 0;
     err = astral_conv_create(&overflow_desc, &overflow);
-    ASSERT_EQ(err, ASTRAL_E_NOMEM);
+    ASSERT_EQ(err, ASTRAL_E_BUSY);
     ASSERT_EQ(overflow, 0u);
 
     for (uint32_t i = 0; i < kSlots; ++i) {

@@ -37,10 +37,9 @@ size_t detect_cache_line_size() {
   // CPUID leaf 0x80000006 (Extended L2 Cache Features)
   // Returns L2 cache line size in ECX bits 7:0
 
-  uint32_t eax, ebx, ecx, edx;
-
 #if defined(__GNUC__) || defined(__clang__)
   // GCC/Clang: use __get_cpuid intrinsic
+  uint32_t eax, ebx, ecx, edx;
   if (__get_cpuid(0x80000006, &eax, &ebx, &ecx, &edx)) {
     // Cache line size is in ECX bits 7:0 (in bytes)
     const size_t valid_size = valid_cache_line_size(ecx & 0xFFu);
@@ -52,7 +51,7 @@ size_t detect_cache_line_size() {
   // MSVC: use __cpuid intrinsic
   int cpu_info[4];
   __cpuid(cpu_info, 0x80000006);
-  ecx = static_cast<uint32_t>(cpu_info[2]);
+  const uint32_t ecx = static_cast<uint32_t>(cpu_info[2]);
   const size_t valid_size = valid_cache_line_size(ecx & 0xFFu);
   if (valid_size != 0) {
     return valid_size;

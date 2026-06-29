@@ -203,10 +203,14 @@ function(astral_configure_runtime_target tgt)
 
     target_compile_options(${tgt} PRIVATE
         $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Werror -Wno-unused-parameter>
-        $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
+        $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /wd4324>
     )
 
     apply_compiler_flags(${tgt})
+
+    if(MSVC)
+        target_compile_definitions(${tgt} PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
 
     if(ASTRAL_NO_EXCEPTIONS)
         if(MSVC)

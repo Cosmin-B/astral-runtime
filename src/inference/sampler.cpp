@@ -1015,11 +1015,11 @@ uint32_t sample_token(const float* logits,
                             const uint32_t id = scratch_ids[i];
                             // Skip ids already picked.
                             bool used = false;
-                            for (uint32_t k = 0; k < out_meta->top_n; ++k) {
-                                if (out_meta->top_ids[k] == id) {
-                                    used = true;
-                                    break;
-                                }
+                            for (uint32_t top_i = 0; top_i < out_meta->top_n; ++top_i) {
+                              if (out_meta->top_ids[top_i] == id) {
+                                used = true;
+                                break;
+                              }
                             }
                             if (used) {
                                 continue;

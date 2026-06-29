@@ -258,6 +258,11 @@ enum {
   ASTRAL_MEMORY_STORAGE_Q8 = 1,
   ASTRAL_MEMORY_STORAGE_F6_E2M3 = 2,
   ASTRAL_MEMORY_STORAGE_F8_E5M2 = 3,
+  ASTRAL_MEMORY_STORAGE_F6_E3M2 = 4,
+  ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK = 5,
+  ASTRAL_MEMORY_STORAGE_F8_E5M2_F32_RERANK = 6,
+  ASTRAL_MEMORY_STORAGE_F6_E2M3_F32_RERANK = 7,
+  ASTRAL_MEMORY_STORAGE_F6_E3M2_F32_RERANK = 8,
 };
 
 enum {
@@ -271,9 +276,9 @@ typedef struct AstralMemoryIndexDesc {
     AstralMemoryMetric metric;
     AstralMemoryIndexKind index_kind;
     uint32_t graph_neighbors;
-    /* Graph construction expansion for ASTRAL_MEMORY_INDEX_GRAPH; 0 selects the runtime default. */
+    /* Graph construction expansion for ASTRAL_MEMORY_INDEX_GRAPH. Used while inserting records. */
     uint32_t graph_search;
-    /* Default query expansion for ASTRAL_MEMORY_INDEX_GRAPH; 0 selects graph_search. */
+    /* Default graph query expansion for searches when AstralMemorySearchDesc.graph_search is 0. */
     uint32_t graph_query_search;
     AstralMemoryStorageKind storage_kind;
 } AstralMemoryIndexDesc;
@@ -293,7 +298,7 @@ typedef struct AstralMemorySearchDesc {
     uint32_t top_k;
     uint32_t group_id;
     uint32_t flags;
-    /* Per-query graph expansion; 0 uses the index query expansion. */
+    /* Per-query graph expansion override. 0 uses AstralMemoryIndexDesc.graph_query_search. */
     uint32_t graph_search;
 } AstralMemorySearchDesc;
 

@@ -981,59 +981,36 @@ AstralErr remote_embedder_embed(void* embedder_ctx, const int32_t* tokens, uint3
     return parsed != 0 ? ASTRAL_OK : ASTRAL_E_BACKEND;
 }
 
-const AstralBackendOps kRemoteOps = {
-    .model_load = remote_model_load,
-    .model_unload = remote_model_unload,
-    .tokenize = remote_tokenize,
-    .detokenize = remote_detokenize,
-    .model_info = remote_model_info,
-    .model_special_tokens = remote_model_special_tokens,
-    .model_embedding_dim = remote_model_embedding_dim,
-    .model_media_init = nullptr,
-    .model_media_info = nullptr,
-    .session_create = remote_session_create,
-    .session_create_ex = nullptr,
-    .session_destroy = remote_session_destroy,
-    .session_reset = remote_session_reset,
-    .session_feed = remote_session_feed,
-    .session_feed_image = nullptr,
-    .session_feed_audio = nullptr,
-    .session_logits = remote_session_logits,
-    .session_accept = remote_session_accept,
-    .session_batch_eval = remote_session_batch_eval,
-    .session_batch_logits = remote_session_batch_logits,
-    .session_slot_reset = remote_session_slot_reset,
-    .embedder_create = remote_embedder_create,
-    .embedder_destroy = remote_embedder_destroy,
-    .embedder_reset = remote_embedder_reset,
-    .embedder_embed = remote_embedder_embed,
-    .embedder_embed_image = nullptr,
-    .embedder_embed_audio = nullptr,
-    .embedder_embed_multimodal = nullptr,
-    .session_grammar_set_gbnf = nullptr,
-    .session_grammar_set_json_schema = nullptr,
-    .session_grammar_clear = nullptr,
-    .session_apply_grammar = nullptr,
-    .session_grammar_set_gbnf_for_slot = nullptr,
-    .session_grammar_set_json_schema_for_slot = nullptr,
-    .session_grammar_clear_for_slot = nullptr,
-    .session_apply_grammar_for_slot = nullptr,
-    .session_state_size = nullptr,
-    .session_state_save = nullptr,
-    .session_state_load = nullptr,
-    .model_adapter_load = nullptr,
-    .model_adapter_unload = nullptr,
-    .session_adapter_clear = nullptr,
-    .session_adapter_add = nullptr,
-    .session_set_slot = nullptr,
-    .session_slot_pos = nullptr,
-};
+const AstralBackendOps kRemoteOps = [] {
+  AstralBackendOps ops{};
+  ops.model_load = remote_model_load;
+  ops.model_unload = remote_model_unload;
+  ops.tokenize = remote_tokenize;
+  ops.detokenize = remote_detokenize;
+  ops.model_info = remote_model_info;
+  ops.model_special_tokens = remote_model_special_tokens;
+  ops.model_embedding_dim = remote_model_embedding_dim;
+  ops.session_create = remote_session_create;
+  ops.session_destroy = remote_session_destroy;
+  ops.session_reset = remote_session_reset;
+  ops.session_feed = remote_session_feed;
+  ops.session_logits = remote_session_logits;
+  ops.session_accept = remote_session_accept;
+  ops.session_batch_eval = remote_session_batch_eval;
+  ops.session_batch_logits = remote_session_batch_logits;
+  ops.session_slot_reset = remote_session_slot_reset;
+  ops.embedder_create = remote_embedder_create;
+  ops.embedder_destroy = remote_embedder_destroy;
+  ops.embedder_reset = remote_embedder_reset;
+  ops.embedder_embed = remote_embedder_embed;
+  return ops;
+}();
 
 const AstralBackendProvider kRemoteProvider = {
-    .name = "remote",
-    .ops = &kRemoteOps,
-    .supports_gpu = 0,
-    .min_gpu_layers = 0,
+    /*name=*/"remote",
+    /*ops=*/&kRemoteOps,
+    /*supports_gpu=*/0,
+    /*min_gpu_layers=*/0,
 };
 
 } // namespace

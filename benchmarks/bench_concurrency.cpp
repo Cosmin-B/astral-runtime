@@ -880,7 +880,7 @@ BenchResult bench_mpsc_ticket_ring(uint32_t producers, uint64_t items_per_produc
 
 BenchResult bench_mpsc_ticket_batch_ring(uint32_t producers, uint64_t items_per_producer) {
     constexpr size_t kCapacity = 4096;
-    constexpr size_t kBatch = 16;
+    static constexpr size_t kBatch = 16;
     astral::concurrency::MpscTicketRing<uint64_t, kCapacity> ring;
 
     if (producers == 0) {

@@ -119,7 +119,7 @@ TEST(mpmc_multi_producer) {
     // Capacity must hold all produced items because this test has no concurrent consumer.
     constexpr size_t kCapacity = 4096;
     constexpr size_t kThreads = 4;
-    constexpr size_t kItemsPerThread = 1000;
+    static constexpr size_t kItemsPerThread = 1000;
 
     MpmcQueue<TestData, kCapacity> queue;
     std::atomic<size_t> successful_enqueues{0};
@@ -154,7 +154,7 @@ TEST(mpmc_multi_consumer) {
     // Capacity must hold all pre-filled items because all enqueues happen up-front.
     constexpr size_t kCapacity = 4096;
     constexpr size_t kThreads = 4;
-    constexpr size_t kTotalItems = 4000;
+    static constexpr size_t kTotalItems = 4000;
 
     MpmcQueue<TestData, kCapacity> queue;
 
@@ -195,7 +195,7 @@ TEST(mpmc_producer_consumer_concurrent) {
     constexpr size_t kCapacity = 256;
     constexpr size_t kProducers = 2;
     constexpr size_t kConsumers = 2;
-    constexpr size_t kItemsPerProducer = 5000;
+    static constexpr size_t kItemsPerProducer = 5000;
 
     MpmcQueue<TestData, kCapacity> queue;
     std::atomic<size_t> items_produced{0};
@@ -375,8 +375,8 @@ TEST(mpsc_full_returns_busy_signal) {
 TEST(mpsc_multi_producer_single_consumer_checksum) {
     constexpr size_t kCapacity = 256;
     constexpr uint32_t kProducers = 4;
-    constexpr uint64_t kItemsPerProducer = 4000;
-    constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
+    static constexpr uint64_t kItemsPerProducer = 4000;
+    static constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
 
     MpscRing<uint64_t, kCapacity> ring;
 
@@ -436,8 +436,8 @@ TEST(mpsc_multi_producer_single_consumer_checksum) {
 TEST(mpsc_ticket_multi_producer_single_consumer_checksum) {
     constexpr size_t kCapacity = 256;
     constexpr uint32_t kProducers = 4;
-    constexpr uint64_t kItemsPerProducer = 4000;
-    constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
+    static constexpr uint64_t kItemsPerProducer = 4000;
+    static constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
 
     MpscTicketRing<uint64_t, kCapacity> ring;
 
@@ -489,9 +489,9 @@ TEST(mpsc_ticket_multi_producer_single_consumer_checksum) {
 TEST(mpsc_ticket_batch_multi_producer_single_consumer_checksum) {
     constexpr size_t kCapacity = 256;
     constexpr uint32_t kProducers = 4;
-    constexpr uint64_t kItemsPerProducer = 4096;
-    constexpr uint64_t kBatch = 16;
-    constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
+    static constexpr uint64_t kItemsPerProducer = 4096;
+    static constexpr uint64_t kBatch = 16;
+    static constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
 
     MpscTicketRing<uint64_t, kCapacity> ring;
 
@@ -547,8 +547,8 @@ TEST(mpsc_ticket_batch_multi_producer_single_consumer_checksum) {
 TEST(spsc_fan_in_multi_producer_single_consumer_checksum) {
     constexpr size_t kProducers = 4;
     constexpr size_t kCapacity = 64;
-    constexpr uint64_t kItemsPerProducer = 1000;
-    constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
+    static constexpr uint64_t kItemsPerProducer = 1000;
+    static constexpr uint64_t kTotalItems = static_cast<uint64_t>(kProducers) * kItemsPerProducer;
 
     SpscFanIn<uint64_t, kProducers, kCapacity> fan_in;
 
@@ -748,7 +748,7 @@ TEST(spsc_batch_partial_capacity) {
 
 TEST(spsc_producer_consumer_pattern) {
     constexpr size_t kCapacity = 128;
-    constexpr size_t kItemCount = 10000;
+    static constexpr size_t kItemCount = 10000;
 
     SpscRing<TestData, kCapacity> ring;
     std::atomic<size_t> items_consumed{0};
@@ -794,7 +794,7 @@ TEST(spsc_pop_nullptr) {
 
 TEST(spsc_ordering_preservation) {
     constexpr size_t kCapacity = 64;
-    constexpr size_t kItemCount = 1000;
+    static constexpr size_t kItemCount = 1000;
 
     SpscRing<TestData, kCapacity> ring;
 

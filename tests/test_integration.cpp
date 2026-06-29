@@ -21,11 +21,26 @@
 #include <cstring>
 #include <ctime>
 #include <sys/stat.h>
-#include <unistd.h>
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
+
+static void set_process_env(const char* key, const char* value) {
+#if defined(_WIN32)
+  (void)_putenv_s(key, value);
+#else
+  (void)setenv(key, value, 1);
+#endif
+}
+
+static void unset_process_env(const char* key) {
+#if defined(_WIN32)
+  (void)_putenv_s(key, "");
+#else
+  (void)unsetenv(key);
+#endif
+}
 
 /**
  * Get path to test model.
@@ -485,16 +500,16 @@ TEST(cpu_seed_reset_deterministic_fixture_probe) {
         e = astral_session_decode(session);
         ASSERT_EQ(e, ASTRAL_OK);
 
+        e = astral_session_wait(session, 60000);
+        ASSERT_EQ(e, ASTRAL_OK);
+
         uint32_t total = 0;
         for (uint32_t i = 0; i < 1024; ++i) {
             AstralMutSpanU8 span = {};
             span.data = out + total;
             span.len = cap - total;
 
-            const int32_t n = astral_stream_read(session, span, 1000);
-            if (n == ASTRAL_E_TIMEOUT) {
-                continue;
-            }
+            const int32_t n = astral_stream_read(session, span, 0);
             ASSERT_GE(n, 0);
             if (n == 0) {
                 break;
@@ -505,9 +520,6 @@ TEST(cpu_seed_reset_deterministic_fixture_probe) {
                 break;
             }
         }
-
-        e = astral_session_wait(session, 60000);
-        ASSERT_EQ(e, ASTRAL_OK);
 
         *out_len = total;
     };
@@ -621,7 +633,7 @@ TEST(cpu_slots_fixture_probe) {
     }
 
     // Ensure llama context is created with multiple sequences enabled.
-    setenv("ASTRAL_LLAMA_MAX_SLOTS", "2", 1);
+    set_process_env("ASTRAL_LLAMA_MAX_SLOTS", "2");
 
     AstralInit cfg = {0};
     cfg.reserve_bytes = 2ULL << 30; // 2GB
@@ -671,7 +683,7 @@ TEST(cpu_slots_fixture_probe) {
     astral_model_release(model);
     astral_shutdown();
 
-    unsetenv("ASTRAL_LLAMA_MAX_SLOTS");
+    unset_process_env("ASTRAL_LLAMA_MAX_SLOTS");
 }
 
 /**

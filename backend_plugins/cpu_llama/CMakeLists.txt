@@ -16,10 +16,13 @@ target_compile_options(astral_backend_cpu_llama_plugin PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
 )
 
+if(MSVC)
+    target_compile_definitions(astral_backend_cpu_llama_plugin PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # Keep the plugin next to the tests so it can be loaded without path gymnastics.
 set_target_properties(astral_backend_cpu_llama_plugin PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
 )
-

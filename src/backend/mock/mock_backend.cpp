@@ -1072,63 +1072,54 @@ AstralErr mock_embedder_embed_multimodal(void* embedder_ctx,
     return mock_embedder_fill(e, sum, out_vec, vec_dim);
 }
 
-static const BackendOps kMockBackendOps = {
-    .model_load = mock_model_load,
-    .model_unload = mock_model_unload,
-
-    .tokenize = mock_tokenize,
-    .detokenize = mock_detokenize,
-
-    .model_info = mock_model_info,
-    .model_special_tokens = mock_model_special_tokens,
-    .model_embedding_dim = mock_model_embedding_dim,
-    .model_media_init = mock_model_media_init,
-    .model_media_info = mock_model_media_info,
-
-    .session_create = mock_session_create,
-    .session_create_ex = mock_session_create_ex,
-    .session_destroy = mock_session_destroy,
-    .session_reset = mock_session_reset,
-    .session_feed = mock_session_feed,
-    .session_feed_image = mock_session_feed_image,
-    .session_feed_audio = mock_session_feed_audio,
-    .session_logits = mock_session_logits,
-    .session_accept = mock_session_accept,
-
-    .session_batch_eval = mock_session_batch_eval,
-    .session_batch_logits = mock_session_batch_logits,
-    .session_slot_reset = mock_session_slot_reset,
-
-    .embedder_create = mock_embedder_create,
-    .embedder_destroy = mock_embedder_destroy,
-    .embedder_reset = mock_embedder_reset,
-    .embedder_embed = mock_embedder_embed,
-    .embedder_embed_image = mock_embedder_embed_image,
-    .embedder_embed_audio = mock_embedder_embed_audio,
-    .embedder_embed_multimodal = mock_embedder_embed_multimodal,
-
-    .session_grammar_set_gbnf = mock_session_grammar_set_gbnf,
-    .session_grammar_set_json_schema = nullptr,
-    .session_grammar_clear = mock_session_grammar_clear,
-    .session_apply_grammar = mock_session_apply_grammar,
-
-    .session_grammar_set_gbnf_for_slot = mock_session_grammar_set_gbnf_for_slot,
-    .session_grammar_set_json_schema_for_slot = mock_session_grammar_set_json_schema_for_slot,
-    .session_grammar_clear_for_slot = mock_session_grammar_clear_for_slot,
-    .session_apply_grammar_for_slot = mock_session_apply_grammar_for_slot,
-
-    .session_state_size = mock_session_state_size,
-    .session_state_save = mock_session_state_save,
-    .session_state_load = mock_session_state_load,
-
-    .model_adapter_load = mock_model_adapter_load,
-    .model_adapter_unload = mock_model_adapter_unload,
-    .session_adapter_clear = mock_session_adapter_clear,
-    .session_adapter_add = mock_session_adapter_add,
-
-    .session_set_slot = mock_session_set_slot,
-    .session_slot_pos = mock_session_slot_pos,
-};
+static const BackendOps kMockBackendOps = [] {
+  BackendOps ops{};
+  ops.model_load = mock_model_load;
+  ops.model_unload = mock_model_unload;
+  ops.tokenize = mock_tokenize;
+  ops.detokenize = mock_detokenize;
+  ops.model_info = mock_model_info;
+  ops.model_special_tokens = mock_model_special_tokens;
+  ops.model_embedding_dim = mock_model_embedding_dim;
+  ops.model_media_init = mock_model_media_init;
+  ops.model_media_info = mock_model_media_info;
+  ops.session_create = mock_session_create;
+  ops.session_create_ex = mock_session_create_ex;
+  ops.session_destroy = mock_session_destroy;
+  ops.session_reset = mock_session_reset;
+  ops.session_feed = mock_session_feed;
+  ops.session_feed_image = mock_session_feed_image;
+  ops.session_feed_audio = mock_session_feed_audio;
+  ops.session_logits = mock_session_logits;
+  ops.session_accept = mock_session_accept;
+  ops.session_batch_eval = mock_session_batch_eval;
+  ops.session_batch_logits = mock_session_batch_logits;
+  ops.session_slot_reset = mock_session_slot_reset;
+  ops.embedder_create = mock_embedder_create;
+  ops.embedder_destroy = mock_embedder_destroy;
+  ops.embedder_reset = mock_embedder_reset;
+  ops.embedder_embed = mock_embedder_embed;
+  ops.embedder_embed_image = mock_embedder_embed_image;
+  ops.embedder_embed_audio = mock_embedder_embed_audio;
+  ops.embedder_embed_multimodal = mock_embedder_embed_multimodal;
+  ops.session_grammar_set_gbnf = mock_session_grammar_set_gbnf;
+  ops.session_grammar_clear = mock_session_grammar_clear;
+  ops.session_apply_grammar = mock_session_apply_grammar;
+  ops.session_grammar_set_gbnf_for_slot = mock_session_grammar_set_gbnf_for_slot;
+  ops.session_grammar_set_json_schema_for_slot = mock_session_grammar_set_json_schema_for_slot;
+  ops.session_grammar_clear_for_slot = mock_session_grammar_clear_for_slot;
+  ops.session_apply_grammar_for_slot = mock_session_apply_grammar_for_slot;
+  ops.session_state_size = mock_session_state_size;
+  ops.session_state_save = mock_session_state_save;
+  ops.session_state_load = mock_session_state_load;
+  ops.model_adapter_load = mock_model_adapter_load;
+  ops.model_adapter_unload = mock_model_adapter_unload;
+  ops.session_adapter_clear = mock_session_adapter_clear;
+  ops.session_adapter_add = mock_session_adapter_add;
+  ops.session_set_slot = mock_session_set_slot;
+  ops.session_slot_pos = mock_session_slot_pos;
+  return ops;
+}();
 
 static const BackendProvider kMockBackendProvider = {
     /*name=*/"mock",

@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 #include <sys/stat.h>
-#include <unistd.h>
 
 namespace astral::bench {
 

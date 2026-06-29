@@ -599,63 +599,27 @@ AstralErr ASTRAL_CALL cpu_embedder_embed(void* embedder_ctx, const int32_t* toke
     return ASTRAL_OK;
 }
 
-static const AstralBackendOps kOps = {
-    .model_load = cpu_model_load,
-    .model_unload = cpu_model_unload,
-
-    .tokenize = cpu_tokenize,
-    .detokenize = cpu_detokenize,
-
-    .model_info = cpu_model_info,
-    .model_special_tokens = cpu_model_special_tokens,
-    .model_embedding_dim = cpu_model_embedding_dim,
-    .model_media_init = nullptr,
-    .model_media_info = nullptr,
-
-    .session_create = cpu_session_create,
-    .session_create_ex = nullptr,
-    .session_destroy = cpu_session_destroy,
-    .session_reset = cpu_session_reset,
-    .session_feed = cpu_session_feed,
-    .session_feed_image = nullptr,
-    .session_feed_audio = nullptr,
-    .session_logits = cpu_session_logits,
-    .session_accept = cpu_session_accept,
-
-    .session_batch_eval = nullptr,
-    .session_batch_logits = nullptr,
-    .session_slot_reset = nullptr,
-
-    .embedder_create = cpu_embedder_create,
-    .embedder_destroy = cpu_embedder_destroy,
-    .embedder_reset = cpu_embedder_reset,
-    .embedder_embed = cpu_embedder_embed,
-    .embedder_embed_image = nullptr,
-    .embedder_embed_audio = nullptr,
-    .embedder_embed_multimodal = nullptr,
-
-    .session_grammar_set_gbnf = nullptr,
-    .session_grammar_set_json_schema = nullptr,
-    .session_grammar_clear = nullptr,
-    .session_apply_grammar = nullptr,
-
-    .session_grammar_set_gbnf_for_slot = nullptr,
-    .session_grammar_set_json_schema_for_slot = nullptr,
-    .session_grammar_clear_for_slot = nullptr,
-    .session_apply_grammar_for_slot = nullptr,
-
-    .session_state_size = nullptr,
-    .session_state_save = nullptr,
-    .session_state_load = nullptr,
-
-    .model_adapter_load = nullptr,
-    .model_adapter_unload = nullptr,
-    .session_adapter_clear = nullptr,
-    .session_adapter_add = nullptr,
-
-    .session_set_slot = nullptr,
-    .session_slot_pos = nullptr,
-};
+static const AstralBackendOps kOps = [] {
+  AstralBackendOps ops{};
+  ops.model_load = cpu_model_load;
+  ops.model_unload = cpu_model_unload;
+  ops.tokenize = cpu_tokenize;
+  ops.detokenize = cpu_detokenize;
+  ops.model_info = cpu_model_info;
+  ops.model_special_tokens = cpu_model_special_tokens;
+  ops.model_embedding_dim = cpu_model_embedding_dim;
+  ops.session_create = cpu_session_create;
+  ops.session_destroy = cpu_session_destroy;
+  ops.session_reset = cpu_session_reset;
+  ops.session_feed = cpu_session_feed;
+  ops.session_logits = cpu_session_logits;
+  ops.session_accept = cpu_session_accept;
+  ops.embedder_create = cpu_embedder_create;
+  ops.embedder_destroy = cpu_embedder_destroy;
+  ops.embedder_reset = cpu_embedder_reset;
+  ops.embedder_embed = cpu_embedder_embed;
+  return ops;
+}();
 
 static const AstralBackendProvider kProvider = {
     /*name=*/"cpu_llama",

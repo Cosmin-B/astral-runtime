@@ -251,9 +251,17 @@ struct SaveLayout {
 
 inline void prefetch_dense_q8_slot(const int8_t* vectors, const float* scales,
                                    const MemorySlot* slots, uint32_t dim, uint32_t slot) {
+#if defined(__GNUC__) || defined(__clang__)
   __builtin_prefetch(vectors + static_cast<size_t>(slot) * dim, 0, 1);
   __builtin_prefetch(scales + slot, 0, 1);
   __builtin_prefetch(slots + slot, 0, 1);
+#else
+  (void)vectors;
+  (void)scales;
+  (void)slots;
+  (void)dim;
+  (void)slot;
+#endif
 }
 
 inline bool metric_valid(AstralMemoryMetric metric) {
@@ -2268,7 +2276,8 @@ int8_t round_scaled_e2m3(float value) {
            kE2M3HighStep *
                ceil_positive_to_u32((abs_value - kE2M3HighMinThreshold) * kE2M3HighStepInv);
   }
-  return value < 0.0f ? static_cast<int8_t>(-best) : static_cast<int8_t>(best);
+  return value < 0.0f ? static_cast<int8_t>(-static_cast<int32_t>(best))
+                      : static_cast<int8_t>(best);
 }
 
 void quantize_e2m3_vector(int8_t* dst, float* out_scale, const float* src, uint32_t dim) {
@@ -3409,6 +3418,7 @@ bool graph_neighbor_diverse_except(MemoryIndex* index, uint32_t candidate_slot,
 void graph_select_neighbors(MemoryIndex* index, uint32_t owner_slot, uint32_t level,
                             uint32_t candidate_count, uint32_t* neighbors, float* selected_scores,
                             uint32_t* out_count, uint32_t selection_capacity) {
+  (void)level;
   uint32_t selected = 0;
   const uint32_t capacity = selection_capacity;
   for (uint32_t i = 0; i < candidate_count && selected < capacity; ++i) {
@@ -7347,9 +7357,9 @@ void snapshot_graph_search_layer(SnapshotBytes bytes, const AstralMemorySnapshot
     uint32_t i = 0;
     for (; i < prefetch_limit; ++i) {
       const uint32_t neighbor = snapshot_graph_neighbor_at_base(bytes.data, neighbor_base, i);
+#if defined(__GNUC__) || defined(__clang__)
       const uint32_t prefetch_neighbor = snapshot_graph_neighbor_at_base(
           bytes.data, neighbor_base, i + kGraphNeighborPrefetchDistance);
-#if defined(__GNUC__) || defined(__clang__)
       __builtin_prefetch(info->storage_kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK
                              ? snapshot_vector_ptr(bytes, info, prefetch_neighbor)
                              : snapshot_score_vector_ptr(bytes, prepared, prefetch_neighbor),
