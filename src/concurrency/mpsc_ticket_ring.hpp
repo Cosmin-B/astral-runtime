@@ -96,6 +96,15 @@ public:
         return true;
     }
 
+    void pop_wait(T& out) {
+      ASTRAL_ZONE_MICRO_N("astral.mpsc_ticket.pop_wait");
+
+      uint32_t spins = 0;
+      while (!pop(out)) {
+        wait_hint(spins);
+      }
+    }
+
     void reset() {
         enqueue_pos_.store(0, std::memory_order_relaxed);
         dequeue_pos_.store(0, std::memory_order_relaxed);

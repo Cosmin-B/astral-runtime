@@ -14,19 +14,19 @@
  */
 
 #include "../../include/astral_rt.h"
-#include "../platform/vm.h"
-#include "../concurrency/mpmc_queue.hpp"
+#include "../concurrency/mpsc_ticket_ring.hpp"
 #include "../memory/frame_allocator.hpp"
+#include "../platform/atomics.h"
+#include "../platform/thread.h"
+#include "../platform/time.h"
+#include "../platform/vm.h"
 #include "../utils/logging.hpp"
 #include "../utils/trace.hpp"
-#include "../platform/time.h"
-#include "../platform/thread.h"
-#include "../platform/atomics.h"
 #include "abi_guard.hpp"
 #include "alloc_utils.hpp"
 #include "handles.hpp"
-#include "work_queue.hpp"
 #include "runtime_state.hpp"
+#include "work_queue.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -51,7 +51,7 @@ struct WorkItem {
 };
 
 constexpr size_t kWorkQueueCapacity = 1024;
-using WorkQueue = concurrency::MpmcQueue<WorkItem, kWorkQueueCapacity>;
+using WorkQueue = concurrency::MpscTicketRing<WorkItem, kWorkQueueCapacity>;
 
 namespace {
 
@@ -481,7 +481,7 @@ struct AstralRuntime {
     astral::platform::Thread* workers;
     uint32_t worker_alloc_count;
 
-    // Work queues (one per worker, MPMC, bounded, CAS-free hot path).
+    // Work queues (one consumer per worker, bounded producer fan-in).
     WorkQueue* work_queues;
     std::atomic<uint32_t> work_queue_rr;
 #if ASTRAL_ENABLE_TRACY
@@ -748,12 +748,12 @@ static inline void bind_worker_tls(uint32_t idx) {
 	void worker_loop(uint32_t worker_idx) {
 	    ASTRAL_ZONE_N("astral.worker_loop");
 	    for (;;) {
-	        ASTRAL_ZONE_MICRO_N("astral.worker.dequeue_wait");
-	        WorkItem item{};
-	        g_runtime.work_queues[worker_idx].dequeue_wait(&item);
-	        if (item.fn == nullptr) {
-	            return;
-	        }
+              ASTRAL_ZONE_MICRO_N("astral.worker.pop_wait");
+              WorkItem item{};
+              g_runtime.work_queues[worker_idx].pop_wait(item);
+              if (item.fn == nullptr) {
+                return;
+              }
 #if ASTRAL_ENABLE_TRACY
         // Profiling counter mirrors successful dequeue operations.
         const uint32_t depth = g_runtime.work_queue_depth.fetch_sub(1, std::memory_order_relaxed) - 1;
@@ -797,7 +797,7 @@ AstralErr submit_work(WorkFn fn, void* user) {
 #endif
     const uint32_t n = g_runtime.thread_count;
     const uint32_t idx = n > 0 ? (g_runtime.work_queue_rr.fetch_add(1, std::memory_order_relaxed) % n) : 0;
-    g_runtime.work_queues[idx].enqueue_wait(WorkItem{fn, user});
+    g_runtime.work_queues[idx].push_wait(WorkItem{fn, user});
 #else
     // Embedded/minimal footprint mode: execute synchronously on the caller thread.
     fn(user);
@@ -824,7 +824,7 @@ AstralErr submit_work_affine(uint32_t worker_id, WorkFn fn, void* user) {
 #endif
     const uint32_t n = g_runtime.thread_count;
     const uint32_t idx = n > 0 ? (worker_id % n) : 0;
-    g_runtime.work_queues[idx].enqueue_wait(WorkItem{fn, user});
+    g_runtime.work_queues[idx].push_wait(WorkItem{fn, user});
 #else
     (void)worker_id;
     fn(user);
@@ -1030,7 +1030,7 @@ static AstralErr runtime_init_fail_cleanup(AstralErr err) {
     if (g_runtime.workers != nullptr) {
         for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {
             if (g_runtime.work_queues) {
-                g_runtime.work_queues[i].enqueue_wait(WorkItem{nullptr, nullptr});
+              g_runtime.work_queues[i].push_wait(WorkItem{nullptr, nullptr});
             }
         }
         for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {
@@ -1376,7 +1376,7 @@ ASTRAL_API void ASTRAL_CALL astral_shutdown(void) {
         const uint32_t n_alloc = g_runtime.worker_alloc_count;
         for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {
             if (g_runtime.work_queues) {
-                g_runtime.work_queues[i].enqueue_wait(WorkItem{nullptr, nullptr});
+              g_runtime.work_queues[i].push_wait(WorkItem{nullptr, nullptr});
             }
         }
         for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {

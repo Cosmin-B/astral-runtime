@@ -486,6 +486,29 @@ TEST(mpsc_ticket_multi_producer_single_consumer_checksum) {
     ASSERT_EQ(sum, expected);
 }
 
+TEST(mpsc_ticket_pop_wait_blocks_until_producer_publishes) {
+  MpscTicketRing<TestData, 4> ring;
+
+  std::atomic<bool> popped{false};
+  TestData out{};
+
+  std::thread consumer([&]() {
+    ring.pop_wait(out);
+    popped.store(true, std::memory_order_release);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  ASSERT_FALSE(popped.load(std::memory_order_acquire));
+
+  ring.push_wait(TestData{77, 3, 9});
+
+  consumer.join();
+  ASSERT_TRUE(popped.load(std::memory_order_acquire));
+  ASSERT_EQ(out.value, 77u);
+  ASSERT_EQ(out.thread_id, 3u);
+  ASSERT_EQ(out.sequence, 9u);
+}
+
 TEST(mpsc_ticket_batch_multi_producer_single_consumer_checksum) {
     constexpr size_t kCapacity = 256;
     constexpr uint32_t kProducers = 4;
