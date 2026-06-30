@@ -76,19 +76,27 @@ struct SlotSnapshot {
       return;
     }
 
-    bool released = false;
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
+    bool wake_waiter = false;
+#endif
     for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
       Conversation* conv = slots[sid];
       slots[sid] = nullptr;
       if (conv != nullptr) {
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
+        const uint32_t refs = conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+        wake_waiter = wake_waiter || refs == 1u;
+#else
         conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
-        released = true;
+#endif
       }
     }
     ex = nullptr;
-    if (released) {
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
+    if (wake_waiter) {
       signal();
     }
+#endif
   }
 };
 
