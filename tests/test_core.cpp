@@ -5,10 +5,34 @@
  * Validates: init/shutdown cycle, handle registration/validation, error codes.
  */
 
-#include "test_framework.hpp"
 #include "../include/astral_rt.h"
+#include "../src/core/runtime_state.hpp"
+#include "../src/core/work_queue.hpp"
+#include "test_framework.hpp"
 
+#include <atomic>
+#include <chrono>
 #include <cstring>
+#include <thread>
+
+namespace {
+
+constexpr uint32_t kNoWorker = 0xFFFFFFFFu;
+
+struct WorkerAssignContext {
+  std::atomic<uint32_t> worker_id{kNoWorker};
+  std::atomic<uint32_t> assigned_id{kNoWorker};
+  std::atomic<bool> done{false};
+};
+
+void record_worker_assignment(void* user) {
+  auto* ctx = static_cast<WorkerAssignContext*>(user);
+  ctx->worker_id.store(astral::core::runtime_worker_id(), std::memory_order_release);
+  ctx->assigned_id.store(astral::core::runtime_assign_worker_id(), std::memory_order_release);
+  ctx->done.store(true, std::memory_order_release);
+}
+
+} // namespace
 
 //
 // Init/Shutdown Tests
@@ -25,6 +49,36 @@ TEST(core_init_shutdown_cycle) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     astral_shutdown();
+}
+
+TEST(core_worker_assign_uses_current_worker) {
+  AstralInit cfg = {};
+  cfg.reserve_bytes = 16 * 1024 * 1024;
+  cfg.thread_count = 2;
+  cfg.numa_node = 0xFFFFFFFF;
+  cfg.enable_hugepages = 0;
+
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  WorkerAssignContext ctx{};
+  ASSERT_EQ(astral::core::submit_work(record_worker_assignment, &ctx), ASTRAL_OK);
+
+  for (uint32_t attempt = 0; attempt < 1000; ++attempt) {
+    if (ctx.done.load(std::memory_order_acquire)) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  const bool done = ctx.done.load(std::memory_order_acquire);
+  const uint32_t worker_id = ctx.worker_id.load(std::memory_order_acquire);
+  const uint32_t assigned_id = ctx.assigned_id.load(std::memory_order_acquire);
+
+  astral_shutdown();
+
+  ASSERT_TRUE(done);
+  ASSERT_NE(worker_id, kNoWorker);
+  ASSERT_EQ(assigned_id, worker_id);
 }
 
 TEST(core_init_null_config) {

@@ -726,13 +726,17 @@ void logging_callback_adapter(void* user, int level, const uint8_t* msg, uint32_
 
 namespace {
 
-thread_local uint32_t g_tls_worker_id = 0xFFFFFFFFu;
+constexpr uint32_t kInvalidWorkerId = 0xFFFFFFFFu;
+
+thread_local uint32_t g_tls_worker_id = kInvalidWorkerId;
+thread_local uint32_t g_tls_submit_rr = kInvalidWorkerId;
 thread_local uint8_t* g_tls_worker_scratch_base = nullptr;
 thread_local size_t g_tls_worker_scratch_size = 0;
 thread_local size_t g_tls_worker_scratch_used = 0;
 
 static inline void bind_worker_tls(uint32_t idx) {
     g_tls_worker_id = idx;
+    g_tls_submit_rr = idx;
     g_tls_worker_scratch_base = nullptr;
     g_tls_worker_scratch_size = 0;
     g_tls_worker_scratch_used = 0;
@@ -742,6 +746,21 @@ static inline void bind_worker_tls(uint32_t idx) {
         g_tls_worker_scratch_base = g_runtime.worker_scratch_base + static_cast<size_t>(idx) * stride;
         g_tls_worker_scratch_size = stride;
     }
+}
+
+static inline uint32_t next_thread_worker_id(uint32_t n) {
+  if (n == 0) {
+    return 0;
+  }
+
+  uint32_t cursor = g_tls_submit_rr;
+  if (cursor == kInvalidWorkerId) {
+    cursor = g_runtime.work_queue_rr.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  const uint32_t idx = cursor % n;
+  g_tls_submit_rr = (idx + 1u) % n;
+  return idx;
 }
 
 #if ASTRAL_ENABLE_THREADS
@@ -796,7 +815,7 @@ AstralErr submit_work(WorkFn fn, void* user) {
     }
 #endif
     const uint32_t n = g_runtime.thread_count;
-    const uint32_t idx = n > 0 ? (g_runtime.work_queue_rr.fetch_add(1, std::memory_order_relaxed) % n) : 0;
+    const uint32_t idx = next_thread_worker_id(n);
     g_runtime.work_queues[idx].push_wait(WorkItem{fn, user});
 #else
     // Embedded/minimal footprint mode: execute synchronously on the caller thread.
@@ -847,7 +866,10 @@ uint32_t runtime_assign_worker_id() {
 
 #if ASTRAL_ENABLE_THREADS
     const uint32_t n = g_runtime.thread_count;
-    return n > 0 ? (g_runtime.work_queue_rr.fetch_add(1, std::memory_order_relaxed) % n) : 0;
+    if (g_tls_worker_id != kInvalidWorkerId) {
+      return n > 0 ? (g_tls_worker_id % n) : 0;
+    }
+    return next_thread_worker_id(n);
 #else
     return 0;
 #endif
@@ -886,7 +908,7 @@ void runtime_free(void* ptr, size_t size, size_t align) {
 }
 
 bool runtime_on_worker_thread() {
-    return g_tls_worker_id != 0xFFFFFFFFu;
+  return g_tls_worker_id != kInvalidWorkerId;
 }
 
 uint32_t runtime_worker_id() {
@@ -1294,6 +1316,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
         g_runtime.work_queues = nullptr;
     }
     g_runtime.work_queue_rr.store(0, std::memory_order_relaxed);
+    g_tls_submit_rr = kInvalidWorkerId;
 
 #if ASTRAL_ENABLE_THREADS
     {
@@ -1438,7 +1461,8 @@ ASTRAL_API void ASTRAL_CALL astral_shutdown(void) {
     g_runtime.initialized.store(false, std::memory_order_release);
 
     // Clear TLS view for the calling thread (worker threads are already joined).
-    g_tls_worker_id = 0xFFFFFFFFu;
+    g_tls_worker_id = kInvalidWorkerId;
+    g_tls_submit_rr = kInvalidWorkerId;
     g_tls_worker_scratch_base = nullptr;
     g_tls_worker_scratch_size = 0;
     g_tls_worker_scratch_used = 0;
