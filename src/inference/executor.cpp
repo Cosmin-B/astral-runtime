@@ -43,40 +43,64 @@ inline void slot_table_unlock(ModelExecutor* ex) {
   signal();
 }
 
-Conversation* slot_ref_acquire(ModelExecutor* ex, uint32_t sid) {
-  if (ex == nullptr || ex->model == nullptr || sid >= ex->max_slots) {
-    return nullptr;
+struct SlotSnapshot {
+  ModelExecutor* ex = nullptr;
+  Conversation* slots[ModelExecutor::kMaxSlotsHard]{};
+
+  SlotSnapshot() = default;
+  SlotSnapshot(const SlotSnapshot&) = delete;
+  SlotSnapshot& operator=(const SlotSnapshot&) = delete;
+
+  ~SlotSnapshot() { release(); }
+
+  void acquire(ModelExecutor* executor) {
+    release();
+    if (executor == nullptr || executor->model == nullptr) {
+      return;
+    }
+
+    ex = executor;
+    slot_table_lock(ex);
+    for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
+      Conversation* conv = ex->slots[sid].load(std::memory_order_relaxed);
+      slots[sid] = conv;
+      if (conv != nullptr) {
+        conv->exec_refs.fetch_add(1, std::memory_order_acq_rel);
+      }
+    }
+    slot_table_unlock(ex);
   }
 
-  slot_table_lock(ex);
-  Conversation* conv = ex->slots[sid].load(std::memory_order_relaxed);
-  if (conv != nullptr) {
-    conv->exec_refs.fetch_add(1, std::memory_order_acq_rel);
-  }
-  slot_table_unlock(ex);
-  return conv;
-}
+  void release() {
+    if (ex == nullptr) {
+      return;
+    }
 
-void slot_ref_release(Conversation* conv) {
-  if (conv == nullptr) {
-    return;
+    bool released = false;
+    for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
+      Conversation* conv = slots[sid];
+      slots[sid] = nullptr;
+      if (conv != nullptr) {
+        conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
+        released = true;
+      }
+    }
+    ex = nullptr;
+    if (released) {
+      signal();
+    }
   }
-  conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
-  signal();
-}
+};
 
-bool slot_has_work(ModelExecutor* ex, uint32_t sid) {
-  if (ex == nullptr || ex->model == nullptr || sid >= ex->max_slots) {
-    return false;
+bool snapshot_has_work(const SlotSnapshot& snapshot, uint32_t max_slots) {
+  for (uint32_t sid = 0; sid < max_slots; ++sid) {
+    Conversation* conv = snapshot.slots[sid];
+    if (conv != nullptr && (conv->state.load(std::memory_order_acquire) == ConvState::Decoding ||
+                            conv->pending_emit_valid != 0)) {
+      return true;
+    }
   }
-
-  slot_table_lock(ex);
-  Conversation* conv = ex->slots[sid].load(std::memory_order_relaxed);
-  const bool has_work =
-      conv != nullptr && (conv->state.load(std::memory_order_acquire) == ConvState::Decoding ||
-                          conv->pending_emit_valid != 0);
-  slot_table_unlock(ex);
-  return has_work;
+  return false;
 }
 
 struct GrammarApplyCtx {
@@ -441,31 +465,26 @@ void executor_thread(ModelExecutor* ex) {
   uint32_t rr = 0;
 
   while (ex->running.load(std::memory_order_acquire)) {
-    bool any_work = false;
-    for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
-      if (slot_has_work(ex, sid)) {
-        any_work = true;
-        break;
-      }
-    }
+    SlotSnapshot snapshot;
+    snapshot.acquire(ex);
+    bool any_work = snapshot_has_work(snapshot, ex->max_slots);
 
     if (!any_work) {
       uint32_t spins = 0;
       while (ex->running.load(std::memory_order_acquire) && !any_work) {
+        snapshot.release();
         wait_hint(spins);
-        for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
-          if (slot_has_work(ex, sid)) {
-            any_work = true;
-            break;
-          }
-        }
+        snapshot.acquire(ex);
+        any_work = snapshot_has_work(snapshot, ex->max_slots);
       }
-      continue;
+      if (!any_work) {
+        continue;
+      }
     }
 
     // 1) Backpressure recovery: attempt to emit one token per slot (non-blocking).
     for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
-      Conversation* conv = slot_ref_acquire(ex, sid);
+      Conversation* conv = snapshot.slots[sid];
       if (conv == nullptr)
         continue;
 
@@ -482,18 +501,15 @@ void executor_thread(ModelExecutor* ex) {
           signal();
         }
       }
-
-      slot_ref_release(conv);
     }
 
     // 1b) Apply per-slot reset/grammar before advancing decoding.
     for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
-      Conversation* conv = slot_ref_acquire(ex, sid);
+      Conversation* conv = snapshot.slots[sid];
       if (conv == nullptr)
         continue;
 
       if (conv->state.load(std::memory_order_acquire) != ConvState::Decoding) {
-        slot_ref_release(conv);
         continue;
       }
 
@@ -544,19 +560,16 @@ void executor_thread(ModelExecutor* ex) {
           conv->grammar_applied = 1;
         }
       }
-
-      slot_ref_release(conv);
     }
 
     // 1c) Feed media prompt chunks (image/audio) outside batch eval.
     for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
-      Conversation* conv = slot_ref_acquire(ex, sid);
+      Conversation* conv = snapshot.slots[sid];
       if (conv == nullptr)
         continue;
 
       if (conv->state.load(std::memory_order_acquire) != ConvState::Decoding ||
           conv->pending_emit_valid != 0) {
-        slot_ref_release(conv);
         continue;
       }
 
@@ -565,13 +578,11 @@ void executor_thread(ModelExecutor* ex) {
         conv->final_err.store(ASTRAL_E_CANCELED, std::memory_order_release);
         conv->state.store(ConvState::Canceled, std::memory_order_release);
         signal();
-        slot_ref_release(conv);
         continue;
       }
 
       PromptChunk* chunk = conv_current_chunk(conv);
       if (chunk == nullptr || chunk->kind == PromptChunkKind::Text) {
-        slot_ref_release(conv);
         continue;
       }
 
@@ -581,7 +592,6 @@ void executor_thread(ModelExecutor* ex) {
         conv->final_err.store(ASTRAL_E_UNSUPPORTED, std::memory_order_release);
         conv->state.store(ConvState::Failed, std::memory_order_release);
         signal();
-        slot_ref_release(conv);
         continue;
       }
 
@@ -591,7 +601,6 @@ void executor_thread(ModelExecutor* ex) {
         conv->final_err.store(slot_err, std::memory_order_release);
         conv->state.store(ConvState::Failed, std::memory_order_release);
         signal();
-        slot_ref_release(conv);
         continue;
       }
 
@@ -613,7 +622,6 @@ void executor_thread(ModelExecutor* ex) {
         conv->final_err.store(feed_err, std::memory_order_release);
         conv->state.store(ConvState::Failed, std::memory_order_release);
         signal();
-        slot_ref_release(conv);
         continue;
       }
 
@@ -624,7 +632,6 @@ void executor_thread(ModelExecutor* ex) {
         conv->final_err.store(pos_err, std::memory_order_release);
         conv->state.store(ConvState::Failed, std::memory_order_release);
         signal();
-        slot_ref_release(conv);
         continue;
       }
       conv->n_past = slot_pos;
@@ -643,13 +650,10 @@ void executor_thread(ModelExecutor* ex) {
                                 std::memory_order_release);
           conv->state.store(ConvState::Failed, std::memory_order_release);
           signal();
-          slot_ref_release(conv);
           continue;
         }
         process_logits_for_conv(ex, ops, conv, sid, view);
       }
-
-      slot_ref_release(conv);
     }
 
     // 2) Build a continuous batching step.
@@ -659,12 +663,11 @@ void executor_thread(ModelExecutor* ex) {
     // Decode stepping: at most 1 token per slot (round-robin).
     for (uint32_t iter = 0; iter < ex->max_slots && batch_count < cap; ++iter) {
       const uint32_t sid = (rr + iter) % ex->max_slots;
-      Conversation* conv = slot_ref_acquire(ex, sid);
+      Conversation* conv = snapshot.slots[sid];
       if (conv == nullptr)
         continue;
 
       if (conv->state.load(std::memory_order_acquire) != ConvState::Decoding) {
-        slot_ref_release(conv);
         continue;
       }
 
@@ -673,12 +676,10 @@ void executor_thread(ModelExecutor* ex) {
         conv->final_err.store(ASTRAL_E_CANCELED, std::memory_order_release);
         conv->state.store(ConvState::Canceled, std::memory_order_release);
         signal();
-        slot_ref_release(conv);
         continue;
       }
 
       if (conv->pending_emit_valid != 0) {
-        slot_ref_release(conv);
         continue;
       }
 
@@ -689,33 +690,28 @@ void executor_thread(ModelExecutor* ex) {
         ex->batch_tokens[batch_count].want_logits = 1;
         ++batch_count;
       }
-
-      slot_ref_release(conv);
     }
 
     // Prompt ingestion (use remaining capacity).
     for (uint32_t iter = 0; iter < ex->max_slots && batch_count < cap; ++iter) {
       const uint32_t sid = (rr + iter) % ex->max_slots;
-      Conversation* conv = slot_ref_acquire(ex, sid);
+      Conversation* conv = snapshot.slots[sid];
       if (conv == nullptr)
         continue;
 
       if (conv->state.load(std::memory_order_acquire) != ConvState::Decoding ||
           conv->pending_emit_valid != 0) {
-        slot_ref_release(conv);
         continue;
       }
 
       PromptChunk* chunk = conv_current_chunk(conv);
       if (chunk == nullptr || chunk->kind != PromptChunkKind::Text) {
-        slot_ref_release(conv);
         continue;
       }
 
       if (conv->prompt_chunk_token_off >= chunk->token_count) {
         conv->prompt_chunk_index += 1u;
         conv->prompt_chunk_token_off = 0;
-        slot_ref_release(conv);
         continue;
       }
 
@@ -739,8 +735,6 @@ void executor_thread(ModelExecutor* ex) {
           conv->pending_token_valid == 0 && take > 0) {
         ex->batch_tokens[batch_count - 1u].want_logits = 1;
       }
-
-      slot_ref_release(conv);
     }
 
     if (batch_count == 0) {
@@ -755,17 +749,15 @@ void executor_thread(ModelExecutor* ex) {
     if (eval_err != ASTRAL_OK) {
       // Fail all decoding conversations.
       for (uint32_t sid = 0; sid < ex->max_slots; ++sid) {
-        Conversation* conv = slot_ref_acquire(ex, sid);
+        Conversation* conv = snapshot.slots[sid];
         if (conv == nullptr)
           continue;
         if (conv->state.load(std::memory_order_acquire) != ConvState::Decoding) {
-          slot_ref_release(conv);
           continue;
         }
         conv->t_end_ticks = ticks_now();
         conv->final_err.store(eval_err, std::memory_order_release);
         conv->state.store(ConvState::Failed, std::memory_order_release);
-        slot_ref_release(conv);
       }
       signal();
       rr = (rr + 1u) % ex->max_slots;
@@ -775,12 +767,11 @@ void executor_thread(ModelExecutor* ex) {
     // Update per-slot positions and prompt offsets.
     for (uint32_t i = 0; i < batch_count; ++i) {
       const uint32_t sid = ex->batch_tokens[i].slot_id;
-      Conversation* conv = slot_ref_acquire(ex, sid);
+      Conversation* conv = snapshot.slots[sid];
       if (conv == nullptr)
         continue;
 
       if (conv->state.load(std::memory_order_acquire) != ConvState::Decoding) {
-        slot_ref_release(conv);
         continue;
       }
 
@@ -806,7 +797,6 @@ void executor_thread(ModelExecutor* ex) {
       }
 
       conv->n_past += 1;
-      slot_ref_release(conv);
     }
 
     // Build output mapping by scanning want_logits in batch order.
@@ -822,13 +812,12 @@ void executor_thread(ModelExecutor* ex) {
 
     for (uint32_t oi = 0; oi < out_count; ++oi) {
       const uint32_t sid = ex->batch_output_slots[oi];
-      Conversation* conv = slot_ref_acquire(ex, sid);
+      Conversation* conv = snapshot.slots[sid];
       if (conv == nullptr)
         continue;
 
       if (conv->state.load(std::memory_order_acquire) != ConvState::Decoding ||
           conv->pending_emit_valid != 0) {
-        slot_ref_release(conv);
         continue;
       }
 
@@ -840,13 +829,10 @@ void executor_thread(ModelExecutor* ex) {
                               std::memory_order_release);
         conv->state.store(ConvState::Failed, std::memory_order_release);
         signal();
-        slot_ref_release(conv);
         continue;
       }
 
       process_logits_for_conv(ex, ops, conv, sid, view);
-
-      slot_ref_release(conv);
     }
 
     rr = (rr + 1u) % ex->max_slots;
