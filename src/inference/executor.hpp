@@ -31,6 +31,7 @@ struct ModelExecutor {
     // Slot registry (atomic pointers; conv_destroy waits for in-flight refs).
     static constexpr uint32_t kMaxSlotsHard = 32;
     std::atomic<Conversation*> slots[kMaxSlotsHard];
+    uint32_t active_slot_mask = 0;
 
     // Work item runs on the runtime worker pool (one model executor occupies one worker).
     std::atomic<bool> started{false};

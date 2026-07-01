@@ -429,12 +429,14 @@ AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity,
     if (preferred < ex->max_slots &&
         ex->slots[preferred].load(std::memory_order_relaxed) == nullptr) {
       ex->slots[preferred].store(conv, std::memory_order_release);
+      ex->active_slot_mask |= 1u << preferred;
       sid = preferred;
     }
   } else {
     for (uint32_t i = 0; i < ex->max_slots; ++i) {
       if (ex->slots[i].load(std::memory_order_relaxed) == nullptr) {
         ex->slots[i].store(conv, std::memory_order_release);
+        ex->active_slot_mask |= 1u << i;
         sid = i;
         break;
       }
@@ -452,7 +454,10 @@ AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity,
 
   const AstralHandle handle = core::register_handle(core::HandleKind::Conversation, conv);
   if (handle == 0) {
+    lock_flag(model->executor_lock);
     ex->slots[sid].store(nullptr, std::memory_order_release);
+    ex->active_slot_mask &= ~(1u << sid);
+    unlock_flag(model->executor_lock);
     conv->slot_id.store(kInvalidExecutorSlot, std::memory_order_release);
     model_release(model);
     ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
@@ -505,6 +510,7 @@ void conv_destroy(Conversation* conv) {
     lock_flag(model->executor_lock);
     if (ex->slots[sid].load(std::memory_order_relaxed) == conv) {
       ex->slots[sid].store(nullptr, std::memory_order_release);
+      ex->active_slot_mask &= ~(1u << sid);
       slot_removed = true;
     }
     unlock_flag(model->executor_lock);
