@@ -236,6 +236,60 @@ public:
         return n;
     }
 
+    /// Consume available items in place, up to `count`.
+    ///
+    /// Preconditions:
+    /// - `fn` must not call back into this ring.
+    /// - Called only by the single consumer.
+    ///
+    /// Returns the number of items consumed. A zero return means the ring was empty.
+    template <typename Fn> size_t consume_batch(size_t count, Fn&& fn) {
+      ASTRAL_ZONE_MICRO_N("astral.spsc.consume_batch");
+      if (count == 0)
+        ASTRAL_UNLIKELY {
+          return 0;
+        }
+
+      uint64_t tail = consumer_tail_cache_;
+      uint64_t head = consumer_head_cache_;
+      size_t available = static_cast<size_t>(head - tail);
+      if (available < count)
+        ASTRAL_UNLIKELY {
+          head = head_.load(std::memory_order_acquire);
+          consumer_head_cache_ = head;
+          available = static_cast<size_t>(head - tail);
+          if (available == 0)
+            ASTRAL_UNLIKELY {
+              return 0;
+            }
+        }
+
+      const bool was_full = (available >= Capacity);
+      const size_t n = count < available ? count : available;
+      const size_t begin = static_cast<size_t>(tail & kIndexMask);
+      size_t first = Capacity - begin;
+      if (first > n) {
+        first = n;
+      }
+
+      for (size_t i = 0; i < first; ++i) {
+        const T& item = buffer_[begin + i];
+        fn(item);
+      }
+      for (size_t i = first; i < n; ++i) {
+        const T& item = buffer_[i - first];
+        fn(item);
+      }
+
+      const uint64_t next_tail = tail + n;
+      consumer_tail_cache_ = next_tail;
+      tail_.store(next_tail, std::memory_order_release);
+      if (was_full) {
+        astral::platform::cpu_signal_event();
+      }
+      return n;
+    }
+
     /// Get approximate size of ring.
     ///
     /// @return Approximate number of items in ring (may be stale).

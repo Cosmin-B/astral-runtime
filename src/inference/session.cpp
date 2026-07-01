@@ -91,39 +91,53 @@ inline uint32_t max_stream_read_batch(uint32_t remaining) {
     return count < kStreamReadBatchCap ? count : kStreamReadBatchCap;
 }
 
+struct SessionStreamDrainConsumer {
+  Session* session;
+  uint8_t*& dst;
+  uint32_t& remaining;
+  uint32_t& total;
+  bool& partial;
+
+  void operator()(const concurrency::StreamToken& token) const {
+    const uint32_t tok_len = token.utf8_len;
+    if (tok_len == 0) {
+      return;
+    }
+    if (tok_len <= remaining) {
+      std::memcpy(dst, token.utf8_data, tok_len);
+      dst += tok_len;
+      remaining -= tok_len;
+      total += tok_len;
+      return;
+    }
+
+    const uint32_t copied = remaining;
+    std::memcpy(dst, token.utf8_data, copied);
+    std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
+    session->pending_len = static_cast<uint8_t>(tok_len);
+    session->pending_off = static_cast<uint8_t>(copied);
+    total += copied;
+    remaining = 0;
+    partial = true;
+  }
+};
+
 int32_t session_stream_drain(Session* session, AstralMutSpanU8 out_buf) {
     uint8_t* dst = out_buf.data;
     uint32_t remaining = out_buf.len;
     uint32_t total = 0;
 
     while (remaining != 0) {
-        concurrency::StreamToken batch[kStreamReadBatchCap];
-        const size_t popped = session->token_ring.pop_batch(batch, max_stream_read_batch(remaining));
-        if (popped == 0) {
-            break;
-        }
-
-        for (size_t i = 0; i < popped; ++i) {
-            const concurrency::StreamToken& token = batch[i];
-            const uint32_t tok_len = token.utf8_len;
-            if (tok_len == 0) {
-                continue;
-            }
-            if (tok_len <= remaining) {
-                std::memcpy(dst, token.utf8_data, tok_len);
-                dst += tok_len;
-                remaining -= tok_len;
-                total += tok_len;
-                continue;
-            }
-
-            std::memcpy(dst, token.utf8_data, remaining);
-            std::memcpy(session->pending_utf8, token.utf8_data, tok_len);
-            session->pending_len = static_cast<uint8_t>(tok_len);
-            session->pending_off = static_cast<uint8_t>(remaining);
-            total += remaining;
-            return static_cast<int32_t>(total);
-        }
+      bool partial = false;
+      SessionStreamDrainConsumer consumer{session, dst, remaining, total, partial};
+      const size_t consumed =
+          session->token_ring.consume_batch(max_stream_read_batch(remaining), consumer);
+      if (consumed == 0) {
+        break;
+      }
+      if (partial) {
+        return static_cast<int32_t>(total);
+      }
     }
 
     return static_cast<int32_t>(total);

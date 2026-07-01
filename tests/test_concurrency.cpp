@@ -742,6 +742,33 @@ TEST(spsc_batch_push_pop_wraparound) {
     ASSERT_TRUE(ring.empty());
 }
 
+TEST(spsc_consume_batch_wraparound) {
+  constexpr size_t kCapacity = 8;
+  SpscRing<TestData, kCapacity> ring;
+
+  TestData input[12]{};
+  for (uint32_t i = 0; i < 12; ++i) {
+    input[i] = TestData{i, 0, i};
+  }
+
+  ASSERT_EQ(ring.push_batch(input, 6), 6u);
+
+  TestData first[4]{};
+  ASSERT_EQ(ring.pop_batch(first, 4), 4u);
+  ASSERT_EQ(ring.push_batch(input + 6, 6), 6u);
+
+  uint32_t seen = 0;
+  const size_t consumed = ring.consume_batch(8, [&](const TestData& current) {
+    ASSERT_EQ(current.value, seen + 4u);
+    ASSERT_EQ(current.sequence, seen + 4u);
+    ++seen;
+  });
+
+  ASSERT_EQ(consumed, 8u);
+  ASSERT_EQ(seen, 8u);
+  ASSERT_TRUE(ring.empty());
+}
+
 TEST(spsc_batch_partial_capacity) {
     SpscRing<TestData, 4> ring;
 

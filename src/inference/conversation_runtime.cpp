@@ -33,37 +33,51 @@ inline uint32_t max_stream_read_batch(uint32_t remaining) {
   return count < kStreamReadBatchCap ? count : kStreamReadBatchCap;
 }
 
+struct ConversationStreamDrainConsumer {
+  Conversation* conv;
+  uint8_t*& dst;
+  uint32_t& remaining;
+  uint32_t& total;
+  bool& partial;
+
+  void operator()(const concurrency::StreamToken& tok) const {
+    const uint32_t tok_len = tok.utf8_len;
+    if (tok_len == 0) {
+      return;
+    }
+    if (tok_len <= remaining) {
+      std::memcpy(dst, tok.utf8_data, tok_len);
+      dst += tok_len;
+      remaining -= tok_len;
+      total += tok_len;
+      return;
+    }
+
+    const uint32_t copied = remaining;
+    std::memcpy(dst, tok.utf8_data, copied);
+    std::memcpy(conv->pending_utf8, tok.utf8_data, tok_len);
+    conv->pending_len = static_cast<uint8_t>(tok_len);
+    conv->pending_off = static_cast<uint8_t>(copied);
+    total += copied;
+    remaining = 0;
+    partial = true;
+  }
+};
+
 int32_t conv_stream_drain(Conversation* conv, AstralMutSpanU8 out_buf) {
   uint8_t* dst = out_buf.data;
   uint32_t remaining = out_buf.len;
   uint32_t total = 0;
 
   while (remaining != 0) {
-    concurrency::StreamToken batch[kStreamReadBatchCap];
-    const size_t popped = conv->token_ring.pop_batch(batch, max_stream_read_batch(remaining));
-    if (popped == 0) {
+    bool partial = false;
+    ConversationStreamDrainConsumer consumer{conv, dst, remaining, total, partial};
+    const size_t consumed =
+        conv->token_ring.consume_batch(max_stream_read_batch(remaining), consumer);
+    if (consumed == 0) {
       break;
     }
-
-    for (size_t i = 0; i < popped; ++i) {
-      const concurrency::StreamToken& tok = batch[i];
-      const uint32_t tok_len = tok.utf8_len;
-      if (tok_len == 0) {
-        continue;
-      }
-      if (tok_len <= remaining) {
-        std::memcpy(dst, tok.utf8_data, tok_len);
-        dst += tok_len;
-        remaining -= tok_len;
-        total += tok_len;
-        continue;
-      }
-
-      std::memcpy(dst, tok.utf8_data, remaining);
-      std::memcpy(conv->pending_utf8, tok.utf8_data, tok_len);
-      conv->pending_len = static_cast<uint8_t>(tok_len);
-      conv->pending_off = static_cast<uint8_t>(remaining);
-      total += remaining;
+    if (partial) {
       platform::cpu_signal_event();
       return static_cast<int32_t>(total);
     }
