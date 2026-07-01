@@ -122,6 +122,13 @@ struct SessionStreamDrainConsumer {
   }
 };
 
+struct SessionMetaDrainConsumer {
+  AstralTokenMeta* out_events;
+  uint32_t& count;
+
+  void operator()(const AstralTokenMeta& ev) const { out_events[count++] = ev; }
+};
+
 int32_t session_stream_drain(Session* session, AstralMutSpanU8 out_buf) {
     uint8_t* dst = out_buf.data;
     uint32_t remaining = out_buf.len;
@@ -2187,14 +2194,10 @@ int32_t stream_read_meta(Session* session, AstralTokenMeta* out_events, uint32_t
         return ASTRAL_E_STATE;
     }
 
-    AstralTokenMeta ev{};
-    if (session->meta_ring.pop(&ev)) {
-        uint32_t n = 0;
-        out_events[n++] = ev;
-        while (n < capacity && session->meta_ring.pop(&ev)) {
-            out_events[n++] = ev;
-        }
-        return static_cast<int32_t>(n);
+    uint32_t n = 0;
+    SessionMetaDrainConsumer consumer{out_events, n};
+    if (session->meta_ring.consume_batch(capacity, consumer) != 0) {
+      return static_cast<int32_t>(n);
     }
 
     SessionState state = session->state.load(std::memory_order_acquire);
@@ -2218,14 +2221,10 @@ int32_t stream_read_meta(Session* session, AstralTokenMeta* out_events, uint32_t
     uint32_t spins = 0;
 
     while (true) {
-        if (session->meta_ring.pop(&ev)) {
-            uint32_t n = 0;
-            out_events[n++] = ev;
-            while (n < capacity && session->meta_ring.pop(&ev)) {
-                out_events[n++] = ev;
-            }
-            return static_cast<int32_t>(n);
-        }
+      n = 0;
+      if (session->meta_ring.consume_batch(capacity, consumer) != 0) {
+        return static_cast<int32_t>(n);
+      }
 
         state = session->state.load(std::memory_order_acquire);
         if (state == SessionState::Completed || state == SessionState::Canceled || state == SessionState::Failed) {

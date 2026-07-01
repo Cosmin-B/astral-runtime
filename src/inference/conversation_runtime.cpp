@@ -64,6 +64,13 @@ struct ConversationStreamDrainConsumer {
   }
 };
 
+struct ConversationMetaDrainConsumer {
+  AstralTokenMeta* out_events;
+  uint32_t& count;
+
+  void operator()(const AstralTokenMeta& ev) const { out_events[count++] = ev; }
+};
+
 int32_t conv_stream_drain(Conversation* conv, AstralMutSpanU8 out_buf) {
   uint8_t* dst = out_buf.data;
   uint32_t remaining = out_buf.len;
@@ -1372,13 +1379,9 @@ int32_t conv_stream_read_meta(Conversation* conv, AstralTokenMeta* out_events, u
     return ASTRAL_E_STATE;
   }
 
-  AstralTokenMeta ev{};
-  if (conv->meta_ring.pop(&ev)) {
-    out_events[0] = ev;
-    uint32_t n = 1;
-    while (n < capacity && conv->meta_ring.pop(&ev)) {
-      out_events[n++] = ev;
-    }
+  uint32_t n = 0;
+  ConversationMetaDrainConsumer consumer{out_events, n};
+  if (conv->meta_ring.consume_batch(capacity, consumer) != 0) {
     platform::cpu_signal_event();
     return static_cast<int32_t>(n);
   }
@@ -1394,12 +1397,8 @@ int32_t conv_stream_read_meta(Conversation* conv, AstralTokenMeta* out_events, u
   uint32_t spins = 0;
 
   while (get_ticks() < deadline) {
-    if (conv->meta_ring.pop(&ev)) {
-      out_events[0] = ev;
-      uint32_t n = 1;
-      while (n < capacity && conv->meta_ring.pop(&ev)) {
-        out_events[n++] = ev;
-      }
+    n = 0;
+    if (conv->meta_ring.consume_batch(capacity, consumer) != 0) {
       platform::cpu_signal_event();
       return static_cast<int32_t>(n);
     }
