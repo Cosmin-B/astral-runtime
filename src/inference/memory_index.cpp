@@ -2552,6 +2552,12 @@ struct MemoryGraphSearchBatchJob {
   GraphSearchScratch* scratch;
 };
 
+inline void memory_parallel_job_complete(std::atomic<uint32_t>* remaining) {
+  if (remaining->fetch_sub(1, std::memory_order_release) == 1u) {
+    astral::platform::cpu_signal_event();
+  }
+}
+
 inline uint32_t save_graph_count_bytes(uint32_t version) {
   return version >= kSaveVersionCompactGraphCounts ? sizeof(uint8_t) : sizeof(uint32_t);
 }
@@ -4518,8 +4524,7 @@ void memory_search_graph_batch_work(void* user) {
     memory_search_graph_with_scratch(job->index, job->desc, query, results, &count, job->scratch);
     job->out_counts[i] = count;
   }
-  job->remaining->fetch_sub(1, std::memory_order_release);
-  astral::platform::cpu_signal_event();
+  memory_parallel_job_complete(job->remaining);
 }
 
 bool memory_search_graph_batch_parallel(MemoryIndex* index, const AstralMemorySearchDesc* desc,
@@ -5297,8 +5302,7 @@ void memory_search_record_shard_work(void* user) {
   MemorySearchRecordShardJob* job = static_cast<MemorySearchRecordShardJob*>(user);
   memory_search_flat_batch_range(job->index, job->desc, job->queries, job->query_count, job->begin,
                                  job->end, job->local_results, job->local_counts);
-  job->remaining->fetch_sub(1, std::memory_order_release);
-  astral::platform::cpu_signal_event();
+  memory_parallel_job_complete(job->remaining);
 }
 
 bool memory_search_flat_batch_record_parallel(MemoryIndex* index,
@@ -5383,8 +5387,7 @@ void memory_search_flat_batch_work(void* user) {
       job->index, job->desc, job->queries + static_cast<size_t>(job->begin) * job->index->dim,
       count, job->out_results + static_cast<size_t>(job->begin) * job->desc->top_k,
       job->out_counts + job->begin);
-  job->remaining->fetch_sub(1, std::memory_order_release);
-  astral::platform::cpu_signal_event();
+  memory_parallel_job_complete(job->remaining);
 }
 
 bool memory_search_flat_batch_parallel(MemoryIndex* index, const AstralMemorySearchDesc* desc,
@@ -5594,8 +5597,7 @@ void memory_add_preprocess_range(MemoryIndex* index, const float* vectors, const
 void memory_add_preprocess_work(void* user) {
   MemoryAddPreprocessJob* job = static_cast<MemoryAddPreprocessJob*>(user);
   memory_add_preprocess_range(job->index, job->vectors, job->slots, job->begin, job->end);
-  job->remaining->fetch_sub(1, std::memory_order_release);
-  astral::platform::cpu_signal_event();
+  memory_parallel_job_complete(job->remaining);
 }
 
 bool memory_add_preprocess_parallel(MemoryIndex* index, const float* vectors, const uint32_t* slots,
