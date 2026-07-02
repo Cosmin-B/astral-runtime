@@ -355,7 +355,6 @@ AstralErr embedder_enqueue(Embedder* embedder, AstralSpanU8 text, uint64_t* out_
     }
 
     Embedder::Slot& slot = e->slots[idx];
-    slot_clear_buffers(slot);
 
     uint64_t counter = e->ticket_counter.fetch_add(1, std::memory_order_relaxed);
     if (counter == 0) {
@@ -410,7 +409,6 @@ AstralErr embedder_enqueue_image(Embedder* embedder, const AstralImageDesc* imag
     }
 
     Embedder::Slot& slot = e->slots[idx];
-    slot_clear_buffers(slot);
 
     uint64_t counter = e->ticket_counter.fetch_add(1, std::memory_order_relaxed);
     if (counter == 0) {
@@ -462,7 +460,6 @@ AstralErr embedder_enqueue_audio(Embedder* embedder, const AstralAudioDesc* audi
     }
 
     Embedder::Slot& slot = e->slots[idx];
-    slot_clear_buffers(slot);
 
     uint64_t counter = e->ticket_counter.fetch_add(1, std::memory_order_relaxed);
     if (counter == 0) {
@@ -518,7 +515,6 @@ AstralErr embedder_enqueue_multimodal(Embedder* embedder,
     }
 
     Embedder::Slot& slot = e->slots[idx];
-    slot_clear_buffers(slot);
 
     uint64_t counter = e->ticket_counter.fetch_add(1, std::memory_order_relaxed);
     if (counter == 0) {
