@@ -64,13 +64,6 @@ struct ConversationStreamDrainConsumer {
   }
 };
 
-struct ConversationMetaDrainConsumer {
-  AstralTokenMeta* out_events;
-  uint32_t& count;
-
-  void operator()(const AstralTokenMeta& ev) const { out_events[count++] = ev; }
-};
-
 int32_t conv_stream_drain(Conversation* conv, AstralMutSpanU8 out_buf) {
   uint8_t* dst = out_buf.data;
   uint32_t remaining = out_buf.len;
@@ -1379,9 +1372,8 @@ int32_t conv_stream_read_meta(Conversation* conv, AstralTokenMeta* out_events, u
     return ASTRAL_E_STATE;
   }
 
-  uint32_t n = 0;
-  ConversationMetaDrainConsumer consumer{out_events, n};
-  if (conv->meta_ring.consume_batch(capacity, consumer) != 0) {
+  size_t n = conv->meta_ring.pop_batch(out_events, capacity);
+  if (n != 0) {
     platform::cpu_signal_event();
     return static_cast<int32_t>(n);
   }
@@ -1397,8 +1389,8 @@ int32_t conv_stream_read_meta(Conversation* conv, AstralTokenMeta* out_events, u
   uint32_t spins = 0;
 
   while (get_ticks() < deadline) {
-    n = 0;
-    if (conv->meta_ring.consume_batch(capacity, consumer) != 0) {
+    n = conv->meta_ring.pop_batch(out_events, capacity);
+    if (n != 0) {
       platform::cpu_signal_event();
       return static_cast<int32_t>(n);
     }

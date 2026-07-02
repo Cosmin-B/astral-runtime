@@ -122,13 +122,6 @@ struct SessionStreamDrainConsumer {
   }
 };
 
-struct SessionMetaDrainConsumer {
-  AstralTokenMeta* out_events;
-  uint32_t& count;
-
-  void operator()(const AstralTokenMeta& ev) const { out_events[count++] = ev; }
-};
-
 int32_t session_stream_drain(Session* session, AstralMutSpanU8 out_buf) {
     uint8_t* dst = out_buf.data;
     uint32_t remaining = out_buf.len;
@@ -2194,9 +2187,8 @@ int32_t stream_read_meta(Session* session, AstralTokenMeta* out_events, uint32_t
         return ASTRAL_E_STATE;
     }
 
-    uint32_t n = 0;
-    SessionMetaDrainConsumer consumer{out_events, n};
-    if (session->meta_ring.consume_batch(capacity, consumer) != 0) {
+    size_t n = session->meta_ring.pop_batch(out_events, capacity);
+    if (n != 0) {
       return static_cast<int32_t>(n);
     }
 
@@ -2221,8 +2213,8 @@ int32_t stream_read_meta(Session* session, AstralTokenMeta* out_events, uint32_t
     uint32_t spins = 0;
 
     while (true) {
-      n = 0;
-      if (session->meta_ring.consume_batch(capacity, consumer) != 0) {
+      n = session->meta_ring.pop_batch(out_events, capacity);
+      if (n != 0) {
         return static_cast<int32_t>(n);
       }
 
