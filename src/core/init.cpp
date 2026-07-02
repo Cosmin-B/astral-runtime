@@ -749,7 +749,8 @@ static inline void bind_worker_tls(uint32_t idx) {
 }
 
 static inline uint32_t next_thread_worker_id(uint32_t n) {
-  if (n == 0) {
+  if (n <= 1) {
+    g_tls_submit_rr = 0;
     return 0;
   }
 
@@ -842,7 +843,7 @@ AstralErr submit_work_affine(uint32_t worker_id, WorkFn fn, void* user) {
     }
 #endif
     const uint32_t n = g_runtime.thread_count;
-    const uint32_t idx = n > 0 ? (worker_id % n) : 0;
+    const uint32_t idx = n > 1 ? (worker_id % n) : 0;
     g_runtime.work_queues[idx].push_wait(WorkItem{fn, user});
 #else
     (void)worker_id;
