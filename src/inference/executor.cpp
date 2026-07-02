@@ -56,6 +56,11 @@ inline uint32_t next_mask_slot(uint32_t mask) {
 #endif
 }
 
+inline uint32_t advance_slot_rr(uint32_t rr, uint32_t max_slots) {
+  ++rr;
+  return rr == max_slots ? 0u : rr;
+}
+
 struct SlotSnapshot {
   ModelExecutor* ex = nullptr;
   Conversation* slots[ModelExecutor::kMaxSlotsHard]{};
@@ -791,7 +796,7 @@ void executor_thread(ModelExecutor* ex) {
     }
 
     if (batch_count == 0) {
-      rr = (rr + 1u) % ex->max_slots;
+      rr = advance_slot_rr(rr, ex->max_slots);
       continue;
     }
 
@@ -816,7 +821,7 @@ void executor_thread(ModelExecutor* ex) {
         conv->state.store(ConvState::Failed, std::memory_order_release);
       }
       signal();
-      rr = (rr + 1u) % ex->max_slots;
+      rr = advance_slot_rr(rr, ex->max_slots);
       continue;
     }
 
@@ -891,7 +896,7 @@ void executor_thread(ModelExecutor* ex) {
       process_logits_for_conv(ex, ops, conv, sid, view);
     }
 
-    rr = (rr + 1u) % ex->max_slots;
+    rr = advance_slot_rr(rr, ex->max_slots);
     signal();
   }
 }
