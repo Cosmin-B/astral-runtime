@@ -866,10 +866,10 @@ uint32_t runtime_assign_worker_id() {
     }
 
 #if ASTRAL_ENABLE_THREADS
-    const uint32_t n = g_runtime.thread_count;
     if (g_tls_worker_id != kInvalidWorkerId) {
-      return n > 0 ? (g_tls_worker_id % n) : 0;
+      return g_tls_worker_id;
     }
+    const uint32_t n = g_runtime.thread_count;
     return next_thread_worker_id(n);
 #else
     return 0;
