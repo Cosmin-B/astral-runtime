@@ -40,15 +40,8 @@ public:
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
 
     SpscRing()
-        : head_(0),
-          tail_(0),
-          producer_head_cache_(0),
-          producer_tail_cache_(0),
-          consumer_head_cache_(0),
-          consumer_tail_cache_(0) {
-        // Initialize buffer to zero
-        std::memset(buffer_, 0, sizeof(buffer_));
-    }
+        : head_(0), tail_(0), producer_head_cache_(0), producer_tail_cache_(0),
+          consumer_head_cache_(0), consumer_tail_cache_(0) {}
 
     ~SpscRing() = default;
 
