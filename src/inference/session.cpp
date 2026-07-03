@@ -751,8 +751,6 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
 
     // Stop sequences (none by default).
     session->stop_seq_count = 0;
-    std::memset(session->stop_seq_lens, 0, sizeof(session->stop_seq_lens));
-    std::memset(session->stop_seq_tokens, 0, sizeof(session->stop_seq_tokens));
     session->stop_max_len = 0;
 
     // Logprobs meta stream disabled by default.
@@ -1330,8 +1328,6 @@ AstralErr session_stop_clear(Session* session) {
     }
 
     session->stop_seq_count = 0;
-    std::memset(session->stop_seq_lens, 0, sizeof(session->stop_seq_lens));
-    std::memset(session->stop_seq_tokens, 0, sizeof(session->stop_seq_tokens));
     session->stop_max_len = 0;
     return ASTRAL_OK;
 }
