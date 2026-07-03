@@ -498,11 +498,13 @@ inline AstralErr session_push_text_chunk(Session* session, uint32_t token_start,
         return ASTRAL_E_NOMEM;
     }
     PromptChunk& chunk = session->prompt_chunks[session->prompt_chunk_count++];
-    chunk = PromptChunk{};
     chunk.kind = PromptChunkKind::Text;
     chunk.finalize = finalize;
     chunk.token_start = token_start;
     chunk.token_count = token_count;
+    chunk.owned_buffer = nullptr;
+    chunk.owned_bytes = 0;
+    chunk.owned_align = 1;
     return ASTRAL_OK;
 }
 
