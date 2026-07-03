@@ -244,7 +244,7 @@ AstralErr emit_word_chunks(const AstralChunkerDesc* desc, AstralSpanU8 text,
   uint32_t required = 0;
   uint32_t pos = 0;
   while (pos < text.len) {
-    UnitRange first{};
+    UnitRange first;
     uint32_t scan = pos;
     if (!next_word_unit(text, &scan, &first)) {
       break;
@@ -256,7 +256,7 @@ AstralErr emit_word_chunks(const AstralChunkerDesc* desc, AstralSpanU8 text,
     uint32_t overlap_begin = first.begin;
 
     while (units < max_units) {
-      UnitRange unit{};
+      UnitRange unit;
       const uint32_t before = scan;
       if (!next_word_unit(text, &scan, &unit)) {
         scan = before;
@@ -305,7 +305,7 @@ AstralErr emit_text_chunks(const AstralChunkerDesc* desc, AstralSpanU8 text,
 
   uint32_t pos = 0;
   while (pos < text.len) {
-    UnitRange first{};
+    UnitRange first;
     uint32_t scan = pos;
     if (!next_unit(desc, text, &scan, &first)) {
       break;
@@ -317,7 +317,7 @@ AstralErr emit_text_chunks(const AstralChunkerDesc* desc, AstralSpanU8 text,
     uint32_t overlap_begin = first.begin;
 
     while (units < desc->max_units) {
-      UnitRange unit{};
+      UnitRange unit;
       const uint32_t before = scan;
       if (!next_unit(desc, text, &scan, &unit)) {
         scan = before;
