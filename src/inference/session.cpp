@@ -475,9 +475,6 @@ inline void session_adapter_refs_clear(Session* session) {
         }
     }
     session->adapter_count = 0;
-    std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
-    std::memset(session->adapter_refs, 0, sizeof(session->adapter_refs));
-    std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
 }
 
 inline bool image_desc_valid(const AstralImageDesc* image) {
@@ -760,9 +757,6 @@ AstralErr session_create(const AstralSessionDesc* desc, Session** out_session) {
 
     // Adapters.
     session->adapter_count = 0;
-    std::memset(session->adapter_handles, 0, sizeof(session->adapter_handles));
-    std::memset(session->adapter_refs, 0, sizeof(session->adapter_refs));
-    std::memset(session->adapter_scales, 0, sizeof(session->adapter_scales));
 
     // Slot id.
     session->slot_id = 0;
