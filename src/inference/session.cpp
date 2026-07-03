@@ -30,7 +30,6 @@ Session::Session(Model* model_,
     , prompt_tokens(nullptr)
     , prompt_count(0)
     , prompt_capacity(0)
-    , prompt_chunks{}
     , prompt_chunk_count(0)
     , prompt_chunk_index(0)
     , prompt_chunk_token_off(0)
@@ -63,13 +62,8 @@ Session::Session(Model* model_,
     , token_bos(-1)
     , token_eos(-1)
     , stop_seq_count(0)
-    , stop_seq_lens{}
-    , stop_seq_tokens{}
     , stop_max_len(0)
     , adapter_count(0)
-    , adapter_handles{}
-    , adapter_refs{}
-    , adapter_scales{}
     , toolset(nullptr)
     , tool_choice_mode(ASTRAL_TOOL_CHOICE_AUTO)
     , slot_id(0)
