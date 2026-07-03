@@ -4553,8 +4553,8 @@ bool memory_search_graph_batch_parallel(MemoryIndex* index, const AstralMemorySe
     worker_count = query_count;
   }
 
-  MemoryGraphSearchBatchJob jobs[kMemorySearchBatchParallelMaxWorkers]{};
-  GraphSearchScratch fallback_scratch[kMemorySearchBatchParallelMaxWorkers]{};
+  MemoryGraphSearchBatchJob jobs[kMemorySearchBatchParallelMaxWorkers];
+  GraphSearchScratch fallback_scratch[kMemorySearchBatchParallelMaxWorkers];
   bool claimed_index_scratch = false;
   if (index->graph_batch_scratch_count >= worker_count &&
       index->graph_batch_scratch_claimed.exchange(1u, std::memory_order_acquire) == 0u) {
