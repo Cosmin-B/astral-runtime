@@ -67,16 +67,16 @@ public:
     ArenaHeap() = default;
 
     void reset() noexcept {
-        epoch_.fetch_add(1, std::memory_order_relaxed);
-        base_ = nullptr;
-        size_ = 0;
-        used_ = 0;
-        arena_lock_.clear(std::memory_order_relaxed);
-        for (auto& b : buckets_) {
-            b.free_list = nullptr;
-            b.grow = 0;
-            b.lock.clear(std::memory_order_relaxed);
-        }
+      ++epoch_;
+      base_ = nullptr;
+      size_ = 0;
+      used_ = 0;
+      arena_lock_.clear(std::memory_order_relaxed);
+      for (auto& b : buckets_) {
+        b.free_list = nullptr;
+        b.grow = 0;
+        b.lock.clear(std::memory_order_relaxed);
+      }
     }
 
     void init(void* base, size_t size) noexcept {
@@ -106,7 +106,7 @@ public:
             return nullptr;
         }
 
-        ThreadCache& tc = tls_cache(epoch_.load(std::memory_order_relaxed));
+        ThreadCache& tc = tls_cache(epoch_);
         void*& local_head = tc.local_lists[bucket];
         uint16_t& local_count = tc.local_counts[bucket];
         if (local_head != nullptr) {
@@ -182,7 +182,7 @@ public:
             return;
         }
 
-        ThreadCache& tc = tls_cache(epoch_.load(std::memory_order_relaxed));
+        ThreadCache& tc = tls_cache(epoch_);
         void*& local_head = tc.local_lists[bucket];
         uint16_t& local_count = tc.local_counts[bucket];
 
@@ -414,7 +414,7 @@ private:
     uint8_t* base_{nullptr};
     size_t size_{0};
     size_t used_{0};
-    std::atomic<uint64_t> epoch_{1};
+    uint64_t epoch_{1};
     std::atomic_flag arena_lock_ = ATOMIC_FLAG_INIT;
     Bucket buckets_[kBucketCount]{};
 };
