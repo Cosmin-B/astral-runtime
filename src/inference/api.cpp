@@ -715,7 +715,7 @@ inline void prompt_cache_remove_entry(PromptCache* cache, PromptCacheEntry* entr
     uint32_t slot = (hole + 1u) & cache->table_mask;
     while (cache->entries[slot].state == kPromptCacheSlotOccupied) {
         PromptCacheEntry moved = cache->entries[slot];
-        cache->entries[slot] = {};
+        cache->entries[slot].state = kPromptCacheSlotEmpty;
 
         PromptCacheEntry* dst = prompt_cache_empty_entry(cache, moved.hash);
         *dst = moved;
