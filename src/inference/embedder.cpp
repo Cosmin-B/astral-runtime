@@ -9,6 +9,10 @@
 #include <cstdint>
 #include <cstring>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 namespace astral::inference {
 
 constexpr uint32_t kMaxEmbedTokens = 2048;
@@ -108,12 +112,13 @@ static uint32_t free_slot_bit(uint32_t idx) {
 }
 
 static uint32_t first_free_slot(uint32_t mask) {
-    for (uint32_t idx = 0; idx < kMaxInflight; ++idx) {
-        if ((mask & free_slot_bit(idx)) != 0) {
-            return idx;
-        }
-    }
-    return kNoFreeSlot;
+#if defined(_MSC_VER)
+  unsigned long idx = 0;
+  _BitScanForward(&idx, mask);
+  return static_cast<uint32_t>(idx);
+#else
+  return static_cast<uint32_t>(__builtin_ctz(mask));
+#endif
 }
 
 static uint32_t free_slot_count(uint32_t mask) {
