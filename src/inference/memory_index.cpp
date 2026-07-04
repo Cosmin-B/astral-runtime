@@ -77,6 +77,7 @@ constexpr uint64_t kBytesPerMiB = kBytesPerKiB * kBytesPerKiB;
 constexpr uint64_t kGraphCompactExactSearchMaxBytes = 16 * kBytesPerMiB;
 constexpr uint32_t kFlatQ8PrefetchDistance = 4;
 constexpr uint32_t kFlatQ8PrefetchMinCount = 32768;
+constexpr uint32_t kInlineSearchCursorResults = 8;
 constexpr uint32_t kGraphMaxLevels = 16;
 constexpr uint32_t kMemoryBatchStackQueries = 16;
 constexpr uint32_t kMemoryAddStackSlots = 256;
@@ -2485,6 +2486,7 @@ struct MemorySearchCursor {
   uint32_t offset;
   std::atomic<uint32_t> canceled;
   AstralMemorySearchResult* results;
+  AstralMemorySearchResult inline_results[kInlineSearchCursorResults];
 };
 
 struct SnapshotGraphLayout {
@@ -5531,7 +5533,7 @@ void destroy_search_cursor(MemorySearchCursor* cursor) {
   if (cursor == nullptr) {
     return;
   }
-  if (cursor->results != nullptr) {
+  if (cursor->results != nullptr && cursor->results != cursor->inline_results) {
     core::runtime_free_array(cursor->results, cursor->capacity);
     cursor->results = nullptr;
   }
@@ -6224,7 +6226,9 @@ AstralErr memory_search_begin(MemoryIndex* index, const AstralMemorySearchDesc* 
   cursor->count = kNoResults;
   cursor->offset = 0;
   cursor->canceled.store(0, std::memory_order_relaxed);
-  cursor->results = core::runtime_alloc_array<AstralMemorySearchResult>(capacity);
+  cursor->results = capacity <= kInlineSearchCursorResults
+                        ? cursor->inline_results
+                        : core::runtime_alloc_array<AstralMemorySearchResult>(capacity);
   if (capacity != kNoResults && cursor->results == nullptr) {
     destroy_search_cursor(cursor);
     return ASTRAL_E_NOMEM;
