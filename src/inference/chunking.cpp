@@ -348,21 +348,18 @@ AstralErr emit_text_chunks(const AstralChunkerDesc* desc, AstralSpanU8 text,
 AstralErr emit_token_chunks(const AstralChunkerDesc* desc, uint32_t token_count,
                             AstralChunkRange* out_ranges, uint32_t max_ranges,
                             uint32_t* out_count) {
-  uint32_t required = 0;
+  const uint32_t required = token_chunk_count_fast(desc, token_count);
+  const uint32_t writable =
+      out_ranges == nullptr ? 0u : (max_ranges < required ? max_ranges : required);
+  const uint32_t stride = desc->max_units - desc->overlap_units;
   uint32_t begin = 0;
-  while (begin < token_count) {
+  for (uint32_t chunk_id = 0; chunk_id < writable; ++chunk_id) {
     uint32_t end = begin + desc->max_units;
     if (end > token_count) {
       end = token_count;
     }
-    if (out_ranges != nullptr && required < max_ranges) {
-      fill_token_range(desc, required, begin, end, &out_ranges[required]);
-    }
-    ++required;
-    if (end >= token_count) {
-      break;
-    }
-    begin = desc->overlap_units != 0 ? end - desc->overlap_units : end;
+    fill_token_range(desc, chunk_id, begin, end, &out_ranges[chunk_id]);
+    begin += stride;
   }
 
   *out_count = required;
