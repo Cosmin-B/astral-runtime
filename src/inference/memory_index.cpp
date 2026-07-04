@@ -4633,7 +4633,7 @@ void memory_search_dot(MemoryIndex* index, const AstralMemorySearchDesc* desc, c
       continue;
     }
 
-    AstralMemorySearchResult candidate{};
+    AstralMemorySearchResult candidate;
     fill_result(&candidate, s, score);
     insert_result(out_results, desc->top_k, &filled, candidate);
   }
