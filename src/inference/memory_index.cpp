@@ -4664,7 +4664,7 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
             !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
           continue;
         }
-        AstralMemorySearchResult candidate{};
+        AstralMemorySearchResult candidate;
         fill_result(&candidate, s, score);
         insert_result(out_results, desc->top_k, &filled, candidate);
       }
