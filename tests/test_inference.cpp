@@ -4696,6 +4696,25 @@ TEST(inference_adapters_mock) {
     ASSERT_EQ(attached_adapter, adapter);
     ASSERT_EQ(attached_scale, kUpdatedAdapterScale);
 
+    err = astral_session_reset(session, nullptr);
+    ASSERT_EQ(err, ASTRAL_OK);
+
+    uint64_t state_bytes = 0;
+    err = astral_session_state_size(session, &state_bytes);
+    ASSERT_EQ(err, ASTRAL_OK);
+    std::vector<uint8_t> state(static_cast<size_t>(state_bytes));
+    AstralMutSpanU8 state_out{};
+    state_out.data = state.data();
+    state_out.len = static_cast<uint32_t>(state.size());
+    uint64_t state_written = 0;
+    err = astral_session_state_save(session, state_out, &state_written);
+    ASSERT_EQ(err, ASTRAL_OK);
+    ASSERT_EQ(state_written, state_bytes);
+    uint32_t backend_adapter_count = 0;
+    std::memcpy(&backend_adapter_count, state.data() + state.size() - sizeof(backend_adapter_count),
+                sizeof(backend_adapter_count));
+    ASSERT_EQ(backend_adapter_count, kAttachedPrimaryAdapterCount);
+
     AstralHandle overflow_adapters[ASTRAL_SESSION_ADAPTERS_MAX]{};
     for (uint32_t i = kAttachedPrimaryAdapterCount; i < ASTRAL_SESSION_ADAPTERS_MAX; ++i) {
         err = astral_model_adapter_load(model, &ad, &overflow_adapters[i]);

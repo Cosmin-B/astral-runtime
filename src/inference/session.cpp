@@ -1212,14 +1212,16 @@ AstralErr session_reset(Session* session, const AstralSessionDesc* new_desc) {
     }
 
     // Re-apply session-scoped generation controls that are provider-owned.
-    if (ops->session_adapter_clear != nullptr && ops->session_adapter_add != nullptr) {
-        (void)ops->session_adapter_clear(session->backend_session_ctx);
-        for (uint32_t i = 0; i < session->adapter_count; ++i) {
-            Adapter* a = session->adapter_refs[i];
-            if (a != nullptr && a->backend_adapter_ctx != nullptr) {
-                (void)ops->session_adapter_add(session->backend_session_ctx, a->backend_adapter_ctx, session->adapter_scales[i]);
-            }
+    if (session->adapter_count != 0 && ops->session_adapter_clear != nullptr &&
+        ops->session_adapter_add != nullptr) {
+      (void)ops->session_adapter_clear(session->backend_session_ctx);
+      for (uint32_t i = 0; i < session->adapter_count; ++i) {
+        Adapter* a = session->adapter_refs[i];
+        if (a != nullptr && a->backend_adapter_ctx != nullptr) {
+          (void)ops->session_adapter_add(session->backend_session_ctx, a->backend_adapter_ctx,
+                                         session->adapter_scales[i]);
         }
+      }
     }
 
     if (ops->session_set_slot != nullptr && session->slot_id != 0) {
