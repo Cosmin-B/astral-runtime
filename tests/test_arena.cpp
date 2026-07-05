@@ -6,8 +6,9 @@
  * - per-session scratch blocks are deterministic (fixed pool) and reusable
  */
 
-#include "test_framework.hpp"
 #include "../include/astral_rt.h"
+#include "../src/core/runtime_state.hpp"
+#include "test_framework.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -136,6 +137,29 @@ TEST(arena_init2_borrowed_and_reuse_blocks) {
 
     astral_model_release(model);
     astral_shutdown();
+}
+
+TEST(arena_runtime_alloc_size_class_boundaries) {
+  alignas(64) static uint8_t arena[8u * 1024u * 1024u];
+
+  AstralInit2 cfg = make_borrowed_arena_init(arena, sizeof(arena));
+  ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
+
+  for (size_t base = 32; base <= 4096; base *= 2) {
+    const size_t step = base / 8;
+    for (size_t sub = 0; sub < 8; ++sub) {
+      const size_t boundary = base + sub * step;
+      for (size_t size : {boundary, boundary + 1}) {
+        void* ptr = astral::core::runtime_alloc(size, 16);
+        ASSERT_NOT_NULL(ptr);
+        ASSERT_EQ(reinterpret_cast<uintptr_t>(ptr) & 15u, 0u);
+        std::memset(ptr, 0xA5, size);
+        astral::core::runtime_free(ptr, size, 16);
+      }
+    }
+  }
+
+  astral_shutdown();
 }
 
 TEST(arena_init2_owned_smoke) {

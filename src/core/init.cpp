@@ -303,30 +303,19 @@ private:
     }
 
     static inline uint32_t bucket_index_for(size_t req) noexcept {
-        const size_t bs = bucket_size_for(req);
-        if (bs == 0) return kInvalidBucket;
+      if (req < kMinPow2)
+        return 0;
+      if (req > kMaxPow2)
+        return kInvalidBucket;
 
-        uint32_t rounded = static_cast<uint32_t>(bs);
-        uint32_t hb = highest_bit_nonzero_u32(rounded);
-        uint32_t base = 1u << hb;
-        if (base > rounded) {
-            base >>= 1u;
-            --hb;
-        }
-        if (base < kMinPow2) {
-            base = kMinPow2;
-            hb = highest_bit_nonzero_u32(kMinPow2);
-        }
-        if (base > kMaxPow2) return kInvalidBucket;
-
-        const uint32_t level = hb - highest_bit_nonzero_u32(kMinPow2);
-        if (level >= kLevels) return kInvalidBucket;
-
-        const uint32_t step = (base / kSubdiv) != 0 ? (base / kSubdiv) : 1u;
-        const uint32_t sub = (rounded - base) / step;
-        if (sub >= kSubdiv) return kInvalidBucket;
-
-        return level * kSubdiv + sub;
+      const uint32_t n = static_cast<uint32_t>(req);
+      const uint32_t hb = highest_bit_nonzero_u32(n);
+      const uint32_t base = 1u << hb;
+      const uint32_t step_shift = hb - highest_bit_nonzero_u32(kSubdiv);
+      const uint32_t step_mask = (1u << step_shift) - 1u;
+      const uint32_t sub = (n - base + step_mask) >> step_shift;
+      // sub == kSubdiv naturally advances to the next level's first bucket.
+      return (hb - highest_bit_nonzero_u32(kMinPow2)) * kSubdiv + sub;
     }
 
     void lock_bucket(Bucket& b) noexcept {
