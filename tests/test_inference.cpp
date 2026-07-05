@@ -5,14 +5,16 @@
  * Validates: session create/destroy, feed/decode, streaming, sampler configuration.
  */
 
-#include "test_framework.hpp"
 #include "../include/astral_rt.h"
+#include "../src/inference/sampler.hpp"
+#include "test_framework.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <thread>
 
@@ -1197,6 +1199,34 @@ TEST(inference_sampler_diverse) {
 
     // This tests the configuration
     astral_shutdown();
+}
+
+TEST(inference_sampler_greedy_argmax_edges) {
+  astral::inference::SamplerConfig sampler{};
+  sampler.temperature = 0.0f;
+  sampler.top_p = 1.0f;
+  sampler.typical_p = 1.0f;
+  sampler.repeat_penalty = 1.0f;
+  uint32_t rng_state = 1;
+  float mirostat_mu = 0.0f;
+  const auto sample = [&](const float* logits, size_t count) {
+    return astral::inference::sample_token(logits, count, sampler, &rng_state, nullptr, nullptr, -1,
+                                           &mirostat_mu, 0, nullptr, nullptr, nullptr, 0, nullptr,
+                                           nullptr, nullptr);
+  };
+
+  const float single[] = {3.0f};
+  ASSERT_EQ(sample(single, 1), 0u);
+
+  const float tied_tail[] = {1.0f, 5.0f, 2.0f, 5.0f, 4.0f, 5.0f, 3.0f};
+  ASSERT_EQ(sample(tied_tail, 7), 1u);
+
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float nan_first[] = {nan, 100.0f, 200.0f, 300.0f, 400.0f};
+  ASSERT_EQ(sample(nan_first, 5), 0u);
+
+  const float nan_interior[] = {1.0f, nan, 7.0f, 4.0f, nan, 6.0f};
+  ASSERT_EQ(sample(nan_interior, 6), 2u);
 }
 
 //

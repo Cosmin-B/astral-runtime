@@ -1,3 +1,4 @@
+#include "../platform/compiler.hpp"
 #include "sampler.hpp"
 
 #include <algorithm>
@@ -146,6 +147,36 @@ inline uint32_t argmax(const float* logits, size_t n) {
         }
     }
     return static_cast<uint32_t>(best);
+}
+
+inline uint32_t argmax_four_lanes(const float* logits, size_t n) {
+  size_t best_ids[4] = {0, 0, 0, 0};
+  float best_vals[4] = {logits[0], logits[0], logits[0], logits[0]};
+  size_t i = 1;
+  for (; i + 3 < n; i += 4) {
+    for (size_t lane = 0; lane < 4; ++lane) {
+      const float value = logits[i + lane];
+      if (value > best_vals[lane]) {
+        best_vals[lane] = value;
+        best_ids[lane] = i + lane;
+      }
+    }
+  }
+  for (; i < n; ++i) {
+    if (logits[i] > best_vals[0]) {
+      best_vals[0] = logits[i];
+      best_ids[0] = i;
+    }
+  }
+
+  for (size_t lane = 1; lane < 4; ++lane) {
+    if (best_vals[lane] > best_vals[0] ||
+        (best_vals[lane] == best_vals[0] && best_ids[lane] < best_ids[0])) {
+      best_vals[0] = best_vals[lane];
+      best_ids[0] = best_ids[lane];
+    }
+  }
+  return static_cast<uint32_t>(best_ids[0]);
 }
 
 inline void heap_swap_u32(uint32_t* ids, size_t a, size_t b) {
@@ -367,6 +398,10 @@ uint32_t sample_token(const float* logits,
                 ? std::min<uint32_t>(std::min<uint32_t>(logprobs_n, ASTRAL_LOGPROBS_MAX),
                                      static_cast<uint32_t>(vocab_size))
                 : 0u;
+        if (ASTRAL_PREDICT_TRUE(!penalties.use_penalties && want_top_n == 0 &&
+                                (grammar_ctx == nullptr || grammar_apply == nullptr))) {
+          return argmax_four_lanes(logits, vocab_size);
+        }
 
         uint32_t top_ids[ASTRAL_LOGPROBS_MAX]{};
         float top_vals[ASTRAL_LOGPROBS_MAX]{};
