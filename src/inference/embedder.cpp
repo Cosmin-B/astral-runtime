@@ -122,11 +122,13 @@ static uint32_t first_free_slot(uint32_t mask) {
 }
 
 static uint32_t free_slot_count(uint32_t mask) {
-    uint32_t count = 0;
-    for (uint32_t idx = 0; idx < kMaxInflight; ++idx) {
-        count += (mask & free_slot_bit(idx)) != 0 ? 1u : 0u;
-    }
-    return count;
+#if defined(_MSC_VER) && defined(_M_ARM64)
+  return static_cast<uint32_t>(_CountOneBits(mask));
+#elif defined(_MSC_VER)
+  return static_cast<uint32_t>(__popcnt(mask));
+#else
+  return static_cast<uint32_t>(__builtin_popcount(mask));
+#endif
 }
 
 static uint32_t acquire_free_slot(Embedder* e) {
