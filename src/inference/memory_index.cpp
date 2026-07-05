@@ -617,6 +617,17 @@ inline int32x4_t dot_i8x8_neon(const int8_t* a, const int8_t* b) {
 
 float dot_f32(const float* a, const float* b, uint32_t dim) {
 #if defined(__AVX2__)
+  if (dim == kAvx2UnrollF32) {
+    const __m256 product0 = _mm256_mul_ps(_mm256_loadu_ps(a), _mm256_loadu_ps(b));
+    const __m256 product1 =
+        _mm256_mul_ps(_mm256_loadu_ps(a + kAvx2Offset1), _mm256_loadu_ps(b + kAvx2Offset1));
+    const __m256 product2 =
+        _mm256_mul_ps(_mm256_loadu_ps(a + kAvx2Offset2), _mm256_loadu_ps(b + kAvx2Offset2));
+    const __m256 product3 =
+        _mm256_mul_ps(_mm256_loadu_ps(a + kAvx2Offset3), _mm256_loadu_ps(b + kAvx2Offset3));
+    return reduce_avx2_f32(
+        _mm256_add_ps(_mm256_add_ps(product0, product1), _mm256_add_ps(product2, product3)));
+  }
   __m256 acc0 = _mm256_setzero_ps();
   __m256 acc1 = _mm256_setzero_ps();
   __m256 acc2 = _mm256_setzero_ps();
