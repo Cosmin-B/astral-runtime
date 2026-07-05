@@ -118,25 +118,27 @@ private:
     // Freelist head (protected by table_lock_)
     T* head_ = nullptr;
 
-    std::atomic_flag table_lock_ = ATOMIC_FLAG_INIT;
+    std::atomic<uint32_t> table_lock_{0};
 
     void lock_() {
-        uint32_t spins = 0;
-        while (table_lock_.test_and_set(std::memory_order_acquire)) {
-            if (spins < 64) {
-                astral::platform::cpu_pause();
-            } else {
-                astral::platform::cpu_wait_for_event();
-            }
-            if (spins < 1024) {
-                ++spins;
-            }
+      uint32_t spins = 0;
+      while (table_lock_.exchange(1u, std::memory_order_acquire) != 0u) {
+        while (table_lock_.load(std::memory_order_relaxed) != 0u) {
+          if (spins < 64) {
+            astral::platform::cpu_pause();
+          } else {
+            astral::platform::cpu_wait_for_event();
+          }
+          if (spins < 1024) {
+            ++spins;
+          }
         }
+      }
     }
 
     void unlock_() {
-        table_lock_.clear(std::memory_order_release);
-        astral::platform::cpu_signal_event();
+      table_lock_.store(0u, std::memory_order_release);
+      astral::platform::cpu_signal_event();
     }
 };
 
