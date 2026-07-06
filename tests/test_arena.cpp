@@ -162,6 +162,29 @@ TEST(arena_runtime_alloc_size_class_boundaries) {
   astral_shutdown();
 }
 
+TEST(arena_runtime_alloc_local_cache_refill_flush) {
+  constexpr uint32_t kAllocationCount = 96;
+  constexpr size_t kAllocationSize = 64;
+  alignas(64) static uint8_t arena[8u * 1024u * 1024u];
+
+  AstralInit2 cfg = make_borrowed_arena_init(arena, sizeof(arena));
+  ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
+
+  void* pointers[kAllocationCount]{};
+  for (uint32_t pass = 0; pass < 2; ++pass) {
+    for (uint32_t i = 0; i < kAllocationCount; ++i) {
+      pointers[i] = astral::core::runtime_alloc(kAllocationSize, 16);
+      ASSERT_NOT_NULL(pointers[i]);
+      std::memset(pointers[i], static_cast<int>(i), kAllocationSize);
+    }
+    for (uint32_t i = 0; i < kAllocationCount; ++i) {
+      astral::core::runtime_free(pointers[i], kAllocationSize, 16);
+    }
+  }
+
+  astral_shutdown();
+}
+
 TEST(arena_init2_owned_smoke) {
     AstralInit2 cfg{};
     cfg.base.thread_count = 0;

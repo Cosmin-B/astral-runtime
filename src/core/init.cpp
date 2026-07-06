@@ -112,9 +112,7 @@ public:
         if (local_head != nullptr) {
             void* p = local_head;
             local_head = *reinterpret_cast<void**>(p);
-            if (local_count > 0) {
-                --local_count;
-            }
+            --local_count;
             return p;
         }
 
@@ -188,9 +186,7 @@ public:
 
         *reinterpret_cast<void**>(ptr) = local_head;
         local_head = ptr;
-        if (local_count < 0xFFFFu) {
-            ++local_count;
-        }
+        ++local_count;
 
         if (local_count < kLocalMax) {
             return;
@@ -202,9 +198,7 @@ public:
         while (local_head != nullptr && moved < kLocalFlush) {
             void* node = local_head;
             local_head = *reinterpret_cast<void**>(node);
-            if (local_count > 0) {
-                --local_count;
-            }
+            --local_count;
             *reinterpret_cast<void**>(node) = b.free_list;
             b.free_list = node;
             ++moved;
