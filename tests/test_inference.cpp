@@ -516,6 +516,59 @@ TEST(inference_conversation_grammar_gbnf_mock) {
     astral_shutdown();
 }
 
+TEST(inference_conversation_stop_clear_mock) {
+  AstralInit cfg{};
+  cfg.reserve_bytes = 32 * 1024 * 1024;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  AstralHandle model = load_mock_model(nullptr);
+  AstralExecutorDesc ex{};
+  ex.size = sizeof(AstralExecutorDesc);
+  ex.max_slots = 1;
+  ex.max_batch_tokens = 8;
+  ASSERT_EQ(astral_model_executor_configure(model, &ex), ASTRAL_OK);
+
+  AstralConvDesc conv_desc{};
+  conv_desc.size = sizeof(AstralConvDesc);
+  conv_desc.model = model;
+  conv_desc.max_tokens = 16;
+  conv_desc.temperature = 0.0f;
+  conv_desc.top_p = 1.0f;
+  conv_desc.stream_enabled = 1;
+  conv_desc.seed = 1;
+
+  AstralHandle conv = 0;
+  ASSERT_EQ(astral_conv_create(&conv_desc, &conv), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_feed(conv, span_from_cstr("hi"), 1), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+  const std::string baseline = read_conv_stream_all(conv);
+  ASSERT_EQ(astral_conv_wait(conv, 1000), ASTRAL_OK);
+  ASSERT_FALSE(baseline.empty());
+
+  ASSERT_EQ(astral_conv_reset(conv, &conv_desc), ASTRAL_OK);
+  AstralSpanU8 stop{};
+  stop.data = reinterpret_cast<const uint8_t*>(baseline.data());
+  stop.len = 1;
+  ASSERT_EQ(astral_conv_stop_add_utf8(conv, stop), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_feed(conv, span_from_cstr("hi"), 1), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+  const std::string stopped = read_conv_stream_all(conv);
+  ASSERT_EQ(astral_conv_wait(conv, 1000), ASTRAL_OK);
+  ASSERT_TRUE(stopped.empty());
+
+  ASSERT_EQ(astral_conv_reset(conv, &conv_desc), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_stop_clear(conv), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_feed(conv, span_from_cstr("hi"), 1), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+  const std::string cleared = read_conv_stream_all(conv);
+  ASSERT_EQ(astral_conv_wait(conv, 1000), ASTRAL_OK);
+  ASSERT_EQ(cleared, baseline);
+
+  astral_conv_destroy(conv);
+  astral_model_release(model);
+  astral_shutdown();
+}
+
 TEST(inference_agent_history_and_chat_mock) {
     constexpr uint32_t kBytesPerKiB = 1024;
     constexpr uint32_t kBytesPerMiB = kBytesPerKiB * kBytesPerKiB;

@@ -982,8 +982,6 @@ AstralErr conv_stop_clear(Conversation* conv) {
     return ASTRAL_E_STATE;
   }
   conv->stop_seq_count = 0;
-  std::memset(conv->stop_seq_lens, 0, sizeof(conv->stop_seq_lens));
-  std::memset(conv->stop_seq_tokens, 0, sizeof(conv->stop_seq_tokens));
   conv->stop_max_len = 0;
   return ASTRAL_OK;
 }
