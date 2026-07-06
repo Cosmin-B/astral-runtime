@@ -1368,7 +1368,8 @@ void* cpu_session_create_ex(void* model_ctx, const AstralSessionDesc* desc, uint
     }
 
     for (uint32_t i = 0; i < cap; ++i) {
-        session->batch_seq_id_ptrs[i] = &session->batch_seq_id_storage[i];
+      session->batch_n_seq_id[i] = 1;
+      session->batch_seq_id_ptrs[i] = &session->batch_seq_id_storage[i];
     }
 
     *out_err = ASTRAL_OK;
@@ -1465,7 +1466,6 @@ AstralErr cpu_session_feed(void* session_ctx, const int32_t* tokens, uint32_t co
 
         for (uint32_t j = 0; j < n; ++j) {
             session->batch_pos[j] = slot_pos + static_cast<int32_t>(j);
-            session->batch_n_seq_id[j] = 1;
             session->batch_seq_id_storage[j] = static_cast<int32_t>(session->active_slot);
             session->batch_logits[j] = 0;
         }
@@ -1698,7 +1698,6 @@ AstralErr cpu_session_accept(void* session_ctx, int32_t token) {
     batch.logits = session->batch_logits;
 
     session->batch_pos[0] = session->slot_pos[session->active_slot];
-    session->batch_n_seq_id[0] = 1;
     session->batch_seq_id_storage[0] = static_cast<int32_t>(session->active_slot);
     session->batch_logits[0] = 1;
 
@@ -1758,7 +1757,6 @@ AstralErr cpu_session_batch_eval(void* session_ctx,
 
         session->batch_token_storage[i] = t.token;
         session->batch_pos[i] = static_cast<int32_t>(t.pos);
-        session->batch_n_seq_id[i] = 1;
         session->batch_seq_id_storage[i] = static_cast<int32_t>(t.slot_id);
         session->batch_logits[i] = t.want_logits != 0 ? 1 : 0;
 
@@ -2325,7 +2323,6 @@ AstralErr cpu_session_state_load(void* session_ctx, const uint8_t* bytes, uint64
         batch.logits = session->batch_logits;
 
         session->batch_pos[0] = pos;
-        session->batch_n_seq_id[0] = 1;
         session->batch_seq_id_storage[0] = static_cast<int32_t>(slot);
         session->batch_logits[0] = 1;
 
