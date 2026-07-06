@@ -1645,6 +1645,23 @@ TEST(inference_sampler_repeat_penalty_mock) {
     const std::string text = read_stream_all(session);
     ASSERT_EQ(text, std::string("ababab"));
 
+    sampler.repeat_last_n = 2;
+    err = astral_session_set_sampler(session, &sampler);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_session_reset(session, nullptr);
+    ASSERT_EQ(err, ASTRAL_OK);
+    const std::string resized_window_text = run_mock_decode_once(session, "");
+
+    AstralHandle fresh_session = 0;
+    err = astral_session_create(&sd, &fresh_session);
+    ASSERT_EQ(err, ASTRAL_OK);
+    err = astral_session_set_sampler(fresh_session, &sampler);
+    ASSERT_EQ(err, ASTRAL_OK);
+    const std::string fresh_window_text = run_mock_decode_once(fresh_session, "");
+    ASSERT_EQ(fresh_window_text, std::string("abaaba"));
+    ASSERT_EQ(resized_window_text, fresh_window_text);
+    astral_session_destroy(fresh_session);
+
     astral_session_destroy(session);
     astral_model_release(model);
     astral_shutdown();

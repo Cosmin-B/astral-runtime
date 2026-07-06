@@ -374,15 +374,18 @@ AstralErr ensure_penalty_state(Session* session) {
         }
 
         if (session->recent_capacity != repeat_last_n || session->recent_tokens == nullptr) {
-            session->recent_tokens = static_cast<uint32_t*>(
-                session->allocator.alloc(static_cast<size_t>(repeat_last_n) * sizeof(uint32_t), alignof(uint32_t))
-            );
-            if (session->recent_tokens == nullptr) {
-                return ASTRAL_E_NOMEM;
-            }
-            session->recent_capacity = repeat_last_n;
-            session->recent_pos = 0;
-            session->recent_size = 0;
+          uint32_t* recent_tokens = static_cast<uint32_t*>(session->allocator.alloc(
+              static_cast<size_t>(repeat_last_n) * sizeof(uint32_t), alignof(uint32_t)));
+          if (recent_tokens == nullptr) {
+            return ASTRAL_E_NOMEM;
+          }
+          if (session->recent_size != 0) {
+            std::memset(session->token_counts, 0, session->vocab_size * sizeof(uint16_t));
+          }
+          session->recent_tokens = recent_tokens;
+          session->recent_capacity = repeat_last_n;
+          session->recent_pos = 0;
+          session->recent_size = 0;
         }
     }
 
@@ -409,12 +412,12 @@ AstralErr ensure_penalty_state(Session* session) {
 }
 
 inline void penalty_state_clear(Session* session) {
-    if (session == nullptr || session->token_counts == nullptr) {
-        return;
-    }
-    std::memset(session->token_counts, 0, session->vocab_size * sizeof(uint16_t));
-    session->recent_pos = 0;
-    session->recent_size = 0;
+  if (session == nullptr || session->token_counts == nullptr || session->recent_size == 0) {
+    return;
+  }
+  std::memset(session->token_counts, 0, session->vocab_size * sizeof(uint16_t));
+  session->recent_pos = 0;
+  session->recent_size = 0;
 }
 
 inline void penalty_state_push(Session* session, uint32_t token_id) {
