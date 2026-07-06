@@ -2327,6 +2327,27 @@ TEST(inference_chunking_ranges_mock) {
     ASSERT_EQ(count, kTokenRangeCount);
 }
 
+TEST(inference_chunking_word_overlap_trailing_space_mock) {
+  constexpr uint32_t kMaxUnits = 8;
+  constexpr uint32_t kOverlapUnits = 4;
+  constexpr uint32_t kWordBytes = 22;
+
+  AstralChunkerDesc desc{};
+  desc.size = sizeof(AstralChunkerDesc);
+  desc.mode = ASTRAL_CHUNK_MODE_WORD;
+  desc.max_units = kMaxUnits;
+  desc.overlap_units = kOverlapUnits;
+
+  AstralChunkRange range{};
+  uint32_t count = 0;
+  const AstralErr err =
+      astral_chunk_ranges(&desc, span_from_cstr("alpha beta gamma delta   "), &range, 1, &count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(count, 1u);
+  ASSERT_EQ(range.byte_begin, 0u);
+  ASSERT_EQ(range.byte_end, kWordBytes);
+}
+
 TEST(inference_memory_index_flat_mock) {
     constexpr uint32_t kDim = 4;
     constexpr uint32_t kCapacity = 8;

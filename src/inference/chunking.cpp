@@ -257,9 +257,7 @@ AstralErr emit_word_chunks(const AstralChunkerDesc* desc, AstralSpanU8 text,
 
     while (units < max_units) {
       UnitRange unit;
-      const uint32_t before = scan;
       if (!next_word_unit(text, &scan, &unit)) {
-        scan = before;
         break;
       }
       if (overlap_units != 0 && units + overlap_units == max_units) {
