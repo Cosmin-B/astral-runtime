@@ -2,6 +2,7 @@
 
 #include "../core/handles.hpp"
 #include "../core/runtime_alloc.hpp"
+#include "../platform/compiler.hpp"
 
 #include <cstring>
 
@@ -52,9 +53,18 @@ inline bool span_equals(AstralSpanU8 a, const uint8_t* b, uint32_t b_len) {
 }
 
 inline uint32_t name_tag(const uint8_t* data, uint32_t len) {
+  if (ASTRAL_PREDICT_TRUE(len >= kToolNameTagBytes)) {
+    uint32_t tag = 0;
+    std::memcpy(&tag, data, sizeof(tag));
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return __builtin_bswap32(tag);
+#else
+    return tag;
+#endif
+  }
+
   uint32_t tag = 0;
-  const uint32_t n = len < kToolNameTagBytes ? len : kToolNameTagBytes;
-  for (uint32_t i = 0; i < n; ++i) {
+  for (uint32_t i = 0; i < len; ++i) {
     tag |= static_cast<uint32_t>(data[i]) << (i * 8u);
   }
   return tag;
