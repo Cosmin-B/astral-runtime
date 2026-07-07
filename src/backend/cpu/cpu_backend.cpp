@@ -1107,34 +1107,34 @@ AstralErr cpu_detokenize(void* model_ctx, const int32_t* tokens, uint32_t count,
     }
 
     uint32_t offset = 0;
+    if (out_text.data == nullptr) {
+      char count_buf[1]{};
+      for (uint32_t i = 0; i < count; ++i) {
+        const int32_t written =
+            llama_token_to_piece(vocab, static_cast<llama_token>(tokens[i]), count_buf, 0,
+                                 0,    // lstrip (don't strip leading space)
+                                 false // special (don't render special tokens)
+            );
+        offset += static_cast<uint32_t>(-written);
+      }
+      *out_len = offset;
+      return ASTRAL_OK;
+    }
+
     for (uint32_t i = 0; i < count; ++i) {
-        const uint32_t space = out_text.data != nullptr ? out_text.len - offset : 0;
-        if (out_text.data != nullptr && space == 0) {
-            *out_len = offset;
-            return ASTRAL_E_NOMEM;
-        }
-
-        char count_buf[1]{};
-        char* piece_out = out_text.data != nullptr ? reinterpret_cast<char*>(out_text.data + offset) : count_buf;
-        const int32_t written = llama_token_to_piece(
-            vocab,
-            static_cast<llama_token>(tokens[i]),
-            piece_out,
-            static_cast<int32_t>(space),
-            0,     // lstrip (don't strip leading space)
-            false  // special (don't render special tokens)
-        );
-
-        if (written < 0) {
-            offset += static_cast<uint32_t>(-written);
-            if (out_text.data != nullptr) {
-                *out_len = offset;
-                return ASTRAL_E_NOMEM;
-            }
-            continue;
-        }
-
-        offset += static_cast<uint32_t>(written);
+      const uint32_t space = out_text.len - offset;
+      const int32_t written = llama_token_to_piece(vocab, static_cast<llama_token>(tokens[i]),
+                                                   reinterpret_cast<char*>(out_text.data + offset),
+                                                   static_cast<int32_t>(space),
+                                                   0,    // lstrip (don't strip leading space)
+                                                   false // special (don't render special tokens)
+      );
+      if (written < 0) {
+        offset += static_cast<uint32_t>(-written);
+        *out_len = offset;
+        return ASTRAL_E_NOMEM;
+      }
+      offset += static_cast<uint32_t>(written);
     }
 
     *out_len = offset;

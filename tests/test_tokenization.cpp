@@ -1,15 +1,17 @@
-#include "test_framework.hpp"
 #include "../include/astral_rt.h"
+#include "test_framework.hpp"
 
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
 
 namespace {
 
 AstralSpanU8 span_from_cstr(const char* text) {
-    AstralSpanU8 span{};
-    span.data = reinterpret_cast<const uint8_t*>(text);
-    span.len = static_cast<uint32_t>(std::strlen(text));
-    return span;
+  AstralSpanU8 span{};
+  span.data = reinterpret_cast<const uint8_t*>(text);
+  span.len = static_cast<uint32_t>(std::strlen(text));
+  return span;
 }
 
 AstralHandle load_mock_model() {
@@ -105,6 +107,79 @@ TEST(tokenization_empty_and_utf8_count) {
 
     astral_model_release(model);
     astral_shutdown();
+}
+
+TEST(tokenization_cpu_detokenize_count_output_and_short_buffer) {
+  const char* model_path = std::getenv("ASTRAL_TEST_MODEL");
+  if (model_path == nullptr || model_path[0] == '\0') {
+    model_path = ASTRAL_TEST_SOURCE_DIR "/tests/models/gpt2.Q2_K.gguf";
+  }
+  std::ifstream model_file(model_path, std::ios::binary);
+  if (!model_file.good()) {
+    SKIP_TEST("tests/models/gpt2.Q2_K.gguf is required for CPU detokenization coverage");
+  }
+
+  AstralInit cfg{};
+  cfg.reserve_bytes = 512ull * 1024ull * 1024ull;
+  cfg.thread_count = 1;
+  cfg.numa_node = 0xFFFFFFFFu;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  AstralModelDesc model_desc{};
+  model_desc.size = sizeof(model_desc);
+  model_desc.source_kind = ASTRAL_MODEL_SOURCE_PATH;
+  model_desc.backend_name = span_from_cstr("cpu");
+  model_desc.model_path = span_from_cstr(model_path);
+  model_desc.n_ctx = 128;
+  model_desc.n_batch = 64;
+  model_desc.n_threads = 1;
+
+  AstralHandle model = 0;
+  ASSERT_EQ(astral_model_load(&model_desc, &model), ASTRAL_OK);
+
+  const char* text = "The quick brown fox jumps over the lazy dog.";
+  const AstralSpanU8 text_span = span_from_cstr(text);
+  int32_t tokens[64]{};
+  uint32_t token_count = 0;
+  ASSERT_EQ(astral_tokenize(model, text_span, tokens, 64, 1, 0, &token_count), ASTRAL_OK);
+  ASSERT_GT(token_count, 1u);
+
+  uint32_t byte_count = 0;
+  ASSERT_EQ(astral_detokenize_count(model, tokens, token_count, &byte_count), ASTRAL_OK);
+  ASSERT_EQ(byte_count, text_span.len);
+
+  uint8_t output[128]{};
+  AstralMutSpanU8 full_output{output, static_cast<uint32_t>(sizeof(output))};
+  uint32_t written = 0;
+  ASSERT_EQ(astral_detokenize(model, tokens, token_count, full_output, &written), ASTRAL_OK);
+  ASSERT_EQ(written, byte_count);
+  ASSERT_EQ(std::memcmp(output, text, byte_count), 0);
+
+  const int32_t special_token = 50256;
+  uint32_t special_bytes = 1;
+  ASSERT_EQ(astral_detokenize_count(model, &special_token, 1, &special_bytes), ASTRAL_OK);
+  ASSERT_EQ(special_bytes, 0u);
+
+  uint32_t visible_bytes = 0;
+  ASSERT_EQ(astral_detokenize_count(model, tokens, 1, &visible_bytes), ASTRAL_OK);
+  ASSERT_GT(visible_bytes, 1u);
+
+  const int32_t trailing_special[2] = {tokens[0], special_token};
+  uint32_t trailing_bytes = 0;
+  ASSERT_EQ(astral_detokenize_count(model, trailing_special, 2, &trailing_bytes), ASTRAL_OK);
+  ASSERT_EQ(trailing_bytes, visible_bytes);
+  AstralMutSpanU8 exact_output{output, trailing_bytes};
+  written = 0;
+  ASSERT_EQ(astral_detokenize(model, trailing_special, 2, exact_output, &written), ASTRAL_OK);
+  ASSERT_EQ(written, trailing_bytes);
+
+  AstralMutSpanU8 short_output{output, visible_bytes - 1u};
+  written = 0;
+  ASSERT_EQ(astral_detokenize(model, tokens, 1, short_output, &written), ASTRAL_E_NOMEM);
+  ASSERT_EQ(written, visible_bytes);
+
+  astral_model_release(model);
+  astral_shutdown();
 }
 
 TEST(tokenization_batch_offsets_and_sizing) {
