@@ -102,8 +102,11 @@ Pattern 4: Epoch-Protected Access
 Pattern 5: Deferred Deletion
 {
     Node* old_node = retire_from_structure();
-    epoch_mgr.defer_delete(old_node);
-    // Will be freed after 3 epochs
+    while (!epoch_mgr.defer_delete(tid, old_node)) {
+        // Fixed participant queue is full; retain ownership and retry.
+        pause_or_wait();
+    }
+    // The single collector invokes delete after the grace period.
 }
 
 PERFORMANCE TIPS

@@ -116,36 +116,38 @@ void test_stream_token() {
 }
 
 void test_epoch_manager() {
-    printf("Testing EpochManager...\n");
+  printf("Testing EpochManager...\n");
 
-    EpochManager epoch_mgr;
+  EpochManager epoch_mgr;
 
-    // Register thread
-    int32_t thread_id = epoch_mgr.register_thread();
-    assert(thread_id >= 0);
+  // Register thread
+  int32_t thread_id = epoch_mgr.register_thread();
+  assert(thread_id >= 0);
 
-    // Test enter/leave
-    epoch_mgr.enter(thread_id);
-    epoch_mgr.leave(thread_id);
+  // Test enter/leave
+  epoch_mgr.enter(thread_id);
+  epoch_mgr.leave(thread_id);
 
-    // Test RAII guard
-    {
-        EpochGuard guard(epoch_mgr, thread_id);
-        // Guard automatically enters epoch
-    }
-    // Guard automatically leaves epoch on scope exit
+  // Test RAII guard
+  {
+    EpochGuard guard(epoch_mgr, thread_id);
+    // Guard automatically enters epoch
+  }
+  // Guard automatically leaves epoch on scope exit
 
-    // Test defer_delete (basic check, not verifying actual deletion)
-    int* ptr = new int(42);
-    epoch_mgr.defer_delete(ptr);
+  // Test defer_delete (basic check; maintained tests verify concurrent reclamation)
+  int* ptr = new int(42);
+  assert(epoch_mgr.defer_delete(thread_id, ptr));
 
-    // Collect garbage
+  // Establish and consume the safe frontier.
+  for (uint32_t i = 0; i < 5; ++i) {
     epoch_mgr.collect();
+  }
 
-    // Unregister thread
-    epoch_mgr.unregister_thread(thread_id);
+  // Unregister thread
+  epoch_mgr.unregister_thread(thread_id);
 
-    printf("EpochManager: PASS\n");
+  printf("EpochManager: PASS\n");
 }
 
 void test_compilation_constraints() {

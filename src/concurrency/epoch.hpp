@@ -1,304 +1,336 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <type_traits>
 
+#include "../platform/atomics.h"
 #include "../platform/cacheline.hpp"
 #include "../platform/compiler.hpp"
 
 namespace astral::concurrency {
 
-/// Epoch-based memory reclamation for lock-free data structures.
+/// Epoch-based reclamation with one fixed retirement queue per participant.
 ///
-/// Design:
-/// - Global epoch counter incremented periodically by reclamation thread
-/// - Each thread tracks its local epoch when accessing shared data structures
-/// - Defer deletion of nodes until all threads have advanced past node's epoch
-/// - No per-object hazard pointers (lower overhead for small objects)
+/// Reader entry writes only the caller's cache-line-isolated participant slot.
+/// Retirement is SPSC: the registered participant is the sole producer for its
+/// queue and collect() is the sole consumer. A full queue returns false and
+/// leaves ownership with the caller; protected memory is never freed as an
+/// overflow fallback.
 ///
-/// Use Cases:
-/// - Free transient nodes (callback entries, work items) without hazard pointers
-/// - Safe deferred deletion in MPMC/SPSC rings
-/// - Avoid use-after-free when nodes are retired but may still be accessed
-///
-/// Memory Ordering:
-/// - Epoch loads: memory_order_acquire (synchronize-with epoch updates)
-/// - Epoch stores: memory_order_release (publish local epoch to reclamation thread)
-/// - Thread registration: memory_order_seq_cst (ensure visibility across all threads)
-///
-/// Performance:
-/// - Low overhead: Single atomic load per critical section entry
-/// - Bounded latency: Nodes freed within 3 epochs (~3 reclamation cycles)
-///
-/// Thread-safety: Thread-safe; safe to call from multiple threads concurrently.
+/// Exactly one thread may call collect(). Calls that overlap an active collector
+/// return without doing work. Registration is serialized because it is a cold
+/// lifecycle operation; enter(), leave(), and defer_delete() take no locks.
 class EpochManager {
 public:
-    /// Maximum number of threads that can register with the epoch manager.
-    /// This is a fixed-size limit to avoid dynamic allocation.
-    static constexpr size_t kMaxThreads = 128;
+  using Deleter = void (*)(void*) noexcept;
 
-    /// Maximum number of deferred deletions per epoch.
-    /// Fixed ring buffer to avoid allocation in defer_delete().
-    static constexpr size_t kMaxDeferredPerEpoch = 4096;
+  static constexpr size_t kMaxThreads = 128;
+  static constexpr size_t kMaxRetiredPerParticipant = 256;
+  static constexpr uint64_t kGraceEpochs = 3;
 
-    /// Number of epochs to keep before reclamation.
-    /// Nodes are safe to free after all threads have advanced 3 epochs.
-    static constexpr size_t kEpochHistorySize = 3;
+  EpochManager() noexcept : global_epoch_(0) {
+    for (Participant& participant : participants_) {
+      participant.epoch.store(kInactiveEpoch, std::memory_order_relaxed);
+      participant.registered.store(false, std::memory_order_relaxed);
+      participant.retired.head.store(0, std::memory_order_relaxed);
+      participant.retired.tail.store(0, std::memory_order_relaxed);
+    }
+  }
 
-    EpochManager() : global_epoch_(0), thread_count_(0) {
-        // Initialize thread-local epochs to 0
-        for (size_t i = 0; i < kMaxThreads; ++i) {
-            thread_epochs_[i].store(0, std::memory_order_relaxed);
-            thread_active_[i].store(false, std::memory_order_relaxed);
-        }
+  ~EpochManager() {
+    // Shutdown requires all participants and the collector to have stopped.
+    for (Participant& participant : participants_) {
+      drain_all(participant.retired);
+    }
+  }
 
-        // Initialize deferred deletion rings
-        for (size_t i = 0; i < kEpochHistorySize; ++i) {
-            epoch_rings_[i].head = 0;
-            epoch_rings_[i].tail = 0;
-            std::memset(epoch_rings_[i].ptrs, 0, sizeof(epoch_rings_[i].ptrs));
-        }
+  EpochManager(const EpochManager&) = delete;
+  EpochManager& operator=(const EpochManager&) = delete;
+  EpochManager(EpochManager&&) = delete;
+  EpochManager& operator=(EpochManager&&) = delete;
+
+  /// Claim a reusable participant slot. Registration is a cold-path operation.
+  int32_t register_thread() noexcept {
+    lock_registration();
+    int32_t result = -1;
+    for (size_t i = 0; i < kMaxThreads; ++i) {
+      Participant& participant = participants_[i];
+      if (participant.registered.load(std::memory_order_relaxed)) {
+        continue;
+      }
+
+      participant.epoch.store(kInactiveEpoch, std::memory_order_relaxed);
+      participant.registered.store(true, std::memory_order_release);
+      result = static_cast<int32_t>(i);
+      break;
+    }
+    unlock_registration();
+    return result;
+  }
+
+  /// Release a participant slot after its final leave() and defer_delete().
+  void unregister_thread(int32_t thread_id) noexcept {
+    Participant* participant = get_participant(thread_id);
+    if (participant == nullptr)
+      ASTRAL_UNLIKELY {
+        return;
+      }
+
+    participant->epoch.store(kInactiveEpoch, std::memory_order_seq_cst);
+    participant->registered.store(false, std::memory_order_release);
+  }
+
+  /// Enter a read-side critical section before loading a shared pointer.
+  void enter(int32_t thread_id) noexcept {
+    Participant* participant = get_registered_participant(thread_id);
+    if (participant == nullptr)
+      ASTRAL_UNLIKELY {
+        return;
+      }
+
+    // The second global load closes the race with collect()'s seq_cst epoch
+    // publication. If publication won, retry before the caller can load a
+    // protected pointer. Otherwise the collector's later scan observes this
+    // participant epoch or conservatively delays reclamation.
+    uint64_t epoch = 0;
+    do {
+      epoch = global_epoch_.load(std::memory_order_seq_cst);
+      participant->epoch.store(epoch, std::memory_order_seq_cst);
+    } while (global_epoch_.load(std::memory_order_seq_cst) != epoch);
+  }
+
+  /// Leave the current read-side critical section.
+  void leave(int32_t thread_id) noexcept {
+    Participant* participant = get_participant(thread_id);
+    if (participant == nullptr)
+      ASTRAL_UNLIKELY {
+        return;
+      }
+    participant->epoch.store(kInactiveEpoch, std::memory_order_release);
+  }
+
+  /// Queue a pointer for deferred destruction by the single collector.
+  ///
+  /// Returns false without invoking deleter when the participant is invalid,
+  /// unregistered, or its fixed queue is full. On failure, the caller still
+  /// owns ptr and may retry after collection advances.
+  bool defer_delete(int32_t thread_id, void* ptr, Deleter deleter) noexcept {
+    if (ptr == nullptr || deleter == nullptr)
+      ASTRAL_UNLIKELY {
+        return false;
+      }
+
+    Participant* participant = get_registered_participant(thread_id);
+    if (participant == nullptr)
+      ASTRAL_UNLIKELY {
+        return false;
+      }
+
+    RetireQueue& queue = participant->retired;
+    const uint64_t head = queue.head.load(std::memory_order_relaxed);
+    const uint64_t tail = queue.tail.load(std::memory_order_acquire);
+    if (head - tail >= kMaxRetiredPerParticipant)
+      ASTRAL_UNLIKELY {
+        return false;
+      }
+
+    RetiredEntry& entry = queue.entries[head & kRetiredMask];
+    entry.ptr = ptr;
+    entry.deleter = deleter;
+    entry.epoch = global_epoch_.load(std::memory_order_acquire);
+    queue.head.store(head + 1, std::memory_order_release);
+    return true;
+  }
+
+  template <typename T> bool defer_delete(int32_t thread_id, T* ptr) noexcept {
+    static_assert(!std::is_void_v<T>);
+    return defer_delete(thread_id, ptr, &delete_typed<T>);
+  }
+
+  /// Reclaim the previously proven safe frontier, then establish the next one.
+  ///
+  /// The safe frontier is intentionally consumed before the global epoch is
+  /// advanced. The seq_cst increment and participant scan prove a frontier for
+  /// the next collect() call, so a retirement concurrent with publication can
+  /// never be consumed by the drain already in progress.
+  size_t collect() noexcept {
+    if (collecting_.test_and_set(std::memory_order_acquire))
+      ASTRAL_UNLIKELY {
+        return 0;
+      }
+
+    size_t reclaimed = 0;
+    if (has_safe_epoch_) {
+      for (Participant& participant : participants_) {
+        reclaimed += drain_through(participant.retired, safe_epoch_);
+      }
     }
 
-    ~EpochManager() {
-        // Reclaim all remaining deferred deletions on shutdown
-        // WARNING: This is not thread-safe; must be called after all threads exit
-        for (size_t i = 0; i < kEpochHistorySize; ++i) {
-            DeferredRing& ring = epoch_rings_[i];
-            for (size_t j = ring.tail; j < ring.head; ++j) {
-                size_t index = j & kDeferredMask;
-                void* ptr = ring.ptrs[index];
-                if (ptr != nullptr) {
-                    ::operator delete(ptr);
-                }
-            }
-        }
-    }
+    const uint64_t new_epoch = global_epoch_.fetch_add(1, std::memory_order_seq_cst) + 1;
+    update_safe_frontier(new_epoch);
 
-    // Non-copyable, non-movable
-    EpochManager(const EpochManager&) = delete;
-    EpochManager& operator=(const EpochManager&) = delete;
-    EpochManager(EpochManager&&) = delete;
-    EpochManager& operator=(EpochManager&&) = delete;
+    collecting_.clear(std::memory_order_release);
+    return reclaimed;
+  }
 
-    /// Register the current thread with the epoch manager.
-    ///
-    /// @return Thread-local ID (0 to kMaxThreads-1), or -1 if registration failed.
-    ///
-    /// IMPORTANT: Must be called once per thread before calling enter/leave.
-    /// The returned ID must be passed to enter/leave/unregister.
-    int32_t register_thread() {
-        uint32_t id = thread_count_.fetch_add(1, std::memory_order_seq_cst);
-        if (id >= kMaxThreads) ASTRAL_UNLIKELY {
-            // Registration failed: too many threads
-            thread_count_.fetch_sub(1, std::memory_order_seq_cst);
-            return -1;
-        }
-
-        thread_active_[id].store(true, std::memory_order_release);
-        thread_epochs_[id].store(global_epoch_.load(std::memory_order_acquire),
-                                 std::memory_order_release);
-        return static_cast<int32_t>(id);
-    }
-
-    /// Unregister the current thread from the epoch manager.
-    ///
-    /// @param thread_id Thread-local ID returned by register_thread().
-    void unregister_thread(int32_t thread_id) {
-        if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads)) ASTRAL_UNLIKELY {
-            return;
-        }
-
-        thread_active_[thread_id].store(false, std::memory_order_release);
-    }
-
-    /// Enter an epoch-protected critical section.
-    ///
-    /// @param thread_id Thread-local ID returned by register_thread().
-    ///
-    /// Call this before accessing shared lock-free data structures.
-    /// Must be paired with leave() at the end of the critical section.
-    void enter(int32_t thread_id) {
-        if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads)) ASTRAL_UNLIKELY {
-            return;
-        }
-
-        // Load global epoch with acquire semantics to see latest reclamation state
-        uint64_t current_epoch = global_epoch_.load(std::memory_order_acquire);
-
-        // Update thread-local epoch with release semantics to publish our entry
-        thread_epochs_[thread_id].store(current_epoch, std::memory_order_release);
-    }
-
-    /// Leave an epoch-protected critical section.
-    ///
-    /// @param thread_id Thread-local ID returned by register_thread().
-    ///
-    /// Must be paired with enter() at the start of the critical section.
-    void leave(int32_t thread_id) {
-        if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads)) ASTRAL_UNLIKELY {
-            return;
-        }
-
-        // Mark thread as not in critical section by advancing to a future epoch
-        // Use UINT64_MAX as sentinel value for "not in critical section"
-        thread_epochs_[thread_id].store(UINT64_MAX, std::memory_order_release);
-    }
-
-    /// Defer deletion of a pointer until all threads have advanced past current epoch.
-    ///
-    /// @param ptr Pointer to delete (must be allocated with ::operator new).
-    ///
-    /// The pointer will be freed after all threads have advanced 3 epochs.
-    /// If the deferred deletion ring is full, the pointer is freed immediately.
-    void defer_delete(void* ptr) {
-        if (ptr == nullptr) ASTRAL_UNLIKELY {
-            return;
-        }
-
-        // Get current epoch ring index
-        uint64_t epoch = global_epoch_.load(std::memory_order_acquire);
-        size_t ring_index = epoch % kEpochHistorySize;
-        DeferredRing& ring = epoch_rings_[ring_index];
-
-        // Try to add to deferred deletion ring
-        uint64_t head = ring.head.load(std::memory_order_relaxed);
-        uint64_t tail = ring.tail.load(std::memory_order_acquire);
-
-        if (head - tail >= kMaxDeferredPerEpoch) ASTRAL_UNLIKELY {
-            // Ring is full; free immediately (fallback)
-            ::operator delete(ptr);
-            return;
-        }
-
-        // Add to ring
-        size_t index = head & kDeferredMask;
-        ring.ptrs[index] = ptr;
-        ring.head.store(head + 1, std::memory_order_release);
-    }
-
-    /// Advance the global epoch and collect garbage from old epochs.
-    ///
-    /// This should be called periodically by a dedicated reclamation thread.
-    /// Typical frequency: 1-10ms (balance between latency and overhead).
-    ///
-    /// Memory ordering: memory_order_seq_cst to ensure all threads see epoch advance.
-    void collect() {
-        // Advance global epoch
-        uint64_t old_epoch = global_epoch_.fetch_add(1, std::memory_order_seq_cst);
-        uint64_t new_epoch = old_epoch + 1;
-
-        // Find minimum thread-local epoch (oldest thread still in critical section)
-        uint64_t min_epoch = new_epoch;
-        uint32_t count = thread_count_.load(std::memory_order_acquire);
-
-        for (uint32_t i = 0; i < count && i < kMaxThreads; ++i) {
-            if (!thread_active_[i].load(std::memory_order_acquire)) {
-                continue;
-            }
-
-            uint64_t thread_epoch = thread_epochs_[i].load(std::memory_order_acquire);
-            if (thread_epoch != UINT64_MAX && thread_epoch < min_epoch) {
-                min_epoch = thread_epoch;
-            }
-        }
-
-        // Reclaim deferred deletions from epochs that are at least 3 epochs old
-        if (new_epoch >= kEpochHistorySize) {
-            uint64_t safe_epoch = new_epoch - kEpochHistorySize;
-            if (min_epoch > safe_epoch) {
-                // All threads have advanced past safe_epoch; safe to reclaim
-                size_t ring_index = safe_epoch % kEpochHistorySize;
-                DeferredRing& ring = epoch_rings_[ring_index];
-
-                // Free all deferred deletions in this ring
-                uint64_t head = ring.head.load(std::memory_order_acquire);
-                uint64_t tail = ring.tail.load(std::memory_order_relaxed);
-
-                for (uint64_t i = tail; i < head; ++i) {
-                    size_t index = i & kDeferredMask;
-                    void* ptr = ring.ptrs[index];
-                    if (ptr != nullptr) {
-                        ::operator delete(ptr);
-                        ring.ptrs[index] = nullptr;
-                    }
-                }
-
-                // Reset ring
-                ring.tail.store(head, std::memory_order_release);
-            }
-        }
-    }
-
-    /// Get current global epoch.
-    ///
-    /// @return Current epoch value (monotonically increasing).
-    uint64_t current_epoch() const {
-        return global_epoch_.load(std::memory_order_acquire);
-    }
+  uint64_t current_epoch() const noexcept { return global_epoch_.load(std::memory_order_acquire); }
 
 private:
-    static constexpr size_t kCacheLineSize = astral::platform::kCacheLineAlign;
-    static constexpr size_t kDeferredMask = kMaxDeferredPerEpoch - 1;
+  static constexpr size_t kCacheLineSize = astral::platform::kCacheLineAlign;
+  static constexpr size_t kRetiredMask = kMaxRetiredPerParticipant - 1;
+  static constexpr uint64_t kInactiveEpoch = UINT64_MAX;
 
-    /// Ring buffer for deferred deletions per epoch.
-    struct DeferredRing {
-        alignas(kCacheLineSize) std::atomic<uint64_t> head;
-        alignas(kCacheLineSize) std::atomic<uint64_t> tail;
-        void* ptrs[kMaxDeferredPerEpoch];
-    };
+  static_assert((kMaxRetiredPerParticipant & kRetiredMask) == 0,
+                "retirement queue capacity must be a power of two");
 
-    // Global epoch counter (incremented by reclamation thread)
-    alignas(kCacheLineSize) std::atomic<uint64_t> global_epoch_;
+  struct RetiredEntry {
+    void* ptr = nullptr;
+    Deleter deleter = nullptr;
+    uint64_t epoch = 0;
+  };
 
-    // Thread registration counter
-    alignas(kCacheLineSize) std::atomic<uint32_t> thread_count_;
+  struct RetireQueue {
+    alignas(kCacheLineSize) std::atomic<uint64_t> head{0};
+    alignas(kCacheLineSize) std::atomic<uint64_t> tail{0};
+    RetiredEntry entries[kMaxRetiredPerParticipant]{};
+  };
 
-    // Per-thread epoch tracking (cache-line aligned to prevent false sharing)
-    alignas(kCacheLineSize) std::atomic<uint64_t> thread_epochs_[kMaxThreads];
-    alignas(kCacheLineSize) std::atomic<bool> thread_active_[kMaxThreads];
+  struct alignas(kCacheLineSize) Participant {
+    std::atomic<uint64_t> epoch{kInactiveEpoch};
+    std::atomic<bool> registered{false};
+    RetireQueue retired;
+  };
 
-    // Deferred deletion rings (one per epoch history slot)
-    DeferredRing epoch_rings_[kEpochHistorySize];
+  static_assert(alignof(Participant) >= kCacheLineSize);
+  static_assert(sizeof(Participant) % kCacheLineSize == 0);
+
+  template <typename T> static void delete_typed(void* value) noexcept {
+    delete static_cast<T*>(value);
+  }
+
+  Participant* get_participant(int32_t thread_id) noexcept {
+    if (thread_id < 0 || thread_id >= static_cast<int32_t>(kMaxThreads))
+      ASTRAL_UNLIKELY {
+        return nullptr;
+      }
+    return &participants_[static_cast<size_t>(thread_id)];
+  }
+
+  Participant* get_registered_participant(int32_t thread_id) noexcept {
+    Participant* participant = get_participant(thread_id);
+    if (participant == nullptr || !participant->registered.load(std::memory_order_acquire))
+      ASTRAL_UNLIKELY {
+        return nullptr;
+      }
+    return participant;
+  }
+
+  void lock_registration() noexcept {
+    while (registration_lock_.test_and_set(std::memory_order_acquire)) {
+      astral::platform::cpu_pause();
+    }
+  }
+
+  void unlock_registration() noexcept {
+    registration_lock_.clear(std::memory_order_release);
+    astral::platform::cpu_signal_event();
+  }
+
+  static size_t drain_through(RetireQueue& queue, uint64_t safe_epoch) noexcept {
+    const uint64_t head = queue.head.load(std::memory_order_acquire);
+    uint64_t tail = queue.tail.load(std::memory_order_relaxed);
+    size_t reclaimed = 0;
+
+    while (tail != head) {
+      RetiredEntry& entry = queue.entries[tail & kRetiredMask];
+      if (entry.epoch > safe_epoch) {
+        break;
+      }
+
+      void* ptr = entry.ptr;
+      Deleter deleter = entry.deleter;
+      entry = RetiredEntry{};
+      ++tail;
+      queue.tail.store(tail, std::memory_order_release);
+      deleter(ptr);
+      ++reclaimed;
+    }
+    return reclaimed;
+  }
+
+  static void drain_all(RetireQueue& queue) noexcept {
+    const uint64_t head = queue.head.load(std::memory_order_acquire);
+    uint64_t tail = queue.tail.load(std::memory_order_relaxed);
+    while (tail != head) {
+      RetiredEntry& entry = queue.entries[tail & kRetiredMask];
+      void* ptr = entry.ptr;
+      Deleter deleter = entry.deleter;
+      entry = RetiredEntry{};
+      ++tail;
+      if (ptr != nullptr && deleter != nullptr) {
+        deleter(ptr);
+      }
+    }
+    queue.tail.store(head, std::memory_order_relaxed);
+  }
+
+  void update_safe_frontier(uint64_t new_epoch) noexcept {
+    if (new_epoch < kGraceEpochs) {
+      return;
+    }
+
+    uint64_t candidate = new_epoch - kGraceEpochs;
+    for (Participant& participant : participants_) {
+      if (!participant.registered.load(std::memory_order_acquire)) {
+        continue;
+      }
+
+      const uint64_t participant_epoch = participant.epoch.load(std::memory_order_acquire);
+      if (participant_epoch == kInactiveEpoch || participant_epoch > candidate) {
+        continue;
+      }
+      if (participant_epoch == 0) {
+        return;
+      }
+      candidate = participant_epoch - 1;
+    }
+
+    if (!has_safe_epoch_ || candidate > safe_epoch_) {
+      safe_epoch_ = candidate;
+      has_safe_epoch_ = true;
+    }
+  }
+
+  alignas(kCacheLineSize) std::atomic<uint64_t> global_epoch_;
+  alignas(kCacheLineSize) std::atomic_flag registration_lock_ = ATOMIC_FLAG_INIT;
+  alignas(kCacheLineSize) std::atomic_flag collecting_ = ATOMIC_FLAG_INIT;
+  Participant participants_[kMaxThreads];
+
+  // Single-collector state; protected by collecting_.
+  uint64_t safe_epoch_ = 0;
+  bool has_safe_epoch_ = false;
 };
 
-/// RAII guard for epoch-protected critical sections.
-///
-/// Usage:
-/// ```cpp
-/// EpochManager epoch_mgr;
-/// int32_t thread_id = epoch_mgr.register_thread();
-///
-/// {
-///     EpochGuard guard(epoch_mgr, thread_id);
-///     // Access lock-free data structures here
-/// }
-/// // Automatically calls leave() on scope exit
-///
-/// epoch_mgr.unregister_thread(thread_id);
-/// ```
+/// RAII guard for one epoch-protected read-side critical section.
 class EpochGuard {
 public:
-    EpochGuard(EpochManager& mgr, int32_t thread_id)
-        : mgr_(mgr), thread_id_(thread_id) {
-        mgr_.enter(thread_id_);
-    }
+  EpochGuard(EpochManager& manager, int32_t thread_id) noexcept
+      : manager_(manager), thread_id_(thread_id) {
+    manager_.enter(thread_id_);
+  }
 
-    ~EpochGuard() {
-        mgr_.leave(thread_id_);
-    }
+  ~EpochGuard() { manager_.leave(thread_id_); }
 
-    // Non-copyable, non-movable
-    EpochGuard(const EpochGuard&) = delete;
-    EpochGuard& operator=(const EpochGuard&) = delete;
-    EpochGuard(EpochGuard&&) = delete;
-    EpochGuard& operator=(EpochGuard&&) = delete;
+  EpochGuard(const EpochGuard&) = delete;
+  EpochGuard& operator=(const EpochGuard&) = delete;
+  EpochGuard(EpochGuard&&) = delete;
+  EpochGuard& operator=(EpochGuard&&) = delete;
 
 private:
-    EpochManager& mgr_;
-    int32_t thread_id_;
+  EpochManager& manager_;
+  int32_t thread_id_;
 };
 
 } // namespace astral::concurrency

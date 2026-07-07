@@ -5,19 +5,21 @@
  * Validates: enqueue/dequeue, push/pop, full/empty, thread-safety, memory ordering.
  */
 
-#include "test_framework.hpp"
+#include "../src/concurrency/epoch.hpp"
 #include "../src/concurrency/mpmc_queue.hpp"
 #include "../src/concurrency/mpsc_ring.hpp"
 #include "../src/concurrency/mpsc_ticket_ring.hpp"
 #include "../src/concurrency/spsc_fan_in.hpp"
 #include "../src/concurrency/spsc_ring.hpp"
 #include "../src/platform/atomics.h"
+#include "test_framework.hpp"
 
+#include <atomic>
+#include <chrono>
+#include <cstring>
+#include <memory>
 #include <thread>
 #include <vector>
-#include <atomic>
-#include <cstring>
-#include <chrono>
 
 using namespace astral::concurrency;
 
@@ -36,6 +38,24 @@ struct SpscBackpressureProducerContext {
     SpscRing<TestData, kSpscBackpressureCapacity>* ring;
     std::atomic<uint32_t>* blocked_pushes;
 };
+
+struct EpochRetireProbe {
+  std::atomic<uint32_t>* destroyed = nullptr;
+  std::atomic<uint32_t>* duplicates = nullptr;
+  std::atomic<uint8_t>* seen = nullptr;
+  uint32_t id = 0;
+
+  ~EpochRetireProbe() {
+    if (seen != nullptr && seen[id].fetch_add(1, std::memory_order_relaxed) != 0) {
+      duplicates->fetch_add(1, std::memory_order_relaxed);
+    }
+    destroyed->fetch_add(1, std::memory_order_release);
+  }
+};
+
+static void delete_epoch_retire_probe(void* ptr) noexcept {
+  delete static_cast<EpochRetireProbe*>(ptr);
+}
 
 static void run_spsc_backpressure_producer(SpscBackpressureProducerContext* ctx) {
     for (uint32_t i = static_cast<uint32_t>(kSpscBackpressureCapacity);
@@ -901,4 +921,136 @@ TEST(spsc_reset_reuse) {
         ASSERT_TRUE(ring.pop(&out));
         ASSERT_EQ(out.value, 100 + i);
     }
+}
+
+TEST(epoch_registration_slots_are_reusable) {
+  EpochManager manager;
+
+  for (size_t i = 0; i < EpochManager::kMaxThreads * 3; ++i) {
+    const int32_t participant = manager.register_thread();
+    ASSERT_GE(participant, 0);
+    manager.unregister_thread(participant);
+  }
+}
+
+TEST(epoch_retire_overflow_never_frees_a_pinned_object) {
+  EpochManager manager;
+  const int32_t retire_participant = manager.register_thread();
+  const int32_t reader_participant = manager.register_thread();
+  ASSERT_GE(retire_participant, 0);
+  ASSERT_GE(reader_participant, 0);
+
+  std::atomic<uint32_t> destroyed{0};
+  std::atomic<uint32_t> duplicates{0};
+  manager.enter(reader_participant);
+
+  for (size_t i = 0; i < EpochManager::kMaxRetiredPerParticipant; ++i) {
+    auto* probe = new EpochRetireProbe{&destroyed, &duplicates, nullptr, 0};
+    ASSERT_TRUE(manager.defer_delete(retire_participant, probe, delete_epoch_retire_probe));
+  }
+
+  auto* overflow = new EpochRetireProbe{&destroyed, &duplicates, nullptr, 0};
+  ASSERT_FALSE(manager.defer_delete(retire_participant, overflow, delete_epoch_retire_probe));
+
+  for (uint32_t i = 0; i < 8; ++i) {
+    manager.collect();
+  }
+  ASSERT_EQ(destroyed.load(std::memory_order_acquire), 0u);
+
+  manager.leave(reader_participant);
+  for (uint32_t i = 0; i < 4; ++i) {
+    manager.collect();
+  }
+  ASSERT_EQ(destroyed.load(std::memory_order_acquire),
+            static_cast<uint32_t>(EpochManager::kMaxRetiredPerParticipant));
+
+  ASSERT_TRUE(manager.defer_delete(retire_participant, overflow, delete_epoch_retire_probe));
+  for (uint32_t i = 0; i < 4; ++i) {
+    manager.collect();
+  }
+  ASSERT_EQ(destroyed.load(std::memory_order_acquire),
+            static_cast<uint32_t>(EpochManager::kMaxRetiredPerParticipant + 1));
+  ASSERT_EQ(duplicates.load(std::memory_order_relaxed), 0u);
+
+  manager.unregister_thread(reader_participant);
+  manager.unregister_thread(retire_participant);
+}
+
+TEST(epoch_concurrent_retire_and_collect_reclaims_once) {
+  constexpr uint32_t kProducerCount = 8;
+  constexpr uint32_t kRetiresPerProducer = 2000;
+  constexpr uint32_t kTotalRetires = kProducerCount * kRetiresPerProducer;
+
+  EpochManager manager;
+  std::atomic<uint32_t> destroyed{0};
+  std::atomic<uint32_t> duplicates{0};
+  std::atomic<uint32_t> producers_ready{0};
+  std::atomic<uint32_t> producers_done{0};
+  std::atomic<bool> start{false};
+  std::atomic<bool> registration_failed{false};
+  std::atomic<bool> timed_out{false};
+  auto seen = std::make_unique<std::atomic<uint8_t>[]>(kTotalRetires);
+  for (uint32_t i = 0; i < kTotalRetires; ++i) {
+    seen[i].store(0, std::memory_order_relaxed);
+  }
+
+  std::vector<std::thread> producers;
+  producers.reserve(kProducerCount);
+  for (uint32_t producer = 0; producer < kProducerCount; ++producer) {
+    producers.emplace_back([&, producer]() {
+      const int32_t participant = manager.register_thread();
+      if (participant < 0) {
+        registration_failed.store(true, std::memory_order_release);
+        producers_ready.fetch_add(1, std::memory_order_release);
+        producers_done.fetch_add(1, std::memory_order_release);
+        return;
+      }
+
+      producers_ready.fetch_add(1, std::memory_order_release);
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+
+      for (uint32_t item = 0; item < kRetiresPerProducer; ++item) {
+        const uint32_t id = producer * kRetiresPerProducer + item;
+        auto* probe = new EpochRetireProbe{&destroyed, &duplicates, seen.get(), id};
+        while (!manager.defer_delete(participant, probe, delete_epoch_retire_probe)) {
+          std::this_thread::yield();
+        }
+      }
+
+      manager.unregister_thread(participant);
+      producers_done.fetch_add(1, std::memory_order_release);
+    });
+  }
+
+  while (producers_ready.load(std::memory_order_acquire) != kProducerCount) {
+    std::this_thread::yield();
+  }
+  start.store(true, std::memory_order_release);
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (producers_done.load(std::memory_order_acquire) != kProducerCount ||
+         destroyed.load(std::memory_order_acquire) != kTotalRetires) {
+    manager.collect();
+    if (std::chrono::steady_clock::now() >= deadline) {
+      timed_out.store(true, std::memory_order_release);
+      break;
+    }
+  }
+
+  for (std::thread& producer : producers) {
+    producer.join();
+  }
+  for (uint32_t i = 0; i < 4; ++i) {
+    manager.collect();
+  }
+
+  ASSERT_FALSE(registration_failed.load(std::memory_order_acquire));
+  ASSERT_FALSE(timed_out.load(std::memory_order_acquire));
+  ASSERT_EQ(destroyed.load(std::memory_order_acquire), kTotalRetires);
+  ASSERT_EQ(duplicates.load(std::memory_order_relaxed), 0u);
+  for (uint32_t i = 0; i < kTotalRetires; ++i) {
+    ASSERT_EQ(seen[i].load(std::memory_order_relaxed), static_cast<uint8_t>(1));
+  }
 }

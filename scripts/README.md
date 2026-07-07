@@ -34,7 +34,8 @@ brew install valgrind
 - Integer overflows
 - Undefined behavior
 
-**Output**: CTest output for `gate_allocations` and `gate_rss_cap`.
+**Output**: CTest output for `test_concurrency`, `gate_allocations`, and
+`gate_rss_cap`.
 
 ---
 
@@ -645,7 +646,7 @@ This is expected with Valgrind (10-20x slowdown). For faster validation:
 ### run_asan.sh
 - Creates separate build directory: `build/asan`
 - Compiles with: `-fsanitize=address -fsanitize=undefined`
-- Runs `gate_allocations` and `gate_rss_cap` through CTest.
+- Runs `test_concurrency`, `gate_allocations`, and `gate_rss_cap` through CTest.
 - Exit code: 0 (pass), non-zero (fail)
 
 ### run_tsan.sh

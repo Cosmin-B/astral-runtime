@@ -31,8 +31,9 @@ COMPONENTS
 3. EpochManager
    - Epoch-based memory reclamation
    - Safe deferred deletion without hazard pointers
-   - Fixed-size thread registration (128 threads max)
-   - Fixed-size deferred deletion ring (4096 items per epoch)
+   - Reusable fixed-size participant registration (128 concurrent threads max)
+   - One fixed 256-entry SPSC retirement queue per participant
+   - Explicit deleters; queue overflow leaves ownership with the caller
 
 4. StreamToken
    - Fixed-size token struct for streaming (40 bytes)
@@ -62,9 +63,9 @@ SpscRing:
 - Size: memory_order_relaxed (approximation only)
 
 EpochManager:
-- Enter: memory_order_acquire on global epoch load
+- Enter: seq_cst epoch publication and validation handshake
 - Leave: memory_order_release on thread epoch store
-- Collect: memory_order_seq_cst on global epoch increment
+- Collect: drain the previously safe frontier, then seq_cst global epoch increment
 
 CRITICAL FIXES
 --------------
@@ -114,9 +115,12 @@ int32_t thread_id = epoch_mgr.register_thread();
 
 // Defer deletion
 Node* node = allocate_node();
-epoch_mgr.defer_delete(node);
+while (!epoch_mgr.defer_delete(thread_id, node)) {
+    // The queue is fixed-capacity. Keep ownership and retry after collection.
+    pause_or_wait();
+}
 
-// Periodically collect garbage (dedicated thread)
+// Periodically collect garbage from exactly one collector thread.
 epoch_mgr.collect();
 
 BUILDING
@@ -145,5 +149,6 @@ NOTES
 - All structures require power-of-2 capacity (compile-time enforced)
 - All data types must be trivially copyable (compile-time enforced)
 - Cache-line size is assumed to be 64 bytes (standard for x86/ARM)
-- EpochManager has fixed limits (128 threads, 4096 deferred deletions per epoch)
+- EpochManager has fixed limits (128 participants, 256 pending retirements per participant)
+- A failed defer_delete does not invoke the deleter; the caller retains ownership
 - SPSC Ring reserves one slot to distinguish full from empty state
