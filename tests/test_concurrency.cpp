@@ -6,6 +6,7 @@
  */
 
 #include "../src/concurrency/epoch.hpp"
+#include "../src/concurrency/event_spin_lock.hpp"
 #include "../src/concurrency/mpmc_queue.hpp"
 #include "../src/concurrency/mpsc_ring.hpp"
 #include "../src/concurrency/mpsc_ticket_ring.hpp"
@@ -72,6 +73,34 @@ static void run_spsc_backpressure_producer(SpscBackpressureProducerContext* ctx)
 //
 // MPMC Queue Tests
 //
+
+TEST(event_spin_lock_serializes_access) {
+  EventSpinLock lock;
+  ASSERT_TRUE(lock.try_lock());
+  ASSERT_FALSE(lock.try_lock());
+  lock.unlock();
+
+  constexpr uint32_t kThreadCount = 4;
+  constexpr uint32_t kIterations = 10000;
+  uint32_t counter = 0;
+  std::thread threads[kThreadCount];
+
+  for (uint32_t thread_i = 0; thread_i < kThreadCount; ++thread_i) {
+    threads[thread_i] = std::thread([&]() {
+      for (uint32_t i = 0; i < kIterations; ++i) {
+        lock.lock();
+        ++counter;
+        lock.unlock();
+      }
+    });
+  }
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  ASSERT_EQ(counter, kThreadCount * kIterations);
+}
 
 TEST(mpmc_enqueue_dequeue_basic) {
     MpmcQueue<TestData, 16> queue;
@@ -642,6 +671,20 @@ TEST(spsc_fan_in_multi_producer_single_consumer_checksum) {
     const uint64_t expected = (kTotalItems - 1) * kTotalItems / 2;
     ASSERT_EQ(consumed.load(), kTotalItems);
     ASSERT_EQ(sum, expected);
+}
+
+TEST(spsc_fan_in_rejects_invalid_producer_lane) {
+  constexpr size_t kProducers = 2;
+  SpscFanIn<uint64_t, kProducers, 8> fan_in;
+
+  const uint64_t item = 42;
+  ASSERT_FALSE(fan_in.try_push(kProducers, item));
+  ASSERT_EQ(fan_in.push_batch(kProducers, &item, 1), 0u);
+
+  ASSERT_TRUE(fan_in.try_push(0, item));
+  uint64_t out = 0;
+  ASSERT_TRUE(fan_in.pop(out));
+  ASSERT_EQ(out, item);
 }
 
 //

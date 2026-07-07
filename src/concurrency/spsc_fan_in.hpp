@@ -28,10 +28,18 @@ public:
     SpscFanIn& operator=(SpscFanIn&&) = delete;
 
     bool try_push(size_t producer_index, const T& item) {
+      if (producer_index >= Producers)
+        ASTRAL_UNLIKELY {
+          return false;
+        }
         return lanes_[producer_index].push(item);
     }
 
     size_t push_batch(size_t producer_index, const T* items, size_t count) {
+      if (producer_index >= Producers)
+        ASTRAL_UNLIKELY {
+          return 0;
+        }
         return lanes_[producer_index].push_batch(items, count);
     }
 

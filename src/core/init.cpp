@@ -14,6 +14,7 @@
  */
 
 #include "../../include/astral_rt.h"
+#include "../concurrency/event_spin_lock.hpp"
 #include "../concurrency/mpsc_ticket_ring.hpp"
 #include "../memory/frame_allocator.hpp"
 #include "../platform/atomics.h"
@@ -71,11 +72,11 @@ public:
       base_ = nullptr;
       size_ = 0;
       used_ = 0;
-      arena_lock_.clear(std::memory_order_relaxed);
+      arena_lock_.reset();
       for (auto& b : buckets_) {
         b.free_list = nullptr;
         b.grow = 0;
-        b.lock.clear(std::memory_order_relaxed);
+        b.lock.reset();
       }
     }
 
@@ -230,9 +231,9 @@ private:
     static constexpr uint32_t kLocalFlush = 32;
 
     struct Bucket {
-        std::atomic_flag lock = ATOMIC_FLAG_INIT;
-        void* free_list = nullptr;
-        uint32_t grow = 0;
+      concurrency::EventSpinLock lock;
+      void* free_list = nullptr;
+      uint32_t grow = 0;
     };
 
     struct ThreadCache {
@@ -312,21 +313,9 @@ private:
       return (hb - highest_bit_nonzero_u32(kMinPow2)) * kSubdiv + sub;
     }
 
-    void lock_bucket(Bucket& b) noexcept {
-        uint32_t spins = 0;
-        while (b.lock.test_and_set(std::memory_order_acquire)) {
-            if (spins < 64) {
-                astral::platform::cpu_pause();
-            } else {
-                astral::platform::cpu_wait_for_event();
-            }
-            if (spins < 1024) {
-                ++spins;
-            }
-        }
-    }
+    void lock_bucket(Bucket& b) noexcept { b.lock.lock(); }
 
-    void unlock_bucket(Bucket& b) noexcept { b.lock.clear(std::memory_order_release); }
+    void unlock_bucket(Bucket& b) noexcept { b.lock.unlock(); }
 
     bool grow_bucket(uint32_t bucket) noexcept {
         if (bucket >= kBucketCount) {
@@ -346,27 +335,17 @@ private:
         // Allocate from backing arena with coarse lock.
         void* chunk = nullptr;
         {
-            uint32_t spins = 0;
-            while (arena_lock_.test_and_set(std::memory_order_acquire)) {
-                if (spins < 64) {
-                    astral::platform::cpu_pause();
-                } else {
-                    astral::platform::cpu_wait_for_event();
-                }
-                if (spins < 1024) {
-                    ++spins;
-                }
-            }
+          arena_lock_.lock();
 
-            uint8_t* cursor = base_ + used_;
-            cursor = static_cast<uint8_t*>(align_up_ptr_local(cursor, kMaxAlign));
-            const size_t off = static_cast<size_t>(cursor - base_);
-            if (off + bytes <= size_) {
-                chunk = cursor;
-                used_ = off + bytes;
-            }
+          uint8_t* cursor = base_ + used_;
+          cursor = static_cast<uint8_t*>(align_up_ptr_local(cursor, kMaxAlign));
+          const size_t off = static_cast<size_t>(cursor - base_);
+          if (off + bytes <= size_) {
+            chunk = cursor;
+            used_ = off + bytes;
+          }
 
-            arena_lock_.clear(std::memory_order_release);
+          arena_lock_.unlock();
         }
 
         if (chunk == nullptr) {
@@ -398,7 +377,7 @@ private:
     size_t size_{0};
     size_t used_{0};
     uint64_t epoch_{1};
-    std::atomic_flag arena_lock_ = ATOMIC_FLAG_INIT;
+    concurrency::EventSpinLock arena_lock_;
     Bucket buckets_[kBucketCount]{};
 };
 
@@ -453,7 +432,7 @@ struct AstralRuntime {
     uint8_t* session_blocks_base;
     uint32_t* session_block_next; // lives inside arena memory
     uint32_t session_block_free_head;
-    std::atomic_flag session_block_lock = ATOMIC_FLAG_INIT;
+    concurrency::EventSpinLock session_block_lock;
 
     // Logging
     AstralLogFn log_cb;
@@ -557,6 +536,7 @@ static void session_pool_reset() {
     g_runtime.session_blocks_base = nullptr;
     g_runtime.session_block_next = nullptr;
     g_runtime.session_block_free_head = kInvalidIndex;
+    g_runtime.session_block_lock.reset();
 }
 
 static bool session_pool_init_from_arena(void* arena_base, size_t arena_size, uint32_t block_size, uint32_t block_count) {
@@ -625,21 +605,11 @@ static bool session_pool_init_from_arena(void* arena_base, size_t arena_size, ui
 }
 
 static inline void session_pool_lock() {
-    uint32_t spins = 0;
-    while (g_runtime.session_block_lock.test_and_set(std::memory_order_acquire)) {
-        if (spins < 64) {
-            astral::platform::cpu_pause();
-        } else {
-            astral::platform::cpu_wait_for_event();
-        }
-        if (spins < 1024) {
-            ++spins;
-        }
-    }
+  g_runtime.session_block_lock.lock();
 }
 
 static inline void session_pool_unlock() {
-    g_runtime.session_block_lock.clear(std::memory_order_release);
+  g_runtime.session_block_lock.unlock();
 }
 
 static void* session_pool_acquire() {

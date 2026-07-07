@@ -75,7 +75,7 @@ public:
             }
         }
 
-        const bool was_empty = (head == tail);
+        const bool was_empty = producer_was_empty(head, tail);
         const size_t index = head & kIndexMask;
         buffer_[index] = item;
         producer_head_cache_ = next_head;
@@ -123,7 +123,7 @@ public:
             }
         }
 
-        const bool was_full = ((head - tail) >= Capacity);
+        const bool was_full = consumer_was_full(head, tail);
         const size_t index = tail & kIndexMask;
         out = buffer_[index];
         const uint64_t next_tail = tail + 1;
@@ -162,7 +162,7 @@ public:
             }
         }
 
-        const bool was_empty = (head == tail);
+        const bool was_empty = producer_was_empty(head, tail);
         const size_t n = count < available ? count : available;
         size_t first = Capacity - static_cast<size_t>(head & kIndexMask);
         if (first > n) {
@@ -208,7 +208,7 @@ public:
             }
         }
 
-        const bool was_full = (available >= Capacity);
+        const bool was_full = consumer_was_full(head, tail);
         const size_t n = count < available ? count : available;
         size_t first = Capacity - static_cast<size_t>(tail & kIndexMask);
         if (first > n) {
@@ -257,7 +257,7 @@ public:
             }
         }
 
-      const bool was_full = (available >= Capacity);
+      const bool was_full = consumer_was_full(head, tail);
       const size_t n = count < available ? count : available;
       const size_t begin = static_cast<size_t>(tail & kIndexMask);
       size_t first = Capacity - begin;
@@ -330,6 +330,26 @@ public:
 private:
     static constexpr size_t kCacheLineSize = astral::platform::kCacheLineAlign;
     static constexpr size_t kIndexMask = Capacity - 1;
+
+    bool producer_was_empty(uint64_t head, uint64_t cached_tail) {
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
+      if (head != cached_tail) {
+        cached_tail = tail_.load(std::memory_order_acquire);
+        producer_tail_cache_ = cached_tail;
+      }
+#endif
+      return head == cached_tail;
+    }
+
+    bool consumer_was_full(uint64_t cached_head, uint64_t tail) {
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
+      if (cached_head - tail < Capacity) {
+        cached_head = head_.load(std::memory_order_acquire);
+        consumer_head_cache_ = cached_head;
+      }
+#endif
+      return cached_head - tail >= Capacity;
+    }
 
     // Cache-line aligned atomics keep the producer and consumer cursors apart.
     // Producer writes head, consumer writes tail - keep them on separate cache lines
