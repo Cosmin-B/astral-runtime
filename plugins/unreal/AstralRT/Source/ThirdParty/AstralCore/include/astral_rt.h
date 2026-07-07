@@ -1273,7 +1273,7 @@ typedef struct AstralExecutorDesc {
     uint32_t size;             // sizeof(AstralExecutorDesc)
     uint32_t max_slots;        // maximum number of concurrent conversations for this model (>=1)
     uint32_t max_batch_tokens; // per-tick batch token cap (<= model n_batch is recommended)
-    uint32_t worker_hint;      // 0 = auto, otherwise preferred runtime worker id
+    uint32_t worker_hint;      // Reserved for compatibility; set to 0
 } AstralExecutorDesc;
 
 /**
@@ -1994,6 +1994,7 @@ ASTRAL_API int32_t ASTRAL_CALL astral_stream_read(AstralHandle session, AstralMu
  *
  * Must be called before creating any conversations for this model. If the executor is
  * already created, returns ASTRAL_E_STATE.
+ * Returns ASTRAL_E_UNSUPPORTED when Astral is built without thread support.
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_configure(AstralHandle model, const AstralExecutorDesc* desc);
 
