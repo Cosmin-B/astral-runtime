@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../backend/backend.hpp"
+#include "../platform/thread.h"
 #include "../utils/trace.hpp"
 
 #include "conversation.hpp"
@@ -18,7 +19,6 @@ struct ModelExecutor {
     void* backend_session_ctx = nullptr;
     uint32_t max_slots = 1;
     uint32_t max_batch_tokens = 1;
-    uint32_t worker_id = 0;
 
     // Scheduling knobs (atomic so they can be tuned at runtime).
     std::atomic<uint32_t> max_prompt_tokens_per_slot_per_tick{8};
@@ -33,9 +33,8 @@ struct ModelExecutor {
     std::atomic<Conversation*> slots[kMaxSlotsHard];
     uint32_t active_slot_mask = 0;
 
-    // Work item runs on the runtime worker pool (one model executor occupies one worker).
-    std::atomic<bool> started{false};
-    std::atomic<bool> finished{false};
+    // The model executor owns its long-lived provider thread.
+    platform::Thread thread{};
 
     // Batch scratch.
     ::AstralBackendBatchToken* batch_tokens = nullptr;
@@ -44,7 +43,7 @@ struct ModelExecutor {
     std::atomic<bool> running{true};
 };
 
-void executor_start(ModelExecutor* ex);
+AstralErr executor_start(ModelExecutor* ex);
 void executor_stop_and_join(ModelExecutor* ex);
 
 } // namespace astral::inference

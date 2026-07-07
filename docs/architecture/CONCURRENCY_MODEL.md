@@ -27,6 +27,8 @@ Not implemented yet (planned):
 
 Current implementation note:
 - `astral_session_decode()` enqueues decode work onto the runtime worker pool and returns immediately.
+- A continuous-batching model executor owns a dedicated long-lived thread. Its provider session and slot
+  scheduler stay on that thread; it does not consume a runtime worker-pool lane.
 
 ## Platform wait primitives
 

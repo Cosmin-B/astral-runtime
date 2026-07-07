@@ -2,7 +2,6 @@
 
 #include "../core/runtime_alloc.hpp"
 #include "../core/runtime_state.hpp"
-#include "../core/work_queue.hpp"
 #include "../platform/atomics.h"
 #include "../platform/time.h"
 
@@ -133,8 +132,7 @@ bool snapshot_has_work(const SlotSnapshot& snapshot) {
     const uint32_t sid = next_mask_slot(mask);
     mask &= mask - 1u;
     Conversation* conv = snapshot.slots[sid];
-    if (conv != nullptr && (conv->state.load(std::memory_order_acquire) == ConvState::Decoding ||
-                            conv->pending_emit_valid != 0)) {
+    if (conv != nullptr && conv->state.load(std::memory_order_acquire) == ConvState::Decoding) {
       return true;
     }
   }
@@ -332,6 +330,25 @@ inline bool stream_hold_flush_all(Conversation* conv) {
   return true;
 }
 
+inline void finish_completion_when_output_drained(Conversation* conv) {
+  if (conv == nullptr || conv->completion_pending == 0) {
+    return;
+  }
+  if (conv->pending_emit_valid != 0) {
+    return;
+  }
+  if (conv->desc.stream_enabled != 0 && !stream_hold_flush_all(conv)) {
+    return;
+  }
+
+  conv->completion_pending = 0;
+  conv->t_end_ticks = ticks_now();
+  conv->published_stats.t_end_ticks.store(conv->t_end_ticks, std::memory_order_relaxed);
+  conv->final_err.store(ASTRAL_OK, std::memory_order_release);
+  conv->state.store(ConvState::Completed, std::memory_order_release);
+  signal();
+}
+
 inline PromptChunk* conv_current_chunk(Conversation* conv) {
   if (conv == nullptr || conv->prompt_chunk_index >= conv->prompt_chunk_count) {
     return nullptr;
@@ -394,8 +411,11 @@ inline void process_logits_for_conv(ModelExecutor* ex, const backend::BackendOps
   const int32_t next_token = static_cast<int32_t>(next);
 
   conv->total_tokens++;
+  conv->published_stats.generated_tokens.store(conv->total_tokens, std::memory_order_relaxed);
   if (conv->total_tokens == 1) {
     conv->t_first_token_ticks = ticks_now();
+    conv->published_stats.t_first_token_ticks.store(conv->t_first_token_ticks,
+                                                    std::memory_order_relaxed);
   }
 
   uint32_t stop_len = 0;
@@ -466,21 +486,13 @@ inline void process_logits_for_conv(ModelExecutor* ex, const backend::BackendOps
       } else {
         conv->hold_count -= stop_len;
       }
-      (void)stream_hold_flush_all(conv);
     }
-    conv->t_end_ticks = ticks_now();
-    conv->final_err.store(ASTRAL_OK, std::memory_order_release);
-    conv->state.store(ConvState::Completed, std::memory_order_release);
-    signal();
+    conv->completion_pending = 1;
+    finish_completion_when_output_drained(conv);
   } else if (conv->total_tokens >= conv->desc.max_tokens ||
              (conv->token_eos >= 0 && next_token == conv->token_eos)) {
-    if (conv->desc.stream_enabled != 0) {
-      (void)stream_hold_flush_all(conv);
-    }
-    conv->t_end_ticks = ticks_now();
-    conv->final_err.store(ASTRAL_OK, std::memory_order_release);
-    conv->state.store(ConvState::Completed, std::memory_order_release);
-    signal();
+    conv->completion_pending = 1;
+    finish_completion_when_output_drained(conv);
   }
 }
 
@@ -528,6 +540,9 @@ void executor_thread(ModelExecutor* ex) {
       Conversation* conv = snapshot.slots[sid];
       if (conv == nullptr)
         continue;
+      if (conv->state.load(std::memory_order_acquire) != ConvState::Decoding) {
+        continue;
+      }
 
       if (conv->pending_emit_valid != 0) {
         if (conv->desc.stream_enabled != 0) {
@@ -542,6 +557,7 @@ void executor_thread(ModelExecutor* ex) {
           signal();
         }
       }
+      finish_completion_when_output_drained(conv);
     }
 
     // 1b) Apply per-slot reset/grammar before advancing decoding.
@@ -561,6 +577,7 @@ void executor_thread(ModelExecutor* ex) {
         (void)ops->session_slot_reset(ex->backend_session_ctx, sid);
         conv->needs_slot_reset = 0;
         conv->n_past = 0;
+        conv->published_stats.kv_tokens.store(0, std::memory_order_relaxed);
         conv->prompt_off = 0;
         conv->pending_token_valid = 0;
         conv->pending_emit_valid = 0;
@@ -682,6 +699,7 @@ void executor_thread(ModelExecutor* ex) {
         continue;
       }
       conv->n_past = slot_pos;
+      conv->published_stats.kv_tokens.store(slot_pos, std::memory_order_relaxed);
 
       prompt_chunk_reset(*chunk);
       conv->prompt_chunk_index += 1u;
@@ -858,6 +876,7 @@ void executor_thread(ModelExecutor* ex) {
       }
 
       conv->n_past += 1;
+      conv->published_stats.kv_tokens.store(conv->n_past, std::memory_order_relaxed);
     }
 
     // Build output mapping by scanning want_logits in batch order.
@@ -915,20 +934,19 @@ void executor_work_item(void* user) {
   if (ex == nullptr) {
     return;
   }
-  ex->started.store(true, std::memory_order_release);
   executor_thread(ex);
-  ex->finished.store(true, std::memory_order_release);
   signal();
 }
 
-void executor_start(ModelExecutor* ex) {
+AstralErr executor_start(ModelExecutor* ex) {
   if (ex == nullptr || ex->model == nullptr || ex->model->backend == nullptr ||
       ex->model->backend->ops == nullptr) {
-    return;
+    return ASTRAL_E_INVALID;
   }
 
-  ex->started.store(false, std::memory_order_release);
-  ex->finished.store(true, std::memory_order_release); // until successfully started
+#if !ASTRAL_ENABLE_THREADS
+  return ASTRAL_E_UNSUPPORTED;
+#else
 
   auto* model = ex->model;
   const auto* ops = model->backend->ops;
@@ -938,7 +956,7 @@ void executor_start(ModelExecutor* ex) {
   const AstralErr info_err = ops->model_info(model->backend_model_ctx, &vocab_size, &ctx_size);
   if (info_err != ASTRAL_OK || vocab_size == 0) {
     ex->running.store(false, std::memory_order_release);
-    return;
+    return info_err != ASTRAL_OK ? info_err : ASTRAL_E_BACKEND;
   }
 
   ex->vocab_size = vocab_size;
@@ -955,7 +973,7 @@ void executor_start(ModelExecutor* ex) {
   if (ex->indices_buffer == nullptr || ex->batch_tokens == nullptr ||
       ex->batch_output_slots == nullptr) {
     ex->running.store(false, std::memory_order_release);
-    return;
+    return ASTRAL_E_NOMEM;
   }
 
   AstralSessionDesc sd{};
@@ -977,27 +995,22 @@ void executor_start(ModelExecutor* ex) {
 
   if (ex->backend_session_ctx == nullptr) {
     ex->running.store(false, std::memory_order_release);
-    return;
+    return create_err != ASTRAL_OK ? create_err : ASTRAL_E_BACKEND;
   }
 
-  // Use the runtime worker pool to run the executor loop (one worker per model).
   if (!core::runtime_initialized()) {
     ex->running.store(false, std::memory_order_release);
-    return;
+    return ASTRAL_E_STATE;
   }
-
-  const uint32_t cfg_worker = ex->model->executor_desc.worker_hint;
-  ex->worker_id = cfg_worker != 0 ? cfg_worker : core::runtime_assign_worker_id();
 
   ex->running.store(true, std::memory_order_release);
-  ex->finished.store(false, std::memory_order_release);
 
-  const AstralErr submit_err = core::submit_work_affine(ex->worker_id, executor_work_item, ex);
-  if (submit_err != ASTRAL_OK) {
+  if (!platform::thread_start(&ex->thread, executor_work_item, ex)) {
     ex->running.store(false, std::memory_order_release);
-    ex->finished.store(true, std::memory_order_release);
-    return;
+    return ASTRAL_E_BACKEND;
   }
+  return ASTRAL_OK;
+#endif
 }
 
 void executor_stop_and_join(ModelExecutor* ex) {
@@ -1007,18 +1020,7 @@ void executor_stop_and_join(ModelExecutor* ex) {
 
   ex->running.store(false, std::memory_order_release);
   signal();
-
-  uint32_t spins = 0;
-  while (!ex->finished.load(std::memory_order_acquire)) {
-    if (spins < 64) {
-      astral::platform::cpu_pause();
-    } else {
-      astral::platform::cpu_wait_for_event();
-    }
-    if (spins < 1024) {
-      ++spins;
-    }
-  }
+  platform::thread_join(&ex->thread);
 
   if (ex->model && ex->model->backend && ex->model->backend->ops && ex->backend_session_ctx) {
     ex->model->backend->ops->session_destroy(ex->backend_session_ctx);

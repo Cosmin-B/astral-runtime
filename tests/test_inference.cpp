@@ -6,6 +6,7 @@
  */
 
 #include "../include/astral_rt.h"
+#include "../src/core/work_queue.hpp"
 #include "../src/inference/sampler.hpp"
 #include "test_framework.hpp"
 
@@ -19,6 +20,10 @@
 #include <thread>
 
 namespace {
+
+void mark_work_complete(void* user) {
+  static_cast<std::atomic<bool>*>(user)->store(true, std::memory_order_release);
+}
 
 AstralHandle load_mock_model(const char* model_path) {
     AstralModelDesc model_desc = {};
@@ -381,6 +386,48 @@ TEST(inference_request_lifecycle_conversation_mock) {
 
     astral_model_release(model);
     astral_shutdown();
+}
+
+TEST(inference_conversation_executor_does_not_occupy_worker_pool) {
+  AstralInit cfg{};
+  cfg.reserve_bytes = 32 * 1024 * 1024;
+  cfg.thread_count = 1;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  const AstralHandle model = load_mock_model(nullptr);
+
+  AstralExecutorDesc executor{};
+  executor.size = sizeof(AstralExecutorDesc);
+  executor.max_slots = 1;
+  executor.max_batch_tokens = 8;
+  ASSERT_EQ(astral_model_executor_configure(model, &executor), ASTRAL_OK);
+
+  AstralConvDesc conv_desc{};
+  conv_desc.size = sizeof(AstralConvDesc);
+  conv_desc.model = model;
+  conv_desc.max_tokens = 8;
+  conv_desc.top_p = 1.0f;
+  conv_desc.stream_enabled = 1;
+
+  AstralHandle conv = 0;
+  ASSERT_EQ(astral_conv_create(&conv_desc, &conv), ASTRAL_OK);
+
+  std::atomic<bool> completed{false};
+  ASSERT_EQ(astral::core::submit_work(mark_work_complete, &completed), ASTRAL_OK);
+
+  for (uint32_t attempt = 0; attempt < 200; ++attempt) {
+    if (completed.load(std::memory_order_acquire)) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  const bool completed_while_executor_running = completed.load(std::memory_order_acquire);
+
+  astral_conv_destroy(conv);
+  astral_model_release(model);
+  astral_shutdown();
+
+  ASSERT_TRUE(completed_while_executor_running);
 }
 
 TEST(inference_mock_lifecycle_churn) {

@@ -251,21 +251,26 @@ inline uint32_t parse_u32_env(const char* key, uint32_t fallback) {
   return static_cast<uint32_t>(n);
 }
 
-ModelExecutor* ensure_executor(Model* model) {
-  if (model == nullptr) {
-    return nullptr;
+AstralErr ensure_executor(Model* model, ModelExecutor** out_executor) {
+  if (model == nullptr || out_executor == nullptr) {
+    return ASTRAL_E_INVALID;
   }
+  *out_executor = nullptr;
 
   ModelExecutor* ex = model->executor.load(std::memory_order_acquire);
   if (ex != nullptr) {
-    return ex;
+    *out_executor = ex;
+    return ASTRAL_OK;
   }
 
+  AstralErr result = ASTRAL_OK;
   lock_flag(model->executor_lock);
   ex = model->executor.load(std::memory_order_acquire);
   if (ex == nullptr) {
     auto* created = core::runtime_new<ModelExecutor>(model);
-    if (created != nullptr) {
+    if (created == nullptr) {
+      result = ASTRAL_E_NOMEM;
+    } else {
       const AstralExecutorDesc cfg = model->executor_desc;
       const uint32_t max_slots = cfg.max_slots != 0 ? cfg.max_slots : 1;
       const uint32_t max_batch = cfg.max_batch_tokens;
@@ -284,12 +289,12 @@ ModelExecutor* ensure_executor(Model* model) {
       if (model->backend == nullptr || model->backend->ops == nullptr ||
           model->backend->ops->session_batch_eval == nullptr ||
           model->backend->ops->session_batch_logits == nullptr) {
+        result = ASTRAL_E_UNSUPPORTED;
         core::runtime_delete(created);
         created = nullptr;
       } else {
-        executor_start(created);
-        if (!created->running.load(std::memory_order_acquire) ||
-            created->backend_session_ctx == nullptr) {
+        result = executor_start(created);
+        if (result != ASTRAL_OK) {
           executor_stop_and_join(created);
           core::runtime_delete(created);
           created = nullptr;
@@ -300,7 +305,8 @@ ModelExecutor* ensure_executor(Model* model) {
     ex = created;
   }
   unlock_flag(model->executor_lock);
-  return ex;
+  *out_executor = ex;
+  return result;
 }
 
 } // namespace
@@ -327,9 +333,10 @@ AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity,
   }
 
   // Ensure executor exists first (also validates backend batching support).
-  ModelExecutor* ex = ensure_executor(model);
-  if (ex == nullptr) {
-    return ASTRAL_E_UNSUPPORTED;
+  ModelExecutor* ex = nullptr;
+  const AstralErr executor_err = ensure_executor(model, &ex);
+  if (executor_err != ASTRAL_OK) {
+    return executor_err;
   }
   if (slot_affinity != 0 && slot_affinity > ex->max_slots) {
     return ASTRAL_E_INVALID;
@@ -747,11 +754,18 @@ AstralErr conv_decode(Conversation* conv) {
   conv->t_first_token_ticks = 0;
   conv->t_end_ticks = 0;
   conv->n_past = 0;
+  conv->published_stats.prompt_tokens.store(conv->prompt_count, std::memory_order_relaxed);
+  conv->published_stats.kv_tokens.store(0, std::memory_order_relaxed);
+  conv->published_stats.generated_tokens.store(0, std::memory_order_relaxed);
+  conv->published_stats.t_start_ticks.store(conv->t_start_ticks, std::memory_order_relaxed);
+  conv->published_stats.t_first_token_ticks.store(0, std::memory_order_relaxed);
+  conv->published_stats.t_end_ticks.store(0, std::memory_order_relaxed);
   conv->stop_tail_len = 0;
   conv->hold_head = 0;
   conv->hold_count = 0;
   conv->pending_token_valid = 0;
   conv->pending_emit_valid = 0;
+  conv->completion_pending = 0;
   conv->mirostat_mu = 0.0f;
 
   // Slot reset must be performed by the executor thread (backend session ctx is not thread-safe).
@@ -886,11 +900,18 @@ AstralErr conv_reset(Conversation* conv, const AstralConvDesc* desc) {
   conv->t_first_token_ticks = 0;
   conv->t_end_ticks = 0;
   conv->n_past = 0;
+  conv->published_stats.prompt_tokens.store(0, std::memory_order_relaxed);
+  conv->published_stats.kv_tokens.store(0, std::memory_order_relaxed);
+  conv->published_stats.generated_tokens.store(0, std::memory_order_relaxed);
+  conv->published_stats.t_start_ticks.store(0, std::memory_order_relaxed);
+  conv->published_stats.t_first_token_ticks.store(0, std::memory_order_relaxed);
+  conv->published_stats.t_end_ticks.store(0, std::memory_order_relaxed);
   conv->stop_tail_len = 0;
   conv->hold_head = 0;
   conv->hold_count = 0;
   conv->pending_token_valid = 0;
   conv->pending_emit_valid = 0;
+  conv->completion_pending = 0;
   conv->needs_slot_reset = 1;
   conv->grammar_applied = 0;
 
@@ -1225,10 +1246,11 @@ AstralErr conv_stats(Conversation* conv, AstralConvStats* out_stats) {
 
   const uint32_t sid = conv->slot_id.load(std::memory_order_acquire);
   out_stats->slot_id = sid;
-  out_stats->prompt_tokens = conv->prompt_count;
-  out_stats->kv_tokens = conv->n_past;
+  out_stats->prompt_tokens = conv->published_stats.prompt_tokens.load(std::memory_order_relaxed);
+  out_stats->kv_tokens = conv->published_stats.kv_tokens.load(std::memory_order_relaxed);
   out_stats->_padding0 = 0;
-  out_stats->generated_tokens = conv->total_tokens;
+  out_stats->generated_tokens =
+      conv->published_stats.generated_tokens.load(std::memory_order_relaxed);
 
   // Timing fields stay zero until the producer records enough samples.
   out_stats->t_first_token_ms = 0.0;
@@ -1237,23 +1259,29 @@ AstralErr conv_stats(Conversation* conv, AstralConvStats* out_stats) {
   const ConvState st = conv->state.load(std::memory_order_acquire);
   (void)st;
 
-  if (conv->t_start_ticks != 0 && conv->t_first_token_ticks != 0) {
-    const uint64_t dt = conv->t_first_token_ticks - conv->t_start_ticks;
+  const uint64_t start_ticks = conv->published_stats.t_start_ticks.load(std::memory_order_relaxed);
+  const uint64_t first_token_ticks =
+      conv->published_stats.t_first_token_ticks.load(std::memory_order_relaxed);
+  if (start_ticks != 0 && first_token_ticks != 0) {
+    const uint64_t dt = first_token_ticks - start_ticks;
     out_stats->t_first_token_ms = static_cast<double>(platform::ticks_to_ns(dt)) / 1.0e6;
   }
 
   // Throughput:
   // - Use end time if terminal, otherwise use "now".
-  if (conv->t_start_ticks != 0 && conv->total_tokens > 0) {
-    const uint64_t end_ticks =
+  if (start_ticks != 0 && out_stats->generated_tokens > 0) {
+    uint64_t end_ticks =
         (st == ConvState::Completed || st == ConvState::Canceled || st == ConvState::Failed)
-            ? conv->t_end_ticks
+            ? conv->published_stats.t_end_ticks.load(std::memory_order_relaxed)
             : get_ticks();
-    if (end_ticks > conv->t_start_ticks) {
+    if (end_ticks == 0) {
+      end_ticks = get_ticks();
+    }
+    if (end_ticks > start_ticks) {
       const double dt_s =
-          static_cast<double>(platform::ticks_to_ns(end_ticks - conv->t_start_ticks)) / 1.0e9;
+          static_cast<double>(platform::ticks_to_ns(end_ticks - start_ticks)) / 1.0e9;
       if (dt_s > 0.0) {
-        out_stats->tok_per_s = static_cast<double>(conv->total_tokens) / dt_s;
+        out_stats->tok_per_s = static_cast<double>(out_stats->generated_tokens) / dt_s;
       }
     }
   }
@@ -1337,8 +1365,11 @@ int32_t conv_stream_read(Conversation* conv, AstralMutSpanU8 out_buf, uint32_t t
     }
 
     const ConvState st = conv->state.load(std::memory_order_acquire);
-    if ((st == ConvState::Completed || st == ConvState::Canceled || st == ConvState::Failed) &&
-        conv->pending_emit_valid == 0 && conv->hold_count == 0) {
+    if (st == ConvState::Completed || st == ConvState::Canceled || st == ConvState::Failed) {
+      const int32_t final_drained = conv_stream_drain(conv, out_buf);
+      if (final_drained > 0) {
+        return final_drained;
+      }
       return 0;
     }
 

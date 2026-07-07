@@ -24,6 +24,15 @@ enum class ConvState : uint32_t {
     Failed = 5,
 };
 
+struct alignas(64) PublishedConversationStats {
+  std::atomic<uint32_t> prompt_tokens{0};
+  std::atomic<uint32_t> kv_tokens{0};
+  std::atomic<uint64_t> generated_tokens{0};
+  std::atomic<uint64_t> t_start_ticks{0};
+  std::atomic<uint64_t> t_first_token_ticks{0};
+  std::atomic<uint64_t> t_end_ticks{0};
+};
+
 struct Conversation {
     Conversation(Model* model_,
                  void* allocator_memory_,
@@ -97,6 +106,9 @@ struct Conversation {
     uint64_t t_first_token_ticks;
     uint64_t t_end_ticks;
 
+    // Observer-facing snapshot. The executor remains the sole owner of the working counters above.
+    PublishedConversationStats published_stats;
+
     // Position within slot.
     uint32_t n_past;
 
@@ -125,6 +137,7 @@ struct Conversation {
     uint8_t pending_token_valid;
     int32_t pending_emit_token;
     uint8_t pending_emit_valid;
+    uint8_t completion_pending{0};
 
     // Executor-side control flags (set by control thread, consumed by executor thread).
     // These must not require any backend calls from the control thread.

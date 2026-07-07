@@ -56,6 +56,7 @@ Controls **Astral’s internal worker pool** used for async work scheduling.
 
 Notes:
 - Backends may still use threads internally (e.g., llama.cpp). Disabling Astral’s worker pool does not guarantee a fully thread-free process.
+- Continuous-batching conversations require Astral thread support and return `ASTRAL_E_UNSUPPORTED` in this profile.
 
 ### `ASTRAL_ENABLE_VIRTUAL_MEMORY` (default: ON)
 

@@ -12,6 +12,10 @@ Call `astral_model_executor_configure()` before creating any conversations:
 
 - `AstralExecutorDesc.max_slots`: maximum concurrent conversations for this model.
 - `AstralExecutorDesc.max_batch_tokens`: per-tick token cap (keep `<= n_batch` for your provider/model).
+- `AstralExecutorDesc.worker_hint`: reserved for ABI compatibility; set it to `0`.
+
+Continuous batching requires a threads-enabled Astral build. Configuration returns
+`ASTRAL_E_UNSUPPORTED` when `ASTRAL_ENABLE_THREADS=OFF`.
 
 ### 2) Create conversations (slots)
 
@@ -97,8 +101,10 @@ Executors are **model-scoped**: each `AstralHandle model` may have its own execu
 
 Practical constraint:
 
-- Each configured model executor occupies one runtime worker thread while it is active. Size `AstralInit.thread_count`
-  accordingly if you plan to run multiple models concurrently.
+- Each active model executor owns one dedicated thread for its provider session and slot scheduler.
+  Executor threads do not occupy runtime worker-pool lanes, so bounded session, embedding, and memory-index
+  jobs continue to use the full `AstralInit.thread_count` budget. Account for one additional thread per active
+  model executor when sizing the process.
 
 ## Unity API
 

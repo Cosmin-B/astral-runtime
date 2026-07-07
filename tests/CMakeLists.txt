@@ -62,6 +62,10 @@ else()
     )
 endif()
 
+if(ASTRAL_ENABLE_VIRTUAL_MEMORY AND NOT ASTRAL_ENABLE_THREADS)
+    list(APPEND TEST_FILES test_threads_disabled)
+endif()
+
 # Create test executables and register with CTest
 foreach(test_file ${TEST_FILES})
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${test_file}.cpp)
@@ -88,6 +92,8 @@ foreach(test_file ${TEST_FILES})
             $<$<NOT:$<BOOL:${ASTRAL_ENABLE_CUDA}>>:ASTRAL_ENABLE_CUDA=0>
             $<$<BOOL:${ASTRAL_ENABLE_MTMD}>:ASTRAL_ENABLE_MTMD=1>
             $<$<NOT:$<BOOL:${ASTRAL_ENABLE_MTMD}>>:ASTRAL_ENABLE_MTMD=0>
+            $<$<BOOL:${ASTRAL_ENABLE_THREADS}>:ASTRAL_ENABLE_THREADS=1>
+            $<$<NOT:$<BOOL:${ASTRAL_ENABLE_THREADS}>>:ASTRAL_ENABLE_THREADS=0>
             ASTRAL_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
         )
 

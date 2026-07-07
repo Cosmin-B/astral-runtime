@@ -1797,6 +1797,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_configure(AstralHandle mo
         return ASTRAL_E_INVALID;
     }
 
+#if !ASTRAL_ENABLE_THREADS
+    set_err_unsupported("continuous batching executor");
+    return ASTRAL_E_UNSUPPORTED;
+#endif
+
     if (m->executor.load(std::memory_order_acquire) != nullptr) {
         set_err_code(ASTRAL_E_STATE);
         return ASTRAL_E_STATE;
