@@ -3926,6 +3926,129 @@ TEST(inference_memory_index_f8_e5m2_storage_mock) {
   astral_memory_destroy(index);
 }
 
+TEST(inference_memory_snapshot_e5m2_clamps_non_finite_codes) {
+  constexpr uint32_t kDim = 32;
+  constexpr uint64_t kKey = 9811;
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = 1;
+  desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+  desc.storage_kind = ASTRAL_MEMORY_STORAGE_F8_E5M2;
+
+  AstralHandle index = 0;
+  ASSERT_EQ(astral_memory_create(&desc, &index), ASTRAL_OK);
+
+  AstralMemoryRecord record{};
+  record.size = sizeof(AstralMemoryRecord);
+  record.key = kKey;
+  float vector[kDim];
+  for (float& value : vector) {
+    value = 1.0f;
+  }
+  ASSERT_EQ(astral_memory_add_batch(index, &record, vector, 1), ASTRAL_OK);
+
+  uint64_t save_bytes = 0;
+  ASSERT_EQ(astral_memory_save_size(index, &save_bytes), ASTRAL_OK);
+  std::vector<uint8_t> blob(static_cast<size_t>(save_bytes));
+  AstralMutSpanU8 out_blob{};
+  out_blob.data = blob.data();
+  out_blob.len = static_cast<uint32_t>(blob.size());
+  uint64_t written = 0;
+  ASSERT_EQ(astral_memory_save(index, out_blob, &written), ASTRAL_OK);
+  ASSERT_EQ(written, save_bytes);
+
+  AstralSpanU8 snapshot{};
+  snapshot.data = blob.data();
+  snapshot.len = static_cast<uint32_t>(blob.size());
+  AstralMemorySnapshotInfo info{};
+  info.size = sizeof(AstralMemorySnapshotInfo);
+  ASSERT_EQ(astral_memory_snapshot_info(snapshot, &info), ASTRAL_OK);
+  ASSERT_TRUE(info.vector_offset + kDim <= blob.size());
+
+  static constexpr uint8_t kNonFiniteCodes[] = {0x7c, 0x7d, 0x7e, 0x7f, 0xfc, 0xfd, 0xfe, 0xff};
+  for (uint32_t i = 0; i < kDim; ++i) {
+    blob[static_cast<size_t>(info.vector_offset) + i] =
+        kNonFiniteCodes[i % (sizeof(kNonFiniteCodes) / sizeof(kNonFiniteCodes[0]))];
+  }
+
+  float query[kDim];
+  for (float& value : query) {
+    value = 1.0f;
+  }
+  AstralMemorySearchDesc search{};
+  search.size = sizeof(AstralMemorySearchDesc);
+  search.top_k = 1;
+  search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+  AstralMemorySearchResult result{};
+  uint32_t count = 0;
+  ASSERT_EQ(astral_memory_snapshot_search(snapshot, &search, query, &result, 1, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 1u);
+  ASSERT_EQ(result.key, kKey);
+  ASSERT_TRUE(std::isfinite(result.score));
+
+  std::vector<uint8_t> saturated_blob = blob;
+  for (uint32_t i = 0; i < kDim; ++i) {
+    const uint8_t corrupt =
+        kNonFiniteCodes[i % (sizeof(kNonFiniteCodes) / sizeof(kNonFiniteCodes[0]))];
+    saturated_blob[static_cast<size_t>(info.vector_offset) + i] =
+        static_cast<uint8_t>((corrupt & 0x80u) | 0x7bu);
+  }
+  AstralSpanU8 saturated_snapshot{};
+  saturated_snapshot.data = saturated_blob.data();
+  saturated_snapshot.len = static_cast<uint32_t>(saturated_blob.size());
+  AstralMemorySearchResult saturated_result{};
+  uint32_t saturated_count = 0;
+  ASSERT_EQ(astral_memory_snapshot_search(saturated_snapshot, &search, query, &saturated_result, 1,
+                                          &saturated_count),
+            ASTRAL_OK);
+  ASSERT_EQ(saturated_count, 1u);
+  ASSERT_EQ(result.score, saturated_result.score);
+
+  AstralHandle loaded = 0;
+  ASSERT_EQ(astral_memory_load(&desc, snapshot, &loaded), ASTRAL_OK);
+  result = {};
+  count = 0;
+  ASSERT_EQ(astral_memory_search(loaded, &search, query, &result, 1, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 1u);
+  ASSERT_EQ(result.key, kKey);
+  ASSERT_TRUE(std::isfinite(result.score));
+  ASSERT_EQ(result.score, saturated_result.score);
+  astral_memory_destroy(loaded);
+
+  char snapshot_path[128]{};
+  std::snprintf(snapshot_path, sizeof(snapshot_path), "/tmp/astral-memory-e5m2-corrupt-%p.bin",
+                static_cast<const void*>(blob.data()));
+  FILE* snapshot_file = std::fopen(snapshot_path, "wb");
+  ASSERT_TRUE(snapshot_file != nullptr);
+  ASSERT_EQ(std::fwrite(blob.data(), 1, blob.size(), snapshot_file), blob.size());
+  ASSERT_EQ(std::fclose(snapshot_file), 0);
+
+  AstralSpanU8 path{};
+  path.data = reinterpret_cast<const uint8_t*>(snapshot_path);
+  path.len = static_cast<uint32_t>(std::strlen(snapshot_path));
+  AstralMemorySnapshotInfo mapped_info{};
+  mapped_info.size = sizeof(AstralMemorySnapshotInfo);
+  AstralHandle mapped_view = 0;
+  ASSERT_EQ(astral_memory_snapshot_map(path, &mapped_info, &mapped_view), ASTRAL_OK);
+
+  result = {};
+  count = 0;
+  ASSERT_EQ(astral_memory_snapshot_view_search(mapped_view, &search, query, &result, 1, &count),
+            ASTRAL_OK);
+  ASSERT_EQ(count, 1u);
+  ASSERT_EQ(result.key, kKey);
+  ASSERT_TRUE(std::isfinite(result.score));
+  ASSERT_EQ(result.score, saturated_result.score);
+
+  astral_memory_snapshot_unmap(mapped_view);
+  std::remove(snapshot_path);
+
+  astral_memory_destroy(index);
+}
+
 TEST(inference_memory_index_f8_e5m2_f32_rerank_storage_mock) {
   constexpr uint32_t kDim = 4;
   constexpr uint32_t kCapacity = 4;

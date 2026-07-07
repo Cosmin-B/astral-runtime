@@ -171,21 +171,54 @@ TEST(cpu_feature_detection_sanity) {
 #endif
 }
 
+TEST(x86_conversion_features_require_f16c) {
+  constexpr uint32_t kXsave = 1u << 26;
+  constexpr uint32_t kOsxsave = 1u << 27;
+  constexpr uint32_t kAvx = 1u << 28;
+  constexpr uint32_t kF16c = 1u << 29;
+  constexpr uint32_t kAvx2 = 1u << 5;
+  constexpr uint64_t kXmmYmmState = (1ull << 1) | (1ull << 2);
+
+  const X86Features complete =
+      x86_features_from_registers(kXsave | kOsxsave | kAvx | kF16c, kAvx2, kXmmYmmState);
+  ASSERT_TRUE(complete.avx2);
+  ASSERT_TRUE(complete.f16c);
+  ASSERT_TRUE(x86_supports_avx2_f16c(complete));
+
+  const X86Features no_f16c =
+      x86_features_from_registers(kXsave | kOsxsave | kAvx, kAvx2, kXmmYmmState);
+  ASSERT_TRUE(no_f16c.avx2);
+  ASSERT_FALSE(no_f16c.f16c);
+  ASSERT_FALSE(x86_supports_avx2_f16c(no_f16c));
+
+  const X86Features no_avx2 =
+      x86_features_from_registers(kXsave | kOsxsave | kAvx | kF16c, 0, kXmmYmmState);
+  ASSERT_FALSE(no_avx2.avx2);
+  ASSERT_TRUE(no_avx2.f16c);
+  ASSERT_FALSE(x86_supports_avx2_f16c(no_avx2));
+
+  const X86Features no_ymm_state =
+      x86_features_from_registers(kXsave | kOsxsave | kAvx | kF16c, kAvx2, 1ull << 1);
+  ASSERT_FALSE(no_ymm_state.avx2);
+  ASSERT_FALSE(no_ymm_state.f16c);
+  ASSERT_FALSE(x86_supports_avx2_f16c(no_ymm_state));
+}
+
 TEST(tick_clock_sanity) {
-    const TickClock clock = tick_clock();
-    ASSERT_GT(clock.tick_to_ns, 0.0);
+  const TickClock clock = tick_clock();
+  ASSERT_GT(clock.tick_to_ns, 0.0);
 
-    const uint64_t first = ticks_now();
-    uint64_t second = first;
-    for (uint32_t i = 0; i < 1000 && second == first; ++i) {
-        cpu_pause();
-        second = ticks_now();
-    }
+  const uint64_t first = ticks_now();
+  uint64_t second = first;
+  for (uint32_t i = 0; i < 1000 && second == first; ++i) {
+    cpu_pause();
+    second = ticks_now();
+  }
 
-    ASSERT_GE(second, first);
-    const uint64_t one_us_ticks = ticks_from_ns(1000);
-    ASSERT_GT(one_us_ticks, 0u);
-    ASSERT_GT(ticks_to_ns(one_us_ticks), 0u);
+  ASSERT_GE(second, first);
+  const uint64_t one_us_ticks = ticks_from_ns(1000);
+  ASSERT_GT(one_us_ticks, 0u);
+  ASSERT_GT(ticks_to_ns(one_us_ticks), 0u);
 }
 
 #if ASTRAL_ENABLE_VIRTUAL_MEMORY

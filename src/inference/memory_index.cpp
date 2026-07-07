@@ -5,6 +5,7 @@
 #include "../core/runtime_state.hpp"
 #include "../core/work_queue.hpp"
 #include "../platform/atomics.h"
+#include "../platform/cpu_features.hpp"
 #include "../platform/file_map.h"
 
 #include <atomic>
@@ -591,8 +592,14 @@ inline void quantize_e5m2_store8_avx2(int8_t* dst, const float* src, __m256 inv_
 }
 
 #if defined(ASTRAL_X86_F16C)
-inline __m256 e5m2_load8_f32_avx2(const int8_t* src) {
-  const __m128i bytes = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src));
+template <bool ClampNonFinite> inline __m256 e5m2_load8_f32_avx2(const int8_t* src) {
+  __m128i bytes = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src));
+  if constexpr (ClampNonFinite) {
+    const __m128i sign = _mm_and_si128(bytes, _mm_set1_epi8(static_cast<char>(0x80)));
+    const __m128i magnitude = _mm_min_epu8(_mm_and_si128(bytes, _mm_set1_epi8(0x7f)),
+                                           _mm_set1_epi8(static_cast<char>(kE5M2MaxFinite)));
+    bytes = _mm_or_si128(sign, magnitude);
+  }
   const __m256i half_u32 = _mm256_slli_epi32(_mm256_cvtepu8_epi32(bytes), 8);
   const __m128i half_lo = _mm256_castsi256_si128(half_u32);
   const __m128i half_hi = _mm256_extracti128_si256(half_u32, 1);
@@ -1585,38 +1592,91 @@ uint8_t f32_to_e5m2(float value) {
                               e5_mantissa);
 }
 
-float dot_e5m2_f32(const int8_t* a, const float* b, uint32_t dim) {
-#if defined(__AVX2__)
-#if defined(ASTRAL_X86_F16C)
-  __m256 acc0 = _mm256_setzero_ps();
-  __m256 acc1 = _mm256_setzero_ps();
-  __m256 acc2 = _mm256_setzero_ps();
-  __m256 acc3 = _mm256_setzero_ps();
-  uint32_t i = 0;
-  for (; i + kAvx2UnrollF32 <= dim; i += kAvx2UnrollF32) {
-#if defined(__FMA__)
-    acc0 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i), _mm256_loadu_ps(b + i), acc0);
-    acc1 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes),
-                           _mm256_loadu_ps(b + i + kAvx2F32Lanes), acc1);
-    acc2 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset2),
-                           _mm256_loadu_ps(b + i + kAvx2Offset2), acc2);
-    acc3 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset3),
-                           _mm256_loadu_ps(b + i + kAvx2Offset3), acc3);
-#else
-    acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i), _mm256_loadu_ps(b + i)));
-    acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes),
-                                             _mm256_loadu_ps(b + i + kAvx2F32Lanes)));
-    acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset2),
-                                             _mm256_loadu_ps(b + i + kAvx2Offset2)));
-    acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset3),
-                                             _mm256_loadu_ps(b + i + kAvx2Offset3)));
-#endif
+void copy_finite_e5m2(int8_t* dst, const int8_t* src, uint32_t dim) {
+  for (uint32_t i = 0; i < dim; ++i) {
+    const uint8_t value = static_cast<uint8_t>(src[i]);
+    const uint8_t magnitude = value & 0x7fu;
+    dst[i] = static_cast<int8_t>((value & 0x80u) |
+                                 (magnitude < kE5M2MaxFinite ? magnitude : kE5M2MaxFinite));
   }
-  float sum = reduce_avx2_f32(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
-  for (; i < dim; ++i) {
+}
+
+#if defined(ASTRAL_X86_F16C)
+float dot_e5m2_f32_scalar(const int8_t* a, const float* b, uint32_t dim) {
+  float sum = 0.0f;
+  for (uint32_t i = 0; i < dim; ++i) {
     sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * b[i];
   }
   return sum;
+}
+
+float dot_e5m2_e5m2_scalar(const int8_t* a, const int8_t* b, uint32_t dim) {
+  float sum = 0.0f;
+  for (uint32_t i = 0; i < dim; ++i) {
+    sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * e5m2_to_f32(static_cast<uint8_t>(b[i]));
+  }
+  return sum;
+}
+
+float l2_score_e5m2_f32_scalar(const int8_t* a, float scale, const float* b, uint32_t dim) {
+  float sum = 0.0f;
+  for (uint32_t i = 0; i < dim; ++i) {
+    const float d = e5m2_to_f32(static_cast<uint8_t>(a[i])) * scale - b[i];
+    sum += d * d;
+  }
+  return -sum;
+}
+
+float l2_score_e5m2_e5m2_scalar(const int8_t* a, float a_scale, const int8_t* b, float b_scale,
+                                uint32_t dim) {
+  float sum = 0.0f;
+  for (uint32_t i = 0; i < dim; ++i) {
+    const float d = e5m2_to_f32(static_cast<uint8_t>(a[i])) * a_scale -
+                    e5m2_to_f32(static_cast<uint8_t>(b[i])) * b_scale;
+    sum += d * d;
+  }
+  return -sum;
+}
+#endif
+
+template <bool UseF16c> float dot_e5m2_f32_impl(const int8_t* a, const float* b, uint32_t dim) {
+#if defined(__AVX2__)
+#if defined(ASTRAL_X86_F16C)
+  if constexpr (!UseF16c) {
+    return dot_e5m2_f32_scalar(a, b, dim);
+  } else {
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    __m256 acc2 = _mm256_setzero_ps();
+    __m256 acc3 = _mm256_setzero_ps();
+    uint32_t i = 0;
+    for (; i + kAvx2UnrollF32 <= dim; i += kAvx2UnrollF32) {
+#if defined(__FMA__)
+      acc0 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i), _mm256_loadu_ps(b + i), acc0);
+      acc1 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2F32Lanes),
+                             _mm256_loadu_ps(b + i + kAvx2F32Lanes), acc1);
+      acc2 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2Offset2),
+                             _mm256_loadu_ps(b + i + kAvx2Offset2), acc2);
+      acc3 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2Offset3),
+                             _mm256_loadu_ps(b + i + kAvx2Offset3), acc3);
+#else
+      acc0 = _mm256_add_ps(
+          acc0, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i), _mm256_loadu_ps(b + i)));
+      acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2F32Lanes),
+                                               _mm256_loadu_ps(b + i + kAvx2F32Lanes)));
+      acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2Offset2),
+                                               _mm256_loadu_ps(b + i + kAvx2Offset2)));
+      acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2Offset3),
+                                               _mm256_loadu_ps(b + i + kAvx2Offset3)));
+#endif
+    }
+    float sum =
+        reduce_avx2_f32(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+    for (; i < dim; ++i) {
+      sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * b[i];
+    }
+    return sum;
+  }
 #else
   const float* table = e5m2_to_f32_table();
   __m256 acc0 = _mm256_setzero_ps();
@@ -1661,39 +1721,46 @@ float dot_e5m2_f32(const int8_t* a, const float* b, uint32_t dim) {
 #endif
 }
 
-float dot_e5m2_e5m2(const int8_t* a, const int8_t* b, uint32_t dim) {
+template <bool UseF16c, bool ClampA>
+float dot_e5m2_e5m2_impl(const int8_t* a, const int8_t* b, uint32_t dim) {
 #if defined(__AVX2__)
 #if defined(ASTRAL_X86_F16C)
-  __m256 acc0 = _mm256_setzero_ps();
-  __m256 acc1 = _mm256_setzero_ps();
-  __m256 acc2 = _mm256_setzero_ps();
-  __m256 acc3 = _mm256_setzero_ps();
-  uint32_t i = 0;
-  for (; i + kAvx2UnrollF32 <= dim; i += kAvx2UnrollF32) {
+  if constexpr (!UseF16c) {
+    return dot_e5m2_e5m2_scalar(a, b, dim);
+  } else {
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    __m256 acc2 = _mm256_setzero_ps();
+    __m256 acc3 = _mm256_setzero_ps();
+    uint32_t i = 0;
+    for (; i + kAvx2UnrollF32 <= dim; i += kAvx2UnrollF32) {
 #if defined(__FMA__)
-    acc0 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i), e5m2_load8_f32_avx2(b + i), acc0);
-    acc1 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes),
-                           e5m2_load8_f32_avx2(b + i + kAvx2F32Lanes), acc1);
-    acc2 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset2),
-                           e5m2_load8_f32_avx2(b + i + kAvx2Offset2), acc2);
-    acc3 = _mm256_fmadd_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset3),
-                           e5m2_load8_f32_avx2(b + i + kAvx2Offset3), acc3);
+      acc0 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<ClampA>(a + i), e5m2_load8_f32_avx2<false>(b + i),
+                             acc0);
+      acc1 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<ClampA>(a + i + kAvx2F32Lanes),
+                             e5m2_load8_f32_avx2<false>(b + i + kAvx2F32Lanes), acc1);
+      acc2 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<ClampA>(a + i + kAvx2Offset2),
+                             e5m2_load8_f32_avx2<false>(b + i + kAvx2Offset2), acc2);
+      acc3 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<ClampA>(a + i + kAvx2Offset3),
+                             e5m2_load8_f32_avx2<false>(b + i + kAvx2Offset3), acc3);
 #else
-    acc0 =
-        _mm256_add_ps(acc0, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i), e5m2_load8_f32_avx2(b + i)));
-    acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes),
-                                             e5m2_load8_f32_avx2(b + i + kAvx2F32Lanes)));
-    acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset2),
-                                             e5m2_load8_f32_avx2(b + i + kAvx2Offset2)));
-    acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2Offset3),
-                                             e5m2_load8_f32_avx2(b + i + kAvx2Offset3)));
+      acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(e5m2_load8_f32_avx2<ClampA>(a + i),
+                                               e5m2_load8_f32_avx2<false>(b + i)));
+      acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(e5m2_load8_f32_avx2<ClampA>(a + i + kAvx2F32Lanes),
+                                               e5m2_load8_f32_avx2<false>(b + i + kAvx2F32Lanes)));
+      acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(e5m2_load8_f32_avx2<ClampA>(a + i + kAvx2Offset2),
+                                               e5m2_load8_f32_avx2<false>(b + i + kAvx2Offset2)));
+      acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(e5m2_load8_f32_avx2<ClampA>(a + i + kAvx2Offset3),
+                                               e5m2_load8_f32_avx2<false>(b + i + kAvx2Offset3)));
 #endif
+    }
+    float sum =
+        reduce_avx2_f32(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+    for (; i < dim; ++i) {
+      sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * e5m2_to_f32(static_cast<uint8_t>(b[i]));
+    }
+    return sum;
   }
-  float sum = reduce_avx2_f32(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
-  for (; i < dim; ++i) {
-    sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * e5m2_to_f32(static_cast<uint8_t>(b[i]));
-  }
-  return sum;
 #else
   const float* table = e5m2_to_f32_table();
   __m256 acc0 = _mm256_setzero_ps();
@@ -1747,32 +1814,37 @@ float dot_e5m2_e5m2(const int8_t* a, const int8_t* b, uint32_t dim) {
 #endif
 }
 
-float l2_score_e5m2_f32(const int8_t* a, float scale, const float* b, uint32_t dim) {
+template <bool UseF16c>
+float l2_score_e5m2_f32_impl(const int8_t* a, float scale, const float* b, uint32_t dim) {
 #if defined(__AVX2__) && defined(ASTRAL_X86_F16C)
-  const __m256 scale_v = _mm256_set1_ps(scale);
-  __m256 acc0 = _mm256_setzero_ps();
-  __m256 acc1 = _mm256_setzero_ps();
-  uint32_t i = 0;
-  for (; i + kAvx2F32Lanes * 2u <= dim; i += kAvx2F32Lanes * 2u) {
-    const __m256 d0 =
-        _mm256_sub_ps(_mm256_mul_ps(e5m2_load8_f32_avx2(a + i), scale_v), _mm256_loadu_ps(b + i));
-    const __m256 d1 =
-        _mm256_sub_ps(_mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes), scale_v),
-                      _mm256_loadu_ps(b + i + kAvx2F32Lanes));
+  if constexpr (!UseF16c) {
+    return l2_score_e5m2_f32_scalar(a, scale, b, dim);
+  } else {
+    const __m256 scale_v = _mm256_set1_ps(scale);
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    uint32_t i = 0;
+    for (; i + kAvx2F32Lanes * 2u <= dim; i += kAvx2F32Lanes * 2u) {
+      const __m256 d0 = _mm256_sub_ps(_mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i), scale_v),
+                                      _mm256_loadu_ps(b + i));
+      const __m256 d1 =
+          _mm256_sub_ps(_mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2F32Lanes), scale_v),
+                        _mm256_loadu_ps(b + i + kAvx2F32Lanes));
 #if defined(__FMA__)
-    acc0 = _mm256_fmadd_ps(d0, d0, acc0);
-    acc1 = _mm256_fmadd_ps(d1, d1, acc1);
+      acc0 = _mm256_fmadd_ps(d0, d0, acc0);
+      acc1 = _mm256_fmadd_ps(d1, d1, acc1);
 #else
-    acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
-    acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1, d1));
+      acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
+      acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1, d1));
 #endif
+    }
+    float sum = reduce_avx2_f32(_mm256_add_ps(acc0, acc1));
+    for (; i < dim; ++i) {
+      const float d = e5m2_to_f32(static_cast<uint8_t>(a[i])) * scale - b[i];
+      sum += d * d;
+    }
+    return -sum;
   }
-  float sum = reduce_avx2_f32(_mm256_add_ps(acc0, acc1));
-  for (; i < dim; ++i) {
-    const float d = e5m2_to_f32(static_cast<uint8_t>(a[i])) * scale - b[i];
-    sum += d * d;
-  }
-  return -sum;
 #else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
@@ -1798,35 +1870,40 @@ float l2_score_e5m2_f32(const int8_t* a, float scale, const float* b, uint32_t d
 #endif
 }
 
-float l2_score_e5m2_e5m2(const int8_t* a, float a_scale, const int8_t* b, float b_scale,
-                         uint32_t dim) {
+template <bool UseF16c, bool ClampA>
+float l2_score_e5m2_e5m2_impl(const int8_t* a, float a_scale, const int8_t* b, float b_scale,
+                              uint32_t dim) {
 #if defined(__AVX2__) && defined(ASTRAL_X86_F16C)
-  const __m256 a_scale_v = _mm256_set1_ps(a_scale);
-  const __m256 b_scale_v = _mm256_set1_ps(b_scale);
-  __m256 acc0 = _mm256_setzero_ps();
-  __m256 acc1 = _mm256_setzero_ps();
-  uint32_t i = 0;
-  for (; i + kAvx2F32Lanes * 2u <= dim; i += kAvx2F32Lanes * 2u) {
-    const __m256 d0 = _mm256_sub_ps(_mm256_mul_ps(e5m2_load8_f32_avx2(a + i), a_scale_v),
-                                    _mm256_mul_ps(e5m2_load8_f32_avx2(b + i), b_scale_v));
-    const __m256 d1 =
-        _mm256_sub_ps(_mm256_mul_ps(e5m2_load8_f32_avx2(a + i + kAvx2F32Lanes), a_scale_v),
-                      _mm256_mul_ps(e5m2_load8_f32_avx2(b + i + kAvx2F32Lanes), b_scale_v));
+  if constexpr (!UseF16c) {
+    return l2_score_e5m2_e5m2_scalar(a, a_scale, b, b_scale, dim);
+  } else {
+    const __m256 a_scale_v = _mm256_set1_ps(a_scale);
+    const __m256 b_scale_v = _mm256_set1_ps(b_scale);
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    uint32_t i = 0;
+    for (; i + kAvx2F32Lanes * 2u <= dim; i += kAvx2F32Lanes * 2u) {
+      const __m256 d0 = _mm256_sub_ps(_mm256_mul_ps(e5m2_load8_f32_avx2<ClampA>(a + i), a_scale_v),
+                                      _mm256_mul_ps(e5m2_load8_f32_avx2<false>(b + i), b_scale_v));
+      const __m256 d1 = _mm256_sub_ps(
+          _mm256_mul_ps(e5m2_load8_f32_avx2<ClampA>(a + i + kAvx2F32Lanes), a_scale_v),
+          _mm256_mul_ps(e5m2_load8_f32_avx2<false>(b + i + kAvx2F32Lanes), b_scale_v));
 #if defined(__FMA__)
-    acc0 = _mm256_fmadd_ps(d0, d0, acc0);
-    acc1 = _mm256_fmadd_ps(d1, d1, acc1);
+      acc0 = _mm256_fmadd_ps(d0, d0, acc0);
+      acc1 = _mm256_fmadd_ps(d1, d1, acc1);
 #else
-    acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
-    acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1, d1));
+      acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
+      acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1, d1));
 #endif
+    }
+    float sum = reduce_avx2_f32(_mm256_add_ps(acc0, acc1));
+    for (; i < dim; ++i) {
+      const float d = e5m2_to_f32(static_cast<uint8_t>(a[i])) * a_scale -
+                      e5m2_to_f32(static_cast<uint8_t>(b[i])) * b_scale;
+      sum += d * d;
+    }
+    return -sum;
   }
-  float sum = reduce_avx2_f32(_mm256_add_ps(acc0, acc1));
-  for (; i < dim; ++i) {
-    const float d = e5m2_to_f32(static_cast<uint8_t>(a[i])) * a_scale -
-                    e5m2_to_f32(static_cast<uint8_t>(b[i])) * b_scale;
-    sum += d * d;
-  }
-  return -sum;
 #else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
@@ -1854,6 +1931,44 @@ float l2_score_e5m2_e5m2(const int8_t* a, float a_scale, const int8_t* b, float 
     sum += d * d;
   }
   return -sum;
+#endif
+}
+
+using DotE5m2F32Fn = float (*)(const int8_t*, const float*, uint32_t);
+using DotE5m2E5m2Fn = float (*)(const int8_t*, const int8_t*, uint32_t);
+using L2E5m2F32Fn = float (*)(const int8_t*, float, const float*, uint32_t);
+using L2E5m2E5m2Fn = float (*)(const int8_t*, float, const int8_t*, float, uint32_t);
+
+struct E5m2Kernels {
+  DotE5m2F32Fn dot_f32;
+  DotE5m2E5m2Fn dot_e5m2;
+  DotE5m2E5m2Fn dot_e5m2_clamped_a;
+  L2E5m2F32Fn l2_f32;
+  L2E5m2E5m2Fn l2_e5m2;
+  L2E5m2E5m2Fn l2_e5m2_clamped_a;
+};
+
+const E5m2Kernels* select_e5m2_kernels() {
+  static constexpr E5m2Kernels kFallback = {
+      dot_e5m2_f32_impl<false>,
+      dot_e5m2_e5m2_impl<false, false>,
+      dot_e5m2_e5m2_impl<false, true>,
+      l2_score_e5m2_f32_impl<false>,
+      l2_score_e5m2_e5m2_impl<false, false>,
+      l2_score_e5m2_e5m2_impl<false, true>,
+  };
+#if defined(ASTRAL_X86_F16C)
+  static constexpr E5m2Kernels kF16c = {
+      dot_e5m2_f32_impl<true>,
+      dot_e5m2_e5m2_impl<true, false>,
+      dot_e5m2_e5m2_impl<true, true>,
+      l2_score_e5m2_f32_impl<true>,
+      l2_score_e5m2_e5m2_impl<true, false>,
+      l2_score_e5m2_e5m2_impl<true, true>,
+  };
+  return platform::cpu_supports_avx2() && platform::cpu_supports_f16c() ? &kF16c : &kFallback;
+#else
+  return &kFallback;
 #endif
 }
 
@@ -2441,6 +2556,7 @@ struct GraphSearchScratch {
 
 struct MemoryIndex {
   AstralHandle handle;
+  const E5m2Kernels* e5m2_kernels;
   uint32_t dim;
   uint32_t capacity;
   uint32_t count;
@@ -2516,6 +2632,7 @@ struct MemorySnapshotView {
   SnapshotGraphLayout graph;
   GraphSearchScratch graph_scratch;
   uint8_t graph_ready;
+  uint8_t e5m2_clamp_non_finite;
 };
 
 namespace {
@@ -3109,18 +3226,18 @@ inline float score_slot(MemoryIndex* index, const float* query, uint32_t slot, f
     }
     const int8_t* q8 = q8_vector_at(index, slot);
     if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
-      return (e5m2_storage(index) ? dot_e5m2_f32(q8, query, index->dim)
+      return (e5m2_storage(index) ? index->e5m2_kernels->dot_f32(q8, query, index->dim)
                                   : dot_q8_f32(q8, query, index->dim)) *
              scale;
     }
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-      return (e5m2_storage(index) ? dot_e5m2_f32(q8, query, index->dim)
+      return (e5m2_storage(index) ? index->e5m2_kernels->dot_f32(q8, query, index->dim)
                                   : dot_q8_f32(q8, query, index->dim)) *
              scale * query_scale;
     }
     return e5m2_storage(index)
-               ? l2_score_e5m2_f32(q8, compact_value_scale(index, index->q8_scales[slot]), query,
-                                   index->dim)
+               ? index->e5m2_kernels->l2_f32(q8, compact_value_scale(index, index->q8_scales[slot]),
+                                             query, index->dim)
                : l2_score_q8_f32(q8, compact_value_scale(index, index->q8_scales[slot]), query,
                                  index->dim);
   }
@@ -3145,22 +3262,23 @@ inline float score_slot_compact_query(MemoryIndex* index, const int8_t* query, i
   const float scale = index->compact_score_scales[slot];
   if (index->metric == ASTRAL_MEMORY_METRIC_DOT) {
     if constexpr (Storage == CompactByteQueryStorage::e5m2) {
-      return dot_e5m2_e5m2(q8, query, index->dim) * scale * query_scale;
+      return index->e5m2_kernels->dot_e5m2(q8, query, index->dim) * scale * query_scale;
     } else {
       return dot_q8_q8_query_aligned(q8, query, index->dim, query_sum) * scale * query_scale;
     }
   }
   if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
     if constexpr (Storage == CompactByteQueryStorage::e5m2) {
-      return dot_e5m2_e5m2(q8, query, index->dim) * scale * query_scale * cosine_query_scale;
+      return index->e5m2_kernels->dot_e5m2(q8, query, index->dim) * scale * query_scale *
+             cosine_query_scale;
     } else {
       return dot_q8_q8_query_aligned(q8, query, index->dim, query_sum) * scale * query_scale *
              cosine_query_scale;
     }
   }
   if constexpr (Storage == CompactByteQueryStorage::e5m2) {
-    return l2_score_e5m2_e5m2(q8, compact_value_scale(index, index->q8_scales[slot]), query,
-                              query_scale, index->dim);
+    return index->e5m2_kernels->l2_e5m2(q8, compact_value_scale(index, index->q8_scales[slot]),
+                                        query, query_scale, index->dim);
   } else {
     return l2_score_q8_q8(q8, compact_value_scale(index, index->q8_scales[slot]), query,
                           query_scale, index->dim);
@@ -3221,19 +3339,20 @@ inline float score_pair(MemoryIndex* index, uint32_t a, uint32_t b) {
     const int8_t* vb = q8_vector_at(index, b);
     if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
       return (e5m2_storage(index)
-                  ? dot_e5m2_e5m2(va, vb, index->dim)
+                  ? index->e5m2_kernels->dot_e5m2(va, vb, index->dim)
                   : dot_q8_q8_query_aligned(va, vb, index->dim, index->compact_vector_sums[b])) *
              scale_a * scale_b;
     }
     if (index->metric == ASTRAL_MEMORY_METRIC_L2) {
       return e5m2_storage(index)
-                 ? l2_score_e5m2_e5m2(va, compact_value_scale(index, index->q8_scales[a]), vb,
-                                      compact_value_scale(index, index->q8_scales[b]), index->dim)
+                 ? index->e5m2_kernels->l2_e5m2(va, compact_value_scale(index, index->q8_scales[a]),
+                                                vb, compact_value_scale(index, index->q8_scales[b]),
+                                                index->dim)
                  : l2_score_q8_q8(va, compact_value_scale(index, index->q8_scales[a]), vb,
                                   compact_value_scale(index, index->q8_scales[b]), index->dim);
     }
     return (e5m2_storage(index)
-                ? dot_e5m2_e5m2(va, vb, index->dim)
+                ? index->e5m2_kernels->dot_e5m2(va, vb, index->dim)
                 : dot_q8_q8_query_aligned(va, vb, index->dim, index->compact_vector_sums[b])) *
            scale_a * scale_b;
   }
@@ -4658,6 +4777,55 @@ void memory_search_q8(MemoryIndex* index, const AstralMemorySearchDesc* desc, co
   const float query_scale =
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, index->dim) : 0.0f;
   if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY && index->dense_active != 0 &&
+      e5m2_storage(index) && !f8_f32_rerank_storage(index)) {
+    uint32_t filled = 0;
+    MemorySlot* slots = index->slots;
+    const uint32_t dim = index->dim;
+    const int8_t* vectors = index->q8_vectors;
+    const bool use_prefetch = index->count >= kFlatQ8PrefetchMinCount;
+    if (index->metric == ASTRAL_MEMORY_METRIC_DOT || index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+      const DotE5m2F32Fn dot = index->e5m2_kernels->dot_f32;
+      const float* scales = index->compact_score_scales;
+      for (uint32_t slot = 0; slot < index->count; ++slot) {
+        if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
+          prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
+        }
+        MemorySlot& s = slots[slot];
+        float score = dot(vectors + static_cast<size_t>(slot) * dim, query, dim) * scales[slot];
+        if (index->metric == ASTRAL_MEMORY_METRIC_COSINE) {
+          score *= query_scale;
+        }
+        if (filled == desc->top_k &&
+            !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+          continue;
+        }
+        AstralMemorySearchResult candidate{};
+        fill_result(&candidate, s, score);
+        insert_result(out_results, desc->top_k, &filled, candidate);
+      }
+    } else {
+      const L2E5m2F32Fn l2 = index->e5m2_kernels->l2_f32;
+      const float* scales = index->q8_scales;
+      for (uint32_t slot = 0; slot < index->count; ++slot) {
+        if (use_prefetch && slot + kFlatQ8PrefetchDistance < index->count) {
+          prefetch_dense_q8_slot(vectors, scales, slots, dim, slot + kFlatQ8PrefetchDistance);
+        }
+        MemorySlot& s = slots[slot];
+        const float score = l2(vectors + static_cast<size_t>(slot) * dim,
+                               compact_value_scale(index, scales[slot]), query, dim);
+        if (filled == desc->top_k &&
+            !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+          continue;
+        }
+        AstralMemorySearchResult candidate{};
+        fill_result(&candidate, s, score);
+        insert_result(out_results, desc->top_k, &filled, candidate);
+      }
+    }
+    *out_count = filled;
+    return;
+  }
+  if (desc->group_id == ASTRAL_MEMORY_GROUP_ANY && index->dense_active != 0 &&
       !e5m2_storage(index) && !i16_storage(index) && !q8_f32_rerank_storage(index)) {
     uint32_t filled = 0;
     MemorySlot* slots = index->slots;
@@ -5718,6 +5886,7 @@ AstralErr memory_create(const AstralMemoryIndexDesc* desc, MemoryIndex** out_ind
     return ASTRAL_E_NOMEM;
   }
   index->handle = 0;
+  index->e5m2_kernels = select_e5m2_kernels();
   index->dim = desc->dim;
   index->capacity = desc->capacity;
   index->count = 0;
@@ -6733,6 +6902,7 @@ struct SnapshotPreparedQuery {
   uint64_t score_vector_stride;
   uint64_t compact_score_scale_offset;
   uint64_t compact_score_scale_stride;
+  const E5m2Kernels* e5m2_kernels;
   float query_scale;
   float compact_query_scale;
   int32_t compact_query_sum;
@@ -6743,11 +6913,15 @@ struct SnapshotPreparedQuery {
   uint8_t compact_i8_vectors_aligned;
   uint8_t compact_i16_vectors_aligned;
   uint8_t normalized_f32_cosine;
+  uint8_t e5m2_clamp_non_finite;
 };
 
 void snapshot_prepare_query(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
-                            const float* query, SnapshotPreparedQuery* prepared) {
+                            const float* query, uint8_t e5m2_clamp_non_finite,
+                            SnapshotPreparedQuery* prepared) {
   *prepared = {};
+  prepared->e5m2_kernels = select_e5m2_kernels();
+  prepared->e5m2_clamp_non_finite = e5m2_clamp_non_finite;
   prepared->score_vector_offset = info->vector_offset;
   prepared->score_vector_stride = info->vector_stride;
   if (f32_rerank_storage_kind(info->storage_kind)) {
@@ -6834,6 +7008,35 @@ inline const uint8_t* snapshot_record_ptr(SnapshotBytes bytes, const AstralMemor
 inline const uint8_t* snapshot_vector_ptr(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info,
                                           uint32_t active_pos) {
   return bytes.data + info->vector_offset + static_cast<uint64_t>(active_pos) * info->vector_stride;
+}
+
+bool snapshot_e5m2_requires_clamp(SnapshotBytes bytes, const AstralMemorySnapshotInfo* info) {
+  if (info->storage_kind != ASTRAL_MEMORY_STORAGE_F8_E5M2 &&
+      info->storage_kind != ASTRAL_MEMORY_STORAGE_F8_E5M2_F32_RERANK) {
+    return false;
+  }
+
+  constexpr uint64_t kExponentMask = 0x7c7c7c7c7c7c7c7cull;
+  constexpr uint64_t kByteOnes = 0x0101010101010101ull;
+  constexpr uint64_t kByteHighBits = 0x8080808080808080ull;
+  for (uint32_t active_pos = 0; active_pos < info->count; ++active_pos) {
+    const uint8_t* vector = snapshot_vector_ptr(bytes, info, active_pos);
+    uint32_t dim_i = 0;
+    for (; dim_i + sizeof(uint64_t) <= info->dim; dim_i += sizeof(uint64_t)) {
+      uint64_t packed = 0;
+      std::memcpy(&packed, vector + dim_i, sizeof(packed));
+      const uint64_t exponent_delta = (packed & kExponentMask) ^ kExponentMask;
+      if (((exponent_delta - kByteOnes) & ~exponent_delta & kByteHighBits) != 0) {
+        return true;
+      }
+    }
+    for (; dim_i < info->dim; ++dim_i) {
+      if ((vector[dim_i] & 0x7cu) == 0x7cu) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 inline const uint8_t* snapshot_score_vector_ptr(SnapshotBytes bytes,
@@ -6923,15 +7126,26 @@ float snapshot_graph_score_active(SnapshotBytes bytes, const AstralMemorySnapsho
                             ? snapshot_compact_score_scale(bytes, prepared, active_pos)
                             : compact_value_scale_kind(info->storage_kind, stored_scale);
     if (info->metric == ASTRAL_MEMORY_METRIC_DOT) {
-      return dot_e5m2_e5m2(vector, prepared->compact_query, info->dim) * scale *
-             prepared->compact_query_scale;
+      const float dot =
+          prepared->e5m2_clamp_non_finite != 0
+              ? prepared->e5m2_kernels->dot_e5m2_clamped_a(vector, prepared->compact_query,
+                                                           info->dim)
+              : prepared->e5m2_kernels->dot_e5m2(vector, prepared->compact_query, info->dim);
+      return dot * scale * prepared->compact_query_scale;
     }
     if (info->metric == ASTRAL_MEMORY_METRIC_COSINE) {
-      return dot_e5m2_e5m2(vector, prepared->compact_query, info->dim) * scale *
-             prepared->compact_query_scale * prepared->query_scale;
+      const float dot =
+          prepared->e5m2_clamp_non_finite != 0
+              ? prepared->e5m2_kernels->dot_e5m2_clamped_a(vector, prepared->compact_query,
+                                                           info->dim)
+              : prepared->e5m2_kernels->dot_e5m2(vector, prepared->compact_query, info->dim);
+      return dot * scale * prepared->compact_query_scale * prepared->query_scale;
     }
-    return l2_score_e5m2_e5m2(vector, scale, prepared->compact_query, prepared->compact_query_scale,
-                              info->dim);
+    return prepared->e5m2_clamp_non_finite != 0
+               ? prepared->e5m2_kernels->l2_e5m2_clamped_a(vector, scale, prepared->compact_query,
+                                                           prepared->compact_query_scale, info->dim)
+               : prepared->e5m2_kernels->l2_e5m2(vector, scale, prepared->compact_query,
+                                                 prepared->compact_query_scale, info->dim);
   }
   return snapshot_score_active(bytes, info, prepared, active_pos);
 }
@@ -6969,7 +7183,11 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
                         ? dot_i16_i16_aligned(vector_i16, prepared->compact_query_i16, info->dim)
                         : dot_i16_i16(vector_i16, prepared->compact_query_i16, info->dim)) *
                        scale * prepared->compact_query_scale
-             : prepared->use_f8 != 0 ? dot_e5m2_e5m2(vector, prepared->compact_query, info->dim) *
+             : prepared->use_f8 != 0 ? (prepared->e5m2_clamp_non_finite != 0
+                                            ? prepared->e5m2_kernels->dot_e5m2_clamped_a(
+                                                  vector, prepared->compact_query, info->dim)
+                                            : prepared->e5m2_kernels->dot_e5m2(
+                                                  vector, prepared->compact_query, info->dim)) *
                                            scale * prepared->compact_query_scale
                                      : dot_q8_f32(vector, prepared->query, info->dim) * scale;
     }
@@ -6990,8 +7208,12 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
         return dot * scale * prepared->compact_query_scale * prepared->query_scale;
       }
       if (prepared->use_f8 != 0) {
-        return dot_e5m2_e5m2(vector, prepared->compact_query, info->dim) * scale *
-               prepared->compact_query_scale * prepared->query_scale;
+        const float dot =
+            prepared->e5m2_clamp_non_finite != 0
+                ? prepared->e5m2_kernels->dot_e5m2_clamped_a(vector, prepared->compact_query,
+                                                             info->dim)
+                : prepared->e5m2_kernels->dot_e5m2(vector, prepared->compact_query, info->dim);
+        return dot * scale * prepared->compact_query_scale * prepared->query_scale;
       }
       const float vector_scale = cosine_scale_q8(vector, stored_scale, info->dim);
       return dot_q8_f32(vector, prepared->query, info->dim) * scale * prepared->query_scale *
@@ -7002,9 +7224,14 @@ float snapshot_score_active(SnapshotBytes bytes, const AstralMemorySnapshotInfo*
            : prepared->use_f6_i16 != 0
                ? l2_score_i16_i16(vector_i16, scale, prepared->compact_query_i16,
                                   prepared->compact_query_scale, info->dim)
-           : prepared->use_f8 != 0 ? l2_score_e5m2_e5m2(vector, scale, prepared->compact_query,
-                                                        prepared->compact_query_scale, info->dim)
-                                   : l2_score_q8_f32(vector, scale, prepared->query, info->dim);
+           : prepared->use_f8 != 0
+               ? (prepared->e5m2_clamp_non_finite != 0
+                      ? prepared->e5m2_kernels->l2_e5m2_clamped_a(
+                            vector, scale, prepared->compact_query, prepared->compact_query_scale,
+                            info->dim)
+                      : prepared->e5m2_kernels->l2_e5m2(vector, scale, prepared->compact_query,
+                                                        prepared->compact_query_scale, info->dim))
+               : l2_score_q8_f32(vector, scale, prepared->query, info->dim);
   }
 
   const float* vector =
@@ -7414,7 +7641,8 @@ AstralErr memory_snapshot_search_with_info(SnapshotBytes bytes,
                                            const AstralMemorySnapshotInfo* info,
                                            const AstralMemorySearchDesc* desc, const float* query,
                                            AstralMemorySearchResult* out_results,
-                                           uint32_t max_results, uint32_t* out_count);
+                                           uint32_t max_results, uint32_t* out_count,
+                                           uint8_t e5m2_clamp_non_finite);
 
 AstralErr memory_snapshot_view_search_graph(MemorySnapshotView* view,
                                             const AstralMemorySearchDesc* desc, const float* query,
@@ -7427,19 +7655,19 @@ AstralErr memory_snapshot_view_search_graph(MemorySnapshotView* view,
   if (view->graph_ready == 0 || desc->group_id != ASTRAL_MEMORY_GROUP_ANY) {
     return memory_snapshot_search_with_info(SnapshotBytes{view->map.data, view->map.size},
                                             &view->info, desc, query, out_results, max_results,
-                                            out_count);
+                                            out_count, view->e5m2_clamp_non_finite);
   }
   if (snapshot_compact_graph_exact_search_preferred(&view->info)) {
     return memory_snapshot_search_with_info(SnapshotBytes{view->map.data, view->map.size},
                                             &view->info, desc, query, out_results, max_results,
-                                            out_count);
+                                            out_count, view->e5m2_clamp_non_finite);
   }
   if (out_results == nullptr || max_results < desc->top_k) {
     return ASTRAL_E_NOMEM;
   }
   SnapshotBytes bytes{view->map.data, view->map.size};
   SnapshotPreparedQuery prepared{};
-  snapshot_prepare_query(bytes, &view->info, query, &prepared);
+  snapshot_prepare_query(bytes, &view->info, query, view->e5m2_clamp_non_finite, &prepared);
   GraphSearchScratch* scratch = &view->graph_scratch;
   snapshot_graph_begin_visit(&view->info, scratch);
   const uint32_t search_capacity = snapshot_graph_search_capacity(view, desc);
@@ -7494,7 +7722,8 @@ AstralErr memory_snapshot_search_with_info(SnapshotBytes bytes,
                                            const AstralMemorySnapshotInfo* info,
                                            const AstralMemorySearchDesc* desc, const float* query,
                                            AstralMemorySearchResult* out_results,
-                                           uint32_t max_results, uint32_t* out_count) {
+                                           uint32_t max_results, uint32_t* out_count,
+                                           uint8_t e5m2_clamp_non_finite) {
   if (bytes.data == nullptr || info == nullptr || desc == nullptr ||
       desc->size != sizeof(AstralMemorySearchDesc) || query == nullptr || out_count == nullptr ||
       desc->top_k == 0) {
@@ -7505,7 +7734,7 @@ AstralErr memory_snapshot_search_with_info(SnapshotBytes bytes,
   }
 
   SnapshotPreparedQuery prepared{};
-  snapshot_prepare_query(bytes, info, query, &prepared);
+  snapshot_prepare_query(bytes, info, query, e5m2_clamp_non_finite, &prepared);
   uint32_t filled = 0;
   for (uint32_t i = 0; i < info->count; ++i) {
 #if defined(__GNUC__) || defined(__clang__)
@@ -7548,7 +7777,7 @@ AstralErr memory_snapshot_search_bytes(SnapshotBytes bytes, const AstralMemorySe
   }
 
   return memory_snapshot_search_with_info(bytes, &info, desc, query, out_results, max_results,
-                                          out_count);
+                                          out_count, 1u);
 }
 
 } // namespace
@@ -7593,6 +7822,7 @@ AstralErr memory_snapshot_map(AstralSpanU8 path, MemorySnapshotView** out_view,
   }
   SnapshotBytes view_bytes{view->map.data, view->map.size};
   view->graph_ready = 0;
+  view->e5m2_clamp_non_finite = snapshot_e5m2_requires_clamp(view_bytes, &info) ? 1u : 0u;
   if (snapshot_graph_layout(view_bytes, &info, &view->graph) &&
       snapshot_graph_scratch_alloc(&info, &view->graph, &view->graph_scratch)) {
     view->graph_ready = 1;
@@ -7647,7 +7877,7 @@ AstralErr memory_snapshot_view_search(MemorySnapshotView* view, const AstralMemo
   }
   return memory_snapshot_search_with_info(SnapshotBytes{view->map.data, view->map.size},
                                           &view->info, desc, query, out_results, max_results,
-                                          out_count);
+                                          out_count, view->e5m2_clamp_non_finite);
 }
 
 AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
@@ -7781,8 +8011,12 @@ AstralErr memory_load(const AstralMemoryIndexDesc* desc, AstralSpanU8 bytes,
         }
       } else if (saved_compact_vector != nullptr) {
         index->q8_scales[slot] = saved_compact_scale;
-        std::memcpy(q8_vector_at(index, slot), saved_compact_vector,
-                    static_cast<size_t>(index->dim) * sizeof(int8_t));
+        if (e5m2_storage(index)) {
+          copy_finite_e5m2(q8_vector_at(index, slot), saved_compact_vector, index->dim);
+        } else {
+          std::memcpy(q8_vector_at(index, slot), saved_compact_vector,
+                      static_cast<size_t>(index->dim) * sizeof(int8_t));
+        }
         index->compact_vector_sums[slot] = sum_i8(q8_vector_at(index, slot), index->dim);
         if (f32_rerank_storage(index)) {
           store_f32_vector(index, slot, vector);
