@@ -464,6 +464,98 @@ TEST(inference_conversation_streams_token_pieces_larger_than_ring_cell) {
   astral_shutdown();
 }
 
+TEST(inference_conversation_accepts_full_prompt_capacity_transactionally) {
+  AstralInit cfg{};
+  cfg.reserve_bytes = 32u * 1024u * 1024u;
+  cfg.thread_count = 2;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  const AstralHandle model = load_mock_model(nullptr);
+  AstralExecutorDesc executor{};
+  executor.size = sizeof(AstralExecutorDesc);
+  executor.max_slots = 1;
+  executor.max_batch_tokens = 8;
+  ASSERT_EQ(astral_model_executor_configure(model, &executor), ASTRAL_OK);
+
+  AstralConvDesc desc{};
+  desc.size = sizeof(AstralConvDesc);
+  desc.model = model;
+  desc.max_tokens = 1;
+  desc.top_p = 1.0f;
+
+  AstralHandle conv = 0;
+  ASSERT_EQ(astral_conv_create(&desc, &conv), ASTRAL_OK);
+
+  std::string full_text(8191, 'x');
+  AstralSpanU8 full_span{};
+  full_span.data = reinterpret_cast<const uint8_t*>(full_text.data());
+  full_span.len = static_cast<uint32_t>(full_text.size());
+  ASSERT_EQ(astral_conv_feed(conv, full_span, 1), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_cancel(conv), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_wait(conv, 1000), ASTRAL_E_CANCELED);
+
+  ASSERT_EQ(astral_conv_reset(conv, &desc), ASTRAL_OK);
+  std::string oversized_text(8192, 'x');
+  AstralSpanU8 oversized_span{};
+  oversized_span.data = reinterpret_cast<const uint8_t*>(oversized_text.data());
+  oversized_span.len = static_cast<uint32_t>(oversized_text.size());
+  ASSERT_EQ(astral_conv_feed(conv, oversized_span, 1), ASTRAL_E_NOMEM);
+
+  int32_t exact_tokens[8192]{};
+  ASSERT_EQ(astral_conv_feed_tokens(conv, exact_tokens, 8192, 1), ASTRAL_OK);
+
+  astral_conv_destroy(conv);
+  astral_model_release(model);
+  astral_shutdown();
+}
+
+TEST(inference_conversation_cancel_transitions_active_states) {
+  AstralInit cfg{};
+  cfg.reserve_bytes = 32u * 1024u * 1024u;
+  cfg.thread_count = 2;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  const AstralHandle model = load_mock_model("infinite");
+  AstralExecutorDesc executor{};
+  executor.size = sizeof(AstralExecutorDesc);
+  executor.max_slots = 1;
+  executor.max_batch_tokens = 8;
+  ASSERT_EQ(astral_model_executor_configure(model, &executor), ASTRAL_OK);
+
+  AstralConvDesc desc{};
+  desc.size = sizeof(AstralConvDesc);
+  desc.model = model;
+  desc.max_tokens = 100000;
+  desc.top_p = 1.0f;
+
+  AstralHandle conv = 0;
+  ASSERT_EQ(astral_conv_create(&desc, &conv), ASTRAL_OK);
+
+  ASSERT_EQ(astral_conv_cancel(conv), ASTRAL_OK);
+  AstralSessionState state = ASTRAL_SESSION_IDLE;
+  ASSERT_EQ(astral_conv_state(conv, &state), ASTRAL_OK);
+  ASSERT_EQ(state, ASTRAL_SESSION_CANCELED);
+  ASSERT_EQ(astral_conv_wait(conv, 0), ASTRAL_E_CANCELED);
+
+  ASSERT_EQ(astral_conv_reset(conv, &desc), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_feed(conv, span_from_cstr("prompt"), 0), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_cancel(conv), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_state(conv, &state), ASTRAL_OK);
+  ASSERT_EQ(state, ASTRAL_SESSION_CANCELED);
+  ASSERT_EQ(astral_conv_wait(conv, 0), ASTRAL_E_CANCELED);
+
+  ASSERT_EQ(astral_conv_reset(conv, &desc), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_feed(conv, AstralSpanU8{}, 1), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_cancel(conv), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_wait(conv, 1000), ASTRAL_E_CANCELED);
+
+  astral_conv_destroy(conv);
+  astral_model_release(model);
+  astral_shutdown();
+}
+
 TEST(inference_conversation_executor_does_not_occupy_worker_pool) {
   AstralInit cfg{};
   cfg.reserve_bytes = 32 * 1024 * 1024;

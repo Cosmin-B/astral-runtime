@@ -526,13 +526,11 @@ void conv_destroy(Conversation* conv) {
   ModelExecutor* ex = model ? model->executor.load(std::memory_order_acquire) : nullptr;
   const uint32_t sid = conv->slot_id.load(std::memory_order_acquire);
 
-  bool slot_removed = false;
   if (ex != nullptr && sid < ex->max_slots) {
     lock_flag(model->executor_lock);
     if (ex->slots[sid].load(std::memory_order_relaxed) == conv) {
       ex->slots[sid].store(nullptr, std::memory_order_release);
       ex->active_slot_mask &= ~(1u << sid);
-      slot_removed = true;
     }
     unlock_flag(model->executor_lock);
 
@@ -549,11 +547,6 @@ void conv_destroy(Conversation* conv) {
       }
     }
 
-    // Clear provider-owned slot state when the backend exposes slot reset.
-    if (slot_removed && model && model->backend && model->backend->ops &&
-        model->backend->ops->session_slot_reset && ex->backend_session_ctx) {
-      (void)model->backend->ops->session_slot_reset(ex->backend_session_ctx, sid);
-    }
   }
 
   conv_prompt_chunks_clear(conv);
@@ -603,10 +596,6 @@ AstralErr conv_feed(Conversation* conv, AstralSpanU8 prompt_chunk, uint8_t final
     return ASTRAL_E_STATE;
   }
 
-  if (state == ConvState::Idle) {
-    conv->state.store(ConvState::FeedingPrompt, std::memory_order_release);
-  }
-
   const bool should_tokenize = (prompt_chunk.len > 0 && prompt_chunk.data != nullptr) ||
                                (finalize != 0 && conv->prompt_count == 0);
 
@@ -627,11 +616,12 @@ AstralErr conv_feed(Conversation* conv, AstralSpanU8 prompt_chunk, uint8_t final
       return err;
     }
     if (n_tokens == 0) {
+      if (state == ConvState::Idle) {
+        conv->state.store(ConvState::FeedingPrompt, std::memory_order_release);
+      }
       return ASTRAL_OK;
     }
-
-    conv->prompt_count += n_tokens;
-    if (conv->prompt_count >= conv->prompt_capacity) {
+    if (n_tokens > space) {
       return ASTRAL_E_NOMEM;
     }
 
@@ -639,6 +629,11 @@ AstralErr conv_feed(Conversation* conv, AstralSpanU8 prompt_chunk, uint8_t final
     if (chunk_err != ASTRAL_OK) {
       return chunk_err;
     }
+    conv->prompt_count += n_tokens;
+  }
+
+  if (state == ConvState::Idle) {
+    conv->state.store(ConvState::FeedingPrompt, std::memory_order_release);
   }
 
   return ASTRAL_OK;
@@ -655,26 +650,32 @@ AstralErr conv_feed_tokens(Conversation* conv, const int32_t* tokens, uint32_t t
     return ASTRAL_E_STATE;
   }
 
-  if (state == ConvState::Idle) {
-    conv->state.store(ConvState::FeedingPrompt, std::memory_order_release);
-  }
-
   if (token_count == 0) {
+    if (state == ConvState::Idle) {
+      conv->state.store(ConvState::FeedingPrompt, std::memory_order_release);
+    }
     return ASTRAL_OK;
   }
   if (conv->prompt_chunk_count >= kMaxPromptChunks) {
     return ASTRAL_E_NOMEM;
   }
   const uint32_t space = conv->prompt_capacity - conv->prompt_count;
-  if (token_count >= space) {
+  if (token_count > space) {
     return ASTRAL_E_NOMEM;
   }
 
   const uint32_t token_start = conv->prompt_count;
   std::memcpy(conv->prompt_tokens + conv->prompt_count, tokens,
               static_cast<size_t>(token_count) * sizeof(int32_t));
+  const AstralErr chunk_err = conv_push_text_chunk(conv, token_start, token_count, finalize);
+  if (chunk_err != ASTRAL_OK) {
+    return chunk_err;
+  }
   conv->prompt_count += token_count;
-  return conv_push_text_chunk(conv, token_start, token_count, finalize);
+  if (state == ConvState::Idle) {
+    conv->state.store(ConvState::FeedingPrompt, std::memory_order_release);
+  }
+  return ASTRAL_OK;
 }
 
 AstralErr conv_feed_image(Conversation* conv, const AstralImageDesc* image, uint8_t finalize) {
@@ -782,6 +783,17 @@ AstralErr conv_decode(Conversation* conv) {
 AstralErr conv_cancel(Conversation* conv) {
   if (conv == nullptr) {
     return ASTRAL_E_INVALID;
+  }
+  const ConvState state = conv->state.load(std::memory_order_acquire);
+  if (state == ConvState::Idle || state == ConvState::FeedingPrompt) {
+    conv->t_end_ticks = get_ticks();
+    conv->published_stats.t_end_ticks.store(conv->t_end_ticks, std::memory_order_relaxed);
+    conv->state.store(ConvState::Canceled, std::memory_order_release);
+    platform::cpu_signal_event();
+    return ASTRAL_OK;
+  }
+  if (state != ConvState::Decoding) {
+    return ASTRAL_OK;
   }
   conv->cancel_requested.store(true, std::memory_order_release);
   platform::cpu_signal_event();
