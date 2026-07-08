@@ -621,11 +621,14 @@ enum {
 /**
  * Arena configuration for ASTRAL_MEMMODE_ARENA_*.
  *
- * The arena is used as a backing store for Astral-managed regions such as per-session scratch blocks.
+ * The arena is used as a backing store for Astral-managed regions such as per-session scratch
+ * blocks.
  *
  * Determinism:
  * - Sessions acquire fixed-size blocks from the arena (see session_block_* fields).
  * - If no blocks remain, session creation fails with ASTRAL_E_NOMEM.
+ * - Astral-owned runtime allocations do not fall back to sys_alloc when the runtime heap is full.
+ * - Backend libraries may have separate allocator contracts documented by their provider.
  */
 typedef struct AstralArenaDesc {
     void* base; /** Arena base address (required for BORROWED; optional for OWNED). */
@@ -640,8 +643,8 @@ typedef struct AstralArenaDesc {
     uint32_t session_block_count; /** Number of fixed scratch blocks. 0 = auto from arena size. */
 
     // Additional arena partitioning knobs (optional; 0 = default):
-    // - _reserved[0]: worker_scratch_bytes_per_worker (default: 256 KiB; 0 disables worker scratch)
-    // - _reserved[1]: runtime_heap_bytes (default: 2 MiB; 0 disables runtime arena heap)
+    // - _reserved[0]: worker_scratch_bytes_per_worker (default: 256 KiB)
+    // - _reserved[1]: runtime_heap_bytes (default: 2 MiB)
     // - _reserved[2..3]: reserved for future use
     uint32_t _reserved[4];
 } AstralArenaDesc;

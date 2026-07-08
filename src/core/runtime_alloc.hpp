@@ -46,5 +46,25 @@ inline void runtime_free_array(T* ptr, uint32_t count) noexcept {
     runtime_free(ptr, bytes, alignof(T));
 }
 
-} // namespace astral::core
+template <typename T> inline T* runtime_new_array(uint32_t count) noexcept {
+  T* ptr = runtime_alloc_array<T>(count);
+  if (ptr == nullptr) {
+    return nullptr;
+  }
+  for (uint32_t i = 0; i < count; ++i) {
+    new (ptr + i) T();
+  }
+  return ptr;
+}
 
+template <typename T> inline void runtime_delete_array(T* ptr, uint32_t count) noexcept {
+  if (ptr == nullptr) {
+    return;
+  }
+  for (uint32_t i = 0; i < count; ++i) {
+    ptr[i].~T();
+  }
+  runtime_free_array(ptr, count);
+}
+
+} // namespace astral::core

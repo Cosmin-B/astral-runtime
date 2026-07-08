@@ -37,13 +37,13 @@ External (optional):
 
 ### Purpose
 
-Provide a single large address space from which all Astral subsystems draw memory. This avoids fragmentation and allows efficient commit/decommit.
+Provide a large address-space reserve for Astral's core size-class allocator. Small and medium runtime allocations use this region first, and cold growth commits more of the reserve under the allocator lock. Requests outside the size-class range can use the configured system allocator. Provider libraries retain their own documented allocation contracts.
 
 ### Design
 
 - **Reserve Size**: Configurable via `AstralInit.reserve_bytes` (default: 2GB on 64-bit, 512MB on 32-bit)
-- **Commit Granularity**: OS page size (4KB typical, 2MB/1GB for huge pages)
-- **Thread Safety**: Global reserve is immutable after init; sub-allocators are thread-local or lock-free
+- **Commit Growth**: The core heap starts with the initial commit and doubles its committed extent on cold growth.
+- **Thread Safety**: The reserve is immutable after init; free blocks are cached per thread and bucket growth is serialized.
 
 ### Platform Implementation
 
@@ -1000,25 +1000,11 @@ InitConfig.sys_alloc = FAstralMemoryManager::CreateUnrealAllocator();
 astral_init(&InitConfig);
 ```
 
-### Fallback: Internal Allocator
+### Runtime Allocation Routing
 
-When no engine allocator is provided:
+VM mode routes supported size-class allocations through the reserved region and commits additional pages on cold allocator growth. Requests larger than the core heap's size-class limit use `sys_alloc`, or the platform allocator when no callback is configured.
 
-```cpp
-void astral_init(const AstralInit* cfg) {
-  // Check if engine provided allocator
-  if (cfg->sys_alloc.alloc != nullptr) {
-    // Use engine allocator exclusively
-    g_allocator = cfg->sys_alloc;
-  } else {
-    // Fall back to internal virtual reserve
-    void* reserve = vm_reserve(cfg->reserve_bytes);
-    g_allocator = create_internal_allocator(reserve, cfg->reserve_bytes);
-  }
-
-  // All subsequent allocations go through g_allocator
-}
-```
+Arena modes are stricter. Astral-owned allocations use the fixed runtime-heap partition and return `ASTRAL_E_NOMEM` when the request is unsupported or the partition is exhausted. They never spill into `sys_alloc`.
 
 ## Memory Budgets and Limits
 

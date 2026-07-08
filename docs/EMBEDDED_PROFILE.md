@@ -73,14 +73,14 @@ Use the `astral_init2()` surface with one of the arena modes:
 - `ASTRAL_MEMMODE_ARENA_BORROWED`: you provide `arena.base` + `arena.size`.
 - `ASTRAL_MEMMODE_ARENA_OWNED`: Astral allocates the arena (or you provide `arena.base`).
 
-In arena modes, Astral also provisions deterministic per-session scratch blocks from the arena (bounded pool) so session create/destroy does not depend on VM APIs.
+In arena modes, Astral provisions deterministic per-session scratch blocks and a bounded runtime heap from the arena. Astral-owned allocations return `ASTRAL_E_NOMEM` when those regions are exhausted; they do not spill into `sys_alloc`. A backend library can still have a separate allocation contract, so check the selected provider before treating the whole process as arena-only.
 
 ### Arena partitioning knobs (optional)
 
 `AstralArenaDesc` includes a small reserved array for additional partitioning/sizing without changing ABI layout:
 
-- `arena._reserved[0]`: worker scratch bytes per worker (default: 256 KiB; 0 disables)
-- `arena._reserved[1]`: runtime heap bytes (default: 2 MiB; 0 disables)
+- `arena._reserved[0]`: worker scratch bytes per worker (default: 256 KiB)
+- `arena._reserved[1]`: runtime heap bytes (default: 2 MiB)
 
 These are used to reserve a small front slice of the arena for:
 

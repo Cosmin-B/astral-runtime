@@ -18,6 +18,7 @@
 #include "../concurrency/mpsc_ticket_ring.hpp"
 #include "../memory/frame_allocator.hpp"
 #include "../platform/atomics.h"
+#include "../platform/compiler.hpp"
 #include "../platform/thread.h"
 #include "../platform/time.h"
 #include "../platform/vm.h"
@@ -26,6 +27,7 @@
 #include "abi_guard.hpp"
 #include "alloc_utils.hpp"
 #include "handles.hpp"
+#include "runtime_alloc.hpp"
 #include "runtime_state.hpp"
 #include "work_queue.hpp"
 
@@ -72,6 +74,8 @@ public:
       base_ = nullptr;
       size_ = 0;
       used_ = 0;
+      committed_.store(0, std::memory_order_relaxed);
+      vm_backed_ = false;
       arena_lock_.reset();
       for (auto& b : buckets_) {
         b.free_list = nullptr;
@@ -85,10 +89,21 @@ public:
         base_ = static_cast<uint8_t*>(base);
         size_ = size;
         used_ = 0;
+        committed_.store(size, std::memory_order_relaxed);
+        vm_backed_ = false;
         for (uint32_t i = 0; i < kBucketCount; ++i) {
             buckets_[i].free_list = nullptr;
             buckets_[i].grow = 0;
         }
+    }
+
+    void init_vm(void* base, size_t reserved, size_t committed) noexcept {
+      reset();
+      base_ = static_cast<uint8_t*>(base);
+      size_ = reserved;
+      used_ = 0;
+      committed_.store(committed, std::memory_order_relaxed);
+      vm_backed_ = true;
     }
 
     void* allocate(size_t size, size_t align) noexcept {
@@ -98,11 +113,12 @@ public:
         if (size == 0) {
             return nullptr;
         }
-        if (align > kMaxAlign) {
-            return nullptr;
+        const size_t request_size = normalized_request_size(size, align);
+        if (request_size == 0) {
+          return nullptr;
         }
 
-        const uint32_t bucket = bucket_index_for(size);
+        const uint32_t bucket = bucket_index_for(request_size);
         if (bucket == kInvalidBucket) {
             return nullptr;
         }
@@ -117,66 +133,19 @@ public:
             return p;
         }
 
-        Bucket& b = buckets_[bucket];
-        // Refill local cache from the global freelist (fast path is lock-free).
-        {
-            lock_bucket(b);
-            void* node = b.free_list;
-            uint32_t moved = 0;
-            while (node != nullptr && moved < kLocalRefill) {
-                void* next = *reinterpret_cast<void**>(node);
-                b.free_list = next;
-                *reinterpret_cast<void**>(node) = local_head;
-                local_head = node;
-                node = next;
-                ++moved;
-            }
-            unlock_bucket(b);
-            if (moved > 0) {
-                local_count = static_cast<uint16_t>(moved - 1u);
-                void* p = local_head;
-                local_head = *reinterpret_cast<void**>(p);
-                return p;
-            }
-        }
-
-        // Grow on demand from the backing arena.
-        if (!grow_bucket(bucket)) {
-            return nullptr;
-        }
-
-        // Post-grow: refill again (should succeed unless arena exhausted between).
-        lock_bucket(b);
-        void* node = b.free_list;
-        uint32_t moved = 0;
-        while (node != nullptr && moved < kLocalRefill) {
-            void* next = *reinterpret_cast<void**>(node);
-            b.free_list = next;
-            *reinterpret_cast<void**>(node) = local_head;
-            local_head = node;
-            node = next;
-            ++moved;
-        }
-        unlock_bucket(b);
-        if (moved == 0) {
-            return nullptr;
-        }
-
-        local_count = static_cast<uint16_t>(moved - 1u);
-        void* p = local_head;
-        local_head = *reinterpret_cast<void**>(p);
-        return p;
+        return allocate_slow(bucket, tc);
     }
 
     void deallocate(void* ptr, size_t size, size_t align) noexcept {
         if (ptr == nullptr || base_ == nullptr) {
             return;
         }
-        if (align > kMaxAlign) {
-            return;
+        const size_t request_size = normalized_request_size(size, align);
+        if (request_size == 0) {
+          return;
         }
 
-        const uint32_t bucket = bucket_index_for(size);
+        const uint32_t bucket = bucket_index_for(request_size);
         if (bucket == kInvalidBucket) {
             return;
         }
@@ -192,23 +161,12 @@ public:
         if (local_count < kLocalMax) {
             return;
         }
-
-        Bucket& b = buckets_[bucket];
-        lock_bucket(b);
-        uint32_t moved = 0;
-        while (local_head != nullptr && moved < kLocalFlush) {
-            void* node = local_head;
-            local_head = *reinterpret_cast<void**>(node);
-            --local_count;
-            *reinterpret_cast<void**>(node) = b.free_list;
-            b.free_list = node;
-            ++moved;
-        }
-        unlock_bucket(b);
+        deallocate_slow(bucket, tc);
     }
 
     bool enabled() const noexcept { return base_ != nullptr && size_ != 0; }
     size_t capacity_bytes() const noexcept { return size_; }
+    size_t committed_bytes() const noexcept { return committed_.load(std::memory_order_acquire); }
     bool owns(void* ptr) const noexcept {
         if (ptr == nullptr || base_ == nullptr) {
             return false;
@@ -220,7 +178,7 @@ public:
 
 private:
     static constexpr uint32_t kInvalidBucket = 0xFFFFFFFFu;
-    static constexpr size_t kMaxAlign = 16;
+    static constexpr size_t kMaxAlign = 64;
     static constexpr uint32_t kMinPow2 = 32;
     static constexpr uint32_t kMaxPow2 = 1u << 20; // 1 MiB max block size
     static constexpr uint32_t kSubdiv = 8;
@@ -242,6 +200,69 @@ private:
         uint16_t local_counts[kBucketCount]{};
     };
 
+    ASTRAL_NOINLINE void* allocate_slow(uint32_t bucket, ThreadCache& tc) noexcept {
+      Bucket& b = buckets_[bucket];
+      void*& local_head = tc.local_lists[bucket];
+      uint16_t& local_count = tc.local_counts[bucket];
+
+      lock_bucket(b);
+      void* node = b.free_list;
+      uint32_t moved = 0;
+      while (node != nullptr && moved < kLocalRefill) {
+        void* next = *reinterpret_cast<void**>(node);
+        b.free_list = next;
+        *reinterpret_cast<void**>(node) = local_head;
+        local_head = node;
+        node = next;
+        ++moved;
+      }
+      unlock_bucket(b);
+
+      if (moved == 0) {
+        if (!grow_bucket(bucket)) {
+          return nullptr;
+        }
+
+        lock_bucket(b);
+        node = b.free_list;
+        while (node != nullptr && moved < kLocalRefill) {
+          void* next = *reinterpret_cast<void**>(node);
+          b.free_list = next;
+          *reinterpret_cast<void**>(node) = local_head;
+          local_head = node;
+          node = next;
+          ++moved;
+        }
+        unlock_bucket(b);
+        if (moved == 0) {
+          return nullptr;
+        }
+      }
+
+      local_count = static_cast<uint16_t>(moved - 1u);
+      void* p = local_head;
+      local_head = *reinterpret_cast<void**>(p);
+      return p;
+    }
+
+    ASTRAL_NOINLINE void deallocate_slow(uint32_t bucket, ThreadCache& tc) noexcept {
+      Bucket& b = buckets_[bucket];
+      void*& local_head = tc.local_lists[bucket];
+      uint16_t& local_count = tc.local_counts[bucket];
+
+      lock_bucket(b);
+      uint32_t moved = 0;
+      while (local_head != nullptr && moved < kLocalFlush) {
+        void* node = local_head;
+        local_head = *reinterpret_cast<void**>(node);
+        --local_count;
+        *reinterpret_cast<void**>(node) = b.free_list;
+        b.free_list = node;
+        ++moved;
+      }
+      unlock_bucket(b);
+    }
+
     static ThreadCache& tls_cache(uint64_t epoch) noexcept {
         thread_local ThreadCache c{};
         if (c.epoch != epoch) {
@@ -256,6 +277,18 @@ private:
         const uintptr_t v = reinterpret_cast<uintptr_t>(p);
         const uintptr_t a = static_cast<uintptr_t>(align);
         return reinterpret_cast<void*>((v + (a - 1u)) & ~(a - 1u));
+    }
+
+    static inline size_t normalized_request_size(size_t size, size_t align) noexcept {
+      if (align == 0 || align > kMaxAlign || (align & (align - 1u)) != 0) {
+        return 0;
+      }
+      const size_t mask = align - 1u;
+      if (size > static_cast<size_t>(-1) - mask) {
+        return 0;
+      }
+      const size_t aligned = (size + mask) & ~mask;
+      return aligned < sizeof(void*) ? sizeof(void*) : aligned;
     }
 
     static inline uint32_t highest_bit_nonzero_u32(uint32_t v) noexcept {
@@ -328,32 +361,57 @@ private:
         }
 
         Bucket& b = buckets_[bucket];
-        // Growth policy: start small, then double (bounded).
-        uint32_t count = b.grow == 0 ? 32u : (b.grow < 1024u ? b.grow * 2u : 1024u);
-        const size_t bytes = static_cast<size_t>(count) * block_size;
-
-        // Allocate from backing arena with coarse lock.
-        void* chunk = nullptr;
-        {
-          arena_lock_.lock();
-
-          uint8_t* cursor = base_ + used_;
-          cursor = static_cast<uint8_t*>(align_up_ptr_local(cursor, kMaxAlign));
-          const size_t off = static_cast<size_t>(cursor - base_);
-          if (off + bytes <= size_) {
-            chunk = cursor;
-            used_ = off + bytes;
-          }
-
-          arena_lock_.unlock();
-        }
-
-        if (chunk == nullptr) {
-            return false;
-        }
-
-        // Push blocks onto the bucket freelist.
         lock_bucket(b);
+        if (b.free_list != nullptr) {
+          unlock_bucket(b);
+          return true;
+        }
+
+        uint32_t count = b.grow == 0 ? 32u : (b.grow < 1024u ? b.grow * 2u : 1024u);
+        void* chunk = nullptr;
+        arena_lock_.lock();
+
+        uint8_t* cursor = base_ + used_;
+        cursor = static_cast<uint8_t*>(align_up_ptr_local(cursor, kMaxAlign));
+        const size_t off = static_cast<size_t>(cursor - base_);
+        const size_t available = off < size_ ? size_ - off : 0;
+        const size_t max_count = available / block_size;
+        if (max_count < count) {
+          count = static_cast<uint32_t>(max_count);
+        }
+        if (count != 0) {
+          const size_t bytes = static_cast<size_t>(count) * block_size;
+          const size_t required = off + bytes;
+          size_t committed = committed_.load(std::memory_order_relaxed);
+#if ASTRAL_ENABLE_VIRTUAL_MEMORY
+          if (required > committed && vm_backed_) {
+            size_t target = committed;
+            while (target < required) {
+              const size_t next = target <= size_ / 2u ? target * 2u : size_;
+              if (next <= target) {
+                break;
+              }
+              target = next;
+            }
+            if (target >= required &&
+                astral::platform::vm_commit(base_ + committed, target - committed)) {
+              committed = target;
+              committed_.store(committed, std::memory_order_release);
+            }
+          }
+#endif
+          if (required <= committed) {
+            chunk = cursor;
+            used_ = required;
+          }
+        }
+
+        arena_lock_.unlock();
+        if (chunk == nullptr) {
+          unlock_bucket(b);
+          return false;
+        }
+
         uint8_t* p = static_cast<uint8_t*>(chunk);
         for (uint32_t i = 0; i < count; ++i) {
             void* node = p + static_cast<size_t>(i) * block_size;
@@ -376,7 +434,9 @@ private:
     uint8_t* base_{nullptr};
     size_t size_{0};
     size_t used_{0};
+    std::atomic<size_t> committed_{0};
     uint64_t epoch_{1};
+    bool vm_backed_{false};
     concurrency::EventSpinLock arena_lock_;
     Bucket buckets_[kBucketCount]{};
 };
@@ -838,11 +898,14 @@ void* runtime_alloc(size_t size, size_t align) {
         return internal_alloc(size, align);
     }
 
-    if (runtime_uses_arena() && g_runtime.arena_heap.enabled()) {
-        void* p = g_runtime.arena_heap.allocate(size, align);
-        if (p != nullptr) {
-            return p;
-        }
+    if (g_runtime.arena_heap.enabled()) {
+      void* p = g_runtime.arena_heap.allocate(size, align);
+      if (p != nullptr) {
+        return p;
+      }
+      if (runtime_uses_arena()) {
+        return nullptr;
+      }
     }
 
     return internal_alloc(size, align);
@@ -853,9 +916,9 @@ void runtime_free(void* ptr, size_t size, size_t align) {
         return;
     }
 
-    if (runtime_uses_arena() && g_runtime.arena_heap.enabled() && g_runtime.arena_heap.owns(ptr)) {
-        g_runtime.arena_heap.deallocate(ptr, size, align);
-        return;
+    if (g_runtime.arena_heap.enabled() && g_runtime.arena_heap.owns(ptr)) {
+      g_runtime.arena_heap.deallocate(ptr, size, align);
+      return;
     }
 
     internal_free(ptr, size, align);
@@ -904,7 +967,7 @@ void runtime_memory_stats(uint64_t* out_committed, uint64_t* out_reserved) {
         if (g_runtime.memory_mode == ASTRAL_MEMMODE_ARENA_BORROWED || g_runtime.memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {
             *out_committed = static_cast<uint64_t>(g_runtime.arena_size);
         } else {
-            *out_committed = static_cast<uint64_t>(g_runtime.vm_committed);
+          *out_committed = static_cast<uint64_t>(g_runtime.arena_heap.committed_bytes());
         }
     }
     if (out_reserved) {
@@ -1015,12 +1078,12 @@ static AstralErr runtime_init_fail_cleanup(AstralErr err) {
         for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {
             astral::platform::thread_join(&g_runtime.workers[i]);
         }
-        astral::core::free_array(g_runtime.sys_alloc, g_runtime.workers, n_alloc);
+        astral::core::runtime_delete_array(g_runtime.workers, n_alloc);
         g_runtime.workers = nullptr;
     }
     if (g_runtime.work_queues != nullptr) {
-        astral::core::free_array(g_runtime.sys_alloc, g_runtime.work_queues, n_alloc);
-        g_runtime.work_queues = nullptr;
+      astral::core::runtime_delete_array(g_runtime.work_queues, n_alloc);
+      g_runtime.work_queues = nullptr;
     }
     g_runtime.worker_alloc_count = 0;
 #endif
@@ -1111,6 +1174,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
     g_runtime.arena_size = 0;
     g_runtime.arena_alloc = {nullptr, nullptr, nullptr};
     g_runtime.arena_owned = false;
+    g_runtime.arena_heap.reset();
     session_pool_reset();
 
     // Determine thread count early (used by arena partitioning).
@@ -1137,6 +1201,8 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
         if (reserve_size == 0) {
             reserve_size = 2ULL << 30;
         }
+        constexpr size_t kVmCommitAlignment = 64u * 1024u;
+        reserve_size = align_up_size(reserve_size, kVmCommitAlignment);
 
         if (cfg->enable_hugepages) {
             constexpr size_t kHugeAlign = 2 * 1024 * 1024;
@@ -1179,6 +1245,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
         g_runtime.vm_size = allocated_size;
         g_runtime.vm_committed = initial_commit;
         g_runtime.enable_hugepages = huge_pages_enabled;
+        g_runtime.arena_heap.init_vm(vm_base, allocated_size, initial_commit);
 
 #endif
     } else if (cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_BORROWED || cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {
@@ -1272,27 +1339,22 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
 
     // Reset work queue state (tests may init/shutdown multiple times in one process).
     if (g_runtime.work_queues != nullptr) {
-        astral::core::free_array(g_runtime.sys_alloc, g_runtime.work_queues, g_runtime.worker_alloc_count);
-        g_runtime.work_queues = nullptr;
+      astral::core::runtime_delete_array(g_runtime.work_queues, g_runtime.worker_alloc_count);
+      g_runtime.work_queues = nullptr;
     }
     g_runtime.work_queue_rr.store(0, std::memory_order_relaxed);
     g_tls_submit_rr = kInvalidWorkerId;
 
 #if ASTRAL_ENABLE_THREADS
-    {
-        astral::core::ScopedArray<WorkQueue> queues(g_runtime.sys_alloc, g_runtime.thread_count);
-        if (queues.get() == nullptr) {
-            return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
-        }
-        g_runtime.work_queues = queues.release();
+    g_runtime.work_queues = astral::core::runtime_new_array<WorkQueue>(g_runtime.thread_count);
+    if (g_runtime.work_queues == nullptr) {
+      return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
     }
 
-    {
-        astral::core::ScopedArray<astral::platform::Thread> workers(g_runtime.sys_alloc, g_runtime.thread_count);
-        if (workers.get() == nullptr) {
-            return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
-        }
-        g_runtime.workers = workers.release();
+    g_runtime.workers =
+        astral::core::runtime_new_array<astral::platform::Thread>(g_runtime.thread_count);
+    if (g_runtime.workers == nullptr) {
+      return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
     }
     g_runtime.worker_alloc_count = g_runtime.thread_count;
 
@@ -1305,7 +1367,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
             for (uint32_t i = 0; i < started; ++i) {
                 astral::platform::thread_join(&g_runtime.workers[i]);
             }
-            astral::core::free_array(g_runtime.sys_alloc, g_runtime.workers, g_runtime.worker_alloc_count);
+            astral::core::runtime_delete_array(g_runtime.workers, g_runtime.worker_alloc_count);
             g_runtime.workers = nullptr;
             g_runtime.worker_alloc_count = 0;
             return runtime_init_fail_cleanup(ASTRAL_E_BACKEND);
@@ -1324,10 +1386,9 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
     }
 
     if (g_runtime.memory_mode == ASTRAL_MEMMODE_VM) {
-        info("Astral runtime initialized: vm_reserve=%zu MB, vm_commit=%zu MB, threads=%u",
-             g_runtime.vm_size / (1024 * 1024),
-             g_runtime.vm_committed / (1024 * 1024),
-             g_runtime.thread_count);
+      info("Astral runtime initialized: vm_reserve=%zu MB, vm_commit=%zu MB, threads=%u",
+           g_runtime.vm_size / (1024 * 1024),
+           g_runtime.arena_heap.committed_bytes() / (1024 * 1024), g_runtime.thread_count);
     } else {
         info("Astral runtime initialized: arena=%zu MB, session_blocks=%u x %u KB, threads=%u",
              g_runtime.arena_size / (1024 * 1024),
@@ -1365,12 +1426,12 @@ ASTRAL_API void ASTRAL_CALL astral_shutdown(void) {
         for (uint32_t i = 0; i < g_runtime.thread_count; ++i) {
             astral::platform::thread_join(&g_runtime.workers[i]);
         }
-        astral::core::free_array(g_runtime.sys_alloc, g_runtime.workers, n_alloc);
+        astral::core::runtime_delete_array(g_runtime.workers, n_alloc);
         g_runtime.workers = nullptr;
     }
     if (g_runtime.work_queues != nullptr) {
         const uint32_t n_alloc = g_runtime.worker_alloc_count;
-        astral::core::free_array(g_runtime.sys_alloc, g_runtime.work_queues, n_alloc);
+        astral::core::runtime_delete_array(g_runtime.work_queues, n_alloc);
         g_runtime.work_queues = nullptr;
     }
     g_runtime.worker_alloc_count = 0;
