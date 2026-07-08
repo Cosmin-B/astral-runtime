@@ -2713,6 +2713,142 @@ TEST(inference_memory_index_flat_mock) {
     astral_memory_destroy(index);
 }
 
+TEST(inference_memory_add_batch_is_transactional) {
+  constexpr uint32_t kDim = 4;
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = 2;
+  desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+  desc.storage_kind = ASTRAL_MEMORY_STORAGE_F32;
+
+  AstralHandle index = 0;
+  ASSERT_EQ(astral_memory_create(&desc, &index), ASTRAL_OK);
+
+  AstralMemoryRecord initial{};
+  initial.size = sizeof(AstralMemoryRecord);
+  initial.key = 101;
+  initial.group_id = 7;
+  const float initial_vector[kDim] = {1.0f, 0.0f, 0.0f, 0.0f};
+  ASSERT_EQ(astral_memory_add_batch(index, &initial, initial_vector, 1), ASTRAL_OK);
+
+  AstralMemoryRecord invalid_batch[2]{};
+  invalid_batch[0].size = sizeof(AstralMemoryRecord);
+  invalid_batch[0].key = 102;
+  invalid_batch[1].key = 103;
+  const float batch_vectors[2 * kDim] = {
+      0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+  };
+  ASSERT_EQ(astral_memory_add_batch(index, invalid_batch, batch_vectors, 2), ASTRAL_E_INVALID);
+
+  uint32_t count = 0;
+  ASSERT_EQ(astral_memory_count(index, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 1u);
+  AstralMemoryRecord found{};
+  ASSERT_EQ(astral_memory_get_record(index, 102, &found), ASTRAL_E_NOT_FOUND);
+
+  AstralMemoryRecord capacity_batch[2]{};
+  capacity_batch[0].size = sizeof(AstralMemoryRecord);
+  capacity_batch[0].key = 102;
+  capacity_batch[1].size = sizeof(AstralMemoryRecord);
+  capacity_batch[1].key = 103;
+  ASSERT_EQ(astral_memory_add_batch(index, capacity_batch, batch_vectors, 2), ASTRAL_E_NOMEM);
+  ASSERT_EQ(astral_memory_count(index, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 1u);
+  ASSERT_EQ(astral_memory_get_record(index, 102, &found), ASTRAL_E_NOT_FOUND);
+
+  AstralMemoryRecord update_batch[2]{};
+  update_batch[0] = initial;
+  update_batch[0].group_id = 99;
+  update_batch[1].key = 102;
+  ASSERT_EQ(astral_memory_add_batch(index, update_batch, batch_vectors, 2), ASTRAL_E_INVALID);
+  ASSERT_EQ(astral_memory_get_record(index, initial.key, &found), ASTRAL_OK);
+  ASSERT_EQ(found.group_id, initial.group_id);
+
+  AstralMemoryRecord mixed_batch[2]{};
+  mixed_batch[0] = initial;
+  mixed_batch[0].group_id = 88;
+  mixed_batch[1].size = sizeof(AstralMemoryRecord);
+  mixed_batch[1].key = 102;
+  const float mixed_vectors[2 * kDim] = {
+      0.0f, 1.0f, 0.0f, 0.0f, std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f, 0.0f,
+  };
+  ASSERT_EQ(astral_memory_add_batch(index, mixed_batch, mixed_vectors, 2), ASTRAL_E_INVALID);
+  ASSERT_EQ(astral_memory_count(index, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 1u);
+  ASSERT_EQ(astral_memory_get_record(index, initial.key, &found), ASTRAL_OK);
+  ASSERT_EQ(found.group_id, initial.group_id);
+  ASSERT_EQ(astral_memory_get_record(index, 102, &found), ASTRAL_E_NOT_FOUND);
+
+  AstralMemorySearchDesc search{};
+  search.size = sizeof(AstralMemorySearchDesc);
+  search.top_k = 1;
+  search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+  AstralMemorySearchResult result{};
+  ASSERT_EQ(astral_memory_search(index, &search, initial_vector, &result, 1, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 1u);
+  ASSERT_EQ(result.score, 1.0f);
+
+  AstralMemoryRecord duplicate_batch[2] = {initial, initial};
+  duplicate_batch[0].group_id = 8;
+  duplicate_batch[1].group_id = 9;
+  ASSERT_EQ(astral_memory_add_batch(index, duplicate_batch, batch_vectors, 2), ASTRAL_OK);
+  ASSERT_EQ(astral_memory_count(index, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 1u);
+  ASSERT_EQ(astral_memory_get_record(index, initial.key, &found), ASTRAL_OK);
+  ASSERT_EQ(found.group_id, 9u);
+
+  astral_memory_destroy(index);
+}
+
+TEST(inference_memory_rejects_non_finite_vectors) {
+  constexpr uint32_t kDim = 4;
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = 2;
+  desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+  desc.storage_kind = ASTRAL_MEMORY_STORAGE_Q8;
+
+  AstralHandle index = 0;
+  ASSERT_EQ(astral_memory_create(&desc, &index), ASTRAL_OK);
+
+  AstralMemoryRecord record{};
+  record.size = sizeof(AstralMemoryRecord);
+  record.key = 201;
+  const float infinite_vector[kDim] = {
+      1.0f,
+      std::numeric_limits<float>::infinity(),
+      0.0f,
+      0.0f,
+  };
+  ASSERT_EQ(astral_memory_add_batch(index, &record, infinite_vector, 1), ASTRAL_E_INVALID);
+
+  const float nan_vector[kDim] = {
+      1.0f,
+      std::numeric_limits<float>::quiet_NaN(),
+      0.0f,
+      0.0f,
+  };
+  ASSERT_EQ(astral_memory_add_batch(index, &record, nan_vector, 1), ASTRAL_E_INVALID);
+
+  AstralMemorySearchDesc search{};
+  search.size = sizeof(AstralMemorySearchDesc);
+  search.top_k = 1;
+  search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+  AstralMemorySearchResult result{};
+  uint32_t count = 0;
+  ASSERT_EQ(astral_memory_search(index, &search, nan_vector, &result, 1, &count), ASTRAL_E_INVALID);
+  ASSERT_EQ(astral_memory_count(index, &count), ASTRAL_OK);
+  ASSERT_EQ(count, 0u);
+
+  astral_memory_destroy(index);
+}
+
 TEST(inference_memory_index_graph_mock) {
     constexpr uint32_t kDim = 4;
     constexpr uint32_t kCapacity = 8;

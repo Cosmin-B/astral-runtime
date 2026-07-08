@@ -116,6 +116,12 @@ chunk, and group metadata consistent with the native chunker while the caller
 supplies the stable record key and any application flags.
 `astral_memory_get_record()` fetches stored metadata by key without running a
 vector search. Missing keys return `ASTRAL_E_NOT_FOUND`.
+
+`astral_memory_add_batch()` validates the complete batch before publishing any
+record. Invalid metadata, capacity failure, allocation failure, or non-finite
+vector values leave the index unchanged. Repeated keys in one batch resolve to
+the last record and vector supplied for that key. Search queries also reject
+non-finite values.
 `astral_memory_update_record()` changes stored metadata without touching the
 vector payload. If the new record has a different key, the key table is renamed
 and graph indexes rebuild their routing links.
