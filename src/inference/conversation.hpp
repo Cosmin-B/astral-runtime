@@ -38,6 +38,7 @@ struct Conversation {
                  void* allocator_memory_,
                  size_t allocator_capacity_,
                  const AstralConvDesc& desc_) noexcept;
+    ~Conversation() noexcept;
 
     AstralHandle handle;
 
@@ -126,7 +127,7 @@ struct Conversation {
     uint32_t stop_tail_len;
 
     // Stop suppression hold buffer (persistent).
-    concurrency::StreamToken hold[64];
+    int32_t hold[64];
     uint32_t hold_head;
     uint32_t hold_count;
 
@@ -137,6 +138,10 @@ struct Conversation {
     uint8_t pending_token_valid;
     int32_t pending_emit_token;
     uint8_t pending_emit_valid;
+    uint8_t* pending_emit_spill{nullptr};
+    uint32_t pending_emit_spill_capacity{0};
+    uint32_t pending_emit_spill_len{0};
+    uint32_t pending_emit_spill_off{0};
     uint8_t completion_pending{0};
 
     // Executor-side control flags (set by control thread, consumed by executor thread).

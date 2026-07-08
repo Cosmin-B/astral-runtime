@@ -284,61 +284,190 @@ inline bool stream_flush_one(Conversation* conv, const concurrency::StreamToken&
   return false;
 }
 
-inline bool stream_hold_push(Conversation* conv, const concurrency::StreamToken& tok,
-                             uint32_t stop_hold) {
-  if (conv == nullptr) {
-    return false;
+bool stream_flush_pending_emit(Conversation* conv) {
+  if (conv == nullptr || conv->pending_emit_valid == 0) {
+    return true;
   }
 
-  if (stop_hold == 0) {
-    return stream_flush_one(conv, tok);
+  if (conv->pending_emit_spill_len != 0) {
+    while (conv->pending_emit_spill_off < conv->pending_emit_spill_len) {
+      concurrency::StreamToken fragment{};
+      fragment.token_id = static_cast<uint32_t>(conv->pending_emit_token);
+      const uint32_t remaining = conv->pending_emit_spill_len - conv->pending_emit_spill_off;
+      const uint32_t fragment_len = remaining < concurrency::kStreamTokenUtf8Capacity
+                                        ? remaining
+                                        : concurrency::kStreamTokenUtf8Capacity;
+      std::memcpy(fragment.utf8_data, conv->pending_emit_spill + conv->pending_emit_spill_off,
+                  fragment_len);
+      fragment.utf8_len = static_cast<uint16_t>(fragment_len);
+      if (!stream_flush_one(conv, fragment)) {
+        return false;
+      }
+      conv->pending_emit_spill_off += fragment_len;
+    }
+    conv->pending_emit_spill_len = 0;
+    conv->pending_emit_spill_off = 0;
+    conv->pending_emit_valid = 0;
+    return true;
+  }
+
+  if (!stream_flush_one(conv, conv->pending_emit_stream)) {
+    return false;
+  }
+  conv->pending_emit_valid = 0;
+  return true;
+}
+
+AstralErr stream_reserve_spill(Conversation* conv, uint32_t required) {
+  if (required <= conv->pending_emit_spill_capacity) {
+    return ASTRAL_OK;
+  }
+  uint8_t* spill = core::runtime_alloc_array<uint8_t>(required);
+  if (spill == nullptr) {
+    return ASTRAL_E_NOMEM;
+  }
+  if (conv->pending_emit_spill != nullptr) {
+    core::runtime_free_array(conv->pending_emit_spill, conv->pending_emit_spill_capacity);
+  }
+  conv->pending_emit_spill = spill;
+  conv->pending_emit_spill_capacity = required;
+  return ASTRAL_OK;
+}
+
+AstralErr stream_stage_token(ModelExecutor* ex, const backend::BackendOps* ops, Conversation* conv,
+                             int32_t token_id) {
+  if (ex == nullptr || ops == nullptr || conv == nullptr || conv->pending_emit_valid != 0) {
+    return ASTRAL_E_STATE;
+  }
+
+  concurrency::StreamToken token{};
+  token.token_id = static_cast<uint32_t>(token_id);
+  AstralMutSpanU8 out{};
+  out.data = token.utf8_data;
+  out.len = sizeof(token.utf8_data);
+  uint32_t len = 0;
+  AstralErr err = ops->detokenize(ex->model->backend_model_ctx, &token_id, 1, out, &len);
+  if (err == ASTRAL_OK) {
+    if (len > sizeof(token.utf8_data)) {
+      return ASTRAL_E_BACKEND;
+    }
+    token.utf8_len = static_cast<uint16_t>(len);
+    if (stream_flush_one(conv, token)) {
+      return ASTRAL_OK;
+    }
+    conv->pending_emit_token = token_id;
+    conv->pending_emit_stream = token;
+    conv->pending_emit_valid = 1;
+    return ASTRAL_OK;
+  }
+  if (err != ASTRAL_E_NOMEM) {
+    return err;
+  }
+
+  AstralMutSpanU8 query{};
+  uint32_t required = 0;
+  err = ops->detokenize(ex->model->backend_model_ctx, &token_id, 1, query, &required);
+  if (err != ASTRAL_OK) {
+    return err;
+  }
+  if (required <= sizeof(token.utf8_data)) {
+    return ASTRAL_E_BACKEND;
+  }
+  err = stream_reserve_spill(conv, required);
+  if (err != ASTRAL_OK) {
+    return err;
+  }
+
+  out.data = conv->pending_emit_spill;
+  out.len = conv->pending_emit_spill_capacity;
+  len = 0;
+  err = ops->detokenize(ex->model->backend_model_ctx, &token_id, 1, out, &len);
+  if (err != ASTRAL_OK) {
+    return err;
+  }
+  if (len > conv->pending_emit_spill_capacity) {
+    return ASTRAL_E_BACKEND;
+  }
+  if (len == 0) {
+    return ASTRAL_OK;
+  }
+
+  conv->pending_emit_token = token_id;
+  conv->pending_emit_spill_len = len;
+  conv->pending_emit_spill_off = 0;
+  conv->pending_emit_valid = 1;
+  (void)stream_flush_pending_emit(conv);
+  return ASTRAL_OK;
+}
+
+AstralErr stream_hold_flush_ready(ModelExecutor* ex, const backend::BackendOps* ops,
+                                  Conversation* conv, uint32_t retain_count) {
+  while (conv->hold_count > retain_count) {
+    if (conv->pending_emit_valid != 0) {
+      if (!stream_flush_pending_emit(conv)) {
+        return ASTRAL_OK;
+      }
+    } else {
+      const AstralErr err = stream_stage_token(ex, ops, conv, conv->hold[conv->hold_head]);
+      if (err != ASTRAL_OK) {
+        return err;
+      }
+      if (conv->pending_emit_valid != 0) {
+        return ASTRAL_OK;
+      }
+    }
+    conv->hold_head = (conv->hold_head + 1u) % 64u;
+    --conv->hold_count;
+  }
+  return ASTRAL_OK;
+}
+
+AstralErr stream_hold_push(ModelExecutor* ex, const backend::BackendOps* ops, Conversation* conv,
+                           int32_t token_id, uint32_t stop_hold) {
+  if (conv == nullptr) {
+    return ASTRAL_E_INVALID;
+  }
+  if (stop_hold == 0 && conv->hold_count == 0) {
+    const AstralErr err = stream_stage_token(ex, ops, conv, token_id);
+    if (err != ASTRAL_OK || conv->pending_emit_valid == 0) {
+      return err;
+    }
+    conv->hold[0] = token_id;
+    conv->hold_head = 0;
+    conv->hold_count = 1;
+    return ASTRAL_OK;
+  }
+  if (conv->hold_count == 64u) {
+    const AstralErr err = stream_hold_flush_ready(ex, ops, conv, stop_hold);
+    if (err != ASTRAL_OK || conv->hold_count == 64u) {
+      return err != ASTRAL_OK ? err : ASTRAL_E_STATE;
+    }
   }
 
   const uint32_t tail = (conv->hold_head + conv->hold_count) % 64u;
-  conv->hold[tail] = tok;
-  if (conv->hold_count < 64u) {
-    ++conv->hold_count;
-  } else {
-    if (!stream_flush_one(conv, conv->hold[conv->hold_head])) {
-      return false;
-    }
-    conv->hold_head = (conv->hold_head + 1u) % 64u;
-  }
-
-  while (conv->hold_count > stop_hold) {
-    if (!stream_flush_one(conv, conv->hold[conv->hold_head])) {
-      return false;
-    }
-    conv->hold_head = (conv->hold_head + 1u) % 64u;
-    --conv->hold_count;
-  }
-
-  return true;
+  conv->hold[tail] = token_id;
+  ++conv->hold_count;
+  return stream_hold_flush_ready(ex, ops, conv, stop_hold);
 }
 
-inline bool stream_hold_flush_all(Conversation* conv) {
-  if (conv == nullptr) {
-    return false;
-  }
-  while (conv->hold_count > 0) {
-    if (!stream_flush_one(conv, conv->hold[conv->hold_head])) {
-      return false;
-    }
-    conv->hold_head = (conv->hold_head + 1u) % 64u;
-    --conv->hold_count;
-  }
-  return true;
-}
-
-inline void finish_completion_when_output_drained(Conversation* conv) {
+inline void finish_completion_when_output_drained(ModelExecutor* ex, const backend::BackendOps* ops,
+                                                  Conversation* conv) {
   if (conv == nullptr || conv->completion_pending == 0) {
     return;
   }
-  if (conv->pending_emit_valid != 0) {
-    return;
-  }
-  if (conv->desc.stream_enabled != 0 && !stream_hold_flush_all(conv)) {
-    return;
+  if (conv->desc.stream_enabled != 0) {
+    const AstralErr err = stream_hold_flush_ready(ex, ops, conv, 0);
+    if (err != ASTRAL_OK) {
+      conv->t_end_ticks = ticks_now();
+      conv->published_stats.t_end_ticks.store(conv->t_end_ticks, std::memory_order_relaxed);
+      conv->final_err.store(err, std::memory_order_release);
+      conv->state.store(ConvState::Failed, std::memory_order_release);
+      signal();
+      return;
+    }
+    if (conv->pending_emit_valid != 0 || conv->hold_count != 0) {
+      return;
+    }
   }
 
   conv->completion_pending = 0;
@@ -437,32 +566,16 @@ inline void process_logits_for_conv(ModelExecutor* ex, const backend::BackendOps
     (void)conv->meta_ring.push(ev);
   }
 
-  conv->pending_emit_token = next_token;
   if (conv->desc.stream_enabled != 0) {
-    concurrency::StreamToken st{};
-    st.token_id = static_cast<uint32_t>(next_token);
-    AstralMutSpanU8 out{};
-    out.data = st.utf8_data;
-    out.len = sizeof(st.utf8_data);
-    uint32_t utf8_len = 0;
-    const AstralErr det_err =
-        ops->detokenize(ex->model->backend_model_ctx, &next_token, 1, out, &utf8_len);
-    if (det_err != ASTRAL_OK) {
+    const uint32_t stop_hold =
+        (conv->stop_max_len > 0 && conv->stop_max_len <= 32) ? conv->stop_max_len : 0;
+    const AstralErr stream_err = stream_hold_push(ex, ops, conv, next_token, stop_hold);
+    if (stream_err != ASTRAL_OK) {
       conv->t_end_ticks = ticks_now();
-      conv->final_err.store(det_err, std::memory_order_release);
+      conv->final_err.store(stream_err, std::memory_order_release);
       conv->state.store(ConvState::Failed, std::memory_order_release);
       signal();
       return;
-    }
-    st.utf8_len = static_cast<uint16_t>(utf8_len);
-
-    const uint32_t stop_hold =
-        (conv->stop_max_len > 0 && conv->stop_max_len <= 32) ? conv->stop_max_len : 0;
-    if (stream_hold_push(conv, st, stop_hold)) {
-      conv->pending_emit_valid = 0;
-    } else {
-      conv->pending_emit_stream = st;
-      conv->pending_emit_valid = 1;
     }
   } else {
     conv->pending_emit_valid = 0;
@@ -488,11 +601,11 @@ inline void process_logits_for_conv(ModelExecutor* ex, const backend::BackendOps
       }
     }
     conv->completion_pending = 1;
-    finish_completion_when_output_drained(conv);
+    finish_completion_when_output_drained(ex, ops, conv);
   } else if (conv->total_tokens >= conv->desc.max_tokens ||
              (conv->token_eos >= 0 && next_token == conv->token_eos)) {
     conv->completion_pending = 1;
-    finish_completion_when_output_drained(conv);
+    finish_completion_when_output_drained(ex, ops, conv);
   }
 }
 
@@ -544,20 +657,21 @@ void executor_thread(ModelExecutor* ex) {
         continue;
       }
 
-      if (conv->pending_emit_valid != 0) {
-        if (conv->desc.stream_enabled != 0) {
-          const uint32_t stop_hold =
-              (conv->stop_max_len > 0 && conv->stop_max_len <= 32) ? conv->stop_max_len : 0;
-          if (stream_hold_push(conv, conv->pending_emit_stream, stop_hold)) {
-            conv->pending_emit_valid = 0;
-            signal();
-          }
-        } else {
-          conv->pending_emit_valid = 0;
+      if (conv->desc.stream_enabled != 0) {
+        const uint32_t stop_hold =
+            (conv->stop_max_len > 0 && conv->stop_max_len <= 32) ? conv->stop_max_len : 0;
+        const AstralErr stream_err = stream_hold_flush_ready(ex, ops, conv, stop_hold);
+        if (stream_err != ASTRAL_OK) {
+          conv->t_end_ticks = ticks_now();
+          conv->final_err.store(stream_err, std::memory_order_release);
+          conv->state.store(ConvState::Failed, std::memory_order_release);
           signal();
+          continue;
         }
+      } else {
+        conv->pending_emit_valid = 0;
       }
-      finish_completion_when_output_drained(conv);
+      finish_completion_when_output_drained(ex, ops, conv);
     }
 
     // 1b) Apply per-slot reset/grammar before advancing decoding.
@@ -581,6 +695,8 @@ void executor_thread(ModelExecutor* ex) {
         conv->prompt_off = 0;
         conv->pending_token_valid = 0;
         conv->pending_emit_valid = 0;
+        conv->pending_emit_spill_len = 0;
+        conv->pending_emit_spill_off = 0;
         conv->stop_tail_len = 0;
         conv->hold_head = 0;
         conv->hold_count = 0;

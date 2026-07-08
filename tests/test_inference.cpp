@@ -138,6 +138,20 @@ std::string run_mock_decode_once(AstralHandle session, const char* prompt) {
     return text;
 }
 
+constexpr char kMockLongPiecePattern[] =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+constexpr uint32_t kMockLongPieceBytes = 9000;
+
+std::string make_mock_long_piece() {
+  std::string piece;
+  piece.resize(kMockLongPieceBytes);
+  constexpr uint32_t pattern_len = sizeof(kMockLongPiecePattern) - 1u;
+  for (uint32_t i = 0; i < kMockLongPieceBytes; ++i) {
+    piece[i] = kMockLongPiecePattern[i % pattern_len];
+  }
+  return piece;
+}
+
 std::string read_conv_stream_all(AstralHandle conv) {
     std::string out;
     out.reserve(256);
@@ -386,6 +400,68 @@ TEST(inference_request_lifecycle_conversation_mock) {
 
     astral_model_release(model);
     astral_shutdown();
+}
+
+TEST(inference_session_streams_token_pieces_larger_than_ring_cell) {
+  AstralInit cfg{};
+  cfg.reserve_bytes = 32u * 1024u * 1024u;
+  cfg.thread_count = 2;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  const AstralHandle model = load_mock_model("long-piece");
+  AstralSessionDesc desc{};
+  desc.model = model;
+  desc.max_tokens = 2;
+  desc.top_p = 1.0f;
+  desc.stream_enabled = 1;
+
+  AstralHandle session = 0;
+  ASSERT_EQ(astral_session_create(&desc, &session), ASTRAL_OK);
+  ASSERT_EQ(astral_session_feed(session, AstralSpanU8{}, 1), ASTRAL_OK);
+  ASSERT_EQ(astral_session_decode(session), ASTRAL_OK);
+
+  const std::string output = read_stream_all(session);
+  ASSERT_EQ(astral_session_wait(session, 1000), ASTRAL_OK);
+  ASSERT_EQ(output, make_mock_long_piece());
+
+  astral_session_destroy(session);
+  astral_model_release(model);
+  astral_shutdown();
+}
+
+TEST(inference_conversation_streams_token_pieces_larger_than_ring_cell) {
+  AstralInit cfg{};
+  cfg.reserve_bytes = 32u * 1024u * 1024u;
+  cfg.thread_count = 2;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  const AstralHandle model = load_mock_model("long-piece");
+  AstralExecutorDesc executor{};
+  executor.size = sizeof(AstralExecutorDesc);
+  executor.max_slots = 1;
+  executor.max_batch_tokens = 2;
+  ASSERT_EQ(astral_model_executor_configure(model, &executor), ASTRAL_OK);
+
+  AstralConvDesc desc{};
+  desc.size = sizeof(AstralConvDesc);
+  desc.model = model;
+  desc.max_tokens = 2;
+  desc.top_p = 1.0f;
+  desc.stream_enabled = 1;
+
+  AstralHandle conv = 0;
+  ASSERT_EQ(astral_conv_create(&desc, &conv), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_feed(conv, AstralSpanU8{}, 1), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  const std::string output = read_conv_stream_all(conv);
+  ASSERT_EQ(astral_conv_wait(conv, 1000), ASTRAL_OK);
+  ASSERT_EQ(output, make_mock_long_piece());
+
+  astral_conv_destroy(conv);
+  astral_model_release(model);
+  astral_shutdown();
 }
 
 TEST(inference_conversation_executor_does_not_occupy_worker_pool) {

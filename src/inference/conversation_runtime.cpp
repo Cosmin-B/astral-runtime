@@ -765,6 +765,8 @@ AstralErr conv_decode(Conversation* conv) {
   conv->hold_count = 0;
   conv->pending_token_valid = 0;
   conv->pending_emit_valid = 0;
+  conv->pending_emit_spill_len = 0;
+  conv->pending_emit_spill_off = 0;
   conv->completion_pending = 0;
   conv->mirostat_mu = 0.0f;
 
@@ -911,6 +913,8 @@ AstralErr conv_reset(Conversation* conv, const AstralConvDesc* desc) {
   conv->hold_count = 0;
   conv->pending_token_valid = 0;
   conv->pending_emit_valid = 0;
+  conv->pending_emit_spill_len = 0;
+  conv->pending_emit_spill_off = 0;
   conv->completion_pending = 0;
   conv->needs_slot_reset = 1;
   conv->grammar_applied = 0;

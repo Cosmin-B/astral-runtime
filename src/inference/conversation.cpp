@@ -1,5 +1,6 @@
 #include "conversation.hpp"
 
+#include "../core/runtime_alloc.hpp"
 #include "../platform/time.h"
 
 #include <cstring>
@@ -84,5 +85,11 @@ Conversation::Conversation(Model* model_,
     , toolset(nullptr)
     , tool_choice_mode(ASTRAL_TOOL_CHOICE_AUTO)
     , pending_emit_stream{} {}
+
+Conversation::~Conversation() noexcept {
+  if (pending_emit_spill != nullptr) {
+    core::runtime_free_array(pending_emit_spill, pending_emit_spill_capacity);
+  }
+}
 
 } // namespace astral::inference

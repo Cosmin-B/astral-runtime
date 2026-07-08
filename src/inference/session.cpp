@@ -162,44 +162,108 @@ inline bool session_stream_flush_one(Session* session, const concurrency::Stream
     return true;
 }
 
-inline bool session_hold_flush_all(Session* session,
-                                   concurrency::StreamToken* hold,
-                                   uint32_t* hold_head,
-                                   uint32_t* hold_count,
-                                   uint32_t hold_cap) {
-    while (*hold_count > 0) {
-        if (!session_stream_flush_one(session, hold[*hold_head])) {
-            return false;
-        }
-        *hold_head = (*hold_head + 1) % hold_cap;
-        --(*hold_count);
+AstralErr session_stream_emit_bytes(Session* session, int32_t token_id, const uint8_t* bytes,
+                                    uint32_t len) {
+  if (len == 0) {
+    concurrency::StreamToken token{};
+    token.token_id = static_cast<uint32_t>(token_id);
+    return session_stream_flush_one(session, token) ? ASTRAL_OK : ASTRAL_E_CANCELED;
+  }
+  uint32_t offset = 0;
+  while (offset < len) {
+    concurrency::StreamToken token{};
+    token.token_id = static_cast<uint32_t>(token_id);
+    const uint32_t remaining = len - offset;
+    const uint32_t fragment_len = remaining < concurrency::kStreamTokenUtf8Capacity
+                                      ? remaining
+                                      : concurrency::kStreamTokenUtf8Capacity;
+    std::memcpy(token.utf8_data, bytes + offset, fragment_len);
+    token.utf8_len = static_cast<uint16_t>(fragment_len);
+    if (!session_stream_flush_one(session, token)) {
+      return ASTRAL_E_CANCELED;
     }
-    return true;
+    offset += fragment_len;
+  }
+  return ASTRAL_OK;
 }
 
-inline bool session_hold_push(Session* session,
-                              const concurrency::StreamToken& tok,
-                              concurrency::StreamToken* hold,
-                              uint32_t* hold_head,
-                              uint32_t* hold_count,
-                              uint32_t hold_cap,
-                              uint32_t stop_hold) {
-    if (stop_hold == 0) {
-        return session_stream_flush_one(session, tok);
+AstralErr session_stream_emit_token(Session* session, const backend::BackendOps* ops,
+                                    int32_t token_id) {
+  uint8_t inline_bytes[concurrency::kStreamTokenUtf8Capacity];
+  AstralMutSpanU8 out{};
+  out.data = inline_bytes;
+  out.len = sizeof(inline_bytes);
+  uint32_t len = 0;
+  AstralErr err = ops->detokenize(session->model->backend_model_ctx, &token_id, 1, out, &len);
+  if (err == ASTRAL_OK) {
+    if (len > sizeof(inline_bytes)) {
+      return ASTRAL_E_BACKEND;
     }
+    return session_stream_emit_bytes(session, token_id, inline_bytes, len);
+  }
+  if (err != ASTRAL_E_NOMEM) {
+    return err;
+  }
 
-    const uint32_t tail = (*hold_head + *hold_count) % hold_cap;
-    hold[tail] = tok;
-    ++(*hold_count);
+  AstralMutSpanU8 query{};
+  uint32_t required = 0;
+  err = ops->detokenize(session->model->backend_model_ctx, &token_id, 1, query, &required);
+  if (err != ASTRAL_OK) {
+    return err;
+  }
+  if (required <= sizeof(inline_bytes)) {
+    return ASTRAL_E_BACKEND;
+  }
 
-    while (*hold_count > stop_hold) {
-        if (!session_stream_flush_one(session, hold[*hold_head])) {
-            return false;
-        }
-        *hold_head = (*hold_head + 1) % hold_cap;
-        --(*hold_count);
+  uint8_t* spill = core::runtime_alloc_array<uint8_t>(required);
+  if (spill == nullptr) {
+    return ASTRAL_E_NOMEM;
+  }
+  out.data = spill;
+  out.len = required;
+  len = 0;
+  err = ops->detokenize(session->model->backend_model_ctx, &token_id, 1, out, &len);
+  if (err == ASTRAL_OK && len <= required) {
+    err = session_stream_emit_bytes(session, token_id, spill, len);
+  } else if (err == ASTRAL_OK) {
+    err = ASTRAL_E_BACKEND;
+  }
+  core::runtime_free_array(spill, required);
+  return err;
+}
+
+AstralErr session_hold_flush_ready(Session* session, const backend::BackendOps* ops, int32_t* hold,
+                                   uint32_t* hold_head, uint32_t* hold_count, uint32_t hold_cap,
+                                   uint32_t retain_count) {
+  while (*hold_count > retain_count) {
+    const AstralErr err = session_stream_emit_token(session, ops, hold[*hold_head]);
+    if (err != ASTRAL_OK) {
+      return err;
     }
-    return true;
+    *hold_head = (*hold_head + 1u) % hold_cap;
+    --(*hold_count);
+  }
+  return ASTRAL_OK;
+}
+
+AstralErr session_hold_push(Session* session, const backend::BackendOps* ops, int32_t token_id,
+                            int32_t* hold, uint32_t* hold_head, uint32_t* hold_count,
+                            uint32_t hold_cap, uint32_t stop_hold) {
+  if (stop_hold == 0 && *hold_count == 0) {
+    return session_stream_emit_token(session, ops, token_id);
+  }
+  if (*hold_count == hold_cap) {
+    const AstralErr err =
+        session_hold_flush_ready(session, ops, hold, hold_head, hold_count, hold_cap, stop_hold);
+    if (err != ASTRAL_OK || *hold_count == hold_cap) {
+      return err != ASTRAL_OK ? err : ASTRAL_E_STATE;
+    }
+  }
+
+  const uint32_t tail = (*hold_head + *hold_count) % hold_cap;
+  hold[tail] = token_id;
+  ++(*hold_count);
+  return session_hold_flush_ready(session, ops, hold, hold_head, hold_count, hold_cap, stop_hold);
 }
 
 inline bool session_stop_check(Session* session,
@@ -1920,7 +1984,7 @@ void decode_loop(Session* session) {
 
         // Streaming hold buffer for stop suppression (enabled only if stop sequences are configured).
         constexpr uint32_t kHoldCap = 64;
-        concurrency::StreamToken hold[kHoldCap];
+        int32_t hold[kHoldCap];
         uint32_t hold_head = 0;
         uint32_t hold_count = 0;
         const uint32_t stop_hold =
@@ -2001,28 +2065,14 @@ void decode_loop(Session* session) {
                 const bool stop_hit = session_stop_check(session, next_token, stop_tail, &stop_tail_len, &stop_len);
 
                 if (session->desc.stream_enabled) {
-                    concurrency::StreamToken stream_token;
-                    stream_token.token_id = static_cast<uint32_t>(next_token);
-
-                    AstralMutSpanU8 out_buf;
-                    out_buf.data = stream_token.utf8_data;
-                    out_buf.len = sizeof(stream_token.utf8_data);
-
-                    uint32_t utf8_len = 0;
                     ASTRAL_ZONE_MICRO_N("astral.backend.detokenize");
-                    err = ops->detokenize(model->backend_model_ctx, &next_token, 1, out_buf, &utf8_len);
+                    err = session_hold_push(session, ops, next_token, hold, &hold_head, &hold_count,
+                                            kHoldCap, stop_hold);
                     if (err != ASTRAL_OK) {
-                        final_state = SessionState::Failed;
-                        final_err = err;
-                        break;
-                    }
-
-                    stream_token.utf8_len = static_cast<uint16_t>(utf8_len);
-
-                    if (!session_hold_push(session, stream_token, hold, &hold_head, &hold_count, kHoldCap, stop_hold)) {
-                        final_state = SessionState::Canceled;
-                        final_err = ASTRAL_E_CANCELED;
-                        break;
+                      final_state =
+                          err == ASTRAL_E_CANCELED ? SessionState::Canceled : SessionState::Failed;
+                      final_err = err;
+                      break;
                     }
                 }
 
@@ -2033,9 +2083,12 @@ void decode_loop(Session* session) {
                         } else {
                             hold_count -= stop_len;
                         }
-                        if (!session_hold_flush_all(session, hold, &hold_head, &hold_count, kHoldCap)) {
-                            final_state = SessionState::Canceled;
-                            final_err = ASTRAL_E_CANCELED;
+                        err = session_hold_flush_ready(session, ops, hold, &hold_head, &hold_count,
+                                                       kHoldCap, 0);
+                        if (err != ASTRAL_OK) {
+                          final_state = err == ASTRAL_E_CANCELED ? SessionState::Canceled
+                                                                 : SessionState::Failed;
+                          final_err = err;
                         }
                     }
                     break;
@@ -2044,10 +2097,11 @@ void decode_loop(Session* session) {
         }
 
         if (final_state == SessionState::Completed && session->desc.stream_enabled && hold_count > 0) {
-            if (!session_hold_flush_all(session, hold, &hold_head, &hold_count, kHoldCap)) {
-                final_state = SessionState::Canceled;
-                final_err = ASTRAL_E_CANCELED;
-            }
+          err = session_hold_flush_ready(session, ops, hold, &hold_head, &hold_count, kHoldCap, 0);
+          if (err != ASTRAL_OK) {
+            final_state = err == ASTRAL_E_CANCELED ? SessionState::Canceled : SessionState::Failed;
+            final_err = err;
+          }
         }
     } // feed_ok
 

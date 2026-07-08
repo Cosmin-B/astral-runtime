@@ -31,6 +31,7 @@ struct MockModel {
     bool infinite;
     bool sampler_mode;
     bool tool_call_mode;
+    bool long_piece_mode;
 };
 
 struct MockSession {
@@ -59,12 +60,21 @@ struct MockEmbedder {
 constexpr uint32_t kMockVocabSize = 260;
 constexpr int32_t kMockTokenBos = 256;
 constexpr int32_t kMockTokenEos = 257;
+constexpr int32_t kMockTokenLongPiece = 258;
 constexpr uint32_t kMockEmbDim = 8;
 constexpr uint32_t kMockMaxSlots = 32;
 constexpr uint32_t kMockMaxBatchOutputs = 64;
 
 constexpr const char* kMockMessage = "mock-backend";
 constexpr const char* kMockToolCallMessage = "{\"name\":\"search\",\"arguments\":{\"query\":\"agent\"}}";
+constexpr char kMockLongPiecePattern[] =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+constexpr uint32_t kMockLongPieceBytes = 9000;
+
+inline uint8_t mock_long_piece_byte(uint32_t offset) {
+  constexpr uint32_t pattern_len = sizeof(kMockLongPiecePattern) - 1u;
+  return static_cast<uint8_t>(kMockLongPiecePattern[offset % pattern_len]);
+}
 
 inline bool span_equals_ascii(AstralSpanU8 span, const char* lit) {
     if (lit == nullptr) {
@@ -185,6 +195,7 @@ void* mock_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
     model->infinite = span_equals_ascii(tag, "infinite");
     model->sampler_mode = span_equals_ascii(tag, "sampler");
     model->tool_call_mode = span_equals_ascii(tag, "toolcall");
+    model->long_piece_mode = span_equals_ascii(tag, "long-piece");
     model->token_eos = (model->infinite || model->sampler_mode) ? -1 : kMockTokenEos;
 
     *out_err = ASTRAL_OK;
@@ -239,6 +250,21 @@ AstralErr mock_detokenize(void* model_ctx, const int32_t* tokens, uint32_t count
         const int32_t t = tokens[i];
         if (t == kMockTokenBos || t == kMockTokenEos) {
             continue;
+        }
+
+        if (t == kMockTokenLongPiece) {
+          if (out_text.data != nullptr &&
+              (offset > out_text.len || kMockLongPieceBytes > out_text.len - offset)) {
+            *out_len = offset + kMockLongPieceBytes;
+            return ASTRAL_E_NOMEM;
+          }
+          if (out_text.data != nullptr) {
+            for (uint32_t j = 0; j < kMockLongPieceBytes; ++j) {
+              out_text.data[offset + j] = mock_long_piece_byte(j);
+            }
+          }
+          offset += kMockLongPieceBytes;
+          continue;
         }
 
         if (out_text.data != nullptr && offset >= out_text.len) {
@@ -481,24 +507,28 @@ AstralErr mock_session_logits(void* session_ctx, BackendLogitsView* out_view) {
         const uint32_t b = static_cast<uint32_t>('b');
         if (a < session->model->vocab_size) session->logits[a] = 10.0f;
         if (b < session->model->vocab_size) session->logits[b] = 10.0f;
+    } else if (session->model->long_piece_mode) {
+      const uint32_t out_step = session->slot_output_step[session->slot_id];
+      const int32_t next = out_step == 0 ? kMockTokenLongPiece : kMockTokenEos;
+      session->logits[static_cast<uint32_t>(next)] = 10.0f;
     } else {
-        const char* message = session->model->tool_call_mode ? kMockToolCallMessage : kMockMessage;
-        const size_t msg_len = std::strlen(message);
-        int32_t next = kMockTokenEos;
-        if (msg_len > 0 && session->model != nullptr && session->model->tool_call_mode) {
-            const uint32_t out_step = session->slot_output_step[session->slot_id];
-            if (out_step < msg_len) {
-                next = static_cast<int32_t>(static_cast<uint8_t>(message[out_step]));
-            }
-        } else if (msg_len > 0 && session->model != nullptr && session->model->infinite) {
-            next = static_cast<int32_t>(static_cast<uint8_t>(message[session->step % msg_len]));
-        } else if (session->step < msg_len) {
-            next = static_cast<int32_t>(static_cast<uint8_t>(message[session->step]));
+      const char* message = session->model->tool_call_mode ? kMockToolCallMessage : kMockMessage;
+      const size_t msg_len = std::strlen(message);
+      int32_t next = kMockTokenEos;
+      if (msg_len > 0 && session->model != nullptr && session->model->tool_call_mode) {
+        const uint32_t out_step = session->slot_output_step[session->slot_id];
+        if (out_step < msg_len) {
+          next = static_cast<int32_t>(static_cast<uint8_t>(message[out_step]));
         }
+      } else if (msg_len > 0 && session->model != nullptr && session->model->infinite) {
+        next = static_cast<int32_t>(static_cast<uint8_t>(message[session->step % msg_len]));
+      } else if (session->step < msg_len) {
+        next = static_cast<int32_t>(static_cast<uint8_t>(message[session->step]));
+      }
 
-        if (next >= 0 && static_cast<uint32_t>(next) < session->model->vocab_size) {
-            session->logits[static_cast<uint32_t>(next)] = 10.0f;
-        }
+      if (next >= 0 && static_cast<uint32_t>(next) < session->model->vocab_size) {
+        session->logits[static_cast<uint32_t>(next)] = 10.0f;
+      }
     }
 
     out_view->logits = session->logits;
@@ -523,9 +553,10 @@ AstralErr mock_session_accept(void* session_ctx, int32_t token) {
 
     session->step++;
     if (session->slot_id < session->n_slots) {
-        if (session->model != nullptr && session->model->tool_call_mode) {
-            session->slot_output_step[session->slot_id] += 1u;
-        }
+      if (session->model != nullptr &&
+          (session->model->tool_call_mode || session->model->long_piece_mode)) {
+        session->slot_output_step[session->slot_id] += 1u;
+      }
         session->slot_step[session->slot_id] = session->step;
         session->slot_has_logits[session->slot_id] = true;
     }
@@ -876,16 +907,20 @@ AstralErr mock_session_batch_eval(void* session_ctx,
             std::memset(out, 0, static_cast<size_t>(session->model->vocab_size) * sizeof(float));
 
             int32_t next = kMockTokenEos;
-            if (session->model->tool_call_mode) {
-                const char* message = kMockToolCallMessage;
-                const size_t msg_len = std::strlen(message);
-                const uint32_t out_step = session->slot_output_step[t.slot_id];
-                if (out_step < msg_len) {
-                    next = static_cast<int32_t>(static_cast<uint8_t>(message[out_step]));
-                    session->slot_output_step[t.slot_id] = out_step + 1u;
-                }
+            if (session->model->long_piece_mode) {
+              const uint32_t out_step = session->slot_output_step[t.slot_id];
+              next = out_step == 0 ? kMockTokenLongPiece : kMockTokenEos;
+              session->slot_output_step[t.slot_id] = out_step + 1u;
+            } else if (session->model->tool_call_mode) {
+              const char* message = kMockToolCallMessage;
+              const size_t msg_len = std::strlen(message);
+              const uint32_t out_step = session->slot_output_step[t.slot_id];
+              if (out_step < msg_len) {
+                next = static_cast<int32_t>(static_cast<uint8_t>(message[out_step]));
+                session->slot_output_step[t.slot_id] = out_step + 1u;
+              }
             } else if (next_step < 16) {
-                next = static_cast<int32_t>((t.slot_id * 17u + next_step * 3u) & 0xFFu);
+              next = static_cast<int32_t>((t.slot_id * 17u + next_step * 3u) & 0xFFu);
             }
 
             if (next >= 0 && static_cast<uint32_t>(next) < session->model->vocab_size) {
