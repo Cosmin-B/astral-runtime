@@ -9,6 +9,7 @@ release candidate.
 |---|---|---|
 | Debug native build/tests | `cmake --preset dev && cmake --build --preset dev -j && ctest --preset dev -j --output-on-failure` | Yes |
 | Release native build/tests | `cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure` | Yes |
+| Memory-search recall | `./scripts/run_memory_search_acceptance.sh --preset release-with-tests --iters 10 --dim 384 --capacity 10000 --metric cosine --graph-search 256 --query-search 256 --graph-neighbors 32 --recall-queries 32 --graph-storages f32,q8,q8f32,f6e3m2f32,f8e5m2f32 --skip-flat-baseline --min-recall-pct 99 --recall-storages f32,q8,q8f32,f6e3m2f32,f8e5m2f32` | Yes |
 | Sanitizer validation | `./scripts/run_asan.sh && ./scripts/run_tsan.sh` for ASAN/UBSAN and TSan evidence | Yes |
 | Comment review | `python3 ./scripts/inventory_comments.py --format review-tsv` plus `python3 ./scripts/inventory_comments.py --format summary --fail-orphan-markers` | Yes |
 | Release gate preflight | `ASTRAL_TEST_VISION_MODEL=... ASTRAL_TEST_VISION_MEDIA=... ASTRAL_TEST_AUDIO_MODEL=... ASTRAL_TEST_AUDIO_MEDIA=... UNREAL_54_EDITOR=... UNREAL_55_EDITOR=... UNREAL_56_EDITOR=... UNREAL_57_EDITOR=... UNREAL_RUNUAT=... ./scripts/run_release_required_gates.sh --print-plan --cuda-arch <deployed-arch-list> --cuda-strict --mtmd-bench` | Yes |

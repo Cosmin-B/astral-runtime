@@ -368,6 +368,12 @@ recall meets the product target, its latency beats the exact flat baseline, and
 its ingest cost is acceptable for that dataset. Keep the flat index available as
 the correctness oracle while tuning new embedding models or document
 distributions.
+
+The required release recall lane uses 10,000 deterministic 384-dimensional
+cosine vectors, 32 recall queries, and build/query search budgets of 256. It
+requires at least 99% aggregate top-k recall for `f32`, `q8`, `q8f32`,
+`f6e3m2f32`, and `f8e5m2f32`. Raw six-bit and E5M2 graph storage profiles are
+capacity-oriented alternatives and are not part of that high-recall set.
 When aggregate top-k recall moves in the right direction but remains unstable,
 run `graph_recall_detail` to see whether failures are isolated to a few query
 regions or spread across the corpus. Run `graph_level_stats` beside large graph

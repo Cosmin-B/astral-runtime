@@ -9,10 +9,10 @@ usage() {
 Usage: scripts/run_release_required_gates.sh [options]
 
 Runs the hard release-candidate gates that must not be treated as optional:
-native release tests, ASAN/UBSAN and TSan validation, CUDA parity/e2e matrix,
-real MTMD media validation, UE 5.7 full/slim container Automation, Unreal
-Automation compatibility, UE 5.7 sample packaging, and Unity EditMode ABI
-validation.
+native release tests, memory-search recall acceptance, ASAN/UBSAN and TSan
+validation, CUDA parity/e2e matrix, real MTMD media validation, UE 5.7
+full/slim container Automation, Unreal Automation compatibility, UE 5.7 sample
+packaging, and Unity EditMode ABI validation.
 
 Options:
   --cuda-arch <list>    Required deployed CUDA architecture list for CUDA presets
@@ -78,6 +78,22 @@ unreal_sample_args=(
   --sample-memory-backend mock
   --sample-media-backend mock
 )
+memory_acceptance_storages="f32,q8,q8f32,f6e3m2f32,f8e5m2f32"
+memory_acceptance_args=(
+  --preset release-with-tests
+  --iters 10
+  --dim 384
+  --capacity 10000
+  --metric cosine
+  --graph-search 256
+  --query-search 256
+  --graph-neighbors 32
+  --recall-queries 32
+  --graph-storages "${memory_acceptance_storages}"
+  --skip-flat-baseline
+  --min-recall-pct 99
+  --recall-storages "${memory_acceptance_storages}"
+)
 
 require_env_for_plan() {
   local missing=0
@@ -108,6 +124,7 @@ print_release_plan() {
 
   echo "[release-gate] plan"
   echo "  native release tests: cmake --preset release-with-tests && cmake --build --preset release-with-tests -j && ctest --preset release-with-tests -j --output-on-failure"
+  echo "  memory search recall: scripts/run_memory_search_acceptance.sh ${memory_acceptance_args[*]}"
   if [[ "${run_sanitizers}" -eq 1 ]]; then
     echo "  sanitizers: scripts/run_asan.sh && scripts/run_tsan.sh"
   else
@@ -180,6 +197,9 @@ echo "[release-gate] Native release tests"
 cmake --preset release-with-tests
 cmake --build --preset release-with-tests -j
 ctest --preset release-with-tests -j --output-on-failure
+
+echo "[release-gate] Memory-search recall acceptance"
+scripts/run_memory_search_acceptance.sh "${memory_acceptance_args[@]}"
 
 if [[ "${run_sanitizers}" -eq 1 ]]; then
   echo "[release-gate] ASAN/UBSAN validation"
