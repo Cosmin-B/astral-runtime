@@ -81,9 +81,9 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
   return reinterpret_cast<void*>(aligned_int);
 }
 
-void vm_commit(void* addr, size_t size) {
+bool vm_commit(void* addr, size_t size) {
   if (addr == nullptr || size == 0) {
-    return;
+    return false;
   }
 
   // Step 1: Make pages accessible (read/write)
@@ -94,7 +94,7 @@ void vm_commit(void* addr, size_t size) {
     // - EINVAL: addr not page-aligned, or invalid range
     // - ENOMEM: kernel cannot allocate internal structures
     // - EACCES: permission denied (shouldn't happen for our reserved pages)
-    return; // The region remains inaccessible; callers prevalidate page ranges at setup boundaries.
+    return false;
   }
 
   // Step 2: Advise kernel to allocate physical pages
@@ -103,6 +103,7 @@ void vm_commit(void* addr, size_t size) {
   // Note: on some systems, madvise may return EINVAL for MADV_WILLNEED
   // if the region is already resident, which is fine
   madvise(addr, size, MADV_WILLNEED);
+  return true;
 }
 
 void vm_decommit(void* addr, size_t size) {
@@ -195,7 +196,10 @@ void* vm_reserve_large(size_t size, size_t* out_size) {
     return nullptr;
   }
 
-  vm_commit(addr, size);
+  if (!vm_commit(addr, size)) {
+    vm_release(addr, size);
+    return nullptr;
+  }
   if (!vm_try_hugepages(addr, size)) {
     vm_release(addr, size);
     return nullptr;
@@ -212,8 +216,7 @@ bool vm_commit_large(void* addr, size_t size) {
     return false;
   }
 
-  vm_commit(addr, size);
-  return vm_try_hugepages(addr, size);
+  return vm_commit(addr, size) && vm_try_hugepages(addr, size);
 }
 
 } // namespace astral::platform

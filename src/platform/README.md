@@ -42,7 +42,7 @@ Reserve virtual address space without committing physical memory.
 - Does not consume physical memory, only address space
 - Size should be page-aligned (typically 4KB)
 
-#### `void vm_commit(void* addr, size_t size)`
+#### `bool vm_commit(void* addr, size_t size)`
 
 Commit physical memory to reserved pages.
 
@@ -53,6 +53,8 @@ Commit physical memory to reserved pages.
 **Parameters**:
 - `addr`: Address within reserved region (must be page-aligned)
 - `size`: Size to commit (must be multiple of page size)
+
+**Returns**: `true` when the range is accessible, or `false` when the OS rejects the request
 
 **Notes**:
 - Safe to call on already-committed pages (no-op)
@@ -146,11 +148,15 @@ Example:
 ```cpp
 // Initialization (NOT hot path)
 void* base = vm_reserve(2GB);
-vm_commit(base, 2MB);  // Pre-commit initial chunk
+if (base == nullptr || !vm_commit(base, 2MB)) {
+  return false;
+}
 
 // Allocator setup (NOT hot path)
 if (used > committed) {
-  vm_commit(base + committed, committed);  // Double committed size
+  if (!vm_commit(base + committed, committed)) {
+    return false;
+  }
   committed *= 2;
 }
 
@@ -171,10 +177,10 @@ void* alloc = bump_allocate(allocator, size);  // No syscalls
 
 ### Error Handling
 
-These primitives do not throw and most mutation functions have no error return:
+These primitives do not throw:
 
 - `vm_reserve()` returns `nullptr` on failure
-- `vm_commit()` leaves pages inaccessible if the OS rejects the commit request
+- `vm_commit()` returns `false` and leaves pages inaccessible if the OS rejects the request
 - `vm_decommit()` may leave pages resident if the OS rejects the decommit request
 - `vm_release()` expects the original reservation base and size; invalid inputs are caller bugs
 - Accessing uncommitted memory faults at the OS boundary

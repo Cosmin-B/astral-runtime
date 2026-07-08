@@ -26,7 +26,8 @@ namespace astral::memory {
 /// - No syscalls during allocation
 ///
 /// Usage:
-///   void* memory = vm_commit(vm_reserve(capacity), capacity);
+///   void* memory = vm_reserve(capacity);
+///   if (memory == nullptr || !vm_commit(memory, capacity)) return;
 ///   FrameAllocator alloc(memory, capacity);
 ///   void* p1 = alloc.alloc(64);
 ///   void* p2 = alloc.alloc(128, 32); // 32-byte aligned

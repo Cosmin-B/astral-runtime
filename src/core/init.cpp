@@ -958,19 +958,22 @@ void* runtime_session_scratch_acquire(size_t min_size, size_t alignment, size_t*
         huge_pages = (mem != nullptr);
     }
     if (mem == nullptr) {
-        alloc_size = min_size;
-        mem = vm_reserve(min_size);
+      alloc_size = min_size;
+      mem = vm_reserve(min_size);
     }
     if (mem == nullptr) {
-        return nullptr;
+      return nullptr;
     }
 
     if (!huge_pages) {
-        vm_commit(mem, min_size);
+      if (!vm_commit(mem, min_size)) {
+        vm_release(mem, alloc_size);
+        return nullptr;
+      }
     }
 
     if (out_size) {
-        *out_size = alloc_size;
+      *out_size = alloc_size;
     }
     (void)alignment;
     return mem;
@@ -1152,21 +1155,24 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
             vm_base = cfg->enable_hugepages ? vm_reserve_aligned(reserve_size, 2 * 1024 * 1024) : vm_reserve(reserve_size);
         }
         if (!vm_base) {
-            return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
+          return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
         }
 
         size_t initial_commit = 2 * 1024 * 1024;
         if (initial_commit > allocated_size) {
-            initial_commit = allocated_size;
+          initial_commit = allocated_size;
         }
         if (huge_pages_enabled) {
-            initial_commit = allocated_size;
+          initial_commit = allocated_size;
         } else {
-            vm_commit(vm_base, initial_commit);
+          if (!vm_commit(vm_base, initial_commit)) {
+            vm_release(vm_base, allocated_size);
+            return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
+          }
         }
 
         if (cfg->enable_hugepages && !huge_pages_enabled) {
-            huge_pages_enabled = vm_commit_large(vm_base, initial_commit);
+          huge_pages_enabled = vm_try_hugepages(vm_base, initial_commit);
         }
 
         g_runtime.vm_base = vm_base;

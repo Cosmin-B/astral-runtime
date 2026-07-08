@@ -21,7 +21,12 @@ void test_vm_basic() {
   printf("  Reserved %zu bytes at %p\n", kSize, addr);
 
   constexpr size_t kCommitSize = 1 * 1024 * 1024;
-  vm_commit(addr, kCommitSize);
+  const bool committed = vm_commit(addr, kCommitSize);
+  assert(committed);
+  if (!committed) {
+    vm_release(addr, kSize);
+    return;
+  }
   printf("  Committed %zu bytes\n", kCommitSize);
 
   // Touch committed pages.
@@ -56,7 +61,12 @@ void test_vm_hugepages() {
   assert(addr != nullptr);
 
   // Commit entire region
-  vm_commit(addr, kSize);
+  const bool committed = vm_commit(addr, kSize);
+  assert(committed);
+  if (!committed) {
+    vm_release(addr, kSize);
+    return;
+  }
 
   // Try to use huge pages (may fail, which is OK)
   bool huge_pages = vm_try_hugepages(addr, kSize);

@@ -91,9 +91,9 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
   return vm_reserve(size);
 }
 
-void vm_commit(void* addr, size_t size) {
+bool vm_commit(void* addr, size_t size) {
   if (addr == nullptr || size == 0) {
-    return;
+    return false;
   }
 
   // MEM_COMMIT is idempotent for pages that are already committed.
@@ -109,8 +109,9 @@ void vm_commit(void* addr, size_t size) {
     // - ERROR_NOT_ENOUGH_MEMORY: system out of memory
     // - ERROR_INVALID_ADDRESS: addr not within reserved region
     // - ERROR_COMMITMENT_LIMIT: commit charge limit exceeded
-    // The region remains inaccessible; callers prevalidate page ranges at setup boundaries.
+    return false;
   }
+  return true;
 }
 
 void vm_decommit(void* addr, size_t size) {

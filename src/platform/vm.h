@@ -48,13 +48,14 @@ void* vm_reserve_aligned(size_t size, size_t alignment);
 ///
 /// @param addr Address within reserved region (must be page-aligned)
 /// @param size Size in bytes to commit (must be multiple of page size)
+/// @return true when the range is accessible, false when the OS rejects the commit
 ///
 ///  This function must NOT be called in hot paths (decode/sampling loops).
 /// Use pre-commit strategy during initialization to avoid page fault stalls.
 ///
 /// Thread-safety: Safe if different threads commit non-overlapping regions
 /// Memory: Allocates physical memory; may fail if system is out of memory
-void vm_commit(void* addr, size_t size);
+bool vm_commit(void* addr, size_t size);
 
 /// Decommit pages (release physical memory but keep address space reserved).
 ///

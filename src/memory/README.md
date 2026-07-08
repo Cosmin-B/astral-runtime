@@ -35,8 +35,11 @@ Linear allocator for short-lived allocations with O(1) allocation and instant re
 ```cpp
 #include "memory/frame_allocator.hpp"
 
-// Pre-commit memory (platform-specific)
-void* memory = vm_commit(vm_reserve(capacity), capacity);
+// Reserve and commit memory before constructing the allocator.
+void* memory = vm_reserve(capacity);
+if (memory == nullptr || !vm_commit(memory, capacity)) {
+  return;
+}
 FrameAllocator alloc(memory, capacity);
 
 // Allocate
@@ -200,22 +203,18 @@ FrameAllocator requires pre-committed memory from platform VM layer:
 ```cpp
 // Platform-specific (src/platform/vm.h)
 void* vm_reserve(size_t size);
-void  vm_commit(void* addr, size_t size);
+bool  vm_commit(void* addr, size_t size);
 void  vm_release(void* addr, size_t size);
 
 // Usage
 void* reserved = vm_reserve(capacity);
-vm_commit(reserved, capacity);
+if (reserved == nullptr || !vm_commit(reserved, capacity)) {
+  return;
+}
 FrameAllocator alloc(reserved, capacity);
 ```
 
 See `src/platform/vm.h` for full VM API documentation.
-
-## References
-
-- Unity allocator: `/home/user/docs/unity-runtime/src/memory/`
-- `docs/architecture/MEMORY_ARCHITECTURE.md` - allocator model and VM-backed arenas
-- `docs/rules/CODING_STANDARDS.md` - memory management rules
 
 ## Design Rationale
 

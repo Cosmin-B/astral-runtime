@@ -82,9 +82,9 @@ void* vm_reserve_aligned(size_t size, size_t alignment) {
   return reinterpret_cast<void*>(aligned_int);
 }
 
-void vm_commit(void* addr, size_t size) {
+bool vm_commit(void* addr, size_t size) {
   if (addr == nullptr || size == 0) {
-    return;
+    return false;
   }
 
   // Step 1: Make pages accessible (read/write)
@@ -95,7 +95,7 @@ void vm_commit(void* addr, size_t size) {
     // - EINVAL: addr not page-aligned, or invalid range
     // - ENOMEM: kernel cannot allocate internal structures
     // - EACCES: permission denied (shouldn't happen for our reserved pages)
-    return; // The region remains inaccessible; callers prevalidate page ranges at setup boundaries.
+    return false;
   }
 
   // Step 2: Advise kernel that we'll use these pages
@@ -109,6 +109,7 @@ void vm_commit(void* addr, size_t size) {
     // ENOMEM: addr not mapped
     // Non-critical failure; pages will fault in on first access
   }
+  return true;
 }
 
 void vm_decommit(void* addr, size_t size) {

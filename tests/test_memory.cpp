@@ -24,11 +24,14 @@ namespace {
 
 static void* alloc_backing(size_t size) {
 #if ASTRAL_ENABLE_VIRTUAL_MEMORY
-    void* memory = vm_reserve(size);
-    vm_commit(memory, size);
-    return memory;
+  void* memory = vm_reserve(size);
+  if (memory == nullptr || !vm_commit(memory, size)) {
+    vm_release(memory, size);
+    return nullptr;
+  }
+  return memory;
 #else
-    return std::malloc(size);
+  return std::malloc(size);
 #endif
 }
 

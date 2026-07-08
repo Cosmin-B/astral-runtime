@@ -21,105 +21,111 @@ using namespace astral::platform;
 #if ASTRAL_ENABLE_VIRTUAL_MEMORY
 // VM reserve/commit/decommit/release contract.
 TEST(vm_reserve_commit_release) {
-    constexpr size_t kSize = 4 * 1024 * 1024; // 4MB
+  constexpr size_t kSize = 4 * 1024 * 1024; // 4MB
 
-    void* addr = vm_reserve(kSize);
-    ASSERT_NOT_NULL(addr);
+  void* addr = vm_reserve(kSize);
+  ASSERT_NOT_NULL(addr);
 
-    constexpr size_t kCommitSize = 1 * 1024 * 1024;
-    vm_commit(addr, kCommitSize);
+  constexpr size_t kCommitSize = 1 * 1024 * 1024;
+  ASSERT_TRUE(vm_commit(addr, kCommitSize));
 
-    // Touch committed pages.
-    memset(addr, 0xAB, kCommitSize);
+  // Touch committed pages.
+  memset(addr, 0xAB, kCommitSize);
 
-    auto* bytes = static_cast<unsigned char*>(addr);
-    ASSERT_EQ(bytes[0], 0xAB);
-    ASSERT_EQ(bytes[kCommitSize - 1], 0xAB);
+  auto* bytes = static_cast<unsigned char*>(addr);
+  ASSERT_EQ(bytes[0], 0xAB);
+  ASSERT_EQ(bytes[kCommitSize - 1], 0xAB);
 
-    vm_decommit(addr, kCommitSize);
+  vm_decommit(addr, kCommitSize);
 
-    // Release entire region
-    vm_release(addr, kSize);
+  // Release entire region
+  vm_release(addr, kSize);
+}
+
+TEST(vm_commit_reports_invalid_ranges) {
+  ASSERT_FALSE(vm_commit(nullptr, 4096));
+  ASSERT_FALSE(vm_commit(reinterpret_cast<void*>(1), 4096));
 }
 
 // Test multiple commit operations on same region
 TEST(vm_commit_incremental) {
-    constexpr size_t kSize = 8 * 1024 * 1024; // 8MB
-    void* addr = vm_reserve(kSize);
-    ASSERT_NOT_NULL(addr);
+  constexpr size_t kSize = 8 * 1024 * 1024; // 8MB
+  void* addr = vm_reserve(kSize);
+  ASSERT_NOT_NULL(addr);
 
-    // Commit in 1MB chunks
-    constexpr size_t kChunkSize = 1 * 1024 * 1024;
-    for (size_t i = 0; i < 4; ++i) {
-        void* chunk = static_cast<char*>(addr) + (i * kChunkSize);
-        vm_commit(chunk, kChunkSize);
+  // Commit in 1MB chunks
+  constexpr size_t kChunkSize = 1 * 1024 * 1024;
+  for (size_t i = 0; i < 4; ++i) {
+    void* chunk = static_cast<char*>(addr) + (i * kChunkSize);
+    ASSERT_TRUE(vm_commit(chunk, kChunkSize));
 
-        // Write to chunk
-        memset(chunk, static_cast<int>(i), kChunkSize);
-    }
+    // Write to chunk
+    memset(chunk, static_cast<int>(i), kChunkSize);
+  }
 
-    // Verify all chunks
-    auto* bytes = static_cast<unsigned char*>(addr);
-    for (size_t i = 0; i < 4; ++i) {
-        size_t offset = i * kChunkSize;
-        ASSERT_EQ(bytes[offset], static_cast<unsigned char>(i));
-    }
+  // Verify all chunks
+  auto* bytes = static_cast<unsigned char*>(addr);
+  for (size_t i = 0; i < 4; ++i) {
+    size_t offset = i * kChunkSize;
+    ASSERT_EQ(bytes[offset], static_cast<unsigned char>(i));
+  }
 
-    vm_release(addr, kSize);
+  vm_release(addr, kSize);
 }
 
 // Huge-page commit may fall back to regular pages; the committed region must still be usable.
 TEST(vm_hugepages_fallback) {
-    constexpr size_t kHugePageSize = 2 * 1024 * 1024; // 2MB
-    constexpr size_t kSize = 4 * kHugePageSize;       // 8MB
+  constexpr size_t kHugePageSize = 2 * 1024 * 1024; // 2MB
+  constexpr size_t kSize = 4 * kHugePageSize;       // 8MB
 
-    void* addr = vm_reserve(kSize);
-    ASSERT_NOT_NULL(addr);
+  void* addr = vm_reserve(kSize);
+  ASSERT_NOT_NULL(addr);
 
-    // Commit entire region
-    vm_commit(addr, kSize);
+  // Commit entire region
+  ASSERT_TRUE(vm_commit(addr, kSize));
 
-    // Transparent huge-page promotion is advisory; byte access is the contract.
-    const bool huge_pages = vm_try_hugepages(addr, kSize);
-    (void)huge_pages;
+  // Transparent huge-page promotion is advisory; byte access is the contract.
+  const bool huge_pages = vm_try_hugepages(addr, kSize);
+  (void)huge_pages;
 
-    // Write to region (should work regardless of huge page status)
-    memset(addr, 0xCD, kSize);
-    auto* bytes = static_cast<unsigned char*>(addr);
-    ASSERT_EQ(bytes[0], 0xCD);
-    ASSERT_EQ(bytes[kSize - 1], 0xCD);
+  // Write to region (should work regardless of huge page status)
+  memset(addr, 0xCD, kSize);
+  auto* bytes = static_cast<unsigned char*>(addr);
+  ASSERT_EQ(bytes[0], 0xCD);
+  ASSERT_EQ(bytes[kSize - 1], 0xCD);
 
-    vm_release(addr, kSize);
+  vm_release(addr, kSize);
 }
 
 TEST(vm_large_page_reserve_fallback) {
-    const size_t large_page_size = vm_large_page_size();
-    const bool expect_large_pages = std::getenv("ASTRAL_TEST_EXPECT_LARGE_PAGES") != nullptr;
-    const bool expect_large_page_fallback = std::getenv("ASTRAL_TEST_EXPECT_LARGE_PAGE_FALLBACK") != nullptr;
-    ASSERT_FALSE(expect_large_pages && expect_large_page_fallback);
+  const size_t large_page_size = vm_large_page_size();
+  const bool expect_large_pages = std::getenv("ASTRAL_TEST_EXPECT_LARGE_PAGES") != nullptr;
+  const bool expect_large_page_fallback =
+      std::getenv("ASTRAL_TEST_EXPECT_LARGE_PAGE_FALLBACK") != nullptr;
+  ASSERT_FALSE(expect_large_pages && expect_large_page_fallback);
 
-    if (large_page_size == 0) {
-        ASSERT_FALSE(expect_large_pages);
-        ASSERT_NULL(vm_reserve_large(2 * 1024 * 1024, nullptr));
-        return;
-    }
+  if (large_page_size == 0) {
+    ASSERT_FALSE(expect_large_pages);
+    ASSERT_NULL(vm_reserve_large(2 * 1024 * 1024, nullptr));
+    return;
+  }
 
-    size_t actual_size = 0;
-    void* addr = vm_reserve_large(large_page_size, &actual_size);
-    if (addr == nullptr) {
-        ASSERT_FALSE(expect_large_pages);
-        ASSERT_EQ(actual_size, 0u);
-        return;
-    }
+  size_t actual_size = 0;
+  void* addr = vm_reserve_large(large_page_size, &actual_size);
+  if (addr == nullptr) {
+    ASSERT_FALSE(expect_large_pages);
+    ASSERT_EQ(actual_size, 0u);
+    return;
+  }
 
-    ASSERT_FALSE(expect_large_page_fallback);
-    ASSERT_GE(actual_size, large_page_size);
-    memset(addr, 0xEF, large_page_size);
-    auto* bytes = static_cast<unsigned char*>(addr);
-    ASSERT_EQ(bytes[0], 0xEF);
-    ASSERT_EQ(bytes[large_page_size - 1], 0xEF);
+  ASSERT_FALSE(expect_large_page_fallback);
+  ASSERT_GE(actual_size, large_page_size);
+  memset(addr, 0xEF, large_page_size);
+  auto* bytes = static_cast<unsigned char*>(addr);
+  ASSERT_EQ(bytes[0], 0xEF);
+  ASSERT_EQ(bytes[large_page_size - 1], 0xEF);
 
-    vm_release(addr, actual_size);
+  vm_release(addr, actual_size);
 }
 #endif // ASTRAL_ENABLE_VIRTUAL_MEMORY
 
@@ -250,26 +256,26 @@ TEST(vm_decommit_without_commit) {
 
 // Test commit after decommit (recommit)
 TEST(vm_commit_after_decommit) {
-    constexpr size_t kSize = 2 * 1024 * 1024;
-    void* addr = vm_reserve(kSize);
-    ASSERT_NOT_NULL(addr);
+  constexpr size_t kSize = 2 * 1024 * 1024;
+  void* addr = vm_reserve(kSize);
+  ASSERT_NOT_NULL(addr);
 
-    // Commit
-    vm_commit(addr, kSize);
-    memset(addr, 0xAA, kSize);
+  // Commit
+  ASSERT_TRUE(vm_commit(addr, kSize));
+  memset(addr, 0xAA, kSize);
 
-    // Decommit
-    vm_decommit(addr, kSize);
+  // Decommit
+  vm_decommit(addr, kSize);
 
-    // Recommit
-    vm_commit(addr, kSize);
+  // Recommit
+  ASSERT_TRUE(vm_commit(addr, kSize));
 
-    // Write again (should work)
-    memset(addr, 0xBB, kSize);
-    auto* bytes = static_cast<unsigned char*>(addr);
-    ASSERT_EQ(bytes[0], 0xBB);
+  // Write again (should work)
+  memset(addr, 0xBB, kSize);
+  auto* bytes = static_cast<unsigned char*>(addr);
+  ASSERT_EQ(bytes[0], 0xBB);
 
-    vm_release(addr, kSize);
+  vm_release(addr, kSize);
 }
 
 // Test alignment of reserved memory (should be page-aligned)
