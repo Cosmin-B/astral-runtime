@@ -4015,7 +4015,7 @@ TEST(inference_memory_index_flat_batch_parallel_mock) {
 }
 
 TEST(inference_memory_index_flat_e5m2_record_shards_top10_mock) {
-  constexpr uint32_t kDim = 8;
+  constexpr uint32_t kDim = 384;
   constexpr uint32_t kCapacity = 32769;
   constexpr uint32_t kTopK = 10;
   constexpr uint64_t kFirstKey = 13501;
@@ -4044,6 +4044,7 @@ TEST(inference_memory_index_flat_e5m2_record_shards_top10_mock) {
   for (uint32_t row = 0; row < kCapacity; ++row) {
     records[row].size = sizeof(AstralMemoryRecord);
     records[row].key = kFirstKey + row;
+    records[row].group_id = 7;
     vectors[static_cast<size_t>(row) * kDim] = static_cast<float>(row + 1u);
   }
   err = astral_memory_add_batch(index, records.data(), vectors.data(), kCapacity);
@@ -4061,6 +4062,17 @@ TEST(inference_memory_index_flat_e5m2_record_shards_top10_mock) {
   ASSERT_EQ(count, kTopK);
   for (uint32_t i = 0; i < kTopK; ++i) {
     ASSERT_EQ(results[i].key, kFirstKey + kCapacity - 1u - i);
+  }
+
+  search.group_id = 7;
+  AstralMemorySearchResult generic_results[kTopK]{};
+  uint32_t generic_count = 0;
+  err = astral_memory_search(index, &search, query, generic_results, kTopK, &generic_count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(generic_count, count);
+  for (uint32_t i = 0; i < kTopK; ++i) {
+    ASSERT_EQ(generic_results[i].key, results[i].key);
+    ASSERT_EQ(generic_results[i].score, results[i].score);
   }
 
   astral_memory_destroy(index);

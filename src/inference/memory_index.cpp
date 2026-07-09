@@ -135,6 +135,7 @@ constexpr uint32_t kE5M2ExponentShift = 2;
 constexpr uint32_t kE5M2ExponentMask = 0x1Fu;
 constexpr uint32_t kE5M2MantissaMask = 0x03u;
 constexpr int32_t kE5M2ExponentBias = 15;
+constexpr uint32_t kE5M2F32ExponentOffset = kF32ExponentBias - kE5M2ExponentBias;
 constexpr uint32_t kE5M2MantissaRoundBit = 1u << 20u;
 constexpr uint32_t kE5M2MantissaShift = 21;
 constexpr uint32_t kE5M2MantissaOverflow = 4;
@@ -621,6 +622,40 @@ inline float32x4_t neon_i8_high_to_f32(int8x8_t bytes) {
 
 inline int32x4_t dot_i8x8_neon(const int8_t* a, const int8_t* b) {
   return vpaddlq_s16(vmull_s8(vld1_s8(a), vld1_s8(b)));
+}
+
+inline float32x4_t e5m2_u32_to_f32_neon(uint32x4_t raw) {
+  const uint32x4_t sign = vshlq_n_u32(vandq_u32(raw, vdupq_n_u32(1u << kE5M2SignShift)), 24);
+  const uint32x4_t exponent =
+      vandq_u32(vshrq_n_u32(raw, kE5M2ExponentShift), vdupq_n_u32(kE5M2ExponentMask));
+  const uint32x4_t mantissa = vandq_u32(raw, vdupq_n_u32(kE5M2MantissaMask));
+  const uint32x4_t normal_bits = vorrq_u32(
+      sign, vorrq_u32(vshlq_n_u32(vaddq_u32(exponent, vdupq_n_u32(kE5M2F32ExponentOffset)),
+                                  kF32ExponentShift),
+                      vshlq_n_u32(mantissa, kE5M2MantissaShift)));
+  const float32x4_t subnormal = vmulq_n_f32(vcvtq_f32_u32(mantissa), kE5M2SubnormalUnit);
+  const float32x4_t signed_subnormal =
+      vreinterpretq_f32_u32(vorrq_u32(sign, vreinterpretq_u32_f32(subnormal)));
+  const float32x4_t saturated =
+      vreinterpretq_f32_u32(vorrq_u32(sign, vreinterpretq_u32_f32(vdupq_n_f32(kE5M2MaxFloat))));
+  const float32x4_t normal = vreinterpretq_f32_u32(normal_bits);
+  const float32x4_t finite =
+      vbslq_f32(vceqq_u32(exponent, vdupq_n_u32(0u)), signed_subnormal, normal);
+  return vbslq_f32(vceqq_u32(exponent, vdupq_n_u32(kE5M2ExponentMask)), saturated, finite);
+}
+
+inline void e5m2_load8_f32_neon(const int8_t* src, float32x4_t* out_low, float32x4_t* out_high) {
+  const uint16x8_t raw16 = vmovl_u8(vld1_u8(reinterpret_cast<const uint8_t*>(src)));
+#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+  // E5M2 is the high byte of binary16. Native FP16 conversion needs only this lane shift; ARMv8
+  // builds without vector FP16 keep the integer bit-construction path below.
+  const float16x8_t half = vreinterpretq_f16_u16(vshlq_n_u16(raw16, 8));
+  *out_low = vcvt_f32_f16(vget_low_f16(half));
+  *out_high = vcvt_f32_f16(vget_high_f16(half));
+#else
+  *out_low = e5m2_u32_to_f32_neon(vmovl_u16(vget_low_u16(raw16)));
+  *out_high = e5m2_u32_to_f32_neon(vmovl_u16(vget_high_u16(raw16)));
+#endif
 }
 #endif
 
@@ -1735,6 +1770,29 @@ template <bool UseF16c> float dot_e5m2_f32_impl(const int8_t* a, const float* b,
   }
   return sum;
 #endif
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+  float32x4_t acc0 = vdupq_n_f32(0.0f);
+  float32x4_t acc1 = vdupq_n_f32(0.0f);
+  float32x4_t acc2 = vdupq_n_f32(0.0f);
+  float32x4_t acc3 = vdupq_n_f32(0.0f);
+  uint32_t i = 0;
+  for (; i + kNeonUnrollF32 <= dim; i += kNeonUnrollF32) {
+    float32x4_t e0;
+    float32x4_t e1;
+    float32x4_t e2;
+    float32x4_t e3;
+    e5m2_load8_f32_neon(a + i, &e0, &e1);
+    e5m2_load8_f32_neon(a + i + kNeonI8HalfLanes, &e2, &e3);
+    acc0 = vfmaq_f32(acc0, e0, vld1q_f32(b + i));
+    acc1 = vfmaq_f32(acc1, e1, vld1q_f32(b + i + kNeonF32Lanes));
+    acc2 = vfmaq_f32(acc2, e2, vld1q_f32(b + i + kNeonOffset2));
+    acc3 = vfmaq_f32(acc3, e3, vld1q_f32(b + i + kNeonOffset3));
+  }
+  float sum = vaddvq_f32(vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)));
+  for (; i < dim; ++i) {
+    sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * b[i];
+  }
+  return sum;
 #else
   float sum0 = 0.0f;
   float sum1 = 0.0f;
@@ -1752,6 +1810,43 @@ template <bool UseF16c> float dot_e5m2_f32_impl(const int8_t* a, const float* b,
     sum += e5m2_to_f32(static_cast<uint8_t>(a[i])) * b[i];
   }
   return sum;
+#endif
+}
+
+float dot_e5m2_f32_384(const int8_t* a, const float* b) {
+#if defined(__AVX2__) && defined(ASTRAL_X86_F16C)
+  __m256 acc0 = _mm256_setzero_ps();
+  __m256 acc1 = _mm256_setzero_ps();
+  __m256 acc2 = _mm256_setzero_ps();
+  __m256 acc3 = _mm256_setzero_ps();
+  // The target dimension is exactly twelve 32-lane blocks. Expanding them removes loop and tail
+  // control from every one of the 100,000 vector scores while retaining four live accumulators.
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC unroll 12
+#endif
+  for (uint32_t i = 0; i < 384u; i += kAvx2UnrollF32) {
+#if defined(__FMA__)
+    acc0 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i), _mm256_loadu_ps(b + i), acc0);
+    acc1 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2F32Lanes),
+                           _mm256_loadu_ps(b + i + kAvx2F32Lanes), acc1);
+    acc2 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2Offset2),
+                           _mm256_loadu_ps(b + i + kAvx2Offset2), acc2);
+    acc3 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2Offset3),
+                           _mm256_loadu_ps(b + i + kAvx2Offset3), acc3);
+#else
+    acc0 = _mm256_add_ps(acc0,
+                         _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i), _mm256_loadu_ps(b + i)));
+    acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2F32Lanes),
+                                             _mm256_loadu_ps(b + i + kAvx2F32Lanes)));
+    acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2Offset2),
+                                             _mm256_loadu_ps(b + i + kAvx2Offset2)));
+    acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2Offset3),
+                                             _mm256_loadu_ps(b + i + kAvx2Offset3)));
+#endif
+  }
+  return reduce_avx2_f32(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+#else
+  return dot_e5m2_f32(a, b, 384u);
 #endif
 }
 
@@ -3536,6 +3631,9 @@ bool memory_search_flat_batch_record_parallel(MemoryIndex* index,
 bool memory_search_flat_record_parallel(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                                         const float* query, AstralMemorySearchResult* out_results,
                                         uint32_t* out_count);
+void memory_search_flat_single_range(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                     const float* query, uint32_t begin_active, uint32_t end_active,
+                                     AstralMemorySearchResult* out_results, uint32_t* out_count);
 void graph_begin_visit(MemoryIndex* index);
 void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, float score,
                          uint32_t* candidate_count);
@@ -5454,6 +5552,10 @@ void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, 
   if (memory_search_flat_record_parallel(index, desc, query, out_results, out_count)) {
     return;
   }
+  if (index->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2) {
+    memory_search_flat_single_range(index, desc, query, 0u, index->count, out_results, out_count);
+    return;
+  }
   if (compact_storage(index)) {
     if (desc->top_k == kTopOne) {
       memory_search_q8_top1(index, desc, query, out_results, out_count);
@@ -5639,10 +5741,46 @@ void memory_search_record_shard_work(void* user) {
   memory_parallel_job_complete(job->remaining);
 }
 
+void memory_search_flat_single_range(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                     const float* query, uint32_t begin_active, uint32_t end_active,
+                                     AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  if (index->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2 && index->dense_active != 0 &&
+      desc->group_id == ASTRAL_MEMORY_GROUP_ANY && index->metric != ASTRAL_MEMORY_METRIC_L2) {
+    uint32_t filled = 0;
+    const uint32_t dim = index->dim;
+    const int8_t* vectors = index->q8_vectors;
+    const float* score_scales = index->compact_score_scales;
+    const float query_scale =
+        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, dim) : 1.0f;
+
+    // Dense slots make the vector address and score scale direct functions of the loop index.
+    // Storage and metric are fixed for the shard, so neither needs redispatch for every record.
+    for (uint32_t slot = begin_active; slot < end_active; ++slot) {
+      const MemorySlot& s = index->slots[slot];
+      const int8_t* vector = vectors + static_cast<size_t>(slot) * dim;
+      const float dot =
+          dim == 384u ? dot_e5m2_f32_384(vector, query) : dot_e5m2_f32(vector, query, dim);
+      const float score = dot * score_scales[slot] * query_scale;
+      if (filled == desc->top_k &&
+          !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+        continue;
+      }
+      AstralMemorySearchResult candidate{};
+      fill_result(&candidate, s, score);
+      insert_result(out_results, desc->top_k, &filled, candidate);
+    }
+    *out_count = filled;
+    return;
+  }
+
+  memory_search_flat_batch_range(index, desc, query, 1u, begin_active, end_active, out_results,
+                                 out_count);
+}
+
 void memory_search_single_record_shard_work(void* user) {
   MemorySearchSingleRecordShardJob* job = static_cast<MemorySearchSingleRecordShardJob*>(user);
-  memory_search_flat_batch_range(job->index, job->desc, job->query, 1u, job->begin, job->end,
-                                 job->local_results, &job->local_count);
+  memory_search_flat_single_range(job->index, job->desc, job->query, job->begin, job->end,
+                                  job->local_results, &job->local_count);
   job->remaining->fetch_sub(1, std::memory_order_release);
   astral::platform::cpu_signal_event();
 }

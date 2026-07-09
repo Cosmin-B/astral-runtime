@@ -55,6 +55,11 @@ candidates, so the vector scan does not share a heap or perform atomic updates.
 separate. For a latency test restricted to four CPU cores, use three workers so
 the caller does not oversubscribe the core set.
 
+Dense pure-E5M2 dot and cosine shards choose their storage and metric path once
+before scanning. The common 384-dimensional x86 path uses a fixed-bound F16C
+conversion/dot kernel. ARM64 uses native NEON FP16 conversion when available
+and NEON integer bit construction on baseline ARMv8 targets.
+
 `AstralMemoryIndexDesc::index_kind` selects storage/search behavior:
 
 - `ASTRAL_MEMORY_INDEX_FLAT` scans contiguous row-major vectors and returns exact
