@@ -4014,6 +4014,59 @@ TEST(inference_memory_index_flat_batch_parallel_mock) {
   astral_shutdown();
 }
 
+TEST(inference_memory_index_flat_e5m2_record_shards_top10_mock) {
+  constexpr uint32_t kDim = 8;
+  constexpr uint32_t kCapacity = 32769;
+  constexpr uint32_t kTopK = 10;
+  constexpr uint64_t kFirstKey = 13501;
+  constexpr uint32_t kRuntimeThreads = 4;
+
+  AstralInit cfg{};
+  cfg.reserve_bytes = 64ull * 1024ull * 1024ull;
+  cfg.thread_count = kRuntimeThreads;
+  cfg.numa_node = 0xFFFFFFFFu;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  AstralMemoryIndexDesc desc{};
+  desc.size = sizeof(AstralMemoryIndexDesc);
+  desc.dim = kDim;
+  desc.capacity = kCapacity;
+  desc.metric = ASTRAL_MEMORY_METRIC_DOT;
+  desc.index_kind = ASTRAL_MEMORY_INDEX_FLAT;
+  desc.storage_kind = ASTRAL_MEMORY_STORAGE_F8_E5M2;
+
+  AstralHandle index = 0;
+  AstralErr err = astral_memory_create(&desc, &index);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  std::vector<AstralMemoryRecord> records(kCapacity);
+  std::vector<float> vectors(static_cast<size_t>(kCapacity) * kDim);
+  for (uint32_t row = 0; row < kCapacity; ++row) {
+    records[row].size = sizeof(AstralMemoryRecord);
+    records[row].key = kFirstKey + row;
+    vectors[static_cast<size_t>(row) * kDim] = static_cast<float>(row + 1u);
+  }
+  err = astral_memory_add_batch(index, records.data(), vectors.data(), kCapacity);
+  ASSERT_EQ(err, ASTRAL_OK);
+
+  AstralMemorySearchDesc search{};
+  search.size = sizeof(AstralMemorySearchDesc);
+  search.top_k = kTopK;
+  search.group_id = ASTRAL_MEMORY_GROUP_ANY;
+  const float query[kDim] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  AstralMemorySearchResult results[kTopK]{};
+  uint32_t count = 0;
+  err = astral_memory_search(index, &search, query, results, kTopK, &count);
+  ASSERT_EQ(err, ASTRAL_OK);
+  ASSERT_EQ(count, kTopK);
+  for (uint32_t i = 0; i < kTopK; ++i) {
+    ASSERT_EQ(results[i].key, kFirstKey + kCapacity - 1u - i);
+  }
+
+  astral_memory_destroy(index);
+  astral_shutdown();
+}
+
 TEST(inference_memory_index_f6_e2m3_storage_mock) {
   constexpr uint32_t kDim = 4;
   constexpr uint32_t kCapacity = 4;

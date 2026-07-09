@@ -30,6 +30,7 @@ Options:
   --batch-queries <N>   ASTRAL_BENCH_MEMORY_BATCH_QUERIES for batch cases
   --runtime-threads <N> ASTRAL_BENCH_RUNTIME_THREADS for benchmark worker lanes
   --recall-queries <N>  Graph recall queries (default: 32)
+  --runtime-threads <N> Astral worker threads (default: 1; the caller is separate)
   --perf                Wrap each benchmark invocation with perf stat
   --perf-bin <path>     Perf executable to use (default: perf from PATH)
   --perf-events <csv>   Perf stat event list
@@ -60,6 +61,7 @@ graph_neighbors="32"
 batch_queries=""
 runtime_threads=""
 recall_queries="32"
+runtime_threads="1"
 perf_enabled="0"
 require_perf="0"
 perf_bin=""
@@ -84,6 +86,7 @@ while [[ $# -gt 0 ]]; do
     --batch-queries) batch_queries="${2:-}"; shift 2 ;;
     --runtime-threads) runtime_threads="${2:-}"; shift 2 ;;
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
+    --runtime-threads) runtime_threads="${2:-}"; shift 2 ;;
     --perf) perf_enabled="1"; shift ;;
     --perf-bin) perf_bin="${2:-}"; shift 2 ;;
     --perf-events) perf_events="${2:-}"; shift 2 ;;
@@ -193,6 +196,7 @@ fi
   echo "# batch_queries: ${batch_queries}"
   echo "# runtime_threads: ${runtime_threads}"
   echo "# recall_queries: ${recall_queries}"
+  echo "# runtime_threads: ${runtime_threads}"
   echo "# perf_enabled: ${perf_enabled}"
   echo "# perf_bin: ${perf_bin}"
   echo "# perf_events: ${perf_events}"
@@ -228,6 +232,7 @@ for metric in "${metric_values[@]}"; do
             "ASTRAL_BENCH_MEMORY_GRAPH_QUERY_SEARCH=${query_search_value}"
             "ASTRAL_BENCH_MEMORY_GRAPH_NEIGHBORS=${graph_neighbors}"
             "ASTRAL_BENCH_MEMORY_RECALL_QUERIES=${recall_queries}"
+            "ASTRAL_BENCH_RUNTIME_THREADS=${runtime_threads}"
             "${bench_bin}"
             --only
             features

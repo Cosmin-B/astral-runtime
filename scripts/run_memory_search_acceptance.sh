@@ -26,6 +26,7 @@ Options:
   --graph-neighbors <N> Graph neighbor budget (default: 32)
   --graph-storages <list> Comma-separated graph storage names to run
   --recall-queries <N>  Recall query count (default: 32)
+  --runtime-threads <N> Astral worker threads (default: 1; the caller is separate)
   --budget-sweep        Also capture graph_recall_search_sweep for graph storage lanes
   --recall-detail       Also capture graph_recall_detail for graph storage lanes
   --add-latency         Also capture graph_add_latency p50/p95/p99 lanes
@@ -60,6 +61,7 @@ query_search=""
 graph_neighbors="32"
 graph_storages="f32,q8,q8f32,f6e2m3,f6e2m3f32,f6e3m2,f6e3m2f32,f8e5m2,f8e5m2f32"
 recall_queries="32"
+runtime_threads="1"
 budget_sweep="0"
 recall_detail="0"
 add_latency="0"
@@ -88,6 +90,7 @@ while [[ $# -gt 0 ]]; do
     --graph-neighbors) graph_neighbors="${2:-}"; shift 2 ;;
     --graph-storages) graph_storages="${2:-}"; shift 2 ;;
     --recall-queries) recall_queries="${2:-}"; shift 2 ;;
+    --runtime-threads) runtime_threads="${2:-}"; shift 2 ;;
     --budget-sweep) budget_sweep="1"; shift ;;
     --recall-detail) recall_detail="1"; shift ;;
     --add-latency) add_latency="1"; shift ;;
@@ -151,6 +154,7 @@ run_case() {
     --query-search "${query_search}" \
     --graph-neighbors "${graph_neighbors}" \
     --recall-queries "${recall_queries}" \
+    --runtime-threads "${runtime_threads}" \
     "${perf_args[@]}" \
     --out "${out_file}"
 }
@@ -190,6 +194,7 @@ run_graph_case() {
   echo "# graph_neighbors: ${graph_neighbors}"
   echo "# graph_storages: ${graph_storages}"
   echo "# recall_queries: ${recall_queries}"
+  echo "# runtime_threads: ${runtime_threads}"
   echo "# budget_sweep: ${budget_sweep}"
   echo "# recall_detail: ${recall_detail}"
   echo "# add_latency: ${add_latency}"

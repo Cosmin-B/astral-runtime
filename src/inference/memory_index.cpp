@@ -89,6 +89,7 @@ constexpr uint32_t kMemorySearchBatchParallelMinQueries = 8;
 constexpr uint32_t kMemorySearchBatchParallelMaxRecords = 32768;
 constexpr uint32_t kMemorySearchBatchParallelMaxWorkers = 16;
 constexpr uint32_t kMemorySearchBatchParallelMaxTopK = 8;
+constexpr uint32_t kMemorySearchRecordParallelMaxTopK = 10;
 constexpr int32_t kQ8MinValue = -127;
 constexpr int32_t kQ8MaxValue = 127;
 constexpr float kQ8MaxFloat = 127.0f;
@@ -2798,6 +2799,17 @@ struct MemorySearchRecordShardJob {
   uint32_t local_counts[kMemoryBatchStackQueries];
 };
 
+struct MemorySearchSingleRecordShardJob {
+  MemoryIndex* index;
+  const AstralMemorySearchDesc* desc;
+  const float* query;
+  uint32_t begin;
+  uint32_t end;
+  std::atomic<uint32_t>* remaining;
+  AstralMemorySearchResult local_results[kMemorySearchRecordParallelMaxTopK];
+  uint32_t local_count;
+};
+
 struct MemoryGraphSearchBatchJob {
   MemoryIndex* index;
   const AstralMemorySearchDesc* desc;
@@ -3521,6 +3533,9 @@ bool memory_search_flat_batch_record_parallel(MemoryIndex* index,
                                               const float* queries, uint32_t query_count,
                                               AstralMemorySearchResult* out_results,
                                               uint32_t* out_counts);
+bool memory_search_flat_record_parallel(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                        const float* query, AstralMemorySearchResult* out_results,
+                                        uint32_t* out_count);
 void graph_begin_visit(MemoryIndex* index);
 void graph_add_candidate(MemoryIndex* index, uint32_t capacity, uint32_t slot, float score,
                          uint32_t* candidate_count);
@@ -5436,15 +5451,15 @@ void memory_search_l2_top1(MemoryIndex* index, const AstralMemorySearchDesc* des
 
 void memory_search_flat(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                         AstralMemorySearchResult* out_results, uint32_t* out_count) {
+  if (memory_search_flat_record_parallel(index, desc, query, out_results, out_count)) {
+    return;
+  }
   if (compact_storage(index)) {
     if (desc->top_k == kTopOne) {
       memory_search_q8_top1(index, desc, query, out_results, out_count);
     } else {
       memory_search_q8(index, desc, query, out_results, out_count);
     }
-    return;
-  }
-  if (memory_search_flat_batch_record_parallel(index, desc, query, 1, out_results, out_count)) {
     return;
   }
   if (desc->top_k == kTopOne) {
@@ -5624,6 +5639,76 @@ void memory_search_record_shard_work(void* user) {
   memory_parallel_job_complete(job->remaining);
 }
 
+void memory_search_single_record_shard_work(void* user) {
+  MemorySearchSingleRecordShardJob* job = static_cast<MemorySearchSingleRecordShardJob*>(user);
+  memory_search_flat_batch_range(job->index, job->desc, job->query, 1u, job->begin, job->end,
+                                 job->local_results, &job->local_count);
+  job->remaining->fetch_sub(1, std::memory_order_release);
+  astral::platform::cpu_signal_event();
+}
+
+bool memory_search_flat_record_parallel(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                        const float* query, AstralMemorySearchResult* out_results,
+                                        uint32_t* out_count) {
+  if (index->count <= kMemorySearchBatchParallelMaxRecords ||
+      desc->top_k > kMemorySearchRecordParallelMaxTopK || !core::runtime_initialized()) {
+    return false;
+  }
+
+  const uint32_t runtime_threads = core::runtime_thread_count();
+  const bool on_worker = core::runtime_on_worker_thread();
+  if (runtime_threads < 2u || index->count < runtime_threads) {
+    return false;
+  }
+
+  uint32_t worker_count = on_worker ? runtime_threads - 1u : runtime_threads;
+  if (worker_count > kMemorySearchBatchParallelMaxWorkers) {
+    worker_count = kMemorySearchBatchParallelMaxWorkers;
+  }
+  if (worker_count < 2u) {
+    return false;
+  }
+
+  // The single-query path carries only ten results per shard. Reusing the batch job here would
+  // reserve its full query matrix on the caller's stack even though every worker scans one query.
+  MemorySearchSingleRecordShardJob jobs[kMemorySearchBatchParallelMaxWorkers]{};
+  std::atomic<uint32_t> remaining(worker_count);
+  const uint32_t current_worker = on_worker ? core::runtime_worker_id() : kU32Max;
+  for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
+    jobs[worker_i].index = index;
+    jobs[worker_i].desc = desc;
+    jobs[worker_i].query = query;
+    jobs[worker_i].begin =
+        static_cast<uint32_t>((static_cast<uint64_t>(index->count) * worker_i) / worker_count);
+    jobs[worker_i].end = static_cast<uint32_t>(
+        (static_cast<uint64_t>(index->count) * (worker_i + 1u)) / worker_count);
+    jobs[worker_i].remaining = &remaining;
+
+    uint32_t target_worker = worker_i;
+    if (on_worker && target_worker >= current_worker) {
+      ++target_worker;
+    }
+    const AstralErr err = core::submit_work_affine(
+        target_worker, memory_search_single_record_shard_work, &jobs[worker_i]);
+    if (err != ASTRAL_OK) {
+      memory_search_single_record_shard_work(&jobs[worker_i]);
+    }
+  }
+
+  while (remaining.load(std::memory_order_acquire) != 0) {
+    astral::platform::cpu_wait_for_event();
+  }
+
+  uint32_t filled = 0;
+  for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
+    for (uint32_t result_i = 0; result_i < jobs[worker_i].local_count; ++result_i) {
+      insert_result(out_results, desc->top_k, &filled, jobs[worker_i].local_results[result_i]);
+    }
+  }
+  *out_count = filled;
+  return true;
+}
+
 bool memory_search_flat_batch_record_parallel(MemoryIndex* index,
                                               const AstralMemorySearchDesc* desc,
                                               const float* queries, uint32_t query_count,
@@ -5652,6 +5737,8 @@ bool memory_search_flat_batch_record_parallel(MemoryIndex* index,
     worker_count = index->count;
   }
 
+  // Each shard owns its top-k during the scan. Sharing one heap would turn every competitive
+  // score into cross-core cache traffic; only these bounded shard results are merged below.
   MemorySearchRecordShardJob jobs[kMemorySearchBatchParallelMaxWorkers]{};
   std::atomic<uint32_t> remaining(worker_count);
   const uint32_t current_worker = on_worker ? core::runtime_worker_id() : kU32Max;
