@@ -94,8 +94,6 @@ constexpr int32_t kQ8MinValue = -127;
 constexpr int32_t kQ8MaxValue = 127;
 constexpr float kQ8MaxFloat = 127.0f;
 constexpr int32_t kE2M3Scale = 16;
-constexpr int32_t kE2M3MagnitudeMask = 0x1F;
-constexpr uint32_t kE2M3CodeCount = 32;
 constexpr float kE2M3MaxFloat = 7.5f;
 constexpr float kE2M3InvScale = 1.0f / static_cast<float>(kE2M3Scale);
 constexpr float kE2M3LinearMinThreshold = 1.0f;
@@ -114,14 +112,12 @@ constexpr uint32_t kE2M3MaxScaled = 120;
 constexpr float kE2M3LinearStepInv = 1.0f / static_cast<float>(kE2M3LinearStep);
 constexpr float kE2M3MidStepInv = 1.0f / static_cast<float>(kE2M3MidStep);
 constexpr float kE2M3HighStepInv = 1.0f / static_cast<float>(kE2M3HighStep);
-constexpr uint32_t kE3M2CodeCount = 32;
 constexpr float kE3M2MaxFloat = 28.0f;
 constexpr int32_t kE3M2Scale = 16;
 constexpr float kE3M2InvScale = 1.0f / static_cast<float>(kE3M2Scale);
 constexpr uint32_t kE3M2MaxScaled = 448;
 constexpr float kE3M2TieBias = 0.5f;
 constexpr float kE3M2UnitBandMaxThreshold = 7.5f;
-constexpr uint32_t kE3M2UnitBandMaxScaled = 8;
 constexpr uint32_t kE3M2StepBandCount = 6;
 constexpr uint32_t kF32SignShift = 31;
 constexpr uint32_t kF32ExponentShift = 23;
@@ -135,7 +131,9 @@ constexpr uint32_t kE5M2ExponentShift = 2;
 constexpr uint32_t kE5M2ExponentMask = 0x1Fu;
 constexpr uint32_t kE5M2MantissaMask = 0x03u;
 constexpr int32_t kE5M2ExponentBias = 15;
+#if defined(__aarch64__) || defined(_M_ARM64)
 constexpr uint32_t kE5M2F32ExponentOffset = kF32ExponentBias - kE5M2ExponentBias;
+#endif
 constexpr uint32_t kE5M2MantissaRoundBit = 1u << 20u;
 constexpr uint32_t kE5M2MantissaShift = 21;
 constexpr uint32_t kE5M2MantissaOverflow = 4;
@@ -289,10 +287,6 @@ inline bool storage_kind_valid(AstralMemoryStorageKind kind) {
 
 inline bool i16_storage_kind(AstralMemoryStorageKind kind) {
   return kind == ASTRAL_MEMORY_STORAGE_F6_E3M2 || kind == ASTRAL_MEMORY_STORAGE_F6_E3M2_F32_RERANK;
-}
-
-inline bool q8_f32_rerank_storage_kind(AstralMemoryStorageKind kind) {
-  return kind == ASTRAL_MEMORY_STORAGE_Q8_F32_RERANK;
 }
 
 inline bool f32_rerank_storage_kind(AstralMemoryStorageKind kind) {
@@ -2493,13 +2487,6 @@ void quantize_q8_vector(int8_t* dst, float* out_scale, const float* src, uint32_
     dst[i] = static_cast<int8_t>(v);
   }
   *out_scale = scale;
-}
-
-inline int8_t e2m3_magnitude_scaled(uint32_t magnitude) {
-  static constexpr int8_t kScaledMagnitudes[kE2M3CodeCount] = {
-      0,  2,  4,  6,  8,  10, 12, 14, 16, 18, 20, 22, 24, 26,  28,  30,
-      32, 36, 40, 44, 48, 52, 56, 60, 64, 72, 80, 88, 96, 104, 112, 120};
-  return kScaledMagnitudes[magnitude & kE2M3MagnitudeMask];
 }
 
 inline float e2m3_scaled_to_f32(int8_t scaled, float scale) {
@@ -7282,11 +7269,6 @@ bool snapshot_graph_layout(SnapshotBytes bytes, const AstralMemorySnapshotInfo* 
   return true;
 }
 
-inline uint32_t snapshot_graph_neighbor_capacity_at_level(const SnapshotGraphLayout* graph,
-                                                          uint32_t level) {
-  return level == 0 ? graph->header.base_neighbor_capacity : graph->header.neighbor_capacity;
-}
-
 inline uint64_t snapshot_graph_level_offset(const AstralMemorySnapshotInfo* info,
                                             const SnapshotGraphLayout* graph, uint32_t active_pos,
                                             uint32_t level) {
@@ -7318,18 +7300,6 @@ snapshot_graph_neighbor_count(const uint8_t* bytes, const AstralMemorySnapshotIn
     std::memcpy(&count, bytes + graph->counts_offset + ordinal * sizeof(uint32_t), sizeof(count));
     return count;
   }
-}
-
-inline uint32_t snapshot_graph_neighbor_at(const uint8_t* bytes,
-                                           const AstralMemorySnapshotInfo* info,
-                                           const SnapshotGraphLayout* graph, uint32_t slot,
-                                           uint32_t level, uint32_t neighbor_i) {
-  uint32_t neighbor = kU32Max;
-  std::memcpy(&neighbor,
-              bytes + snapshot_graph_level_offset(info, graph, slot, level) +
-                  static_cast<uint64_t>(neighbor_i) * sizeof(uint32_t),
-              sizeof(neighbor));
-  return neighbor;
 }
 
 inline uint32_t snapshot_graph_neighbor_at_base(const uint8_t* bytes, uint64_t neighbor_base,
