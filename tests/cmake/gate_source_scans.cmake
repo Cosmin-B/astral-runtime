@@ -1777,4 +1777,27 @@ foreach(unreal_doc
   endif()
 endforeach()
 
+file(READ "${ROOT}/README.md" root_readme_text)
+file(READ "${ROOT}/BUILD.md" build_guide_text)
+foreach(required_toolchain "GCC 11[+]" "Clang 13[+]" "MSVC 2022[+]")
+  if(NOT root_readme_text MATCHES "${required_toolchain}")
+    message(FATAL_ERROR "README.md is missing compiler floor ${required_toolchain}")
+  endif()
+  if(NOT build_guide_text MATCHES "${required_toolchain}")
+    message(FATAL_ERROR "BUILD.md is missing compiler floor ${required_toolchain}")
+  endif()
+endforeach()
+
+file(READ "${ROOT}/FEATURE_MATRIX.md" root_feature_matrix_text)
+foreach(required_feature_overview
+    "## Current Support"
+    "docs/FEATURE_MATRIX.md"
+    "CPU"
+    "CUDA"
+    "Embedded")
+  if(NOT root_feature_matrix_text MATCHES "${required_feature_overview}")
+    message(FATAL_ERROR "Root feature matrix is missing ${required_feature_overview}")
+  endif()
+endforeach()
+
 message(STATUS "gate_source_scans: OK (${FILES_LEN} files)")

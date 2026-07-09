@@ -83,17 +83,19 @@ Applied automatically in Release mode:
 
 Applied automatically in Debug mode:
 
-- **AddressSanitizer**: `-fsanitize=address` (buffer overflows, use-after-free)
-- **UndefinedBehaviorSanitizer**: `-fsanitize=undefined` (integer overflow, etc.)
 - **Stack Protector**: `-fstack-protector-strong` (buffer overflow detection)
 - **Debug Symbols**: `-g3` (full debug info)
+
+Sanitizers are opt-in. Use `./scripts/run_asan.sh` for AddressSanitizer and
+UndefinedBehaviorSanitizer, or configure a debug build with
+`-DASTRAL_ENABLE_ASAN=ON`.
 
 ## Requirements
 
 - **CMake**: 3.20 or higher
 - **C++ Compiler**: C++17 support required
-  - GCC 10+ or Clang 12+ recommended
-  - MSVC 2019 16.11+ on Windows
+  - GCC 11+ or Clang 13+
+  - MSVC 2022+ on Windows
 - **Platform**: Linux, macOS, Windows (cross-platform)
 
 ## Directory Structure
@@ -196,8 +198,8 @@ If you encounter unused function warnings, ensure you're using C++17:
 
 ```bash
 # Check compiler version
-g++ --version   # GCC 10+
-clang++ --version  # Clang 12+
+g++ --version      # GCC 11+
+clang++ --version  # Clang 13+
 ```
 
 ### Missing Dependencies
@@ -227,7 +229,7 @@ This produces:
 
 - **Linux**: Install `build-essential` package
 - **macOS**: Install Xcode Command Line Tools
-- **Windows**: Use Visual Studio 2019+ or MinGW-w64
+- **Windows**: Use Visual Studio 2022+ or a C++17-capable MinGW-w64 toolchain
 
 ## References
 
