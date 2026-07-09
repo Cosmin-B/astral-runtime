@@ -5657,33 +5657,36 @@ bool memory_search_flat_record_parallel(MemoryIndex* index, const AstralMemorySe
 
   const uint32_t runtime_threads = core::runtime_thread_count();
   const bool on_worker = core::runtime_on_worker_thread();
-  if (runtime_threads < 2u || index->count < runtime_threads) {
+  if (runtime_threads == 0u) {
     return false;
   }
 
-  uint32_t worker_count = on_worker ? runtime_threads - 1u : runtime_threads;
-  if (worker_count > kMemorySearchBatchParallelMaxWorkers) {
-    worker_count = kMemorySearchBatchParallelMaxWorkers;
+  uint32_t remote_count = on_worker ? runtime_threads - 1u : runtime_threads;
+  if (remote_count >= kMemorySearchBatchParallelMaxWorkers) {
+    remote_count = kMemorySearchBatchParallelMaxWorkers - 1u;
   }
-  if (worker_count < 2u) {
+  if (remote_count == 0u) {
     return false;
   }
+  const uint32_t shard_count = remote_count + 1u;
 
   // The single-query path carries only ten results per shard. Reusing the batch job here would
-  // reserve its full query matrix on the caller's stack even though every worker scans one query.
+  // reserve its full query matrix on the caller's stack even though every shard scans one query.
   MemorySearchSingleRecordShardJob jobs[kMemorySearchBatchParallelMaxWorkers]{};
-  std::atomic<uint32_t> remaining(worker_count);
+  std::atomic<uint32_t> remaining(shard_count);
   const uint32_t current_worker = on_worker ? core::runtime_worker_id() : kU32Max;
-  for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
-    jobs[worker_i].index = index;
-    jobs[worker_i].desc = desc;
-    jobs[worker_i].query = query;
-    jobs[worker_i].begin =
-        static_cast<uint32_t>((static_cast<uint64_t>(index->count) * worker_i) / worker_count);
-    jobs[worker_i].end = static_cast<uint32_t>(
-        (static_cast<uint64_t>(index->count) * (worker_i + 1u)) / worker_count);
-    jobs[worker_i].remaining = &remaining;
+  for (uint32_t shard_i = 0; shard_i < shard_count; ++shard_i) {
+    jobs[shard_i].index = index;
+    jobs[shard_i].desc = desc;
+    jobs[shard_i].query = query;
+    jobs[shard_i].begin =
+        static_cast<uint32_t>((static_cast<uint64_t>(index->count) * shard_i) / shard_count);
+    jobs[shard_i].end =
+        static_cast<uint32_t>((static_cast<uint64_t>(index->count) * (shard_i + 1u)) / shard_count);
+    jobs[shard_i].remaining = &remaining;
+  }
 
+  for (uint32_t worker_i = 0; worker_i < remote_count; ++worker_i) {
     uint32_t target_worker = worker_i;
     if (on_worker && target_worker >= current_worker) {
       ++target_worker;
@@ -5695,14 +5698,16 @@ bool memory_search_flat_record_parallel(MemoryIndex* index, const AstralMemorySe
     }
   }
 
+  // The caller owns the final shard instead of parking while remote workers consume the scan.
+  memory_search_single_record_shard_work(&jobs[remote_count]);
   while (remaining.load(std::memory_order_acquire) != 0) {
     astral::platform::cpu_wait_for_event();
   }
 
   uint32_t filled = 0;
-  for (uint32_t worker_i = 0; worker_i < worker_count; ++worker_i) {
-    for (uint32_t result_i = 0; result_i < jobs[worker_i].local_count; ++result_i) {
-      insert_result(out_results, desc->top_k, &filled, jobs[worker_i].local_results[result_i]);
+  for (uint32_t shard_i = 0; shard_i < shard_count; ++shard_i) {
+    for (uint32_t result_i = 0; result_i < jobs[shard_i].local_count; ++result_i) {
+      insert_result(out_results, desc->top_k, &filled, jobs[shard_i].local_results[result_i]);
     }
   }
   *out_count = filled;

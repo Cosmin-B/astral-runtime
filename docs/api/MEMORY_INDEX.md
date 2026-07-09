@@ -48,9 +48,9 @@ pass per chunk, so multi-query RAG can reuse cache-hot vector rows instead of
 re-running a full scan for every query.
 
 Single-query flat searches above 32,768 records and through top-k 10 can shard
-contiguous record ranges when the runtime has at least two workers. Each worker
-keeps a private bounded top-k and the caller merges only those final candidates,
-so the vector scan does not share a heap or perform atomic updates.
+contiguous record ranges when the runtime has at least one worker. Each worker
+and the caller keep a private bounded top-k; the caller merges only those final
+candidates, so the vector scan does not share a heap or perform atomic updates.
 `AstralInit::thread_count` is the number of worker threads; the API caller is
 separate. For a latency test restricted to four CPU cores, use three workers so
 the caller does not oversubscribe the core set.

@@ -4019,7 +4019,7 @@ TEST(inference_memory_index_flat_e5m2_record_shards_top10_mock) {
   constexpr uint32_t kCapacity = 32769;
   constexpr uint32_t kTopK = 10;
   constexpr uint64_t kFirstKey = 13501;
-  constexpr uint32_t kRuntimeThreads = 4;
+  constexpr uint32_t kRuntimeThreads = 1;
 
   AstralInit cfg{};
   cfg.reserve_bytes = 64ull * 1024ull * 1024ull;
