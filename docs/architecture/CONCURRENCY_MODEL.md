@@ -10,6 +10,7 @@ Implemented:
 - **MPSC ring**: bounded fan-in ring with non-blocking `try_push`; full queues map to `ASTRAL_E_BUSY` at public API boundaries.
 - **MPSC ticket ring**: bounded fan-in ring for internal backpressured paths that reserve producer slots with one unconditional ticket.
 - **MPMC queue**: bounded ring with **ticket + per-slot sequence**, blocking `enqueue_wait` / `dequeue_wait` (no atomic compare-and-swap usage).
+- **Epoch reclamation**: fixed-capacity, per-participant retirement queues with cache-line-isolated reader epochs.
 - **ARM-friendly waiting**: `cpu_pause`, `cpu_wait_for_event`, `cpu_signal_event` primitives for low overhead spin/wait.
 - **CPU dispatch probe**: private runtime feature detection for x86_64 AVX2 and ARM NEON dispatch tiers.
 - **Worker pool**: fixed worker threads + internal work queue (`astral::core::submit_work`)
@@ -29,6 +30,23 @@ Current implementation note:
 - `astral_session_decode()` enqueues decode work onto the runtime worker pool and returns immediately.
 - A continuous-batching model executor owns a dedicated long-lived thread. Its provider session and slot
   scheduler stay on that thread; it does not consume a runtime worker-pool lane.
+
+## Epoch reclamation (conversation slots)
+
+The continuous-batching executor protects conversation-slot snapshots with
+`EpochManager`. The executor owns one read participant and enters once per
+scheduling snapshot, so scanning any number of active slots does not increment
+per-conversation reference counts.
+
+Conversation destruction removes the slot while holding the model slot-table
+lock, then publishes a quiescence marker through a fixed retirement queue. The
+same lock serializes retirement producers, preserving the queue's SPSC
+contract. The executor is the sole collector. Destruction waits until the
+marker crosses the safe epoch frontier before releasing conversation storage.
+
+The executor uses `EpochManager<2, 64>`: one reader participant, one retirement
+participant, and 64 pending retirements. Queue overflow retains ownership and
+waits for collection; it never destroys protected memory as a fallback.
 
 ## Platform wait primitives
 

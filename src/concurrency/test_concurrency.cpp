@@ -118,7 +118,7 @@ void test_stream_token() {
 void test_epoch_manager() {
   printf("Testing EpochManager...\n");
 
-  EpochManager epoch_mgr;
+  EpochManager<> epoch_mgr;
 
   // Register thread
   int32_t thread_id = epoch_mgr.register_thread();

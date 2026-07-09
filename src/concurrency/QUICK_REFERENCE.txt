@@ -86,7 +86,7 @@ Pattern 3: SPSC Token Streaming
 
 Pattern 4: Epoch-Protected Access
 {
-    EpochManager epoch_mgr;
+    EpochManager<> epoch_mgr;
     int32_t tid = epoch_mgr.register_thread();
 
     {

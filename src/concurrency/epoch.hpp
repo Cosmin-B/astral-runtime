@@ -22,12 +22,12 @@ namespace astral::concurrency {
 /// Exactly one thread may call collect(). Calls that overlap an active collector
 /// return without doing work. Registration is serialized because it is a cold
 /// lifecycle operation; enter(), leave(), and defer_delete() take no locks.
-class EpochManager {
+template <size_t MaxThreads = 128, size_t MaxRetiredPerParticipant = 256> class EpochManager {
 public:
   using Deleter = void (*)(void*) noexcept;
 
-  static constexpr size_t kMaxThreads = 128;
-  static constexpr size_t kMaxRetiredPerParticipant = 256;
+  static constexpr size_t kMaxThreads = MaxThreads;
+  static constexpr size_t kMaxRetiredPerParticipant = MaxRetiredPerParticipant;
   static constexpr uint64_t kGraceEpochs = 3;
 
   EpochManager() noexcept : global_epoch_(0) {
@@ -182,6 +182,9 @@ private:
   static constexpr size_t kRetiredMask = kMaxRetiredPerParticipant - 1;
   static constexpr uint64_t kInactiveEpoch = UINT64_MAX;
 
+  static_assert(kMaxThreads > 0, "epoch manager requires at least one participant");
+  static_assert(kMaxRetiredPerParticipant > 0,
+                "epoch manager requires a non-empty retirement queue");
   static_assert((kMaxRetiredPerParticipant & kRetiredMask) == 0,
                 "retirement queue capacity must be a power of two");
 
@@ -314,9 +317,9 @@ private:
 };
 
 /// RAII guard for one epoch-protected read-side critical section.
-class EpochGuard {
+template <typename Manager> class EpochGuard {
 public:
-  EpochGuard(EpochManager& manager, int32_t thread_id) noexcept
+  EpochGuard(Manager& manager, int32_t thread_id) noexcept
       : manager_(manager), thread_id_(thread_id) {
     manager_.enter(thread_id_);
   }
@@ -329,8 +332,10 @@ public:
   EpochGuard& operator=(EpochGuard&&) = delete;
 
 private:
-  EpochManager& manager_;
+  Manager& manager_;
   int32_t thread_id_;
 };
+
+template <typename Manager> EpochGuard(Manager&, int32_t) -> EpochGuard<Manager>;
 
 } // namespace astral::concurrency

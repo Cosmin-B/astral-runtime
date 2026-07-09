@@ -967,9 +967,9 @@ TEST(spsc_reset_reuse) {
 }
 
 TEST(epoch_registration_slots_are_reusable) {
-  EpochManager manager;
+  EpochManager<> manager;
 
-  for (size_t i = 0; i < EpochManager::kMaxThreads * 3; ++i) {
+  for (size_t i = 0; i < EpochManager<>::kMaxThreads * 3; ++i) {
     const int32_t participant = manager.register_thread();
     ASSERT_GE(participant, 0);
     manager.unregister_thread(participant);
@@ -977,7 +977,7 @@ TEST(epoch_registration_slots_are_reusable) {
 }
 
 TEST(epoch_retire_overflow_never_frees_a_pinned_object) {
-  EpochManager manager;
+  EpochManager<> manager;
   const int32_t retire_participant = manager.register_thread();
   const int32_t reader_participant = manager.register_thread();
   ASSERT_GE(retire_participant, 0);
@@ -987,7 +987,7 @@ TEST(epoch_retire_overflow_never_frees_a_pinned_object) {
   std::atomic<uint32_t> duplicates{0};
   manager.enter(reader_participant);
 
-  for (size_t i = 0; i < EpochManager::kMaxRetiredPerParticipant; ++i) {
+  for (size_t i = 0; i < EpochManager<>::kMaxRetiredPerParticipant; ++i) {
     auto* probe = new EpochRetireProbe{&destroyed, &duplicates, nullptr, 0};
     ASSERT_TRUE(manager.defer_delete(retire_participant, probe, delete_epoch_retire_probe));
   }
@@ -1005,14 +1005,14 @@ TEST(epoch_retire_overflow_never_frees_a_pinned_object) {
     manager.collect();
   }
   ASSERT_EQ(destroyed.load(std::memory_order_acquire),
-            static_cast<uint32_t>(EpochManager::kMaxRetiredPerParticipant));
+            static_cast<uint32_t>(EpochManager<>::kMaxRetiredPerParticipant));
 
   ASSERT_TRUE(manager.defer_delete(retire_participant, overflow, delete_epoch_retire_probe));
   for (uint32_t i = 0; i < 4; ++i) {
     manager.collect();
   }
   ASSERT_EQ(destroyed.load(std::memory_order_acquire),
-            static_cast<uint32_t>(EpochManager::kMaxRetiredPerParticipant + 1));
+            static_cast<uint32_t>(EpochManager<>::kMaxRetiredPerParticipant + 1));
   ASSERT_EQ(duplicates.load(std::memory_order_relaxed), 0u);
 
   manager.unregister_thread(reader_participant);
@@ -1024,7 +1024,7 @@ TEST(epoch_concurrent_retire_and_collect_reclaims_once) {
   constexpr uint32_t kRetiresPerProducer = 2000;
   constexpr uint32_t kTotalRetires = kProducerCount * kRetiresPerProducer;
 
-  EpochManager manager;
+  EpochManager<> manager;
   std::atomic<uint32_t> destroyed{0};
   std::atomic<uint32_t> duplicates{0};
   std::atomic<uint32_t> producers_ready{0};

@@ -105,7 +105,7 @@ if (token_ring.pop(&token)) {
 }
 
 // Epoch-based reclamation
-EpochManager epoch_mgr;
+EpochManager<> epoch_mgr;
 int32_t thread_id = epoch_mgr.register_thread();
 
 {
@@ -149,6 +149,7 @@ NOTES
 - All structures require power-of-2 capacity (compile-time enforced)
 - All data types must be trivially copyable (compile-time enforced)
 - Cache-line size is assumed to be 64 bytes (standard for x86/ARM)
-- EpochManager has fixed limits (128 participants, 256 pending retirements per participant)
+- EpochManager defaults to 128 participants and 256 pending retirements per participant;
+  both fixed capacities are configurable template arguments
 - A failed defer_delete does not invoke the deleter; the caller retains ownership
 - SPSC Ring reserves one slot to distinguish full from empty state

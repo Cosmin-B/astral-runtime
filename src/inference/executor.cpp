@@ -64,6 +64,7 @@ struct SlotSnapshot {
   ModelExecutor* ex = nullptr;
   Conversation* slots[ModelExecutor::kMaxSlotsHard]{};
   uint32_t active_mask = 0;
+  int32_t reader_id = -1;
 
   SlotSnapshot() = default;
   SlotSnapshot(const SlotSnapshot&) = delete;
@@ -71,13 +72,15 @@ struct SlotSnapshot {
 
   ~SlotSnapshot() { release(); }
 
-  void acquire(ModelExecutor* executor) {
+  void acquire(ModelExecutor* executor, int32_t epoch_reader) {
     release();
-    if (executor == nullptr || executor->model == nullptr) {
+    if (executor == nullptr || executor->model == nullptr || epoch_reader < 0) {
       return;
     }
 
     ex = executor;
+    reader_id = epoch_reader;
+    ex->conversation_epochs.enter(reader_id);
     slot_table_lock(ex);
     uint32_t mask = ex->active_slot_mask;
     active_mask = mask;
@@ -86,9 +89,6 @@ struct SlotSnapshot {
       mask &= mask - 1u;
       Conversation* conv = ex->slots[sid].load(std::memory_order_relaxed);
       slots[sid] = conv;
-      if (conv != nullptr) {
-        conv->exec_refs.fetch_add(1, std::memory_order_acq_rel);
-      }
     }
     slot_table_unlock(ex);
   }
@@ -98,33 +98,33 @@ struct SlotSnapshot {
       return;
     }
 
-#if defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
-    bool wake_waiter = false;
-#endif
     uint32_t mask = active_mask;
     active_mask = 0;
     while (mask != 0u) {
       const uint32_t sid = next_mask_slot(mask);
       mask &= mask - 1u;
-      Conversation* conv = slots[sid];
       slots[sid] = nullptr;
-      if (conv != nullptr) {
-#if defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
-        const uint32_t refs = conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
-        wake_waiter = wake_waiter || refs == 1u;
-#else
-        conv->exec_refs.fetch_sub(1, std::memory_order_acq_rel);
-#endif
-      }
     }
+    ex->conversation_epochs.leave(reader_id);
     ex = nullptr;
-#if defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
-    if (wake_waiter) {
-      signal();
-    }
-#endif
+    reader_id = -1;
   }
 };
+
+void collect_retired_conversations(ModelExecutor* ex) {
+  if (ex == nullptr || ex->conversation_retire_count.load(std::memory_order_acquire) == 0) {
+    return;
+  }
+  size_t reclaimed = 0;
+  for (uint64_t i = 0; i <= ModelExecutor::ConversationEpochManager::kGraceEpochs; ++i) {
+    reclaimed += ex->conversation_epochs.collect();
+  }
+  if (reclaimed != 0) {
+    ex->conversation_retire_count.fetch_sub(static_cast<uint32_t>(reclaimed),
+                                            std::memory_order_acq_rel);
+    signal();
+  }
+}
 
 bool snapshot_has_work(const SlotSnapshot& snapshot) {
   uint32_t mask = snapshot.active_mask;
@@ -623,21 +623,29 @@ void executor_thread(ModelExecutor* ex) {
     return;
   }
 
+  const int32_t epoch_reader = ex->conversation_epochs.register_thread();
+  if (epoch_reader < 0) {
+    return;
+  }
+  ex->conversation_epoch_reader = epoch_reader;
+
   const uint32_t max_prompt_tokens_per_slot_per_tick =
       ex->max_prompt_tokens_per_slot_per_tick.load(std::memory_order_relaxed);
   uint32_t rr = 0;
 
   while (ex->running.load(std::memory_order_acquire)) {
+    collect_retired_conversations(ex);
     SlotSnapshot snapshot;
-    snapshot.acquire(ex);
+    snapshot.acquire(ex, epoch_reader);
     bool any_work = snapshot_has_work(snapshot);
 
     if (!any_work) {
       uint32_t spins = 0;
       while (ex->running.load(std::memory_order_acquire) && !any_work) {
         snapshot.release();
+        collect_retired_conversations(ex);
         wait_hint(spins);
-        snapshot.acquire(ex);
+        snapshot.acquire(ex, epoch_reader);
         any_work = snapshot_has_work(snapshot);
       }
       if (!any_work) {
@@ -1034,6 +1042,9 @@ void executor_thread(ModelExecutor* ex) {
     rr = advance_slot_rr(rr, ex->max_slots);
     signal();
   }
+  collect_retired_conversations(ex);
+  ex->conversation_epochs.unregister_thread(epoch_reader);
+  ex->conversation_epoch_reader = -1;
 }
 
 } // namespace
@@ -1119,10 +1130,18 @@ AstralErr executor_start(ModelExecutor* ex) {
     return ASTRAL_E_STATE;
   }
 
+  ex->conversation_epoch_retire = ex->conversation_epochs.register_thread();
+  if (ex->conversation_epoch_retire < 0) {
+    ex->running.store(false, std::memory_order_release);
+    return ASTRAL_E_BUSY;
+  }
+
   ex->running.store(true, std::memory_order_release);
 
   if (!platform::thread_start(&ex->thread, executor_work_item, ex)) {
     ex->running.store(false, std::memory_order_release);
+    ex->conversation_epochs.unregister_thread(ex->conversation_epoch_retire);
+    ex->conversation_epoch_retire = -1;
     return ASTRAL_E_BACKEND;
   }
   return ASTRAL_OK;
@@ -1137,6 +1156,12 @@ void executor_stop_and_join(ModelExecutor* ex) {
   ex->running.store(false, std::memory_order_release);
   signal();
   platform::thread_join(&ex->thread);
+
+  collect_retired_conversations(ex);
+  if (ex->conversation_epoch_retire >= 0) {
+    ex->conversation_epochs.unregister_thread(ex->conversation_epoch_retire);
+    ex->conversation_epoch_retire = -1;
+  }
 
   if (ex->model && ex->model->backend && ex->model->backend->ops && ex->backend_session_ctx) {
     ex->model->backend->ops->session_destroy(ex->backend_session_ctx);

@@ -25,6 +25,10 @@ void mark_work_complete(void* user) {
   static_cast<std::atomic<bool>*>(user)->store(true, std::memory_order_release);
 }
 
+void destroy_conversation(AstralHandle conv) {
+  astral_conv_destroy(conv);
+}
+
 AstralHandle load_mock_model(const char* model_path) {
     AstralModelDesc model_desc = {};
     model_desc.size = sizeof(AstralModelDesc);
@@ -596,6 +600,46 @@ TEST(inference_conversation_executor_does_not_occupy_worker_pool) {
   astral_shutdown();
 
   ASSERT_TRUE(completed_while_executor_running);
+}
+
+TEST(inference_conversation_concurrent_destroy_churn) {
+  AstralInit cfg{};
+  cfg.reserve_bytes = 64u * 1024u * 1024u;
+  cfg.thread_count = 2;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  const AstralHandle model = load_mock_model("infinite");
+  AstralExecutorDesc executor{};
+  executor.size = sizeof(AstralExecutorDesc);
+  executor.max_slots = 4;
+  executor.max_batch_tokens = 8;
+  ASSERT_EQ(astral_model_executor_configure(model, &executor), ASTRAL_OK);
+
+  AstralConvDesc desc{};
+  desc.size = sizeof(AstralConvDesc);
+  desc.model = model;
+  desc.max_tokens = 100000;
+  desc.top_p = 1.0f;
+
+  for (uint32_t round = 0; round < 64; ++round) {
+    AstralHandle convs[4]{};
+    for (AstralHandle& conv : convs) {
+      ASSERT_EQ(astral_conv_create(&desc, &conv), ASTRAL_OK);
+      ASSERT_EQ(astral_conv_feed(conv, AstralSpanU8{}, 1), ASTRAL_OK);
+      ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+    }
+
+    std::thread destroyers[4];
+    for (uint32_t i = 0; i < 4; ++i) {
+      destroyers[i] = std::thread(destroy_conversation, convs[i]);
+    }
+    for (std::thread& destroyer : destroyers) {
+      destroyer.join();
+    }
+  }
+
+  astral_model_release(model);
+  astral_shutdown();
 }
 
 TEST(inference_mock_lifecycle_churn) {

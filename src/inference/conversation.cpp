@@ -15,7 +15,6 @@ Conversation::Conversation(Model* model_,
     , model(model_)
     , desc(desc_)
     , slot_id(0xFFFFFFFFu)
-    , exec_refs(0)
     , allocator(allocator_memory_, allocator_capacity_)
     , allocator_memory(allocator_memory_)
     , allocator_capacity(allocator_capacity_)

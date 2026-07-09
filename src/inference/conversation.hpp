@@ -47,8 +47,7 @@ struct Conversation {
 
     // Assigned by the model executor (slot id / seq id).
     std::atomic<uint32_t> slot_id;
-    // In-flight executor references for safe unregister/free (no locks in hot path).
-    std::atomic<uint32_t> exec_refs;
+    std::atomic<bool> epoch_reclaim_ready{false};
 
     memory::FrameAllocator allocator;
     void* allocator_memory;

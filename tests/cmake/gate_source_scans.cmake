@@ -1800,4 +1800,28 @@ foreach(required_feature_overview
   endif()
 endforeach()
 
+file(READ "${ROOT}/src/inference/conversation.hpp" conversation_header_text)
+file(READ "${ROOT}/src/inference/executor.hpp" executor_header_text)
+file(READ "${ROOT}/src/inference/executor.cpp" executor_source_text)
+file(READ "${ROOT}/src/inference/conversation_runtime.cpp" conversation_runtime_text)
+foreach(epoch_runtime_text
+    "${conversation_header_text}"
+    "${executor_source_text}"
+    "${conversation_runtime_text}")
+  if(epoch_runtime_text MATCHES "exec_refs")
+    message(FATAL_ERROR "Conversation lifetime still uses per-snapshot exec_refs traffic")
+  endif()
+endforeach()
+foreach(required_epoch_runtime_text
+    "conversation_epochs"
+    "conversation_epoch_reader"
+    "conversation_retire_count"
+    "defer_delete")
+  if(NOT executor_header_text MATCHES "${required_epoch_runtime_text}" AND
+     NOT executor_source_text MATCHES "${required_epoch_runtime_text}" AND
+     NOT conversation_runtime_text MATCHES "${required_epoch_runtime_text}")
+    message(FATAL_ERROR "Conversation runtime is missing epoch lifetime wiring ${required_epoch_runtime_text}")
+  endif()
+endforeach()
+
 message(STATUS "gate_source_scans: OK (${FILES_LEN} files)")

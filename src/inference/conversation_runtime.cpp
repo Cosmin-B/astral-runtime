@@ -309,6 +309,14 @@ AstralErr ensure_executor(Model* model, ModelExecutor** out_executor) {
   return result;
 }
 
+void mark_conversation_quiescent(void* value) noexcept {
+  auto* conv = static_cast<Conversation*>(value);
+  if (conv != nullptr) {
+    conv->epoch_reclaim_ready.store(true, std::memory_order_release);
+    platform::cpu_signal_event();
+  }
+}
+
 } // namespace
 
 AstralErr conv_create(const AstralConvDesc* desc, Conversation** out_conv) {
@@ -526,17 +534,36 @@ void conv_destroy(Conversation* conv) {
   ModelExecutor* ex = model ? model->executor.load(std::memory_order_acquire) : nullptr;
   const uint32_t sid = conv->slot_id.load(std::memory_order_acquire);
 
+  bool epoch_retired = false;
   if (ex != nullptr && sid < ex->max_slots) {
     lock_flag(model->executor_lock);
     if (ex->slots[sid].load(std::memory_order_relaxed) == conv) {
       ex->slots[sid].store(nullptr, std::memory_order_release);
       ex->active_slot_mask &= ~(1u << sid);
+      conv->slot_id.store(kInvalidExecutorSlot, std::memory_order_release);
+      conv->epoch_reclaim_ready.store(false, std::memory_order_relaxed);
+      for (;;) {
+        ex->conversation_retire_count.fetch_add(1, std::memory_order_acq_rel);
+        if (ex->conversation_epochs.defer_delete(ex->conversation_epoch_retire, conv,
+                                                 &mark_conversation_quiescent)) {
+          break;
+        }
+        ex->conversation_retire_count.fetch_sub(1, std::memory_order_acq_rel);
+        unlock_flag(model->executor_lock);
+        platform::cpu_signal_event();
+        platform::cpu_wait_for_event();
+        lock_flag(model->executor_lock);
+      }
+      epoch_retired = true;
     }
     unlock_flag(model->executor_lock);
 
-    // Wait for executor to drop all in-flight references.
+    platform::cpu_signal_event();
+  }
+
+  if (epoch_retired) {
     uint32_t spins = 0;
-    while (conv->exec_refs.load(std::memory_order_acquire) != 0) {
+    while (!conv->epoch_reclaim_ready.load(std::memory_order_acquire)) {
       if (spins < 64) {
         platform::cpu_pause();
       } else {
@@ -546,7 +573,6 @@ void conv_destroy(Conversation* conv) {
         ++spins;
       }
     }
-
   }
 
   conv_prompt_chunks_clear(conv);

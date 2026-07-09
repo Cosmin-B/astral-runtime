@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../backend/backend.hpp"
+#include "../concurrency/epoch.hpp"
 #include "../platform/thread.h"
 #include "../utils/trace.hpp"
 
@@ -28,10 +29,17 @@ struct ModelExecutor {
     // Full-vocab indices buffer (shared across conversations) for sampler fallback paths.
     uint32_t* indices_buffer = nullptr;
 
-    // Slot registry (atomic pointers; conv_destroy waits for in-flight refs).
+    // Slot registry protected by the model's slot-table lock.
     static constexpr uint32_t kMaxSlotsHard = 32;
     std::atomic<Conversation*> slots[kMaxSlotsHard];
     uint32_t active_slot_mask = 0;
+
+    // One executor reader and one slot-lock-serialized retirement producer.
+    using ConversationEpochManager = concurrency::EpochManager<2, 64>;
+    ConversationEpochManager conversation_epochs;
+    int32_t conversation_epoch_reader = -1;
+    int32_t conversation_epoch_retire = -1;
+    std::atomic<uint32_t> conversation_retire_count{0};
 
     // The model executor owns its long-lived provider thread.
     platform::Thread thread{};
