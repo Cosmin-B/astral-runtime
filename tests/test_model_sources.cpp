@@ -6,10 +6,11 @@
  * - surfaces are usable under arena-backed init2 (embedded-friendly)
  */
 
-#include "test_framework.hpp"
 #include "../include/astral_rt.h"
+#include "test_framework.hpp"
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <vector>
@@ -40,6 +41,17 @@ static std::vector<uint8_t> read_file(const char* path) {
         return {};
     }
     return out;
+}
+
+static std::vector<uint8_t> read_cpu_test_model() {
+  const char* path = std::getenv("ASTRAL_TEST_MODEL");
+  if (path != nullptr && path[0] != '\0') {
+    auto bytes = read_file(path);
+    if (!bytes.empty()) {
+      return bytes;
+    }
+  }
+  return read_file(ASTRAL_TEST_SOURCE_DIR "/tests/models/gpt2.Q2_K.gguf");
 }
 
 struct IoString {
@@ -187,66 +199,68 @@ TEST(model_load2_io_mock_smoke) {
 
 TEST(model_load2_memory_cpu_smoke) {
 #if !ASTRAL_ENABLE_VIRTUAL_MEMORY
-    SKIP_TEST("CPU MEMORY source requires virtual memory support");
+  SKIP_TEST("CPU MEMORY source requires virtual memory support");
 #endif
-    const auto bytes = read_file(ASTRAL_TEST_SOURCE_DIR "/tests/models/gpt2.Q2_K.gguf");
-    if (bytes.empty()) {
-      SKIP_TEST("tests/models/gpt2.Q2_K.gguf is required for CPU MEMORY source coverage");
-    }
+  const auto bytes = read_cpu_test_model();
+  if (bytes.empty()) {
+    SKIP_TEST("ASTRAL_TEST_MODEL or tests/models/gpt2.Q2_K.gguf is required for CPU MEMORY source "
+              "coverage");
+  }
 
-    alignas(64) static uint8_t arena[16u * 1024u * 1024u];
-    const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
-    ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
+  alignas(64) static uint8_t arena[16u * 1024u * 1024u];
+  const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
+  ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
 
-    // Load a real GGUF model from the test corpus into memory, then load via MEMORY source.
-    AstralModelDesc desc = make_desc_common_cpu();
-    desc.source_kind = ASTRAL_MODEL_SOURCE_MEMORY;
-    desc.model_bytes.data = bytes.data();
-    desc.model_bytes.len = static_cast<uint32_t>(bytes.size());
+  // Load a real GGUF model from the test corpus into memory, then load via MEMORY source.
+  AstralModelDesc desc = make_desc_common_cpu();
+  desc.source_kind = ASTRAL_MODEL_SOURCE_MEMORY;
+  desc.model_bytes.data = bytes.data();
+  desc.model_bytes.len = static_cast<uint32_t>(bytes.size());
 
-    AstralHandle model = 0;
-    ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
-    ASSERT_TRUE(astral_handle_valid(model));
+  AstralHandle model = 0;
+  ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
+  ASSERT_TRUE(astral_handle_valid(model));
 
-    AstralModelInfo info{};
-    ASSERT_EQ(astral_model_info(model, &info), ASTRAL_OK);
-    ASSERT_GT(info.vocab_size, 0u);
+  AstralModelInfo info{};
+  ASSERT_EQ(astral_model_info(model, &info), ASTRAL_OK);
+  ASSERT_GT(info.vocab_size, 0u);
 
-    astral_model_release(model);
-    astral_shutdown();
+  astral_model_release(model);
+  astral_shutdown();
 }
 
 TEST(model_load2_io_cpu_smoke) {
 #if !ASTRAL_ENABLE_VIRTUAL_MEMORY
-    SKIP_TEST("CPU IO source requires virtual memory support");
+  SKIP_TEST("CPU IO source requires virtual memory support");
 #endif
-    const auto bytes = read_file(ASTRAL_TEST_SOURCE_DIR "/tests/models/gpt2.Q2_K.gguf");
-    if (bytes.empty()) {
-      SKIP_TEST("tests/models/gpt2.Q2_K.gguf is required for CPU IO source coverage");
-    }
+  const auto bytes = read_cpu_test_model();
+  if (bytes.empty()) {
+    SKIP_TEST(
+        "ASTRAL_TEST_MODEL or tests/models/gpt2.Q2_K.gguf is required for CPU IO source coverage");
+  }
 
-    alignas(64) static uint8_t arena[16u * 1024u * 1024u];
-    const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
-    ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
+  alignas(64) static uint8_t arena[16u * 1024u * 1024u];
+  const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
+  ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
 
-    IoMem io_src{};
-    io_src.data = bytes.data();
-    io_src.size = bytes.size();
+  IoMem io_src{};
+  io_src.data = bytes.data();
+  io_src.size = bytes.size();
 
-    AstralModelDesc desc = make_desc_common_cpu();
-    desc.source_kind = ASTRAL_MODEL_SOURCE_IO;
-    desc.io.user = &io_src;
-    desc.io.size = io_size_mem;
-    desc.io.read_at = io_read_at_mem;
+  AstralModelDesc desc = make_desc_common_cpu();
+  desc.source_kind = ASTRAL_MODEL_SOURCE_IO;
+  desc.io.user = &io_src;
+  desc.io.size = io_size_mem;
+  desc.io.read_at = io_read_at_mem;
 
-    AstralHandle model = 0;
-    ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
-    ASSERT_TRUE(astral_handle_valid(model));
+  AstralHandle model = 0;
+  ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
+  ASSERT_TRUE(astral_handle_valid(model));
 
-    AstralModelInfo info{};
-    ASSERT_EQ(astral_model_info(model, &info), ASTRAL_OK);
-    ASSERT_GT(info.vocab_size, 0u);
+  AstralModelInfo info{};
+  ASSERT_EQ(astral_model_info(model, &info), ASTRAL_OK);
+  ASSERT_GT(info.vocab_size, 0u);
 
-    astral_model_release(model);
-    astral_shutdown();
+  astral_model_release(model);
+  astral_shutdown();
 }
