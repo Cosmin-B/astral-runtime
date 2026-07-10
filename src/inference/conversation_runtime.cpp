@@ -233,7 +233,16 @@ inline AstralErr conv_push_media_chunk(Conversation* conv, const AstralImageDesc
 }
 
 inline uint32_t parse_u32_env(const char* key, uint32_t fallback) {
+#if defined(_MSC_VER)
+  char value[16]{};
+  size_t length = 0;
+  if (getenv_s(&length, value, sizeof(value), key) != 0 || length <= 1 || length > sizeof(value)) {
+    return fallback;
+  }
+  const char* v = value;
+#else
   const char* v = std::getenv(key);
+#endif
   if (v == nullptr || v[0] == '\0') {
     return fallback;
   }

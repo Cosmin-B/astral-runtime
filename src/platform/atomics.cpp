@@ -38,6 +38,7 @@ size_t detect_cache_line_size() {
   // Returns L2 cache line size in ECX bits 7:0
 
 #if defined(__GNUC__) || defined(__clang__)
+  uint32_t eax, ebx, ecx, edx;
   // GCC/Clang: use __get_cpuid intrinsic
   uint32_t eax, ebx, ecx, edx;
   if (__get_cpuid(0x80000006, &eax, &ebx, &ecx, &edx)) {

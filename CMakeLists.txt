@@ -203,6 +203,7 @@ function(astral_configure_runtime_target tgt)
 
     target_compile_options(${tgt} PRIVATE
         $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Werror -Wno-unused-parameter>
+        # C4324 reports the intentional tail padding created by cache-line-aligned queue cursors.
         $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /wd4324>
     )
 
