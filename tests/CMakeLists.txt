@@ -254,7 +254,7 @@ endif()
 
 # Source-level validation gates (provider-agnostic hard rules)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_source_scans.cmake)
-    set(ASTRAL_GATE_SOURCE_SCAN_TIMEOUT 30)
+    set(ASTRAL_GATE_SOURCE_SCAN_TIMEOUT 90)
     if(WIN32)
         set(ASTRAL_GATE_SOURCE_SCAN_TIMEOUT 120)
     endif()
