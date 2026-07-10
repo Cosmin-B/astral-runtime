@@ -379,6 +379,36 @@ namespace Astral.Runtime
             public byte enable_hugepages;       // Try huge pages
         }
 
+        public enum AstralMemoryMode : uint
+        {
+            VirtualMemory = 0,
+            BorrowedArena = 1,
+            OwnedArena = 2
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralArenaDesc
+        {
+            public IntPtr base_address;
+            public ulong size;
+            public AstralAllocator alloc;
+            public uint session_block_size;
+            public uint session_block_count;
+            public uint reserved0;
+            public uint reserved1;
+            public uint reserved2;
+            public uint reserved3;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AstralInit2
+        {
+            public AstralInit base_config;
+            public AstralMemoryMode memory_mode;
+            public uint flags;
+            public AstralArenaDesc arena;
+        }
+
         /// <summary>
         /// Initialize Astral runtime.
         /// Must be called once before any other Astral functions.
@@ -386,6 +416,9 @@ namespace Astral.Runtime
         /// </summary>
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_init(ref AstralInit cfg);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int astral_init2(ref AstralInit2 cfg);
 
         /// <summary>
         /// Shutdown Astral runtime.

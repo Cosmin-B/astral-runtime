@@ -191,12 +191,17 @@ private:
         InitCfg.numa_node = 0xFFFFFFFFu;
         InitCfg.enable_hugepages = 0;
 
-        const AstralErr Err = astral_init(&InitCfg);
+        AstralInit2 ExtendedInit{};
+        ExtendedInit.base = InitCfg;
+        ExtendedInit.memory_mode = ASTRAL_MEMMODE_VM;
+
+        const AstralErr Err = astral_init2(&ExtendedInit);
         if (Err != ASTRAL_OK)
         {
             bInitialized = false;
             GAllocatorCounters.Reset();
-            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_init failed (%d)"), static_cast<int32>(Err));
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: initialization failed (%d)"),
+                   static_cast<int32>(Err));
             return false;
         }
 

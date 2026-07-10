@@ -94,6 +94,12 @@ declare -a docker_args=(
   --env ASTRAL_UNITY_REQUIRE_NATIVE=1
 )
 
+for env_name in ASTRAL_ENGINE_MEMORY_PERF ASTRAL_ENGINE_MEMORY_MAX_P50_US; do
+  if [[ -n "${!env_name:-}" ]]; then
+    docker_args+=(--env "${env_name}")
+  fi
+done
+
 for env_name in UNITY_LICENSE UNITY_EMAIL UNITY_PASSWORD UNITY_SERIAL UNITY_LICENSING_SERVER; do
   if [[ -n "${!env_name:-}" ]]; then
     docker_args+=(--env "${env_name}")

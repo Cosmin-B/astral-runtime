@@ -14,6 +14,7 @@
 #include "Engine/Texture2D.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformProcess.h"
+#include "HAL/PlatformTime.h"
 #include "Math/UnrealMathUtility.h"
 #include "Misc/Paths.h"
 #include "PixelFormat.h"
@@ -90,6 +91,27 @@ static void append_ascii(TArray<uint8>& out, const char* lit) {
 static bool env_enabled(const TCHAR* name) {
     const FString value = FPlatformMisc::GetEnvironmentVariable(name);
     return value == TEXT("1") || value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+}
+
+static uint32 memory_perf_mix(uint32 value) {
+  value ^= value >> 16u;
+  value *= 0x7FEB352Du;
+  value ^= value >> 15u;
+  value *= 0x846CA68Bu;
+  value ^= value >> 16u;
+  return value;
+}
+
+static float memory_perf_value(uint32 row, uint32 column) {
+  const uint32 mixed = memory_perf_mix(row * 0x9E3779B9u + column * 0x85EBCA6Bu);
+  return static_cast<float>(static_cast<int32>(mixed)) * (1.0f / 2147483648.0f);
+}
+
+static double memory_perf_limit_us() {
+  const FString value =
+      FPlatformMisc::GetEnvironmentVariable(TEXT("ASTRAL_ENGINE_MEMORY_MAX_P50_US"));
+  const double parsed = value.IsEmpty() ? 0.0 : FCString::Atod(*value);
+  return parsed > 0.0 ? parsed : 1000.0;
 }
 
 static FString readable_model_path_from_env(const TCHAR* path_env,
@@ -687,7 +709,7 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     constexpr int32 AnyMemoryGroup = -1;
     constexpr int32 CursorFetchLimit = 1;
     constexpr int32 EmptySearchCount = 0;
-    constexpr int32 EmptyByteCount = 0;
+    constexpr int64 EmptyByteCount = 0;
     FAstralMemoryIndexDesc MemoryDesc;
     MemoryDesc.Dimension = MemoryDim;
     MemoryDesc.Capacity = MemoryCapacity;
@@ -2479,6 +2501,160 @@ bool FAstralRTMediaDescriptorHelpersTest::RunTest(const FString& Parameters) {
     Model->Release();
     Model->ConditionalBeginDestroy();
     return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAstralRTMemorySearchPerformanceTest,
+                                 "AstralRT.Performance.MemorySearch100k",
+                                 EAutomationTestFlags::EditorContext |
+                                     EAutomationTestFlags::EngineFilter)
+
+bool FAstralRTMemorySearchPerformanceTest::RunTest(const FString& Parameters) {
+  (void)Parameters;
+  if (!env_enabled(TEXT("ASTRAL_ENGINE_MEMORY_PERF"))) {
+    AddInfo(TEXT("Set ASTRAL_ENGINE_MEMORY_PERF=1 to run the 100k memory-search wrapper test."));
+    return true;
+  }
+  if (!ensure_astral_initialized(*this)) {
+    return false;
+  }
+
+  constexpr int32 Dimension = 384;
+  constexpr int32 Capacity = 100000;
+  constexpr int32 TopK = 10;
+  constexpr int32 QueryCount = 64;
+  constexpr int32 MeasuredQueries = 128;
+  constexpr int32 AnyGroup = -1;
+
+  FAstralMemoryIndexDesc ExactDesc;
+  ExactDesc.Dimension = Dimension;
+  ExactDesc.Capacity = Capacity;
+  ExactDesc.Metric = EAstralMemoryMetric::Cosine;
+  ExactDesc.IndexKind = EAstralMemoryIndexKind::Flat;
+  ExactDesc.StorageKind = EAstralMemoryStorageKind::F32;
+  FAstralMemoryIndexDesc CompactDesc = ExactDesc;
+  CompactDesc.StorageKind = EAstralMemoryStorageKind::F8_E5M2;
+
+  const FAstralOperationResult ExactCreate =
+      UAstralBlueprintLibrary::CreateMemoryIndexResult(ExactDesc);
+  const FAstralOperationResult CompactCreate =
+      UAstralBlueprintLibrary::CreateMemoryIndexResult(CompactDesc);
+  TestTrue(TEXT("exact memory index created"), ExactCreate.bSuccess);
+  TestTrue(TEXT("compact memory index created"), CompactCreate.bSuccess);
+  if (!ExactCreate.bSuccess || !CompactCreate.bSuccess) {
+    UAstralBlueprintLibrary::DestroyMemoryIndex(ExactCreate.Handle);
+    UAstralBlueprintLibrary::DestroyMemoryIndex(CompactCreate.Handle);
+    return false;
+  }
+
+  TArray<FAstralMemoryRecord> Records;
+  TArray<float> Vectors;
+  Records.SetNum(Capacity);
+  Vectors.SetNumUninitialized(Capacity * Dimension);
+  for (int32 Row = 0; Row < Capacity; ++Row) {
+    FAstralMemoryRecord& Record = Records[Row];
+    Record.Key = static_cast<int64>(Row) + 1;
+    Record.GroupId = Row & 1;
+    Record.DocumentId = Row >> 4;
+    Record.ChunkId = Row;
+    const int32 RowOffset = Row * Dimension;
+    for (int32 Column = 0; Column < Dimension; ++Column) {
+      Vectors[RowOffset + Column] =
+          memory_perf_value(static_cast<uint32>(Row), static_cast<uint32>(Column));
+    }
+  }
+
+  const FAstralOperationResult ExactAdd = UAstralBlueprintLibrary::AddMemoryBatchResult(
+      ExactCreate.Handle, Records, Vectors, Dimension);
+  const FAstralOperationResult CompactAdd = UAstralBlueprintLibrary::AddMemoryBatchResult(
+      CompactCreate.Handle, Records, Vectors, Dimension);
+  TestTrue(TEXT("exact memory records added"), ExactAdd.bSuccess);
+  TestTrue(TEXT("compact memory records added"), CompactAdd.bSuccess);
+
+  TArray<float> Queries;
+  TArray<int64> OracleKeys;
+  Queries.SetNumUninitialized(QueryCount * Dimension);
+  OracleKeys.SetNumUninitialized(QueryCount * TopK);
+  TArray<float> Query;
+  TArray<FAstralMemorySearchResult> ExactResults;
+  TArray<FAstralMemorySearchResult> CompactResults;
+  Query.SetNumUninitialized(Dimension);
+
+  bool bSetupOk = ExactAdd.bSuccess && CompactAdd.bSuccess;
+  for (int32 QueryIndex = 0; bSetupOk && QueryIndex < QueryCount; ++QueryIndex) {
+    const uint32 QueryRow =
+        static_cast<uint32>(static_cast<int64>(QueryIndex) * Capacity / QueryCount);
+    const int32 QueryOffset = QueryIndex * Dimension;
+    for (int32 Column = 0; Column < Dimension; ++Column) {
+      Queries[QueryOffset + Column] = memory_perf_value(QueryRow, static_cast<uint32>(Column));
+    }
+    FMemory::Memcpy(Query.GetData(), Queries.GetData() + QueryOffset, sizeof(float) * Dimension);
+    const FAstralOperationResult Search = UAstralBlueprintLibrary::SearchMemoryIndexResult(
+        ExactCreate.Handle, Query, TopK, AnyGroup, ExactResults);
+    bSetupOk = Search.bSuccess && ExactResults.Num() == TopK;
+    if (bSetupOk) {
+      for (int32 ResultIndex = 0; ResultIndex < TopK; ++ResultIndex) {
+        OracleKeys[QueryIndex * TopK + ResultIndex] = ExactResults[ResultIndex].Key;
+      }
+    }
+  }
+  TestTrue(TEXT("exact top-k oracle created"), bSetupOk);
+
+  for (int32 Warmup = 0; bSetupOk && Warmup < QueryCount; ++Warmup) {
+    FMemory::Memcpy(Query.GetData(), Queries.GetData() + Warmup * Dimension,
+                    sizeof(float) * Dimension);
+    const FAstralOperationResult Search = UAstralBlueprintLibrary::SearchMemoryIndexResult(
+        CompactCreate.Handle, Query, TopK, AnyGroup, CompactResults);
+    bSetupOk = Search.bSuccess && CompactResults.Num() == TopK;
+  }
+
+  TArray<double> SamplesUs;
+  SamplesUs.Reserve(MeasuredQueries);
+  int64 Matched = 0;
+  int64 Expected = 0;
+  for (int32 Iteration = 0; bSetupOk && Iteration < MeasuredQueries; ++Iteration) {
+    const int32 QueryIndex = Iteration % QueryCount;
+    FMemory::Memcpy(Query.GetData(), Queries.GetData() + QueryIndex * Dimension,
+                    sizeof(float) * Dimension);
+    const uint64 Start = FPlatformTime::Cycles64();
+    const FAstralOperationResult Search = UAstralBlueprintLibrary::SearchMemoryIndexResult(
+        CompactCreate.Handle, Query, TopK, AnyGroup, CompactResults);
+    const uint64 End = FPlatformTime::Cycles64();
+    bSetupOk = Search.bSuccess && CompactResults.Num() == TopK;
+    if (!bSetupOk) {
+      break;
+    }
+    SamplesUs.Add(FPlatformTime::ToSeconds64(End - Start) * 1000000.0);
+    Expected += TopK;
+    for (int32 OracleIndex = 0; OracleIndex < TopK; ++OracleIndex) {
+      const int64 OracleKey = OracleKeys[QueryIndex * TopK + OracleIndex];
+      for (const FAstralMemorySearchResult& Result : CompactResults) {
+        if (Result.Key == OracleKey) {
+          ++Matched;
+          break;
+        }
+      }
+    }
+  }
+
+  SamplesUs.Sort();
+  const double Recall =
+      Expected > 0 ? static_cast<double>(Matched) * 100.0 / static_cast<double>(Expected) : 0.0;
+  const double P50 = SamplesUs.Num() > 0 ? SamplesUs[SamplesUs.Num() / 2] : 0.0;
+  const double P95 = SamplesUs.Num() > 0 ? SamplesUs[(SamplesUs.Num() * 95) / 100] : 0.0;
+  const double P99 = SamplesUs.Num() > 0 ? SamplesUs[(SamplesUs.Num() * 99) / 100] : 0.0;
+  AddInfo(FString::Printf(TEXT("[astral_memory_wrapper] engine=unreal count=%d dim=%d top_k=%d "
+                               "recall_pct=%.2f p50_us=%.2f p95_us=%.2f p99_us=%.2f"),
+                          Capacity, Dimension, TopK, Recall, P50, P95, P99));
+
+  TestTrue(TEXT("compact wrapper searches completed"),
+           bSetupOk && SamplesUs.Num() == MeasuredQueries);
+  TestTrue(TEXT("compact top-10 recall is at least 92 percent"), Recall >= 92.0);
+  TestTrue(TEXT("compact wrapper p50 meets configured limit"),
+           P50 > 0.0 && P50 <= memory_perf_limit_us());
+
+  UAstralBlueprintLibrary::DestroyMemoryIndex(CompactCreate.Handle);
+  UAstralBlueprintLibrary::DestroyMemoryIndex(ExactCreate.Handle);
+  return !HasAnyErrors();
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

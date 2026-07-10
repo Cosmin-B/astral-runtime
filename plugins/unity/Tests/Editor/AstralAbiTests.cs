@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using NUnit.Framework;
@@ -45,6 +46,37 @@ namespace Astral.Runtime.Tests
         private static bool RequireNativeLibrary =>
             Environment.GetEnvironmentVariable("ASTRAL_UNITY_REQUIRE_NATIVE") == "1";
 
+        private static uint MemoryPerfMix(uint value)
+        {
+            unchecked
+            {
+                value ^= value >> 16;
+                value *= 0x7FEB352Du;
+                value ^= value >> 15;
+                value *= 0x846CA68Bu;
+                value ^= value >> 16;
+                return value;
+            }
+        }
+
+        private static float MemoryPerfValue(uint row, uint column)
+        {
+            unchecked
+            {
+                uint mixed = MemoryPerfMix(row * 0x9E3779B9u + column * 0x85EBCA6Bu);
+                return (int)mixed * (1.0f / 2147483648.0f);
+            }
+        }
+
+        private static double MemoryPerfLimitUs()
+        {
+            const double defaultLimitUs = 1000.0;
+            string value = Environment.GetEnvironmentVariable("ASTRAL_ENGINE_MEMORY_MAX_P50_US");
+            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) && parsed > 0.0
+                ? parsed
+                : defaultLimitUs;
+        }
+
         [Test]
         public void Abi_StructSizes_AreExpected()
         {
@@ -58,6 +90,10 @@ namespace Astral.Runtime.Tests
 
             int expectedInit = IntPtr.Size == 8 ? 64 : 48;
             Assert.AreEqual(expectedInit, Marshal.SizeOf<AstralNative.AstralInit>());
+            int expectedArenaDesc = IntPtr.Size == 8 ? 64 : 56;
+            int expectedInit2 = IntPtr.Size == 8 ? 136 : 112;
+            Assert.AreEqual(expectedArenaDesc, Marshal.SizeOf<AstralNative.AstralArenaDesc>());
+            Assert.AreEqual(expectedInit2, Marshal.SizeOf<AstralNative.AstralInit2>());
 
             int expectedModelDesc = IntPtr.Size == 8 ? 168 : 116;
             Assert.AreEqual(expectedModelDesc, Marshal.SizeOf<AstralNative.AstralModelDesc>());
@@ -444,6 +480,12 @@ namespace Astral.Runtime.Tests
         {
             RequireNative();
 
+            NativeArray<AstralNative.AstralMemoryRecord> records = default;
+            NativeArray<float> vectors = default;
+            NativeArray<float> queries = default;
+            NativeArray<AstralNative.AstralMemorySearchResult> results = default;
+            NativeArray<uint> counts = default;
+
             AstralRuntime.Initialize(new AstralConfig
             {
                 reserveBytes = 64UL << 20,
@@ -462,7 +504,7 @@ namespace Astral.Runtime.Tests
                     indexKind = AstralNative.AstralMemoryIndexKind.Flat
                 });
 
-                using var records = new NativeArray<AstralNative.AstralMemoryRecord>(2, Allocator.Temp);
+                records = new NativeArray<AstralNative.AstralMemoryRecord>(2, Allocator.Temp);
                 records[0] = new AstralNative.AstralMemoryRecord
                 {
                     size = (uint)Marshal.SizeOf<AstralNative.AstralMemoryRecord>(),
@@ -479,13 +521,13 @@ namespace Astral.Runtime.Tests
                     document_id = 20,
                     chunk_id = 200
                 };
-                using var vectors = new NativeArray<float>(new[] { 1.0f, 0.0f, 0.0f, 1.0f }, Allocator.Temp);
+                vectors = new NativeArray<float>(new[] { 1.0f, 0.0f, 0.0f, 1.0f }, Allocator.Temp);
                 index.AddBatch(records, vectors);
 
                 var desc = AstralMemoryIndex.SearchDesc(topK: 1, groupId: AstralMemoryIndex.DefaultSearchGroupId);
-                using var queries = new NativeArray<float>(new[] { 1.0f, 0.0f, 0.0f, 1.0f }, Allocator.Temp);
-                using var results = new NativeArray<AstralNative.AstralMemorySearchResult>(2, Allocator.Temp);
-                using var counts = new NativeArray<uint>(2, Allocator.Temp);
+                queries = new NativeArray<float>(new[] { 1.0f, 0.0f, 0.0f, 1.0f }, Allocator.Temp);
+                results = new NativeArray<AstralNative.AstralMemorySearchResult>(2, Allocator.Temp);
+                counts = new NativeArray<uint>(2, Allocator.Temp);
 
                 index.SearchBatch(ref desc, queries, queryCount: 2, results, counts);
 
@@ -496,6 +538,150 @@ namespace Astral.Runtime.Tests
             }
             finally
             {
+                if (counts.IsCreated) counts.Dispose();
+                if (results.IsCreated) results.Dispose();
+                if (queries.IsCreated) queries.Dispose();
+                if (vectors.IsCreated) vectors.Dispose();
+                if (records.IsCreated) records.Dispose();
+                AstralRuntime.Shutdown();
+            }
+        }
+
+        [Test]
+        public void MemoryIndex_E5M2_100k384_ReproducesRecallAndLatency()
+        {
+            if (Environment.GetEnvironmentVariable("ASTRAL_ENGINE_MEMORY_PERF") != "1")
+            {
+                Assert.Ignore("Set ASTRAL_ENGINE_MEMORY_PERF=1 to run the 100k memory-search wrapper test.");
+            }
+            RequireNative();
+
+            const int dim = 384;
+            const int capacity = 100000;
+            const int topK = 10;
+            const int queryCount = 64;
+            const int measuredQueries = 128;
+
+            NativeArray<AstralNative.AstralMemoryRecord> records = default;
+            NativeArray<float> vectors = default;
+            NativeArray<float> queries = default;
+            NativeArray<AstralNative.AstralMemorySearchResult> exactResults = default;
+            NativeArray<AstralNative.AstralMemorySearchResult> compactResults = default;
+
+            AstralRuntime.Initialize(new AstralConfig
+            {
+                reserveBytes = 1UL << 30,
+                threadCount = 3,
+                useUnityAllocator = false,
+                enableLogging = false
+            });
+
+            try
+            {
+                using var exact = AstralMemoryIndex.Create(new AstralMemoryIndexConfig
+                {
+                    dim = dim,
+                    capacity = capacity,
+                    metric = AstralNative.AstralMemoryMetric.Cosine,
+                    indexKind = AstralNative.AstralMemoryIndexKind.Flat,
+                    storageKind = AstralNative.AstralMemoryStorageKind.F32
+                });
+                using var compact = AstralMemoryIndex.Create(new AstralMemoryIndexConfig
+                {
+                    dim = dim,
+                    capacity = capacity,
+                    metric = AstralNative.AstralMemoryMetric.Cosine,
+                    indexKind = AstralNative.AstralMemoryIndexKind.Flat,
+                    storageKind = AstralNative.AstralMemoryStorageKind.F8_E5M2
+                });
+                records = new NativeArray<AstralNative.AstralMemoryRecord>(capacity, Allocator.Persistent);
+                vectors = new NativeArray<float>(capacity * dim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                queries = new NativeArray<float>(queryCount * dim, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                exactResults = new NativeArray<AstralNative.AstralMemorySearchResult>(topK, Allocator.Persistent);
+                compactResults = new NativeArray<AstralNative.AstralMemorySearchResult>(topK, Allocator.Persistent);
+
+                for (int row = 0; row < capacity; ++row)
+                {
+                    records[row] = AstralMemoryIndex.Record((ulong)row + 1UL, (uint)row >> 4, (uint)row, (uint)row & 1u);
+                    int rowOffset = row * dim;
+                    for (int column = 0; column < dim; ++column)
+                    {
+                        vectors[rowOffset + column] = MemoryPerfValue((uint)row, (uint)column);
+                    }
+                }
+                exact.AddBatch(records, vectors);
+                compact.AddBatch(records, vectors);
+
+                var search = AstralMemoryIndex.SearchDesc(topK: topK);
+                var oracleKeys = new ulong[queryCount * topK];
+                for (int queryIndex = 0; queryIndex < queryCount; ++queryIndex)
+                {
+                    uint queryRow = (uint)((long)queryIndex * capacity / queryCount);
+                    int queryOffset = queryIndex * dim;
+                    for (int column = 0; column < dim; ++column)
+                    {
+                        queries[queryOffset + column] = MemoryPerfValue(queryRow, (uint)column);
+                    }
+                    var query = queries.GetSubArray(queryOffset, dim);
+                    uint count = exact.Search(ref search, query, exactResults);
+                    Assert.AreEqual((uint)topK, count);
+                    for (int resultIndex = 0; resultIndex < topK; ++resultIndex)
+                    {
+                        oracleKeys[queryIndex * topK + resultIndex] = exactResults[resultIndex].key;
+                    }
+                }
+
+                for (int warmup = 0; warmup < queryCount; ++warmup)
+                {
+                    var query = queries.GetSubArray(warmup * dim, dim);
+                    Assert.AreEqual((uint)topK, compact.Search(ref search, query, compactResults));
+                }
+
+                var samplesUs = new double[measuredQueries];
+                long matched = 0;
+                long expected = 0;
+                for (int iteration = 0; iteration < measuredQueries; ++iteration)
+                {
+                    int queryIndex = iteration % queryCount;
+                    var query = queries.GetSubArray(queryIndex * dim, dim);
+                    long start = System.Diagnostics.Stopwatch.GetTimestamp();
+                    uint count = compact.Search(ref search, query, compactResults);
+                    long end = System.Diagnostics.Stopwatch.GetTimestamp();
+                    Assert.AreEqual((uint)topK, count);
+                    samplesUs[iteration] = (end - start) * 1000000.0 / System.Diagnostics.Stopwatch.Frequency;
+
+                    expected += topK;
+                    for (int oracleIndex = 0; oracleIndex < topK; ++oracleIndex)
+                    {
+                        ulong oracleKey = oracleKeys[queryIndex * topK + oracleIndex];
+                        for (int resultIndex = 0; resultIndex < topK; ++resultIndex)
+                        {
+                            if (compactResults[resultIndex].key == oracleKey)
+                            {
+                                ++matched;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                Array.Sort(samplesUs);
+                double recall = matched * 100.0 / expected;
+                double p50 = samplesUs[samplesUs.Length / 2];
+                double p95 = samplesUs[(samplesUs.Length * 95) / 100];
+                double p99 = samplesUs[(samplesUs.Length * 99) / 100];
+                Debug.Log($"[astral_memory_wrapper] engine=unity count={capacity} dim={dim} top_k={topK} recall_pct={recall:F2} p50_us={p50:F2} p95_us={p95:F2} p99_us={p99:F2}");
+
+                Assert.GreaterOrEqual(recall, 92.0);
+                Assert.LessOrEqual(p50, MemoryPerfLimitUs());
+            }
+            finally
+            {
+                if (compactResults.IsCreated) compactResults.Dispose();
+                if (exactResults.IsCreated) exactResults.Dispose();
+                if (queries.IsCreated) queries.Dispose();
+                if (vectors.IsCreated) vectors.Dispose();
+                if (records.IsCreated) records.Dispose();
                 AstralRuntime.Shutdown();
             }
         }

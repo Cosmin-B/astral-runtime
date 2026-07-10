@@ -55,6 +55,10 @@ Environment:
                             Absolute model path inside the container for the gated real embedding Automation probe
   ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING
                             Set to 1 with ASTRAL_UNREAL_TEST_EMBED_MODEL to fail hard when the probe cannot run
+  ASTRAL_ENGINE_MEMORY_PERF
+                            Set to 1 to run the 100k x 384 E5M2 wrapper test
+  ASTRAL_ENGINE_MEMORY_MAX_P50_US
+                            Maximum accepted wrapper p50 in microseconds (default: 1000)
   ASTRAL_UNREAL_TEST_MODEL
                             Absolute model path inside the container for the gated real generation Automation smoke
   ASTRAL_UNREAL_REQUIRE_REAL_GENERATION
@@ -430,6 +434,8 @@ fi
   -e "ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE=${ASTRAL_UNREAL_REQUIRE_REAL_LIFECYCLE:-}" \
   -e "ASTRAL_UNREAL_TEST_EMBED_MODEL=${ASTRAL_UNREAL_TEST_EMBED_MODEL:-}" \
   -e "ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=${ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING:-}" \
+  -e "ASTRAL_ENGINE_MEMORY_PERF=${ASTRAL_ENGINE_MEMORY_PERF:-}" \
+  -e "ASTRAL_ENGINE_MEMORY_MAX_P50_US=${ASTRAL_ENGINE_MEMORY_MAX_P50_US:-}" \
   -e "UNREAL_EDITOR=${unreal_editor}" \
   -e "UNREAL_TEST_FILTER=${test_filter}" \
   -v "${root_dir}:/workspace/astral" \
