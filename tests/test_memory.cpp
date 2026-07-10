@@ -265,21 +265,21 @@ TEST(object_pool_thread_safety) {
     ObjectPool<Token, kPoolSize> pool;
     std::atomic<size_t> successful_acquires{0};
 
-    auto worker = [&pool, &successful_acquires](int thread_id) {
-        for (size_t i = 0; i < kIterations; ++i) {
-            // Acquire
-            Token* tok = pool.acquire();
-            if (tok) {
-                successful_acquires.fetch_add(1, std::memory_order_relaxed);
+    auto worker = [&pool, &successful_acquires, kIterations](int thread_id) {
+      for (size_t i = 0; i < kIterations; ++i) {
+        // Acquire
+        Token* tok = pool.acquire();
+        if (tok) {
+          successful_acquires.fetch_add(1, std::memory_order_relaxed);
 
-                // Simulate work
-                tok->id = thread_id * 1000000 + i;
-                tok->timestamp = i;
+          // Simulate work
+          tok->id = thread_id * 1000000 + i;
+          tok->timestamp = i;
 
-                // Release
-                pool.release(tok);
-            }
+          // Release
+          pool.release(tok);
         }
+      }
     };
 
     std::vector<std::thread> threads;
@@ -326,16 +326,16 @@ TEST(object_pool_stress_test) {
     ObjectPool<Token, kPoolSize> pool;
     std::atomic<size_t> total_ops{0};
 
-    auto worker = [&pool, &total_ops]() {
-        for (size_t i = 0; i < kIterations; ++i) {
-            Token* tok = pool.acquire();
-            if (tok) {
-                total_ops.fetch_add(1, std::memory_order_relaxed);
-                // Brief work
-                tok->id = i;
-                pool.release(tok);
-            }
+    auto worker = [&pool, &total_ops, kIterations]() {
+      for (size_t i = 0; i < kIterations; ++i) {
+        Token* tok = pool.acquire();
+        if (tok) {
+          total_ops.fetch_add(1, std::memory_order_relaxed);
+          // Brief work
+          tok->id = i;
+          pool.release(tok);
         }
+      }
     };
 
     std::vector<std::thread> threads;

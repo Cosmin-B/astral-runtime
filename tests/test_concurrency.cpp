@@ -173,12 +173,12 @@ TEST(mpmc_multi_producer) {
     MpmcQueue<TestData, kCapacity> queue;
     std::atomic<size_t> successful_enqueues{0};
 
-    auto producer = [&queue, &successful_enqueues](uint32_t thread_id) {
-        for (size_t i = 0; i < kItemsPerThread; ++i) {
-            TestData data = {i, thread_id, static_cast<uint32_t>(i)};
-            queue.enqueue_wait(data);
-            successful_enqueues.fetch_add(1, std::memory_order_relaxed);
-        }
+    auto producer = [&queue, &successful_enqueues, kItemsPerThread](uint32_t thread_id) {
+      for (size_t i = 0; i < kItemsPerThread; ++i) {
+        TestData data = {i, thread_id, static_cast<uint32_t>(i)};
+        queue.enqueue_wait(data);
+        successful_enqueues.fetch_add(1, std::memory_order_relaxed);
+      }
     };
 
     std::vector<std::thread> threads;
@@ -216,16 +216,16 @@ TEST(mpmc_multi_consumer) {
     std::atomic<size_t> items_consumed{0};
     std::atomic<size_t> next_item{0};
 
-    auto consumer = [&queue, &items_consumed, &next_item]() {
-        for (;;) {
-            const size_t idx = next_item.fetch_add(1, std::memory_order_relaxed);
-            if (idx >= kTotalItems) {
-                break;
-            }
-            TestData out;
-            queue.dequeue_wait(&out);
-            items_consumed.fetch_add(1, std::memory_order_relaxed);
+    auto consumer = [&queue, &items_consumed, &next_item, kTotalItems]() {
+      for (;;) {
+        const size_t idx = next_item.fetch_add(1, std::memory_order_relaxed);
+        if (idx >= kTotalItems) {
+          break;
         }
+        TestData out;
+        queue.dequeue_wait(&out);
+        items_consumed.fetch_add(1, std::memory_order_relaxed);
+      }
     };
 
     std::vector<std::thread> threads;
@@ -574,21 +574,21 @@ TEST(mpsc_ticket_batch_multi_producer_single_consumer_checksum) {
     producers.reserve(kProducers);
 
     for (uint32_t p = 0; p < kProducers; ++p) {
-        producers.emplace_back([&, p]() {
-            uint64_t batch[kBatch];
-            ready.fetch_add(1, std::memory_order_release);
-            while (!start.load(std::memory_order_acquire)) {
-                astral::platform::cpu_pause();
-            }
+      producers.emplace_back([&, p]() {
+        uint64_t batch[16];
+        ready.fetch_add(1, std::memory_order_release);
+        while (!start.load(std::memory_order_acquire)) {
+          astral::platform::cpu_pause();
+        }
 
-            const uint64_t base = static_cast<uint64_t>(p) * kItemsPerProducer;
-            for (uint64_t i = 0; i < kItemsPerProducer; i += kBatch) {
-                for (uint64_t j = 0; j < kBatch; ++j) {
-                    batch[j] = base + i + j;
-                }
-                ring.push_batch_wait(batch, kBatch);
-            }
-        });
+        const uint64_t base = static_cast<uint64_t>(p) * kItemsPerProducer;
+        for (uint64_t i = 0; i < kItemsPerProducer; i += kBatch) {
+          for (uint64_t j = 0; j < kBatch; ++j) {
+            batch[j] = base + i + j;
+          }
+          ring.push_batch_wait(batch, kBatch);
+        }
+      });
     }
 
     while (ready.load(std::memory_order_acquire) != kProducers) {
@@ -866,26 +866,26 @@ TEST(spsc_producer_consumer_pattern) {
     SpscRing<TestData, kCapacity> ring;
     std::atomic<size_t> items_consumed{0};
 
-    auto producer = [&ring]() {
-        for (size_t i = 0; i < kItemCount; ++i) {
-            TestData data = {i, 0, static_cast<uint32_t>(i)};
-            while (!ring.push(data)) {
-                // Spin wait
-            }
+    auto producer = [&ring, kItemCount]() {
+      for (size_t i = 0; i < kItemCount; ++i) {
+        TestData data = {i, 0, static_cast<uint32_t>(i)};
+        while (!ring.push(data)) {
+          // Spin wait
         }
+      }
     };
 
-    auto consumer = [&ring, &items_consumed]() {
-        TestData out;
-        size_t count = 0;
-        while (count < kItemCount) {
-            if (ring.pop(&out)) {
-                ASSERT_EQ(out.value, count);
-                ASSERT_EQ(out.sequence, count);
-                ++count;
-                items_consumed.fetch_add(1, std::memory_order_relaxed);
-            }
+    auto consumer = [&ring, &items_consumed, kItemCount]() {
+      TestData out;
+      size_t count = 0;
+      while (count < kItemCount) {
+        if (ring.pop(&out)) {
+          ASSERT_EQ(out.value, count);
+          ASSERT_EQ(out.sequence, count);
+          ++count;
+          items_consumed.fetch_add(1, std::memory_order_relaxed);
         }
+      }
     };
 
     std::thread producer_thread(producer);
@@ -911,21 +911,23 @@ TEST(spsc_ordering_preservation) {
 
     SpscRing<TestData, kCapacity> ring;
 
-    auto producer = [&ring]() {
-        for (size_t i = 0; i < kItemCount; ++i) {
-            TestData data = {i * 2, 0, static_cast<uint32_t>(i)};
-            while (!ring.push(data)) {}
+    auto producer = [&ring, kItemCount]() {
+      for (size_t i = 0; i < kItemCount; ++i) {
+        TestData data = {i * 2, 0, static_cast<uint32_t>(i)};
+        while (!ring.push(data)) {
         }
+      }
     };
 
-    auto consumer = [&ring]() {
-        TestData out;
-        for (size_t i = 0; i < kItemCount; ++i) {
-            while (!ring.pop(&out)) {}
-            // Verify ordering preserved
-            ASSERT_EQ(out.sequence, i);
-            ASSERT_EQ(out.value, i * 2);
+    auto consumer = [&ring, kItemCount]() {
+      TestData out;
+      for (size_t i = 0; i < kItemCount; ++i) {
+        while (!ring.pop(&out)) {
         }
+        // Verify ordering preserved
+        ASSERT_EQ(out.sequence, i);
+        ASSERT_EQ(out.value, i * 2);
+      }
     };
 
     std::thread producer_thread(producer);
