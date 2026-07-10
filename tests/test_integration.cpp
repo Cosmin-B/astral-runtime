@@ -228,6 +228,7 @@ static double get_monotonic_time_ms() {
  */
 TEST(runtime_init_shutdown) {
     AstralInit cfg = {0};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30; // 2GB
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFF; // Any NUMA node
@@ -283,6 +284,7 @@ TEST(e2e_inference_fixture_probe) {
     // Initialize Astral
     fprintf(stdout, "[INFO] Initializing Astral runtime...\n");
     AstralInit cfg = {0};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30; // 2GB
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFF; // Any NUMA node
@@ -472,6 +474,7 @@ TEST(cpu_seed_reset_deterministic_fixture_probe) {
     }
 
     AstralInit cfg = {0};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30; // 2GB
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFF;
@@ -571,6 +574,7 @@ TEST(cpu_json_schema_grammar_capability_probe) {
     }
 
     AstralInit cfg = {0};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30; // 2GB
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFF;
@@ -636,6 +640,7 @@ TEST(cpu_slots_fixture_probe) {
     set_process_env("ASTRAL_LLAMA_MAX_SLOTS", "2");
 
     AstralInit cfg = {0};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30; // 2GB
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFF;
@@ -692,6 +697,7 @@ TEST(cpu_slots_fixture_probe) {
 TEST(model_load_invalid_path) {
     // Initialize runtime
     AstralInit cfg = {0};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30;
     cfg.thread_count = 4;
     cfg.enable_hugepages = 0;
@@ -727,6 +733,7 @@ TEST(model_load_invalid_path) {
 TEST(session_create_null_model) {
     // Initialize runtime
     AstralInit cfg = {0};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30;
     cfg.thread_count = 4;
     cfg.enable_hugepages = 0;

@@ -192,6 +192,7 @@ void bench_embeddings_print(uint32_t dim_override, uint64_t iters) {
     }
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 512ull << 20;
     cfg.thread_count = bench_runtime_threads();
     cfg.numa_node = 0xFFFFFFFFu;

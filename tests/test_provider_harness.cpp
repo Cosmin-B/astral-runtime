@@ -215,6 +215,7 @@ static void run_provider_case(const ProviderCase& c) {
 
 TEST(provider_swap_harness_mock) {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -235,6 +236,7 @@ TEST(provider_swap_harness_cpu_fixture_probe) {
     }
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -260,6 +262,7 @@ TEST(provider_plugin_sample_load_and_run_probe) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 128ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -313,6 +316,7 @@ TEST(provider_plugin_cpu_llama_load_and_run_probe) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -341,6 +345,7 @@ TEST(provider_plugin_toy_load_and_run_probe) {
     ASSERT_EQ(err, ASTRAL_OK);
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -359,6 +364,7 @@ TEST(provider_plugin_toy_load_and_run_probe) {
 
 TEST(provider_override_unknown_fails_cleanly) {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);

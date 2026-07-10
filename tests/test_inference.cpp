@@ -268,6 +268,7 @@ void run_mock_lifecycle_session(AstralHandle model, uint32_t seed) {
 
 TEST(inference_session_create_destroy) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 32 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -294,6 +295,7 @@ TEST(inference_session_create_destroy) {
 
 TEST(inference_request_lifecycle_session_mock) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 32 * 1024 * 1024;
     cfg.thread_count = 2;
     ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -344,6 +346,7 @@ TEST(inference_request_lifecycle_conversation_mock) {
     constexpr uint32_t kRequestTimeoutMs = 1000;
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = kReserveBytes;
     cfg.thread_count = 2;
     ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -649,6 +652,7 @@ TEST(inference_mock_lifecycle_churn) {
 
     for (uint32_t cycle = 0; cycle < kRuntimeCycles; ++cycle) {
         AstralInit cfg = {};
+        cfg.size = sizeof(AstralInit);
         cfg.reserve_bytes = 64 * 1024 * 1024;
         cfg.thread_count = 2;
         const AstralErr init_err = astral_init(&cfg);
@@ -671,6 +675,7 @@ TEST(inference_mock_lifecycle_churn) {
 
 TEST(inference_conversation_multi_slot_isolation) {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 32 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -726,6 +731,7 @@ TEST(inference_conversation_multi_slot_isolation) {
 
 TEST(inference_conversation_grammar_gbnf_mock) {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 32 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -860,6 +866,7 @@ TEST(inference_agent_history_and_chat_mock) {
     constexpr uint32_t kMemoryCapacity = 8;
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = kReserveBytes;
     ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
 
@@ -1057,6 +1064,7 @@ TEST(inference_agents_share_model_executor_mock) {
     constexpr uint32_t kRequestTimeoutMs = 5000;
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = kReserveMiB * kBytesPerMiB;
     ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
 
@@ -1263,6 +1271,7 @@ TEST(inference_agents_cancel_one_shared_model_mock) {
     constexpr char kOtherPrompt[] = "finish normally";
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = kReserveMiB * kBytesPerMiB;
     ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
 
@@ -1360,6 +1369,7 @@ TEST(inference_agent_overflow_truncate_mock) {
                                                 kLineBreakBytes + kAssistantLabelBytes;
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = kReserveBytes;
     ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
 
@@ -1455,6 +1465,7 @@ TEST(inference_agent_overflow_truncate_mock) {
 
 TEST(inference_session_create_null_desc) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -1468,6 +1479,7 @@ TEST(inference_session_create_null_desc) {
 
 TEST(inference_session_create_null_output) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -1485,6 +1497,7 @@ TEST(inference_session_create_null_output) {
 
 TEST(inference_sampler_deterministic) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 32 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -1499,6 +1512,7 @@ TEST(inference_sampler_deterministic) {
 
 TEST(inference_sampler_diverse) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 32 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -1547,6 +1561,7 @@ TEST(inference_sampler_greedy_argmax_edges) {
 
 TEST(inference_session_feed_null_session) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -1564,6 +1579,7 @@ TEST(inference_session_feed_null_session) {
 
 TEST(inference_session_feed_empty) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -1583,6 +1599,7 @@ TEST(inference_session_feed_empty) {
 
 TEST(inference_session_decode_null_session) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -1599,6 +1616,7 @@ TEST(inference_session_decode_null_session) {
 
 TEST(inference_stream_read_null_session) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -1616,6 +1634,7 @@ TEST(inference_stream_read_null_session) {
 
 TEST(inference_stream_read_null_buffer) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -1647,6 +1666,7 @@ TEST(inference_stream_read_rejects_concurrent_consumers) {
     } cleanup;
 
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -1693,6 +1713,7 @@ TEST(inference_stream_read_rejects_concurrent_consumers) {
 
 TEST(inference_stream_timeout_and_eos_semantics) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -1746,6 +1767,7 @@ TEST(inference_stream_timeout_and_eos_semantics) {
 
 TEST(inference_model_caps_mock) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     AstralErr err = astral_init(&cfg);
     ASSERT_EQ(err, ASTRAL_OK);
@@ -1771,6 +1793,7 @@ TEST(inference_model_caps_mock) {
 
 TEST(inference_stop_sequences_suppress_output) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -1818,6 +1841,7 @@ TEST(inference_stop_sequences_suppress_output) {
 
 TEST(inference_stop_sequences_suppress_output_after_reset) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -1862,6 +1886,7 @@ TEST(inference_stop_sequences_suppress_output_after_reset) {
 
 TEST(inference_stop_sequences_bulk_set_utf8) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -1907,6 +1932,7 @@ TEST(inference_stop_sequences_bulk_set_utf8) {
 
 TEST(inference_sampler_repeat_penalty_mock) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -1981,6 +2007,7 @@ TEST(inference_sampler_repeat_penalty_mock) {
 
 TEST(inference_logprobs_meta_mock) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -2049,6 +2076,7 @@ TEST(inference_logprobs_meta_mock) {
 
 TEST(inference_grammar_gbnf_mock) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -2136,6 +2164,7 @@ TEST(inference_toolset_parse_and_bind_mock) {
     constexpr uint32_t kRagContextMaxBytes = 64;
 
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = kRuntimeReserveBytes;
     cfg.thread_count = kRuntimeThreads;
     AstralErr err = astral_init(&cfg);
@@ -3805,6 +3834,7 @@ TEST(inference_memory_index_q8_parallel_add_mock) {
   constexpr uint32_t kRuntimeThreads = 4;
 
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 64ull * 1024ull * 1024ull;
   cfg.thread_count = kRuntimeThreads;
   cfg.numa_node = 0xFFFFFFFFu;
@@ -3858,6 +3888,7 @@ TEST(inference_memory_index_graph_q8_parallel_preprocess_mock) {
   constexpr uint32_t kRuntimeThreads = 4;
 
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 64ull * 1024ull * 1024ull;
   cfg.thread_count = kRuntimeThreads;
   cfg.numa_node = 0xFFFFFFFFu;
@@ -3958,6 +3989,7 @@ TEST(inference_memory_index_flat_batch_parallel_mock) {
   constexpr uint32_t kRuntimeThreads = 8;
 
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 64ull * 1024ull * 1024ull;
   cfg.thread_count = kRuntimeThreads;
   cfg.numa_node = 0xFFFFFFFFu;
@@ -4022,6 +4054,7 @@ TEST(inference_memory_index_flat_e5m2_record_shards_top10_mock) {
   constexpr uint32_t kRuntimeThreads = 1;
 
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 64ull * 1024ull * 1024ull;
   cfg.thread_count = kRuntimeThreads;
   cfg.numa_node = 0xFFFFFFFFu;
@@ -5264,6 +5297,7 @@ TEST(inference_adapters_mock) {
     constexpr uint32_t kAttachedPrimaryAdapterCount = 1u;
 
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -5437,6 +5471,7 @@ TEST(inference_adapter_release_after_session_destroy_mock) {
     constexpr float kAdapterScale = 1.0f;
 
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = kReserveBytes;
     cfg.thread_count = kThreadCount;
     AstralErr err = astral_init(&cfg);
@@ -5479,6 +5514,7 @@ TEST(inference_adapter_release_after_session_destroy_mock) {
 
 TEST(inference_kv_state_roundtrip_mock) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -5536,6 +5572,7 @@ TEST(inference_kv_state_roundtrip_mock) {
 
 TEST(inference_slots_mock) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -5566,6 +5603,7 @@ TEST(inference_slots_mock) {
 
 TEST(inference_cancel_wait_and_reset_invariants) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -5653,6 +5691,7 @@ TEST(inference_cancel_wait_and_reset_invariants) {
 
 TEST(inference_cancel_unblocks_when_stream_not_drained) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -5715,6 +5754,7 @@ TEST(inference_cancel_unblocks_when_stream_not_drained) {
 
 TEST(inference_reset_clears_stream_buffer) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -5785,6 +5825,7 @@ TEST(inference_reset_clears_stream_buffer) {
 
 TEST(inference_session_stats_null_session) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -5798,6 +5839,7 @@ TEST(inference_session_stats_null_session) {
 
 TEST(inference_session_stats_null_output) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -5812,6 +5854,7 @@ TEST(inference_session_stats_null_output) {
 
 TEST(inference_embed_create_null_model) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -5825,6 +5868,7 @@ TEST(inference_embed_create_null_model) {
 
 TEST(inference_embed_create_null_output) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -5838,6 +5882,7 @@ TEST(inference_embed_create_null_output) {
 
 TEST(inference_embed_create_and_run_mock) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     astral_init(&cfg);

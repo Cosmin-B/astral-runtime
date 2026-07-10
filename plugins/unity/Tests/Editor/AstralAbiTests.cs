@@ -88,12 +88,10 @@ namespace Astral.Runtime.Tests
             Assert.AreEqual(8, Marshal.SizeOf<ulong>()); // AstralCaps
             Assert.AreEqual(IntPtr.Size == 8 ? 24 : 12, Marshal.SizeOf<AstralNative.AstralTokenizeRequest>());
 
-            int expectedInit = IntPtr.Size == 8 ? 64 : 48;
+            int expectedInit = IntPtr.Size == 8 ? 144 : 120;
             Assert.AreEqual(expectedInit, Marshal.SizeOf<AstralNative.AstralInit>());
             int expectedArenaDesc = IntPtr.Size == 8 ? 64 : 56;
-            int expectedInit2 = IntPtr.Size == 8 ? 136 : 112;
             Assert.AreEqual(expectedArenaDesc, Marshal.SizeOf<AstralNative.AstralArenaDesc>());
-            Assert.AreEqual(expectedInit2, Marshal.SizeOf<AstralNative.AstralInit2>());
 
             int expectedModelDesc = IntPtr.Size == 8 ? 168 : 116;
             Assert.AreEqual(expectedModelDesc, Marshal.SizeOf<AstralNative.AstralModelDesc>());
@@ -783,6 +781,7 @@ namespace Astral.Runtime.Tests
 
             var cfg = new AstralNative.AstralInit
             {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralInit>(),
                 reserve_bytes = 256UL << 20,
                 thread_count = 1,
                 numa_node = 0xFFFFFFFFu,
@@ -864,6 +863,7 @@ namespace Astral.Runtime.Tests
 
             var cfg = new AstralNative.AstralInit
             {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralInit>(),
                 reserve_bytes = 256UL << 20,
                 thread_count = 1,
                 numa_node = 0xFFFFFFFFu,
@@ -947,6 +947,7 @@ namespace Astral.Runtime.Tests
 
             var cfg = new AstralNative.AstralInit
             {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralInit>(),
                 reserve_bytes = 256UL << 20,
                 thread_count = 1,
                 numa_node = 0xFFFFFFFFu,
@@ -1034,6 +1035,7 @@ namespace Astral.Runtime.Tests
 
             var cfg = new AstralNative.AstralInit
             {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralInit>(),
                 reserve_bytes = 256UL << 20,
                 thread_count = 1,
                 numa_node = 0xFFFFFFFFu,
@@ -1136,6 +1138,7 @@ namespace Astral.Runtime.Tests
 
             var cfg = new AstralNative.AstralInit
             {
+                size = (uint)Marshal.SizeOf<AstralNative.AstralInit>(),
                 reserve_bytes = 256UL << 20,
                 thread_count = 1,
                 numa_node = 0xFFFFFFFFu,
@@ -1208,7 +1211,7 @@ namespace Astral.Runtime.Tests
                 };
 
                 ulong ticket;
-                err = AstralNative.astral_embed_enqueue_multimodal(emb, textSpan, (IntPtr)(&imageDesc), (IntPtr)(&audioDesc), out ticket);
+                err = AstralNative.astral_embed_enqueue_multimodal(emb, textSpan, (IntPtr)(&imageDesc), IntPtr.Zero, out ticket);
                 Assert.AreEqual(AstralNative.ASTRAL_OK, err);
 
                 using var outVec = new NativeArray<float>((int)dim, Allocator.Temp);

@@ -200,6 +200,7 @@ static void run_model_churn_soak(const ChurnConfig& cfg)
     for (uint32_t cycle = 0; cycle < cfg.Cycles; ++cycle)
     {
         AstralInit init{};
+        init.size = sizeof(AstralInit);
         init.reserve_bytes = 128ULL * 1024ULL * 1024ULL;
         init.thread_count = 2;
         init.numa_node = 0xFFFFFFFFu;

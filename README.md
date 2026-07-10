@@ -135,7 +135,7 @@ Astral’s integration tests/benches use GGUF models on disk. Download small def
 ./tests/model_downloader.sh --preset embed-minilm-q2k
 ```
 
-For embedded/no-filesystem deployments, use `astral_model_load2()` with `AstralModelDesc` and a `MEMORY` or custom `IO` source (single-file GGUF; `use_mmap` is forced OFF for these sources).
+For embedded/no-filesystem deployments, use `astral_model_load()` with `AstralModelDesc` and a `MEMORY` or custom `IO` source (single-file GGUF; `use_mmap` is forced OFF for these sources).
 
 #### Threading knobs (benchmarks)
 

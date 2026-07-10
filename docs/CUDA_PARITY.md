@@ -22,7 +22,7 @@ Parity is not just “it runs”. For a given model + prompt + sampler config:
   - Strategy: see `docs/CUDA_KERNEL_STRATEGY.md`.
 
 **Model load**
-- [ ] `astral_model_load()` / `astral_model_load2(PATH)` with `backend_name="cuda"` loads successfully.
+- [ ] `astral_model_load()` with a `PATH` source and `backend_name="cuda"` loads successfully.
 - [ ] `gpu_layers > 0` selects CUDA backend when enabled (and falls back to CPU when not built with CUDA).
 - [ ] Multi-file GGUF splits (if supported by llama.cpp) load via PATH.
 - [ ] Memory/IO sources: document the policy clearly (embedded builds must not require filesystem syscalls).

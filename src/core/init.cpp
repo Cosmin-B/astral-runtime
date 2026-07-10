@@ -1128,30 +1128,12 @@ extern "C" {
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_init(const AstralInit* cfg) {
     ASTRAL_ABI_TRY_BEGIN
-    if (cfg == nullptr) {
-        return ASTRAL_E_INVALID;
-    }
-
-    AstralInit2 cfg2{};
-    cfg2.base = *cfg;
-    cfg2.memory_mode = ASTRAL_MEMMODE_VM;
-    cfg2.flags = 0;
-    cfg2.arena = {};
-
-    return astral_init2(&cfg2);
-    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
-}
-
-ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
-    ASTRAL_ABI_TRY_BEGIN
     using namespace astral::core;
     using namespace astral::logging;
 
-    if (cfg2 == nullptr) {
-        return ASTRAL_E_INVALID;
+    if (cfg == nullptr || cfg->size < sizeof(AstralInit) || cfg->flags != 0u) {
+      return ASTRAL_E_INVALID;
     }
-
-    const AstralInit* cfg = &cfg2->base;
 
     // Check if already initialized
     if (g_runtime.initialized.exchange(true, std::memory_order_acq_rel)) {
@@ -1163,7 +1145,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
     g_runtime.log_cb = cfg->log_cb;
     g_runtime.log_user = cfg->log_user;
     g_runtime.numa_node = cfg->numa_node;
-    g_runtime.memory_mode = cfg2->memory_mode;
+    g_runtime.memory_mode = cfg->memory_mode;
 
     g_runtime.vm_base = nullptr;
     g_runtime.vm_size = 0;
@@ -1181,16 +1163,17 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
     // In arena modes, default to a single worker for determinism unless the user explicitly requests otherwise.
     g_runtime.thread_count = cfg->thread_count;
     if (g_runtime.thread_count == 0) {
-        if (cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_BORROWED || cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {
-            g_runtime.thread_count = 1;
-        } else {
-            const uint32_t hw = astral::platform::hardware_concurrency();
-            g_runtime.thread_count = hw > 0 ? hw : 4;
-        }
+      if (cfg->memory_mode == ASTRAL_MEMMODE_ARENA_BORROWED ||
+          cfg->memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {
+        g_runtime.thread_count = 1;
+      } else {
+        const uint32_t hw = astral::platform::hardware_concurrency();
+        g_runtime.thread_count = hw > 0 ? hw : 4;
+      }
     }
 
     // Memory mode setup
-    if (cfg2->memory_mode == ASTRAL_MEMMODE_VM) {
+    if (cfg->memory_mode == ASTRAL_MEMMODE_VM) {
 #if !ASTRAL_ENABLE_VIRTUAL_MEMORY
         return runtime_init_fail_cleanup(ASTRAL_E_UNSUPPORTED);
 #else
@@ -1248,74 +1231,77 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
         g_runtime.arena_heap.init_vm(vm_base, allocated_size, initial_commit);
 
 #endif
-    } else if (cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_BORROWED || cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {
-        const uint64_t arena_size_u64 = cfg2->arena.size;
-        if (arena_size_u64 == 0) {
-            return runtime_init_fail_cleanup(ASTRAL_E_INVALID);
+    } else if (cfg->memory_mode == ASTRAL_MEMMODE_ARENA_BORROWED ||
+               cfg->memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {
+      const uint64_t arena_size_u64 = cfg->arena.size;
+      if (arena_size_u64 == 0) {
+        return runtime_init_fail_cleanup(ASTRAL_E_INVALID);
+      }
+
+      void* arena_base = cfg->arena.base;
+      AstralAllocator arena_alloc = cfg->arena.alloc;
+      if (arena_alloc.alloc == nullptr) {
+        arena_alloc = cfg->sys_alloc;
+      }
+
+      if (cfg->memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {
+        if (arena_base == nullptr) {
+          if (arena_alloc.alloc) {
+            arena_base =
+                arena_alloc.alloc(arena_alloc.user, static_cast<size_t>(arena_size_u64), 16);
+          } else {
+            arena_base = ::malloc(static_cast<size_t>(arena_size_u64));
+          }
+          if (arena_base == nullptr) {
+            return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
+          }
         }
-
-        void* arena_base = cfg2->arena.base;
-        AstralAllocator arena_alloc = cfg2->arena.alloc;
-        if (arena_alloc.alloc == nullptr) {
-            arena_alloc = cfg->sys_alloc;
+        g_runtime.arena_owned = true;
+        g_runtime.arena_alloc = arena_alloc;
+      } else {
+        if (arena_base == nullptr) {
+          return runtime_init_fail_cleanup(ASTRAL_E_INVALID);
         }
+        g_runtime.arena_owned = false;
+        g_runtime.arena_alloc = {nullptr, nullptr, nullptr};
+      }
 
-        if (cfg2->memory_mode == ASTRAL_MEMMODE_ARENA_OWNED) {
-            if (arena_base == nullptr) {
-                if (arena_alloc.alloc) {
-                    arena_base = arena_alloc.alloc(arena_alloc.user, static_cast<size_t>(arena_size_u64), 16);
-                } else {
-                    arena_base = ::malloc(static_cast<size_t>(arena_size_u64));
-                }
-                if (arena_base == nullptr) {
-                    return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
-                }
-            }
-            g_runtime.arena_owned = true;
-            g_runtime.arena_alloc = arena_alloc;
-        } else {
-            if (arena_base == nullptr) {
-                return runtime_init_fail_cleanup(ASTRAL_E_INVALID);
-            }
-            g_runtime.arena_owned = false;
-            g_runtime.arena_alloc = {nullptr, nullptr, nullptr};
-        }
+      g_runtime.arena_base = arena_base;
+      g_runtime.arena_size = static_cast<size_t>(arena_size_u64);
+      g_runtime.enable_hugepages = false;
 
-        g_runtime.arena_base = arena_base;
-        g_runtime.arena_size = static_cast<size_t>(arena_size_u64);
-        g_runtime.enable_hugepages = false;
+      // Partition the arena for worker scratch + runtime heap + per-session scratch blocks.
+      uint8_t* cursor = static_cast<uint8_t*>(arena_base);
+      uint8_t* end = cursor + g_runtime.arena_size;
 
-        // Partition the arena for worker scratch + runtime heap + per-session scratch blocks.
-        uint8_t* cursor = static_cast<uint8_t*>(arena_base);
-        uint8_t* end = cursor + g_runtime.arena_size;
-
-        // Worker scratch: per worker thread (or 1 in threads-disabled builds).
-        const uint32_t scratch_workers =
+      // Worker scratch: per worker thread (or 1 in threads-disabled builds).
+      const uint32_t scratch_workers =
 #if ASTRAL_ENABLE_THREADS
-            (g_runtime.thread_count != 0 ? g_runtime.thread_count : 1u);
+          (g_runtime.thread_count != 0 ? g_runtime.thread_count : 1u);
 #else
-            1u;
+          1u;
 #endif
 
-        const uint32_t scratch_bytes_per_worker =
-            cfg2->arena._reserved[0] != 0 ? cfg2->arena._reserved[0] : (256u * 1024u);
-        const size_t scratch_total =
-            static_cast<size_t>(scratch_bytes_per_worker) * static_cast<size_t>(scratch_workers);
+      const uint32_t scratch_bytes_per_worker =
+          cfg->arena._reserved[0] != 0 ? cfg->arena._reserved[0] : (256u * 1024u);
+      const size_t scratch_total =
+          static_cast<size_t>(scratch_bytes_per_worker) * static_cast<size_t>(scratch_workers);
 
-        g_runtime.worker_scratch_base = nullptr;
-        g_runtime.worker_scratch_bytes = scratch_bytes_per_worker;
+      g_runtime.worker_scratch_base = nullptr;
+      g_runtime.worker_scratch_bytes = scratch_bytes_per_worker;
 
-        if (scratch_total != 0) {
-            cursor = static_cast<uint8_t*>(align_up_ptr(cursor, 64));
-            if (static_cast<size_t>(end - cursor) < scratch_total) {
-                return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
-            }
-            g_runtime.worker_scratch_base = cursor;
-            cursor += scratch_total;
+      if (scratch_total != 0) {
+        cursor = static_cast<uint8_t*>(align_up_ptr(cursor, 64));
+        if (static_cast<size_t>(end - cursor) < scratch_total) {
+          return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
         }
+        g_runtime.worker_scratch_base = cursor;
+        cursor += scratch_total;
+      }
 
         // Runtime heap (size-class allocator) for deterministic non-hot allocations.
-        const uint32_t heap_bytes = cfg2->arena._reserved[1] != 0 ? cfg2->arena._reserved[1] : (2u * 1024u * 1024u);
+        const uint32_t heap_bytes =
+            cfg->arena._reserved[1] != 0 ? cfg->arena._reserved[1] : (2u * 1024u * 1024u);
         g_runtime.arena_heap.reset();
         if (heap_bytes != 0) {
             cursor = static_cast<uint8_t*>(align_up_ptr(cursor, 64));
@@ -1328,13 +1314,15 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg2) {
 
         // Initialize deterministic per-session scratch blocks inside the remaining arena.
         constexpr uint32_t kDefaultSessionBlockSize = 2u * 1024u * 1024u;
-        const uint32_t block_size = cfg2->arena.session_block_size != 0 ? cfg2->arena.session_block_size : kDefaultSessionBlockSize;
-        const uint32_t block_count = cfg2->arena.session_block_count;
+        const uint32_t block_size = cfg->arena.session_block_size != 0
+                                        ? cfg->arena.session_block_size
+                                        : kDefaultSessionBlockSize;
+        const uint32_t block_count = cfg->arena.session_block_count;
         if (!session_pool_init_from_arena(cursor, static_cast<size_t>(end - cursor), block_size, block_count)) {
             return runtime_init_fail_cleanup(ASTRAL_E_NOMEM);
         }
     } else {
-        return runtime_init_fail_cleanup(ASTRAL_E_INVALID);
+      return runtime_init_fail_cleanup(ASTRAL_E_INVALID);
     }
 
     // Reset work queue state (tests may init/shutdown multiple times in one process).

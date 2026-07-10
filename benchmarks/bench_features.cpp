@@ -4424,6 +4424,7 @@ void bench_feature_surfaces_print(void) {
         const uint64_t iters = parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", kFeatureDefaultIters);
 
         AstralInit cfg{};
+        cfg.size = sizeof(AstralInit);
         cfg.reserve_bytes = kPromptCacheOnlyReserveBytes;
         cfg.thread_count = parse_u32_env("ASTRAL_BENCH_RUNTIME_THREADS", 1);
         cfg.numa_node = 0xFFFFFFFFu;
@@ -4446,6 +4447,7 @@ void bench_feature_surfaces_print(void) {
         const uint64_t iters = parse_u64_env("ASTRAL_BENCH_FEATURE_ITERS", kFeatureDefaultIters);
 
         AstralInit cfg{};
+        cfg.size = sizeof(AstralInit);
         cfg.reserve_bytes = kPromptCacheOnlyReserveBytes;
         cfg.thread_count = parse_u32_env("ASTRAL_BENCH_RUNTIME_THREADS", 1);
         cfg.numa_node = 0xFFFFFFFFu;
@@ -4502,6 +4504,7 @@ void bench_feature_surfaces_print(void) {
     const uint32_t tokens = parse_u32_env("ASTRAL_BENCH_FEATURE_TOKENS", 64);
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30;
     cfg.thread_count = parse_u32_env("ASTRAL_BENCH_RUNTIME_THREADS", 1);
     cfg.numa_node = 0xFFFFFFFFu;

@@ -40,6 +40,7 @@ void record_worker_assignment(void* user) {
 
 TEST(core_init_shutdown_cycle) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024; // 16MB
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFF; // Any node
@@ -88,6 +89,7 @@ TEST(core_init_null_config) {
 
 TEST(core_init_minimal_config) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 1024 * 1024; // 1MB minimum
 
     AstralErr err = astral_init(&cfg);
@@ -98,6 +100,7 @@ TEST(core_init_minimal_config) {
 
 TEST(core_double_init) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
 
     AstralErr err1 = astral_init(&cfg);
@@ -121,6 +124,7 @@ TEST(core_handle_null_invalid) {
 
 TEST(core_handle_validation) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -242,6 +246,7 @@ static void test_free(void* user, void* ptr, size_t size, size_t align) {
 
 TEST(core_custom_allocator) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     cfg.sys_alloc.alloc = test_alloc;
     cfg.sys_alloc.free = test_free;
@@ -265,6 +270,7 @@ static void test_log_callback(void* user, int level, AstralSpanU8 msg) {
 
 TEST(core_logging_callback) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     cfg.log_cb = test_log_callback;
     cfg.log_user = nullptr;

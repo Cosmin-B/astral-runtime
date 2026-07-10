@@ -31,6 +31,7 @@ AstralHandle load_mock_model() {
 
 void init_runtime() {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     cfg.thread_count = 1;
     cfg.numa_node = 0xFFFFFFFFu;

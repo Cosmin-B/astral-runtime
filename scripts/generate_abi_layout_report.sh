@@ -105,7 +105,6 @@ int main() {
     EMIT_STRUCT(AstralAllocator);
     EMIT_STRUCT(AstralInit);
     EMIT_STRUCT(AstralArenaDesc);
-    EMIT_STRUCT(AstralInit2);
     EMIT_STRUCT(AstralModelIO);
     EMIT_STRUCT(AstralModelPathResolveDesc);
     EMIT_STRUCT(AstralModelDesc);

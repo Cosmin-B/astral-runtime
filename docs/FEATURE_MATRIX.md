@@ -19,8 +19,8 @@ must map to local tests, release evidence, or an explicit caveat.
 | C ABI runtime (`astral_rt`) | ✅ | ✅ | ✅ |
 | Static lib | ✅ | ✅ | ✅ |
 | Shared lib | ✅ (optional) | ✅ (optional) | ✅ (optional) |
-| Virtual memory runtime (`astral_init`) | ✅ | ✅ | ❌ (use `astral_init2` arena) |
-| Arena init (`astral_init2`, owned/borrowed) | ✅ | ✅ | ✅ |
+| Virtual memory runtime (`astral_init`) | ✅ | ✅ | ❌ (use an arena mode) |
+| Arena init (`astral_init`, owned/borrowed) | ✅ | ✅ | ✅ |
 | Exceptions across ABI | ✅ (caught at ABI) | ✅ (caught at ABI) | ✅ (presets build with `ASTRAL_NO_EXCEPTIONS=ON`) |
 | Dynamic backends (`dlopen`/`LoadLibrary`) | ✅ (optional) | ✅ (optional) | ❌ (presets disable) |
 | JSON-schema grammar helper | ✅ (optional) | ✅ (optional) | ❌ (presets disable) |
@@ -56,9 +56,9 @@ Notes:
 | Model source | CPU-only (desktop) | CUDA build (desktop) | Embedded presets |
 |---|---:|---:|---:|
 | `PATH` (`astral_model_load`) | ✅ | ✅ | ✅ |
-| `PATH` (`astral_model_load2(PATH)`) | ✅ | ✅ | ✅ |
-| `MEMORY` (`astral_model_load2(MEMORY)`) | ⚠️ | ⚠️ | 🧪 |
-| `IO` (`astral_model_load2(IO)`) | ⚠️ | ⚠️ | 🧪 |
+| `PATH` (`astral_model_load`) | ✅ | ✅ | ✅ |
+| `MEMORY` (`astral_model_load`) | ⚠️ | ⚠️ | 🧪 |
+| `IO` (`astral_model_load`) | ⚠️ | ⚠️ | 🧪 |
 
 Caveats (MEMORY/IO):
 - Current llama.cpp no longer exposes an in-memory loader API that Astral can call directly, so CPU/CUDA providers currently **materialize to a temp file** and then call `llama_model_load_from_file` on desktop.

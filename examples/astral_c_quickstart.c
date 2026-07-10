@@ -34,6 +34,7 @@ static void print_err(const char* label, AstralErr err) {
 
 static AstralErr init_runtime(uint64_t reserve_bytes) {
     AstralInit init = {0};
+    init.size = sizeof(AstralInit);
     AstralErr err = ASTRAL_OK;
     init.reserve_bytes = reserve_bytes;
     init.thread_count = 0;
@@ -42,13 +43,10 @@ static AstralErr init_runtime(uint64_t reserve_bytes) {
 
     err = astral_init(&init);
     if (err == ASTRAL_E_UNSUPPORTED) {
-        AstralInit2 init2 = {0};
-        init2.base = init;
-        init2.memory_mode = ASTRAL_MEMMODE_ARENA_OWNED;
-        init2.arena.size = reserve_bytes;
-        init2.arena.session_block_size = 2u * 1024u * 1024u;
-        init2.arena.session_block_count = 0;
-        err = astral_init2(&init2);
+      init.memory_mode = ASTRAL_MEMMODE_ARENA_OWNED;
+      init.arena.size = reserve_bytes;
+      init.arena.session_block_size = 2u * 1024u * 1024u;
+      err = astral_init(&init);
     }
     return err;
 }

@@ -117,6 +117,7 @@ static void run_cpu_media_init_smoke(const char* label,
     }
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30;
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -161,6 +162,7 @@ static void run_cpu_media_init_smoke(const char* label,
 
 TEST(media_mock_session_conv) {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -229,6 +231,7 @@ TEST(media_mock_session_conv) {
 
 TEST(media_mock_embeddings) {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;

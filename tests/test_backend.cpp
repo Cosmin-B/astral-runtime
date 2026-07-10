@@ -271,6 +271,7 @@ void operator delete[](void* ptr, const std::nothrow_t&) noexcept {
 
 TEST(backend_cpu_auto_registration) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
 
     AstralErr err = astral_init(&cfg);
@@ -288,6 +289,7 @@ TEST(backend_cpu_auto_registration) {
 
 TEST(backend_selection_cpu) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -317,6 +319,7 @@ TEST(backend_selection_cpu) {
 
 TEST(backend_selection_gpu) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -346,6 +349,7 @@ TEST(backend_selection_gpu) {
 
 TEST(backend_cuda_registration_surface) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -386,6 +390,7 @@ TEST(backend_cuda_registration_surface) {
 
 TEST(backend_model_load_invalid_path) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -408,6 +413,7 @@ TEST(backend_model_load_invalid_path) {
 
 TEST(backend_model_load_null_desc) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -421,6 +427,7 @@ TEST(backend_model_load_null_desc) {
 
 TEST(backend_model_load_null_output) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     astral_init(&cfg);
 
@@ -440,6 +447,7 @@ TEST(backend_model_load_null_output) {
 
 TEST(backend_mock_provider_end_to_end) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -580,6 +588,7 @@ TEST(backend_remote_loopback_completion_and_embeddings) {
     ASSERT_TRUE(remote.start(true));
 
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -748,6 +757,7 @@ TEST(backend_remote_tokenize_falls_back_to_byte_tokens) {
     ASSERT_TRUE(remote.start(true));
 
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     cfg.thread_count = 1;
     AstralErr err = astral_init(&cfg);
@@ -802,6 +812,7 @@ TEST(backend_remote_stream_falls_back_to_completion) {
     ASSERT_TRUE(remote.start(true));
 
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 1;
     AstralErr err = astral_init(&cfg);
@@ -886,6 +897,7 @@ TEST(backend_remote_stream_accepts_sse_data_frames) {
   ASSERT_TRUE(remote.start(true));
 
   AstralInit cfg = {};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 64 * 1024 * 1024;
   cfg.thread_count = 1;
   AstralErr err = astral_init(&cfg);
@@ -972,6 +984,7 @@ TEST(backend_remote_stream_extracts_sse_json_text) {
   ASSERT_TRUE(remote.start(true));
 
   AstralInit cfg = {};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 64 * 1024 * 1024;
   cfg.thread_count = 1;
   AstralErr err = astral_init(&cfg);
@@ -1057,6 +1070,7 @@ TEST(backend_remote_stream_overflow_reports_error) {
   ASSERT_TRUE(remote.start(true));
 
   AstralInit cfg = {};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 64 * 1024 * 1024;
   cfg.thread_count = 1;
   AstralErr err = astral_init(&cfg);
@@ -1120,6 +1134,7 @@ TEST(backend_remote_auth_failure) {
     ASSERT_TRUE(remote.start(true));
 
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     cfg.thread_count = 1;
     AstralErr err = astral_init(&cfg);
@@ -1151,6 +1166,7 @@ TEST(backend_remote_auth_failure) {
 
 TEST(backend_remote_https_requires_tls_build) {
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     cfg.thread_count = 1;
     AstralErr err = astral_init(&cfg);
@@ -1185,6 +1201,7 @@ TEST(backend_remote_health_retry_and_timeout_status) {
     ASSERT_TRUE(retry_remote.start(true));
 
     AstralInit cfg = {};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     cfg.thread_count = 1;
     AstralErr err = astral_init(&cfg);

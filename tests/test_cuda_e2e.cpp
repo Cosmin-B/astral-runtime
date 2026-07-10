@@ -442,6 +442,7 @@ TEST(cuda_e2e_features_fixture_probe) {
     }
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30;
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFFu;

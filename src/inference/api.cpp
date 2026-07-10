@@ -932,15 +932,6 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_load(
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
 
-ASTRAL_API AstralErr ASTRAL_CALL astral_model_load2(
-    const AstralModelDesc* desc,
-    AstralHandle* out_model
-) {
-    ASTRAL_ABI_TRY_BEGIN
-    return model_load_impl(desc, out_model);
-    ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
-}
-
 ASTRAL_API void ASTRAL_CALL astral_model_release(AstralHandle model) {
     ASTRAL_ABI_TRY_BEGIN
     if (model == 0) {

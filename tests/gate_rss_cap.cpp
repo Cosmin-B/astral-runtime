@@ -122,6 +122,7 @@ TEST(gate_rss_cap) {
     }
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;

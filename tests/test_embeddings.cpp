@@ -145,6 +145,7 @@ static float mock_embedding_first_value(const char* text) {
 
 TEST(embeddings_mock_e2e) {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -211,6 +212,7 @@ TEST(embeddings_mock_e2e) {
 
 TEST(embeddings_request_ticket_state_mock) {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -262,6 +264,7 @@ TEST(embeddings_mock_queue_pressure) {
     constexpr uint32_t kCanceledIndex = 3;
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 256ULL * 1024ULL * 1024ULL;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -382,6 +385,7 @@ TEST(embeddings_cpu_e2e_fixture_probe) {
     }
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30;
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -460,6 +464,7 @@ TEST(embeddings_cpu_throughput_fixture_probe) {
     }
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30;
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFFu;

@@ -183,6 +183,7 @@ private:
         Allocator.user = nullptr;
 
         AstralInit InitCfg{};
+        InitCfg.size = sizeof(AstralInit);
         InitCfg.sys_alloc = Allocator;
         InitCfg.log_cb = &UELog;
         InitCfg.log_user = nullptr;
@@ -191,11 +192,8 @@ private:
         InitCfg.numa_node = 0xFFFFFFFFu;
         InitCfg.enable_hugepages = 0;
 
-        AstralInit2 ExtendedInit{};
-        ExtendedInit.base = InitCfg;
-        ExtendedInit.memory_mode = ASTRAL_MEMMODE_VM;
-
-        const AstralErr Err = astral_init2(&ExtendedInit);
+        InitCfg.memory_mode = ASTRAL_MEMMODE_VM;
+        const AstralErr Err = astral_init(&InitCfg);
         if (Err != ASTRAL_OK)
         {
             bInitialized = false;

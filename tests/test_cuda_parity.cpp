@@ -137,6 +137,7 @@ static bool token_in_top(const AstralTokenMeta& ev, uint32_t token, uint32_t* ou
 
 TEST(cuda_parity_scaffold) {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 512ull * 1024ull * 1024ull;
     cfg.thread_count = 2;
     cfg.numa_node = 0xFFFFFFFFu;

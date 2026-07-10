@@ -584,28 +584,6 @@ typedef void (*AstralLogFn)(void* user, int level, AstralSpanU8 msg);
 // Initialization
 // ============================================================================
 
-/**
- * Initialization configuration.
- */
-typedef struct AstralInit {
-    AstralAllocator sys_alloc;   /** System allocator (optional; use internal if null) */
-    AstralLogFn log_cb;          /** Logging callback (optional) */
-    void* log_user;              /** User data for log callback */
-#if !(defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8))
-    // Ensure `reserve_bytes` is 8-byte aligned on 32-bit ABIs.
-    uint32_t _padding0;
-#endif
-    uint64_t reserve_bytes;      /** Virtual memory to reserve (e.g., 2GB = 2ULL << 30) */
-    uint32_t thread_count;       /** Worker threads (0 = auto-detect) */
-    uint32_t numa_node;          /** NUMA node to pin memory (0xFFFFFFFF = any) */
-    uint8_t enable_hugepages;    /** Try huge pages (2MB/1GB) if available */
-    uint8_t _padding1[7];        /** Reserved/padding (keeps layout stable) */
-} AstralInit;
-
-// ============================================================================
-// Initialization (Extended)
-// ============================================================================
-
 typedef uint32_t AstralMemoryMode;
 enum {
     // Default behavior: reserve/commit virtual memory using platform VM primitives.
@@ -647,23 +625,43 @@ typedef struct AstralArenaDesc {
     // - _reserved[1]: runtime_heap_bytes (default: 2 MiB)
     // - _reserved[2..3]: reserved for future use
     uint32_t _reserved[4];
+#if !(defined(__LP64__) || defined(_WIN64) ||                                                      \
+      (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8))
+    uint32_t _padding1;
+#endif
 } AstralArenaDesc;
 
 /**
- * Extended initialization configuration supporting embedded-friendly arena modes.
+ * Initialization configuration.
  *
  * Notes:
- * - For ASTRAL_MEMMODE_VM, AstralInit.reserve_bytes behaves as in astral_init().
+ * - `size` must be set to sizeof(AstralInit).
+ * - ASTRAL_MEMMODE_VM is the zero/default memory mode.
  * - For ASTRAL_MEMMODE_ARENA_*, reserve_bytes is ignored; use AstralArenaDesc.size instead.
  * - enable_hugepages is ignored in arena modes.
- * - In arena modes, if `base.thread_count` is 0, Astral defaults to 1 worker thread for determinism.
+ * - In arena modes, if thread_count is 0, Astral defaults to 1 worker thread for determinism.
  */
-typedef struct AstralInit2 {
-    AstralInit base;
-    AstralMemoryMode memory_mode;
-    uint32_t flags;
-    AstralArenaDesc arena;
-} AstralInit2;
+typedef struct AstralInit {
+  uint32_t size;
+  uint32_t flags;
+
+  AstralAllocator sys_alloc; /** System allocator (optional; use internal if null). */
+  AstralLogFn log_cb;        /** Logging callback (optional). */
+  void* log_user;            /** User data for log callback. */
+#if !(defined(__LP64__) || defined(_WIN64) ||                                                      \
+      (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8))
+  uint32_t _padding0;
+#endif
+  uint64_t reserve_bytes;   /** Virtual memory to reserve in VM mode. */
+  uint32_t thread_count;    /** Worker threads (0 = mode-specific default). */
+  uint32_t numa_node;       /** NUMA node to pin memory (0xFFFFFFFF = any). */
+  uint8_t enable_hugepages; /** Try huge pages in VM mode. */
+  uint8_t _padding1[7];
+
+  AstralMemoryMode memory_mode;
+  uint32_t _padding2;
+  AstralArenaDesc arena;
+} AstralInit;
 
 // Compile-time validation for critical structs
 ASTRAL_STATIC_ASSERT(sizeof(AstralAllocator) == sizeof(void*) * 3, "AstralAllocator layout mismatch");
@@ -679,16 +677,6 @@ ASTRAL_STATIC_ASSERT(sizeof(AstralHandle) == 8, "AstralHandle must be 64-bit");
  * @return ASTRAL_OK on success; ASTRAL_E_INVALID if cfg is NULL; error code on failure
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_init(const AstralInit* cfg);
-
-/**
- * Initialize Astral runtime (extended).
- *
- * Prefer this API for embedded/robotics targets that cannot rely on virtual memory.
- *
- * @param cfg Initialization configuration (must not be NULL)
- * @return ASTRAL_OK on success; error code on failure
- */
-ASTRAL_API AstralErr ASTRAL_CALL astral_init2(const AstralInit2* cfg);
 
 /**
  * Shutdown Astral runtime.
@@ -1213,23 +1201,18 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_path_resolve(
     uint32_t* out_len);
 
 /**
- * Load a GGUF model.
- * Thread-safety: Safe to call from multiple threads.
- *
- * @param desc Model configuration (must not be NULL)
- * @param out_model Output: model handle (must not be NULL; valid only if return is ASTRAL_OK)
- * @return ASTRAL_OK on success; ASTRAL_E_INVALID if desc/out_model is NULL; error code on failure
- */
-ASTRAL_API AstralErr ASTRAL_CALL astral_model_load(const AstralModelDesc* desc, AstralHandle* out_model);
-
-/**
  * Load a model from a selected source (path / memory / custom IO).
  *
  * Notes:
  * - This is an embedded-friendly surface; not all backends support all sources yet.
  * - If a source is unsupported by the selected backend, returns ASTRAL_E_UNSUPPORTED.
+ *
+ * @param desc Model configuration (must not be NULL)
+ * @param out_model Output: model handle (must not be NULL; valid only if return is ASTRAL_OK)
+ * @return ASTRAL_OK on success; ASTRAL_E_INVALID if desc/out_model is NULL; error code on failure
  */
-ASTRAL_API AstralErr ASTRAL_CALL astral_model_load2(const AstralModelDesc* desc, AstralHandle* out_model);
+ASTRAL_API AstralErr ASTRAL_CALL astral_model_load(const AstralModelDesc* desc,
+                                                   AstralHandle* out_model);
 
 /**
  * Release a model.
@@ -1388,39 +1371,51 @@ typedef struct AstralAdapterInfo {
 
 // Compile-time layout validation for configs.
 #if defined(__LP64__) || defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
-  ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 64, "AstralInit must be 64 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 168, "AstralModelDesc must be 168 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralModelPathResolveDesc) == ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_64, "AstralModelPathResolveDesc must be 96 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 40, "AstralConvDesc must be 40 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralConvStats) == 40, "AstralConvStats must be 40 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 24, "AstralAdapterDesc must be 24 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 24, "AstralAdapterInfo must be 24 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 64, "AstralImageDesc must be 64 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 72, "AstralAudioDesc must be 72 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 104, "AstralModelMediaDesc must be 104 bytes on 64-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralMediaInfo) == 28, "AstralMediaInfo must be 28 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralArenaDesc) == 64, "AstralArenaDesc must be 64 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 144, "AstralInit must be 144 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 168, "AstralModelDesc must be 168 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralModelPathResolveDesc) == ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_64,
+                     "AstralModelPathResolveDesc must be 96 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32,
+                     "AstralSessionDesc must be 32 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
+ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
+ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 40, "AstralConvDesc must be 40 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralConvStats) == 40, "AstralConvStats must be 40 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
+ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
+ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 24,
+                     "AstralAdapterDesc must be 24 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 24,
+                     "AstralAdapterInfo must be 24 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 64, "AstralImageDesc must be 64 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 72, "AstralAudioDesc must be 72 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 104,
+                     "AstralModelMediaDesc must be 104 bytes on 64-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMediaInfo) == 28, "AstralMediaInfo must be 28 bytes on 64-bit");
 #else
-  ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 48, "AstralInit must be 48 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 116, "AstralModelDesc must be 116 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralModelPathResolveDesc) == ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_32, "AstralModelPathResolveDesc must be 56 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32, "AstralSessionDesc must be 32 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 36, "AstralConvDesc must be 36 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralConvStats) == 40, "AstralConvStats must be 40 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12, "AstralAdapterDesc must be 12 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 20, "AstralAdapterInfo must be 20 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 52, "AstralImageDesc must be 52 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 60, "AstralAudioDesc must be 60 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 72, "AstralModelMediaDesc must be 72 bytes on 32-bit");
-  ASTRAL_STATIC_ASSERT(sizeof(AstralMediaInfo) == 28, "AstralMediaInfo must be 28 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralArenaDesc) == 56, "AstralArenaDesc must be 56 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 120, "AstralInit must be 120 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 116, "AstralModelDesc must be 116 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralModelPathResolveDesc) == ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_32,
+                     "AstralModelPathResolveDesc must be 56 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32,
+                     "AstralSessionDesc must be 32 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
+ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
+ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 36, "AstralConvDesc must be 36 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralConvStats) == 40, "AstralConvStats must be 40 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
+ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
+ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12,
+                     "AstralAdapterDesc must be 12 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 20,
+                     "AstralAdapterInfo must be 20 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 52, "AstralImageDesc must be 52 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 60, "AstralAudioDesc must be 60 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 72,
+                     "AstralModelMediaDesc must be 72 bytes on 32-bit");
+ASTRAL_STATIC_ASSERT(sizeof(AstralMediaInfo) == 28, "AstralMediaInfo must be 28 bytes on 32-bit");
 #endif
 
 

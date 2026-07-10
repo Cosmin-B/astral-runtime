@@ -64,11 +64,11 @@ Controls whether Astral is allowed to use platform virtual memory APIs (`vm_rese
 
 - OFF (embedded presets):
   - VM-backed `astral_init()` / `ASTRAL_MEMMODE_VM` is unavailable (returns `ASTRAL_E_UNSUPPORTED`).
-  - Use `astral_init2()` with an arena memory mode instead (see below).
+  - Use `astral_init()` with an arena memory mode instead (see below).
 
 ## Arena mode (no VM dependency)
 
-Use the `astral_init2()` surface with one of the arena modes:
+Use `astral_init()` with one of the arena modes:
 
 - `ASTRAL_MEMMODE_ARENA_BORROWED`: you provide `arena.base` + `arena.size`.
 - `ASTRAL_MEMMODE_ARENA_OWNED`: Astral allocates the arena (or you provide `arena.base`).
@@ -89,7 +89,7 @@ These are used to reserve a small front slice of the arena for:
 
 ## Model loading source contracts
 
-Astral exposes `astral_model_load2()` with `AstralModelDesc` to select a model source (`PATH` / `MEMORY` / custom `IO`) so embedded targets can avoid filesystem paths.
+Astral exposes `astral_model_load()` with `AstralModelDesc` to select a model source (`PATH` / `MEMORY` / custom `IO`) so embedded targets can avoid filesystem paths.
 
 Status:
 - The public ABI and mock provider support `MEMORY` and `IO` sources without requiring a filesystem path.

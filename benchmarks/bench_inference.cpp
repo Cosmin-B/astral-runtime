@@ -493,6 +493,7 @@ void bench_inference_print(uint32_t warmup_tokens, uint32_t measure_tokens) {
     const uint32_t max_batch_tokens = parse_u32_env("ASTRAL_BENCH_MAX_BATCH_TOKENS", 64);
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ull << 30; // 2GB address space (virtual reserve).
     cfg.thread_count = bench_runtime_threads();
     cfg.numa_node = 0xFFFFFFFFu;    // any

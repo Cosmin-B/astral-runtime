@@ -2,8 +2,8 @@
  * test_model_sources.cpp - Model source selection tests (PATH/MEMORY/IO)
  *
  * Validates:
- * - astral_model_load2 supports MEMORY and IO sources for backends that opt in
- * - surfaces are usable under arena-backed init2 (embedded-friendly)
+ * - astral_model_load supports MEMORY and IO sources for backends that opt in
+ * - surfaces are usable under arena-backed initialization (embedded-friendly)
  */
 
 #include "../include/astral_rt.h"
@@ -106,18 +106,17 @@ static uint32_t ASTRAL_CALL io_read_at_mem(void* user, uint64_t offset, void* ds
     return n;
 }
 
-static AstralInit2 make_small_borrowed_arena_cfg(void* base, uint64_t size) {
-    AstralInit2 cfg{};
-    cfg.base.thread_count = 0;
-    cfg.base.numa_node = 0xFFFFFFFFu;
-    cfg.base.enable_hugepages = 0;
+static AstralInit make_small_borrowed_arena_cfg(void* base, uint64_t size) {
+  AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
+  cfg.numa_node = 0xFFFFFFFFu;
 
-    cfg.memory_mode = ASTRAL_MEMMODE_ARENA_BORROWED;
-    cfg.arena.base = base;
-    cfg.arena.size = size;
-    cfg.arena.session_block_size = 2u * 1024u * 1024u;
-    cfg.arena.session_block_count = 1;
-    return cfg;
+  cfg.memory_mode = ASTRAL_MEMMODE_ARENA_BORROWED;
+  cfg.arena.base = base;
+  cfg.arena.size = size;
+  cfg.arena.session_block_size = 2u * 1024u * 1024u;
+  cfg.arena.session_block_count = 1;
+  return cfg;
 }
 
 static AstralModelDesc make_desc_common_mock() {
@@ -148,56 +147,56 @@ static AstralModelDesc make_desc_common_cpu() {
 
 } // namespace
 
-TEST(model_load2_memory_mock_smoke) {
-    alignas(64) static uint8_t arena[8u * 1024u * 1024u];
-    const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
-    ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
+TEST(model_load_memory_mock_smoke) {
+  alignas(64) static uint8_t arena[8u * 1024u * 1024u];
+  const AstralInit cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
 
-    AstralModelDesc desc = make_desc_common_mock();
-    desc.source_kind = ASTRAL_MODEL_SOURCE_MEMORY;
-    desc.model_bytes = span_from_cstr("sampler");
+  AstralModelDesc desc = make_desc_common_mock();
+  desc.source_kind = ASTRAL_MODEL_SOURCE_MEMORY;
+  desc.model_bytes = span_from_cstr("sampler");
 
-    AstralHandle model = 0;
-    ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
-    ASSERT_TRUE(astral_handle_valid(model));
+  AstralHandle model = 0;
+  ASSERT_EQ(astral_model_load(&desc, &model), ASTRAL_OK);
+  ASSERT_TRUE(astral_handle_valid(model));
 
-    AstralModelInfo info{};
-    ASSERT_EQ(astral_model_info(model, &info), ASTRAL_OK);
-    ASSERT_LT(info.token_eos, 0);
+  AstralModelInfo info{};
+  ASSERT_EQ(astral_model_info(model, &info), ASTRAL_OK);
+  ASSERT_LT(info.token_eos, 0);
 
-    astral_model_release(model);
-    astral_shutdown();
+  astral_model_release(model);
+  astral_shutdown();
 }
 
-TEST(model_load2_io_mock_smoke) {
-    alignas(64) static uint8_t arena[8u * 1024u * 1024u];
-    const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
-    ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
+TEST(model_load_io_mock_smoke) {
+  alignas(64) static uint8_t arena[8u * 1024u * 1024u];
+  const AstralInit cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
 
-    const char* tag = "infinite";
-    IoString io_src{};
-    io_src.data = reinterpret_cast<const uint8_t*>(tag);
-    io_src.len = static_cast<uint32_t>(std::strlen(tag));
+  const char* tag = "infinite";
+  IoString io_src{};
+  io_src.data = reinterpret_cast<const uint8_t*>(tag);
+  io_src.len = static_cast<uint32_t>(std::strlen(tag));
 
-    AstralModelDesc desc = make_desc_common_mock();
-    desc.source_kind = ASTRAL_MODEL_SOURCE_IO;
-    desc.io.user = &io_src;
-    desc.io.size = io_size_string;
-    desc.io.read_at = io_read_at_string;
+  AstralModelDesc desc = make_desc_common_mock();
+  desc.source_kind = ASTRAL_MODEL_SOURCE_IO;
+  desc.io.user = &io_src;
+  desc.io.size = io_size_string;
+  desc.io.read_at = io_read_at_string;
 
-    AstralHandle model = 0;
-    ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
-    ASSERT_TRUE(astral_handle_valid(model));
+  AstralHandle model = 0;
+  ASSERT_EQ(astral_model_load(&desc, &model), ASTRAL_OK);
+  ASSERT_TRUE(astral_handle_valid(model));
 
-    AstralModelInfo info{};
-    ASSERT_EQ(astral_model_info(model, &info), ASTRAL_OK);
-    ASSERT_LT(info.token_eos, 0);
+  AstralModelInfo info{};
+  ASSERT_EQ(astral_model_info(model, &info), ASTRAL_OK);
+  ASSERT_LT(info.token_eos, 0);
 
-    astral_model_release(model);
-    astral_shutdown();
+  astral_model_release(model);
+  astral_shutdown();
 }
 
-TEST(model_load2_memory_cpu_smoke) {
+TEST(model_load_memory_cpu_smoke) {
 #if !ASTRAL_ENABLE_VIRTUAL_MEMORY
   SKIP_TEST("CPU MEMORY source requires virtual memory support");
 #endif
@@ -208,8 +207,8 @@ TEST(model_load2_memory_cpu_smoke) {
   }
 
   alignas(64) static uint8_t arena[16u * 1024u * 1024u];
-  const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
-  ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
+  const AstralInit cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
 
   // Load a real GGUF model from the test corpus into memory, then load via MEMORY source.
   AstralModelDesc desc = make_desc_common_cpu();
@@ -218,7 +217,7 @@ TEST(model_load2_memory_cpu_smoke) {
   desc.model_bytes.len = static_cast<uint32_t>(bytes.size());
 
   AstralHandle model = 0;
-  ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
+  ASSERT_EQ(astral_model_load(&desc, &model), ASTRAL_OK);
   ASSERT_TRUE(astral_handle_valid(model));
 
   AstralModelInfo info{};
@@ -229,7 +228,7 @@ TEST(model_load2_memory_cpu_smoke) {
   astral_shutdown();
 }
 
-TEST(model_load2_io_cpu_smoke) {
+TEST(model_load_io_cpu_smoke) {
 #if !ASTRAL_ENABLE_VIRTUAL_MEMORY
   SKIP_TEST("CPU IO source requires virtual memory support");
 #endif
@@ -240,8 +239,8 @@ TEST(model_load2_io_cpu_smoke) {
   }
 
   alignas(64) static uint8_t arena[16u * 1024u * 1024u];
-  const AstralInit2 cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
-  ASSERT_EQ(astral_init2(&cfg), ASTRAL_OK);
+  const AstralInit cfg = make_small_borrowed_arena_cfg(arena, sizeof(arena));
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
 
   IoMem io_src{};
   io_src.data = bytes.data();
@@ -254,7 +253,7 @@ TEST(model_load2_io_cpu_smoke) {
   desc.io.read_at = io_read_at_mem;
 
   AstralHandle model = 0;
-  ASSERT_EQ(astral_model_load2(&desc, &model), ASTRAL_OK);
+  ASSERT_EQ(astral_model_load(&desc, &model), ASTRAL_OK);
   ASSERT_TRUE(astral_handle_valid(model));
 
   AstralModelInfo info{};

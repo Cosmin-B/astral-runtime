@@ -78,6 +78,7 @@ TEST(continuous_batching_mock_slot_fairness) {
     constexpr uint32_t kSlots = 4;
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 64 * 1024 * 1024;
     cfg.thread_count = 2;
     AstralErr err = astral_init(&cfg);
@@ -233,6 +234,7 @@ TEST(continuous_batching_multi_conv_cpu_fixture_probe) {
     }
 
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 2ULL << 30;
     cfg.thread_count = 4;
     cfg.numa_node = 0xFFFFFFFFu;

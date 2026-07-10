@@ -370,13 +370,28 @@ namespace Astral.Runtime
         [StructLayout(LayoutKind.Sequential)]
         public struct AstralInit
         {
+            public uint size;
+            public uint flags;
             public AstralAllocator sys_alloc;   // System allocator (optional)
             public IntPtr log_cb;               // LogFn callback
             public IntPtr log_user;             // User data for log callback
+#if !UNITY_64
+            private uint _padding0;
+#endif
             public ulong reserve_bytes;         // Virtual memory to reserve
             public uint thread_count;           // Worker threads (0 = auto)
             public uint numa_node;              // NUMA node (0xFFFFFFFF = any)
             public byte enable_hugepages;       // Try huge pages
+            private byte _padding1_0;
+            private byte _padding1_1;
+            private byte _padding1_2;
+            private byte _padding1_3;
+            private byte _padding1_4;
+            private byte _padding1_5;
+            private byte _padding1_6;
+            public AstralMemoryMode memory_mode;
+            private uint _padding2;
+            public AstralArenaDesc arena;
         }
 
         public enum AstralMemoryMode : uint
@@ -400,15 +415,6 @@ namespace Astral.Runtime
             public uint reserved3;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        public struct AstralInit2
-        {
-            public AstralInit base_config;
-            public AstralMemoryMode memory_mode;
-            public uint flags;
-            public AstralArenaDesc arena;
-        }
-
         /// <summary>
         /// Initialize Astral runtime.
         /// Must be called once before any other Astral functions.
@@ -416,9 +422,6 @@ namespace Astral.Runtime
         /// </summary>
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_init(ref AstralInit cfg);
-
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int astral_init2(ref AstralInit2 cfg);
 
         /// <summary>
         /// Shutdown Astral runtime.
@@ -595,9 +598,6 @@ namespace Astral.Runtime
         /// </summary>
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_model_load(ref AstralModelDesc desc, out AstralHandle out_model);
-
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int astral_model_load2(ref AstralModelDesc desc, out AstralHandle out_model);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int astral_model_path_resolve(

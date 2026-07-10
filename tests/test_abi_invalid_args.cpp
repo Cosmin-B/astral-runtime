@@ -58,6 +58,7 @@ void assert_path_resolves_to(AstralModelPathResolveDesc desc, const char* expect
 
 AstralInit small_init() {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 16 * 1024 * 1024;
     cfg.thread_count = 1;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -186,7 +187,13 @@ TEST(abi_invalid_args_core_and_backend) {
     astral_version(nullptr, nullptr, nullptr);
 
     ASSERT_EQ(astral_init(nullptr), ASTRAL_E_INVALID);
-    ASSERT_EQ(astral_init2(nullptr), ASTRAL_E_INVALID);
+
+    AstralInit invalid_cfg = small_init();
+    invalid_cfg.size = 0;
+    ASSERT_EQ(astral_init(&invalid_cfg), ASTRAL_E_INVALID);
+    invalid_cfg = small_init();
+    invalid_cfg.flags = 1;
+    ASSERT_EQ(astral_init(&invalid_cfg), ASTRAL_E_INVALID);
 
     AstralInit cfg = small_init();
     ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -206,12 +213,10 @@ TEST(abi_invalid_args_model_surface) {
 
     AstralHandle model = 0;
     ASSERT_EQ(astral_model_load(nullptr, &model), ASTRAL_E_INVALID);
-    ASSERT_EQ(astral_model_load2(nullptr, &model), ASTRAL_E_INVALID);
 
     AstralModelDesc model_desc{};
     model_desc.size = sizeof(AstralModelDesc);
     ASSERT_EQ(astral_model_load(&model_desc, nullptr), ASTRAL_E_INVALID);
-    ASSERT_EQ(astral_model_load2(&model_desc, nullptr), ASTRAL_E_INVALID);
 
     AstralModelInfo info{};
     AstralCaps caps = 0;

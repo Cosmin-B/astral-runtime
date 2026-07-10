@@ -114,20 +114,22 @@ static bool parse_bool_env(const char* key, bool fallback) {
 static AstralErr init_gate_runtime() {
 #if ASTRAL_ENABLE_VIRTUAL_MEMORY
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = kRuntimeReserveBytes;
     cfg.thread_count = kGateThreadCount;
     cfg.numa_node = kAnyNumaNode;
     cfg.enable_hugepages = 0;
     return astral_init(&cfg);
 #else
-    AstralInit2 cfg{};
-    cfg.base.thread_count = kGateThreadCount;
-    cfg.memory_mode = ASTRAL_MEMMODE_ARENA_BORROWED;
-    cfg.arena.base = g_embedded_arena;
-    cfg.arena.size = kEmbeddedArenaBytes;
-    cfg.arena.session_block_size = kEmbeddedSessionBlockBytes;
-    cfg.arena.session_block_count = kEmbeddedSessionBlocks;
-    return astral_init2(&cfg);
+  AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
+  cfg.thread_count = kGateThreadCount;
+  cfg.memory_mode = ASTRAL_MEMMODE_ARENA_BORROWED;
+  cfg.arena.base = g_embedded_arena;
+  cfg.arena.size = kEmbeddedArenaBytes;
+  cfg.arena.session_block_size = kEmbeddedSessionBlockBytes;
+  cfg.arena.session_block_count = kEmbeddedSessionBlocks;
+  return astral_init(&cfg);
 #endif
 }
 

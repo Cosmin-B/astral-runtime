@@ -46,6 +46,7 @@ struct ArenaBuffer {
 
 static AstralErr init_vm_runtime() {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = 128ull * 1024ull * 1024ull;
     cfg.thread_count = 1;
     cfg.numa_node = 0xFFFFFFFFu;
@@ -58,17 +59,14 @@ static AstralErr init_arena_runtime(ArenaBuffer& arena) {
         return ASTRAL_E_NOMEM;
     }
 
-    AstralInit2 cfg2{};
-    cfg2.base.reserve_bytes = 0;
-    cfg2.base.thread_count = 1;
-    cfg2.base.numa_node = 0xFFFFFFFFu;
-    cfg2.base.enable_hugepages = 0;
-    cfg2.memory_mode = ASTRAL_MEMMODE_ARENA_BORROWED;
-    cfg2.arena.base = arena.base;
-    cfg2.arena.size = static_cast<uint64_t>(arena.size);
-    cfg2.arena.session_block_size = 0;
-    cfg2.arena.session_block_count = 0;
-    return astral_init2(&cfg2);
+    AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
+    cfg.thread_count = 1;
+    cfg.numa_node = 0xFFFFFFFFu;
+    cfg.memory_mode = ASTRAL_MEMMODE_ARENA_BORROWED;
+    cfg.arena.base = arena.base;
+    cfg.arena.size = static_cast<uint64_t>(arena.size);
+    return astral_init(&cfg);
 }
 
 struct PoolNode {

@@ -28,6 +28,7 @@ inline constexpr int32_t kFifoThirdToken = 303;
 
 void init_runtime() {
     AstralInit cfg{};
+    cfg.size = sizeof(AstralInit);
     cfg.reserve_bytes = kRuntimeReserveBytes;
     cfg.thread_count = 1;
     cfg.numa_node = 0xFFFFFFFFu;

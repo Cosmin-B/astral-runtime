@@ -59,22 +59,20 @@ namespace Astral.Runtime
                 AstralLogging.SetMaxLogLevel(s_config.maxLogLevel);
             }
 
-            var init = new AstralNative.AstralInit2
+            var init = new AstralNative.AstralInit
             {
-                base_config = new AstralNative.AstralInit
-                {
-                    sys_alloc = s_config.useUnityAllocator ? AstralAllocatorBridge.CreateUnityAllocator() : default,
-                    log_cb = s_config.enableLogging ? AstralLogging.GetLogCallback() : IntPtr.Zero,
-                    log_user = IntPtr.Zero,
-                    reserve_bytes = s_config.reserveBytes,
-                    thread_count = s_config.threadCount,
-                    numa_node = 0xFFFFFFFF, // Any NUMA node
-                    enable_hugepages = (byte)(s_config.enableHugePages ? 1 : 0)
-                },
+                size = (uint)Marshal.SizeOf<AstralNative.AstralInit>(),
+                sys_alloc = s_config.useUnityAllocator ? AstralAllocatorBridge.CreateUnityAllocator() : default,
+                log_cb = s_config.enableLogging ? AstralLogging.GetLogCallback() : IntPtr.Zero,
+                log_user = IntPtr.Zero,
+                reserve_bytes = s_config.reserveBytes,
+                thread_count = s_config.threadCount,
+                numa_node = 0xFFFFFFFF, // Any NUMA node
+                enable_hugepages = (byte)(s_config.enableHugePages ? 1 : 0),
                 memory_mode = AstralNative.AstralMemoryMode.VirtualMemory
             };
 
-            err = AstralNative.astral_init2(ref init);
+            err = AstralNative.astral_init(ref init);
             if (err != AstralNative.ASTRAL_OK)
             {
                 return false;
