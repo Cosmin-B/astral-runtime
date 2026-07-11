@@ -173,7 +173,7 @@ TEST(mpmc_multi_producer) {
     MpmcQueue<TestData, kCapacity> queue;
     std::atomic<size_t> successful_enqueues{0};
 
-    auto producer = [&queue, &successful_enqueues, kItemsPerThread](uint32_t thread_id) {
+    auto producer = [&queue, &successful_enqueues](uint32_t thread_id) {
       for (size_t i = 0; i < kItemsPerThread; ++i) {
         TestData data = {i, thread_id, static_cast<uint32_t>(i)};
         queue.enqueue_wait(data);
@@ -216,7 +216,7 @@ TEST(mpmc_multi_consumer) {
     std::atomic<size_t> items_consumed{0};
     std::atomic<size_t> next_item{0};
 
-    auto consumer = [&queue, &items_consumed, &next_item, kTotalItems]() {
+    auto consumer = [&queue, &items_consumed, &next_item]() {
       for (;;) {
         const size_t idx = next_item.fetch_add(1, std::memory_order_relaxed);
         if (idx >= kTotalItems) {
@@ -866,7 +866,7 @@ TEST(spsc_producer_consumer_pattern) {
     SpscRing<TestData, kCapacity> ring;
     std::atomic<size_t> items_consumed{0};
 
-    auto producer = [&ring, kItemCount]() {
+    auto producer = [&ring]() {
       for (size_t i = 0; i < kItemCount; ++i) {
         TestData data = {i, 0, static_cast<uint32_t>(i)};
         while (!ring.push(data)) {
@@ -875,7 +875,7 @@ TEST(spsc_producer_consumer_pattern) {
       }
     };
 
-    auto consumer = [&ring, &items_consumed, kItemCount]() {
+    auto consumer = [&ring, &items_consumed]() {
       TestData out;
       size_t count = 0;
       while (count < kItemCount) {
@@ -911,7 +911,7 @@ TEST(spsc_ordering_preservation) {
 
     SpscRing<TestData, kCapacity> ring;
 
-    auto producer = [&ring, kItemCount]() {
+    auto producer = [&ring]() {
       for (size_t i = 0; i < kItemCount; ++i) {
         TestData data = {i * 2, 0, static_cast<uint32_t>(i)};
         while (!ring.push(data)) {
@@ -919,7 +919,7 @@ TEST(spsc_ordering_preservation) {
       }
     };
 
-    auto consumer = [&ring, kItemCount]() {
+    auto consumer = [&ring]() {
       TestData out;
       for (size_t i = 0; i < kItemCount; ++i) {
         while (!ring.pop(&out)) {

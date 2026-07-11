@@ -265,7 +265,7 @@ TEST(object_pool_thread_safety) {
     ObjectPool<Token, kPoolSize> pool;
     std::atomic<size_t> successful_acquires{0};
 
-    auto worker = [&pool, &successful_acquires, kIterations](int thread_id) {
+    auto worker = [&pool, &successful_acquires](int thread_id) {
       for (size_t i = 0; i < kIterations; ++i) {
         // Acquire
         Token* tok = pool.acquire();
@@ -326,7 +326,7 @@ TEST(object_pool_stress_test) {
     ObjectPool<Token, kPoolSize> pool;
     std::atomic<size_t> total_ops{0};
 
-    auto worker = [&pool, &total_ops, kIterations]() {
+    auto worker = [&pool, &total_ops]() {
       for (size_t i = 0; i < kIterations; ++i) {
         Token* tok = pool.acquire();
         if (tok) {
