@@ -40,7 +40,6 @@ size_t detect_cache_line_size() {
 #if defined(__GNUC__) || defined(__clang__)
   uint32_t eax, ebx, ecx, edx;
   // GCC/Clang: use __get_cpuid intrinsic
-  uint32_t eax, ebx, ecx, edx;
   if (__get_cpuid(0x80000006, &eax, &ebx, &ecx, &edx)) {
     // Cache line size is in ECX bits 7:0 (in bytes)
     const size_t valid_size = valid_cache_line_size(ecx & 0xFFu);
