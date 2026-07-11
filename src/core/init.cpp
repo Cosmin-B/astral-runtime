@@ -23,6 +23,7 @@
 #include "../platform/time.h"
 #include "../platform/vm.h"
 #include "../utils/logging.hpp"
+#include "../utils/string_builder.hpp"
 #include "../utils/trace.hpp"
 #include "abi_guard.hpp"
 #include "alloc_utils.hpp"
@@ -33,7 +34,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -800,9 +800,10 @@ static inline uint32_t next_thread_worker_id(uint32_t n) {
 void worker_loop_thunk(void* user) {
     const uint32_t idx = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(user));
 #if ASTRAL_ENABLE_TRACY
-    char name[32];
-    std::snprintf(name, sizeof(name), "astral_worker_%u", idx);
-    ASTRAL_THREAD_NAME(name);
+    utf8::StackStringBuilder<31> name;
+    name.append_literal("astral_worker_");
+    name.append_u32(idx);
+    ASTRAL_THREAD_NAME(name.c_str());
 #endif
     bind_worker_tls(idx);
     worker_loop(idx);

@@ -5,12 +5,45 @@
  * Validates: equals, slice, from_cstr, validation, SIMD equivalence.
  */
 
-#include "test_framework.hpp"
+#include "../src/utils/string_builder.hpp"
 #include "../src/utils/utf8.hpp"
+#include "test_framework.hpp"
 
+#include <cstdlib>
 #include <cstring>
+#include <limits>
 
 using namespace astral::utf8;
+
+namespace {
+
+struct TrackingStringAllocator {
+  static thread_local uint32_t allocations;
+  static thread_local uint32_t frees;
+  static thread_local bool fail;
+
+  static void* allocate(size_t size, size_t) noexcept {
+    ++allocations;
+    return fail ? nullptr : std::malloc(size);
+  }
+
+  static void deallocate(void* ptr, size_t, size_t) noexcept {
+    ++frees;
+    std::free(ptr);
+  }
+
+  static void reset() noexcept {
+    allocations = 0;
+    frees = 0;
+    fail = false;
+  }
+};
+
+thread_local uint32_t TrackingStringAllocator::allocations = 0;
+thread_local uint32_t TrackingStringAllocator::frees = 0;
+thread_local bool TrackingStringAllocator::fail = false;
+
+} // namespace
 
 //
 // Span Operations Tests
@@ -230,6 +263,113 @@ TEST(count_codepoints_empty) {
 
     size_t count = count_codepoints(s);
     ASSERT_EQ(count, 0);
+}
+
+//
+// Inline String Builder Tests
+//
+
+TEST(string_builder_stays_inline_within_capacity) {
+  TrackingStringAllocator::reset();
+  StringBuilder<16, TrackingStringAllocator> builder;
+
+  ASSERT_TRUE(builder.append_literal("hello"));
+  ASSERT_TRUE(builder.append_char(' '));
+  ASSERT_TRUE(builder.append_u32(42));
+
+  ASSERT_FALSE(builder.spilled());
+  ASSERT_FALSE(builder.truncated());
+  ASSERT_EQ(TrackingStringAllocator::allocations, 0u);
+  ASSERT_EQ(builder.length(), 8u);
+  ASSERT_EQ(std::strcmp(builder.c_str(), "hello 42"), 0);
+  ASSERT_EQ(builder.c_str()[builder.length()], '\0');
+}
+
+TEST(string_builder_spills_through_policy_allocator) {
+  TrackingStringAllocator::reset();
+  {
+    StringBuilder<4, TrackingStringAllocator> builder;
+
+    ASSERT_TRUE(builder.append(Span::from_cstr("abcdefgh")));
+    ASSERT_TRUE(builder.spilled());
+    ASSERT_FALSE(builder.truncated());
+    ASSERT_EQ(TrackingStringAllocator::allocations, 1u);
+    ASSERT_EQ(std::strcmp(builder.c_str(), "abcdefgh"), 0);
+
+    ASSERT_TRUE(builder.append_literal("ijklmnopq"));
+    ASSERT_EQ(TrackingStringAllocator::allocations, 2u);
+    ASSERT_EQ(TrackingStringAllocator::frees, 1u);
+    ASSERT_EQ(std::strcmp(builder.c_str(), "abcdefghijklmnopq"), 0);
+
+    const uint32_t capacity = builder.capacity();
+    builder.reset();
+    ASSERT_TRUE(builder.empty());
+    ASSERT_TRUE(builder.spilled());
+    ASSERT_EQ(builder.capacity(), capacity);
+    ASSERT_TRUE(builder.append(Span::from_cstr("reuse")));
+    ASSERT_EQ(TrackingStringAllocator::allocations, 2u);
+  }
+  ASSERT_EQ(TrackingStringAllocator::frees, 2u);
+}
+
+TEST(string_builder_default_spill_uses_runtime_allocator) {
+  StringBuilder<4> builder;
+
+  ASSERT_TRUE(builder.append_literal("runtime"));
+  ASSERT_TRUE(builder.spilled());
+  ASSERT_FALSE(builder.truncated());
+  ASSERT_EQ(std::strcmp(builder.c_str(), "runtime"), 0);
+}
+
+TEST(string_builder_truncates_without_spilling_when_requested) {
+  TrackingStringAllocator::reset();
+  StackStringBuilder<5, TrackingStringAllocator> builder;
+
+  ASSERT_FALSE(builder.append(Span::from_cstr("abcdefgh")));
+  ASSERT_TRUE(builder.truncated());
+  ASSERT_FALSE(builder.spilled());
+  ASSERT_EQ(TrackingStringAllocator::allocations, 0u);
+  ASSERT_EQ(builder.length(), 5u);
+  ASSERT_EQ(std::strcmp(builder.c_str(), "abcde"), 0);
+  ASSERT_EQ(builder.c_str()[builder.length()], '\0');
+}
+
+TEST(string_builder_truncates_when_spill_allocation_fails) {
+  TrackingStringAllocator::reset();
+  TrackingStringAllocator::fail = true;
+  StringBuilder<5, TrackingStringAllocator> builder;
+
+  ASSERT_FALSE(builder.append(Span::from_cstr("abcdefgh")));
+  ASSERT_TRUE(builder.truncated());
+  ASSERT_FALSE(builder.spilled());
+  ASSERT_EQ(TrackingStringAllocator::allocations, 1u);
+  ASSERT_EQ(std::strcmp(builder.c_str(), "abcde"), 0);
+}
+
+TEST(string_builder_appends_integer_boundaries_without_printf) {
+  StringBuilder<96, TrackingStringAllocator> builder;
+
+  ASSERT_TRUE(builder.append_i32((std::numeric_limits<int32_t>::min)()));
+  ASSERT_TRUE(builder.append_char(' '));
+  ASSERT_TRUE(builder.append_u32((std::numeric_limits<uint32_t>::max)()));
+  ASSERT_TRUE(builder.append_char(' '));
+  ASSERT_TRUE(builder.append_i64((std::numeric_limits<int64_t>::min)()));
+  ASSERT_TRUE(builder.append_char(' '));
+  ASSERT_TRUE(builder.append_u64((std::numeric_limits<uint64_t>::max)()));
+
+  ASSERT_EQ(std::strcmp(builder.c_str(),
+                        "-2147483648 4294967295 -9223372036854775808 18446744073709551615"),
+            0);
+}
+
+TEST(string_builder_appends_fixed_float_without_printf) {
+  StringBuilder<32, TrackingStringAllocator> builder;
+
+  ASSERT_TRUE(builder.append_f32(3.14159f, 3));
+  ASSERT_TRUE(builder.append_char(' '));
+  ASSERT_TRUE(builder.append_f32(-0.5f, 2));
+
+  ASSERT_EQ(std::strcmp(builder.c_str(), "3.142 -0.50"), 0);
 }
 
 //

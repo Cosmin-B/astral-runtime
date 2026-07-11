@@ -8,13 +8,19 @@
 #include "utf8.hpp"
 #include "string_builder.hpp"
 #include "logging.hpp"
-#include "../memory/frame_allocator.hpp"
 
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
 
 using namespace astral;
+
+struct TestStringAllocator {
+  static void* allocate(size_t size, size_t) noexcept { return malloc(size); }
+  static void deallocate(void* ptr, size_t, size_t) noexcept { free(ptr); }
+};
+
+using TestStringBuilder = utf8::StringBuilder<256, TestStringAllocator>;
 
 // ============================================================================
 // Test Helpers
@@ -127,83 +133,60 @@ TEST(utf8_count_codepoints_multibyte) {
 // ============================================================================
 
 TEST(string_builder_basic) {
-    // Allocate 4KB of memory for FrameAllocator
-    void* memory = malloc(4096);
-    ASSERT_NE(memory, nullptr);
+  TestStringBuilder sb;
 
-    memory::FrameAllocator alloc(memory, 4096);
-    utf8::StringBuilder sb(alloc);
+  sb.append(utf8::Span::from_cstr("Hello"));
+  utf8::Span result = sb.freeze();
 
-    sb.append(utf8::Span::from_cstr("Hello"));
-    utf8::Span result = sb.freeze();
-
-    ASSERT_EQ(result.len, 5);
-    ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Hello")));
-
-    free(memory);
+  ASSERT_EQ(result.len, 5);
+  ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Hello")));
 }
 
 TEST(string_builder_append_multiple) {
-    void* memory = malloc(4096);
-    memory::FrameAllocator alloc(memory, 4096);
-    utf8::StringBuilder sb(alloc);
+  TestStringBuilder sb;
 
-    sb.append(utf8::Span::from_cstr("Hello"));
-    sb.append(utf8::Span::from_cstr(" "));
-    sb.append(utf8::Span::from_cstr("World"));
+  sb.append(utf8::Span::from_cstr("Hello"));
+  sb.append(utf8::Span::from_cstr(" "));
+  sb.append(utf8::Span::from_cstr("World"));
 
-    utf8::Span result = sb.freeze();
-    ASSERT_EQ(result.len, 11);
-    ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Hello World")));
-
-    free(memory);
+  utf8::Span result = sb.freeze();
+  ASSERT_EQ(result.len, 11);
+  ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Hello World")));
 }
 
 TEST(string_builder_append_u32) {
-    void* memory = malloc(4096);
-    memory::FrameAllocator alloc(memory, 4096);
-    utf8::StringBuilder sb(alloc);
+  TestStringBuilder sb;
 
-    sb.append(utf8::Span::from_cstr("Token: "));
-    sb.append_u32(42);
+  sb.append(utf8::Span::from_cstr("Token: "));
+  sb.append_u32(42);
 
-    utf8::Span result = sb.freeze();
-    ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Token: 42")));
-
-    free(memory);
+  utf8::Span result = sb.freeze();
+  ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Token: 42")));
 }
 
 TEST(string_builder_append_f32) {
-    void* memory = malloc(4096);
-    memory::FrameAllocator alloc(memory, 4096);
-    utf8::StringBuilder sb(alloc);
+  TestStringBuilder sb;
 
-    sb.append(utf8::Span::from_cstr("Score: "));
-    sb.append_f32(0.95f, 2);
+  sb.append(utf8::Span::from_cstr("Score: "));
+  sb.append_f32(0.95f, 2);
 
-    utf8::Span result = sb.freeze();
-    ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Score: 0.95")));
-
-    free(memory);
+  utf8::Span result = sb.freeze();
+  ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Score: 0.95")));
 }
 
 TEST(string_builder_reset) {
-    void* memory = malloc(4096);
-    memory::FrameAllocator alloc(memory, 4096);
-    utf8::StringBuilder sb(alloc);
+  TestStringBuilder sb;
 
-    sb.append(utf8::Span::from_cstr("First"));
-    ASSERT_EQ(sb.length(), 5);
+  sb.append(utf8::Span::from_cstr("First"));
+  ASSERT_EQ(sb.length(), 5);
 
-    sb.reset();
-    ASSERT_EQ(sb.length(), 0);
-    ASSERT_TRUE(sb.empty());
+  sb.reset();
+  ASSERT_EQ(sb.length(), 0);
+  ASSERT_TRUE(sb.empty());
 
-    sb.append(utf8::Span::from_cstr("Second"));
-    utf8::Span result = sb.freeze();
-    ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Second")));
-
-    free(memory);
+  sb.append(utf8::Span::from_cstr("Second"));
+  utf8::Span result = sb.freeze();
+  ASSERT_TRUE(result.equals(utf8::Span::from_cstr("Second")));
 }
 
 // ============================================================================

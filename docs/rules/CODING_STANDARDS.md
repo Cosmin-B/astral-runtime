@@ -297,21 +297,24 @@ struct MutSpan {
 ### String Builder
 
 ```cpp
-// Append-only builder over arena
-class StringBuilder {
-public:
-  void append(Span utf8);
-  void append_u32(uint32_t val); // Integer to UTF-8
-  Span freeze();                 // Snapshot current content
-  void reset();                  // Reset bump pointer
-};
+// Truncate-only alias for hot paths that must not allocate
+template<uint32_t InlineCapacity = 256>
+using StackStringBuilder =
+    StringBuilder<InlineCapacity,
+                  RuntimeStringAllocator,
+                  StringOverflowPolicy::Truncate>;
 
 // Usage
-StringBuilder sb(allocator);
+StackStringBuilder<256> sb;
 sb.append(Span::from_cstr("Token: "));
 sb.append_u32(token_id);
 Span result = sb.freeze(); // Zero-copy slice
 ```
+
+Use `StackStringBuilder` for hot paths that must never allocate. The default
+`StringBuilder` spill policy uses the runtime allocator only after inline
+capacity is exhausted. Builders are locally owned and are not shared between
+threads.
 
 ### UTF-8 Validation
 

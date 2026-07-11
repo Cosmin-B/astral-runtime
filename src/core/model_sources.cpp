@@ -1,9 +1,9 @@
 #include "../concurrency/event_spin_lock.hpp"
+#include "../utils/string_builder.hpp"
 #include "model_sources.hpp"
 
 #include <atomic>
-#include <cinttypes>
-#include <cstdio>
+#include <cstring>
 
 namespace astral::core {
 
@@ -25,15 +25,17 @@ static uint32_t format_token(uint64_t id, char* out_token, uint32_t cap) {
   if (out_token == nullptr || cap == 0) {
     return 0;
   }
-  const int n = std::snprintf(out_token, cap, "astral-src:%" PRIu64, id);
-  if (n <= 0) {
-    return 0;
-  }
-  if (static_cast<uint32_t>(n) >= cap) {
+
+  utf8::StackStringBuilder<31> token;
+  token.append_literal("astral-src:");
+  token.append_u64(id);
+  if (token.truncated() || token.length() >= cap) {
     out_token[0] = '\0';
     return 0;
   }
-  return static_cast<uint32_t>(n);
+
+  std::memcpy(out_token, token.c_str(), static_cast<size_t>(token.length()) + 1u);
+  return token.length();
 }
 
 } // namespace

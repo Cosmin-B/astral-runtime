@@ -36,38 +36,48 @@ namespace astral::utf8 {
 ### 2. String Builder (`string_builder.hpp`)
 
 **Features**:
-- Append-only UTF-8 string builder over `FrameAllocator`
+- Append-only UTF-8 string builder with inline object storage
 - Zero-copy `freeze()` to snapshot current content
 - Type-safe append methods (UTF-8 spans, integers, floats)
-- Automatic growth (doubles capacity when exhausted)
+- Explicit spill or truncation behavior when inline capacity is exhausted
 
 **Memory Discipline**:
-- All allocations from provided `FrameAllocator`
-- No hidden allocations
-- All memory reclaimed on allocator reset
+- Appends within inline capacity do not allocate
+- Spill uses the runtime allocator only on overflow
+- Truncate mode never allocates
+- Each builder is independently owned; sharing requires external synchronization
 
 **API**:
 ```cpp
 namespace astral::utf8 {
+    template<uint32_t InlineCapacity = 256,
+             typename SpillAllocator = RuntimeStringAllocator,
+             StringOverflowPolicy OverflowPolicy = StringOverflowPolicy::Spill>
     class StringBuilder {
-        explicit StringBuilder(memory::FrameAllocator& alloc);
+        StringBuilder();
 
-        void append(Span utf8);
-        void append_u32(uint32_t val);
-        void append_i32(int32_t val);
-        void append_f32(float val, uint32_t decimals = 2);
-        void append_char(char c);
+        bool append(Span utf8);
+        bool append_u32(uint32_t val);
+        bool append_i32(int32_t val);
+        bool append_f32(float val, uint32_t decimals = 2);
+        bool append_char(char c);
 
         Span freeze() const;  // Zero-copy snapshot
+        const char* c_str() const;
         void reset();
     };
+    template<uint32_t InlineCapacity = 256,
+             typename SpillAllocator = RuntimeStringAllocator>
+    using StackStringBuilder =
+        StringBuilder<InlineCapacity,
+                      SpillAllocator,
+                      StringOverflowPolicy::Truncate>;
 }
 ```
 
 **Usage Example**:
 ```cpp
-FrameAllocator alloc(memory, capacity);
-StringBuilder sb(alloc);
+StackStringBuilder<256> sb;
 
 sb.append(Span::from_cstr("Token: "));
 sb.append_u32(42);
@@ -200,16 +210,14 @@ All strings in Astral are UTF-8. NO UTF-16, NO Latin-1.
 
 ## Performance Characteristics
 
-| Operation | Latency | Notes |
+| Operation | Cost | Notes |
 |-----------|---------|-------|
-| `validate()` (scalar) | ~2.5 ns/byte | Single-threaded |
-| `validate_simd()` (AVX2) | ~0.5 ns/byte | 5x faster |
-| `count_codepoints()` | ~0.5 ns/byte | SIMD-accelerated |
-| `StringBuilder::append()` | ~10-20 ns | memcpy + length update |
-| `StringBuilder::freeze()` | ~1-2 ns | Return struct (zero-copy) |
-| `logging::log()` | ~100-500 ns | Format + callback dispatch |
-
-Measured on Intel i7-12700K (3.6 GHz), single-threaded.
+| `validate()` | Input-size dependent | Scalar validation |
+| `validate_simd()` | Input-size dependent | SIMD with scalar fallback |
+| `count_codepoints()` | Input-size dependent | SIMD where supported |
+| `StringBuilder::append()` | Input-size dependent | Inline until capacity is exhausted |
+| `StringBuilder::freeze()` | Constant time | Returns a span over owned storage |
+| `logging::log()` | Callback dependent | Formats into thread-local storage |
 
 ## References
 
