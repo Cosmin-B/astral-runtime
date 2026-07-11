@@ -1840,7 +1840,7 @@ float dot_e5m2_f32_384(const int8_t* a, const float* b) {
   }
   return reduce_avx2_f32(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
 #else
-  return dot_e5m2_f32(a, b, 384u);
+  return dot_e5m2_f32_impl<false>(a, b, 384u);
 #endif
 }
 
@@ -5739,6 +5739,9 @@ void memory_search_flat_single_range(MemoryIndex* index, const AstralMemorySearc
     const float* score_scales = index->compact_score_scales;
     const float query_scale =
         index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, dim) : 1.0f;
+    const DotE5m2F32Fn dot_kernel = index->e5m2_kernels->dot_f32;
+    const bool use_384_kernel =
+        dim == 384u && platform::cpu_supports_avx2() && platform::cpu_supports_f16c();
 
     // Dense slots make the vector address and score scale direct functions of the loop index.
     // Storage and metric are fixed for the shard, so neither needs redispatch for every record.
@@ -5746,7 +5749,7 @@ void memory_search_flat_single_range(MemoryIndex* index, const AstralMemorySearc
       const MemorySlot& s = index->slots[slot];
       const int8_t* vector = vectors + static_cast<size_t>(slot) * dim;
       const float dot =
-          dim == 384u ? dot_e5m2_f32_384(vector, query) : dot_e5m2_f32(vector, query, dim);
+          use_384_kernel ? dot_e5m2_f32_384(vector, query) : dot_kernel(vector, query, dim);
       const float score = dot * score_scales[slot] * query_scale;
       if (filled == desc->top_k &&
           !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
