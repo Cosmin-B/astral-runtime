@@ -411,6 +411,7 @@ TEST(inference_request_lifecycle_conversation_mock) {
 
 TEST(inference_session_streams_token_pieces_larger_than_ring_cell) {
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 32u * 1024u * 1024u;
   cfg.thread_count = 2;
   ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -438,6 +439,7 @@ TEST(inference_session_streams_token_pieces_larger_than_ring_cell) {
 
 TEST(inference_conversation_streams_token_pieces_larger_than_ring_cell) {
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 32u * 1024u * 1024u;
   cfg.thread_count = 2;
   ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -473,6 +475,7 @@ TEST(inference_conversation_streams_token_pieces_larger_than_ring_cell) {
 
 TEST(inference_conversation_accepts_full_prompt_capacity_transactionally) {
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 32u * 1024u * 1024u;
   cfg.thread_count = 2;
   ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -519,6 +522,7 @@ TEST(inference_conversation_accepts_full_prompt_capacity_transactionally) {
 
 TEST(inference_conversation_cancel_transitions_active_states) {
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 32u * 1024u * 1024u;
   cfg.thread_count = 2;
   ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -565,6 +569,7 @@ TEST(inference_conversation_cancel_transitions_active_states) {
 
 TEST(inference_conversation_executor_does_not_occupy_worker_pool) {
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 32 * 1024 * 1024;
   cfg.thread_count = 1;
   ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -607,6 +612,7 @@ TEST(inference_conversation_executor_does_not_occupy_worker_pool) {
 
 TEST(inference_conversation_concurrent_destroy_churn) {
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 64u * 1024u * 1024u;
   cfg.thread_count = 2;
   ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
@@ -783,6 +789,7 @@ TEST(inference_conversation_grammar_gbnf_mock) {
 
 TEST(inference_conversation_stop_clear_mock) {
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 32 * 1024 * 1024;
   ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
 

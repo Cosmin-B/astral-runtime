@@ -54,6 +54,7 @@ TEST(core_init_shutdown_cycle) {
 
 TEST(core_worker_assign_uses_current_worker) {
   AstralInit cfg = {};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 16 * 1024 * 1024;
   cfg.thread_count = 2;
   cfg.numa_node = 0xFFFFFFFF;

@@ -258,6 +258,7 @@ TEST(vm_runtime_alloc_uses_reserved_region_and_commits_on_demand) {
 
   RejectingAllocatorProbe probe{};
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 64u * 1024u * 1024u;
   cfg.thread_count = 1;
   cfg.numa_node = 0xFFFFFFFFu;
