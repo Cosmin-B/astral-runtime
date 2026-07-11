@@ -33,11 +33,11 @@
 namespace {
 
 inline void set_err_invalid(const char* what) {
-    astral::core::set_last_errorf("Invalid parameter: %s", what ? what : "");
+  astral::core::set_last_error_parts("Invalid parameter: ", what);
 }
 
 inline void set_err_unsupported(const char* what) {
-    astral::core::set_last_errorf("Unsupported: %s", what ? what : "");
+  astral::core::set_last_error_parts("Unsupported: ", what);
 }
 
 inline void set_err_code(AstralErr err) {

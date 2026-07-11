@@ -14,13 +14,13 @@
  */
 
 #include "../../include/astral_rt.h"
-#include "error.hpp"
+#include "../utils/string_builder.hpp"
 #include "abi_guard.hpp"
+#include "error.hpp"
 #include "handles.hpp"
 
-#include <cstdarg>
-#include <cstdio>
 #include <cstdint>
+#include <cstring>
 
 // ============================================================================
 // Error String Conversion
@@ -121,19 +121,23 @@ void set_last_error(const char* msg) {
         current_slot()[0] = '\0';
         return;
     }
-    std::snprintf(current_slot(), kErrorMsgBytes, "%s", msg);
+
+    const utf8::Span text = utf8::Span::from_cstr(msg);
+    const uint32_t copy_bytes =
+        text.len < kErrorMsgBytes ? text.len : static_cast<uint32_t>(kErrorMsgBytes - 1u);
+    std::memcpy(current_slot(), text.data, copy_bytes);
+    current_slot()[copy_bytes] = '\0';
 }
 
-void set_last_errorf(const char* fmt, ...) {
-    if (fmt == nullptr) {
-        current_slot()[0] = '\0';
-        return;
-    }
-
-    va_list args;
-    va_start(args, fmt);
-    std::vsnprintf(current_slot(), kErrorMsgBytes, fmt, args);
-    va_end(args);
+void set_last_error_parts(const char* prefix, const char* detail) {
+  utf8::StackStringBuilder<kErrorMsgBytes - 1u> builder;
+  if (prefix != nullptr) {
+    builder.append(utf8::Span::from_cstr(prefix));
+  }
+  if (detail != nullptr) {
+    builder.append(utf8::Span::from_cstr(detail));
+  }
+  set_last_error(builder.c_str());
 }
 
 void set_last_error_from_code(AstralErr err) {

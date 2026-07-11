@@ -148,11 +148,11 @@ static char* span_to_cstr(AstralSpanU8 s, size_t* out_bytes) {
 }
 
 static void set_err_invalid(const char* what) {
-    astral::core::set_last_errorf("Invalid parameter: %s", what ? what : "");
+  astral::core::set_last_error_parts("Invalid parameter: ", what);
 }
 
 static void set_err_backend(const char* what) {
-    astral::core::set_last_errorf("Backend error: %s", what ? what : "");
+  astral::core::set_last_error_parts("Backend error: ", what);
 }
 
 static bool backend_ops_is_valid(const AstralBackendOps* ops) {
@@ -259,7 +259,8 @@ extern "C" {
 ASTRAL_API AstralErr ASTRAL_CALL astral_backend_load_plugin(AstralSpanU8 path) {
     ASTRAL_ABI_TRY_BEGIN
     (void)path;
-    astral::core::set_last_errorf("Unsupported: dynamic backends disabled (ASTRAL_ENABLE_DYNAMIC_BACKENDS=0)");
+    astral::core::set_last_error(
+        "Unsupported: dynamic backends disabled (ASTRAL_ENABLE_DYNAMIC_BACKENDS=0)");
     return ASTRAL_E_UNSUPPORTED;
     ASTRAL_ABI_CATCH_END_ERR(ASTRAL_E_BACKEND)
 }
