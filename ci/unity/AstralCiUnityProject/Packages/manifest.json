@@ -2,7 +2,7 @@
   "dependencies": {
     "com.unity.collections": "1.4.0",
     "com.unity.test-framework": "1.1.33",
+    "com.unity.modules.audio": "1.0.0",
     "com.astral.runtime": "file:../../../../plugins/unity"
   }
 }
-

@@ -8,11 +8,25 @@ set(unity_cmake "${root}/plugins/unity/CMakeLists.txt")
 set(package_json "${root}/plugins/unity/package.json")
 set(plugin_readme "${root}/plugins/unity/Runtime/Plugins/README.md")
 set(native_cs "${root}/plugins/unity/Runtime/AstralNative.cs")
-set(basic_chat_sample "${root}/plugins/unity/Samples~/BasicChat/BasicChatExample.cs")
 
-foreach(path "${presets_file}" "${unity_cmake}" "${package_json}" "${plugin_readme}" "${native_cs}" "${basic_chat_sample}")
+foreach(path "${presets_file}" "${unity_cmake}" "${package_json}" "${plugin_readme}" "${native_cs}")
   if(NOT EXISTS "${path}")
     message(FATAL_ERROR "Unity mobile package layout input is missing: ${path}")
+  endif()
+endforeach()
+
+set(unity_sample_workflows
+  StreamingChat
+  StatefulNpc
+  LocalKnowledge
+  CharacterVariants
+  MultimodalInput
+  MultipleConversations
+)
+foreach(workflow IN LISTS unity_sample_workflows)
+  set(sample_source "${root}/plugins/unity/Samples~/${workflow}/${workflow}Example.cs")
+  if(NOT EXISTS "${sample_source}")
+    message(FATAL_ERROR "Unity mobile package layout input is missing: ${sample_source}")
   endif()
 endforeach()
 
@@ -48,19 +62,17 @@ foreach(required
 endforeach()
 
 file(READ "${package_json}" package_json_text)
-foreach(required
-  "\"samples\""
-  "\"displayName\": \"Basic Chat Example\""
-  "\"path\": \"Samples~/BasicChat\""
-)
+foreach(required "\"samples\"")
   if(NOT package_json_text MATCHES "${required}")
     message(FATAL_ERROR "Unity package metadata is missing: ${required}")
   endif()
 endforeach()
-
-if(package_json_text MATCHES "Samples~/BasicInference")
-  message(FATAL_ERROR "Unity package metadata still points at a missing BasicInference sample")
-endif()
+foreach(workflow IN LISTS unity_sample_workflows)
+  set(required_path "\"path\": \"Samples~/${workflow}\"")
+  if(NOT package_json_text MATCHES "${required_path}")
+    message(FATAL_ERROR "Unity package metadata is missing: ${required_path}")
+  endif()
+endforeach()
 
 file(READ "${plugin_readme}" readme_text)
 foreach(required

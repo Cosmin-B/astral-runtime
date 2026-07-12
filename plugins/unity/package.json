@@ -27,9 +27,34 @@
   },
   "samples": [
     {
-      "displayName": "Basic Chat Example",
-      "description": "Minimal chat example demonstrating model loading, streaming, and inference",
-      "path": "Samples~/BasicChat"
+      "displayName": "Streaming Chat",
+      "description": "Frame-polled UTF-8 generation, request status, cancellation, and deterministic cleanup",
+      "path": "Samples~/StreamingChat"
+    },
+    {
+      "displayName": "Stateful NPC",
+      "description": "Agent prompts, persistent history, memory context, and structured tool calls",
+      "path": "Samples~/StatefulNpc"
+    },
+    {
+      "displayName": "Local Knowledge",
+      "description": "Document chunking, embeddings, memory search, and index persistence",
+      "path": "Samples~/LocalKnowledge"
+    },
+    {
+      "displayName": "Character Variants",
+      "description": "Prompt caches, LoRA adapters, stop sequences, grammar, and tokenization",
+      "path": "Samples~/CharacterVariants"
+    },
+    {
+      "displayName": "Multimodal Input",
+      "description": "Texture and audio generation inputs with multimodal embeddings",
+      "path": "Samples~/MultimodalInput"
+    },
+    {
+      "displayName": "Multiple Conversations",
+      "description": "Independent frame-polled conversations sharing one model executor",
+      "path": "Samples~/MultipleConversations"
     }
   ]
 }

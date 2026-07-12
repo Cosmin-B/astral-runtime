@@ -55,6 +55,31 @@ if [[ ! -d "${project_dir}" ]]; then
   exit 2
 fi
 
+samples_source="${root_dir}/plugins/unity/Samples~"
+samples_stage="${project_dir}/Assets/AstralWorkflowSamples"
+
+cleanup_samples() {
+  rm -rf "${samples_stage}" "${samples_stage}.meta"
+}
+trap cleanup_samples EXIT
+
+rm -rf "${samples_stage}"
+mkdir -p "${samples_stage}"
+shopt -s nullglob
+for sample_dir in "${samples_source}"/*; do
+  if [[ ! -d "${sample_dir}" ]]; then
+    continue
+  fi
+  sample_sources=("${sample_dir}"/*.cs)
+  if [[ "${#sample_sources[@]}" -eq 0 ]]; then
+    continue
+  fi
+  sample_name="$(basename "${sample_dir}")"
+  mkdir -p "${samples_stage}/${sample_name}"
+  cp "${sample_sources[@]}" "${samples_stage}/${sample_name}/"
+done
+shopt -u nullglob
+
 if [[ "${build_native}" -eq 1 ]]; then
   echo "[unity-ci] Configure native plugin"
   cmake --preset unity-plugin

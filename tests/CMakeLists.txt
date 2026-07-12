@@ -608,6 +608,20 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_unity_editmode_results")
         endif()
 
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unity_samples.cmake)
+            add_test(
+                NAME gate_unity_samples
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unity_samples.cmake
+            )
+            set_tests_properties(gate_unity_samples PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unity"
+            )
+            message(STATUS "Configured test: gate_unity_samples")
+        endif()
+
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unity_mobile_package_layout.cmake)
             add_test(
                 NAME gate_unity_mobile_package_layout
