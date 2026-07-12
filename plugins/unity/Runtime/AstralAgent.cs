@@ -297,7 +297,9 @@ namespace Astral.Runtime
             }
 
             int result = AstralNative.astral_agent_chat_stream_read(m_handle, AstralNative.AstralMutSpanU8.FromNativeArray(buffer), timeoutMs);
-            if (result < 0)
+            if (result < 0 &&
+                result != AstralNative.ASTRAL_E_TIMEOUT &&
+                result != AstralNative.ASTRAL_E_CANCELED)
             {
                 ThrowIfError(result, "astral_agent_chat_stream_read");
             }

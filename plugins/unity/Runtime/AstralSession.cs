@@ -147,6 +147,35 @@ namespace Astral.Runtime
         }
 
         /// <summary>
+        /// Set the system prompt before feeding user prompt text.
+        /// </summary>
+        public void SetSystemPrompt(string systemPrompt)
+        {
+            if (m_disposed)
+            {
+                throw new ObjectDisposedException(nameof(AstralSession));
+            }
+
+            NativeArray<byte> tempArray;
+            var span = AstralNative.AstralSpanU8.FromString(systemPrompt, out tempArray);
+            try
+            {
+                int err = AstralNative.astral_session_set_system_prompt(m_handle, span);
+                if (err != AstralNative.ASTRAL_OK)
+                {
+                    throw new AstralException($"astral_session_set_system_prompt failed: {AstralRuntime.GetErrorString(err)}", err);
+                }
+            }
+            finally
+            {
+                if (tempArray.IsCreated)
+                {
+                    tempArray.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
         /// Feed an image chunk into the session prompt.
         /// </summary>
         public void FeedImage(ref AstralNative.AstralImageDesc image, bool finalize = true)

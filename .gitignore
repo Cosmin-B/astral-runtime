@@ -10,6 +10,10 @@ cmake-build-*/
 *.swo
 *~
 
+# Unity Package Manager uses Samples~ as a source directory name.
+!plugins/unity/Samples~/
+!plugins/unity/Samples~/**
+
 # Compiled objects
 *.o
 *.obj
