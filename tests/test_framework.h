@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <functional>
 #include <vector>
 
 // Test macros
@@ -117,7 +116,7 @@ extern bool g_test_failed;
 // Test registration
 struct TestCase {
     const char* name;
-    std::function<void()> func;
+    void (*func)();
 };
 
 class TestRegistrar {

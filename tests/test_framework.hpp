@@ -11,19 +11,18 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
-#include <functional>
 
 namespace astral::testing {
 
 // Test registry for automatic test registration
 class TestRegistry {
 public:
-    using TestFn = std::function<void()>;
+  using TestFn = void (*)();
 
-    struct TestCase {
-        const char* name;
-        TestFn fn;
-    };
+  struct TestCase {
+    const char* name;
+    TestFn fn;
+  };
 
     struct TestSkipped {
         const char* file;
