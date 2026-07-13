@@ -505,11 +505,16 @@ have been validated.
 
 ## Examples
 
-See `Runtime/AstralExample.cs` for comprehensive usage examples:
+Install the package samples from Package Manager or open them under `Samples~`:
 
-- **Basic Inference**: Simple blocking inference
-- **Streaming Inference**: Real-time token streaming with coroutines
-- **NativeArray Streaming**: Read token bytes into caller-owned buffers.
+| Workflow | Sample | Focus |
+| --- | --- | --- |
+| Streaming chat | [StreamingChat](Samples~/StreamingChat/README.md) | Frame-polled UTF-8 streaming, cancellation, and stats |
+| Multiple conversations | [MultipleConversations](Samples~/MultipleConversations/README.md) | One executor serving independent conversation slots |
+| Stateful NPC | [StatefulNpc](Samples~/StatefulNpc/README.md) | Agent history, summary, memory context, and tool calls |
+| Local knowledge | [LocalKnowledge](Samples~/LocalKnowledge/README.md) | Chunking, embeddings, native indexing, search, and persistence |
+| Character variants | [CharacterVariants](Samples~/CharacterVariants/README.md) | Prompt caches, structured output, stop sequences, and adapters |
+| Multimodal input | [MultimodalInput](Samples~/MultimodalInput/README.md) | Texture, audio, and multimodal embedding requests |
 
 ## Building Native Plugins
 

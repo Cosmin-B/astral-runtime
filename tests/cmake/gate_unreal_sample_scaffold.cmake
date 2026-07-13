@@ -10,6 +10,8 @@ endif()
 
 set(out_dir "${ASTRAL_BUILD_DIR}/unreal-sample-scaffold/AstralSample")
 set(template_dir "${ASTRAL_SOURCE_DIR}/examples/unreal/AstralSample")
+set(plugin_readme "${ASTRAL_SOURCE_DIR}/plugins/unreal/AstralRT/README.md")
+set(integration_doc "${ASTRAL_SOURCE_DIR}/docs/integration/UNREAL_INTEGRATION.md")
 file(REMOVE_RECURSE "${out_dir}")
 file(MAKE_DIRECTORY "${ASTRAL_BUILD_DIR}/unreal-sample-scaffold")
 
@@ -43,6 +45,33 @@ set(template_files
 foreach(relative_file IN LISTS template_files)
   if(NOT EXISTS "${template_dir}/${relative_file}")
     message(FATAL_ERROR "Unreal sample template missing ${template_dir}/${relative_file}")
+  endif()
+endforeach()
+
+file(READ "${plugin_readme}" plugin_readme_text)
+file(READ "${integration_doc}" integration_doc_text)
+foreach(workflow IN ITEMS
+    StreamingChat
+    MultipleConversations
+    StatefulNpc
+    LocalKnowledge
+    CharacterVariants
+    MultimodalInput)
+  string(FIND "${integration_doc_text}" "UAstral${workflow}Component" component_index)
+  if(component_index EQUAL -1)
+    message(FATAL_ERROR "Unreal integration guide does not list UAstral${workflow}Component")
+  endif()
+endforeach()
+foreach(display_name IN ITEMS
+    "Astral Streaming Chat"
+    "Astral Multiple Conversations"
+    "Astral Stateful Npc"
+    "Astral Local Knowledge"
+    "Astral Character Variants"
+    "Astral Multimodal Input")
+  string(FIND "${plugin_readme_text}" "${display_name}" display_name_index)
+  if(display_name_index EQUAL -1)
+    message(FATAL_ERROR "Unreal plugin README does not list ${display_name}")
   endif()
 endforeach()
 

@@ -140,8 +140,26 @@ plugins/unreal/AstralRT/
       lib/<Platform>/...
 ```
 
-The descriptor has `CanContainContent: false`; samples live in docs and tests,
-not as plugin content assets.
+The descriptor has `CanContainContent: false`; the maintained sample is a
+generated sidecar project under [`examples/unreal/AstralSample`](../../examples/unreal/AstralSample/README.md),
+not plugin content.
+
+## Workflow Samples
+
+`AAstralSampleActor` owns six focused components in the generated project:
+
+| Workflow | Component |
+| --- | --- |
+| Streaming chat | `UAstralStreamingChatComponent` |
+| Multiple conversations | `UAstralMultipleConversationsComponent` |
+| Stateful NPC | `UAstralStatefulNpcComponent` |
+| Local knowledge | `UAstralLocalKnowledgeComponent` |
+| Character variants | `UAstralCharacterVariantsComponent` |
+| Multimodal input | `UAstralMultimodalInputComponent` |
+
+Each component exposes its controls to Blueprint while retaining native handle
+ownership in C++. Generate the complete project with
+`scripts/create_unreal_sample_project.sh`.
 
 ## Descriptor
 

@@ -33,6 +33,20 @@ To generate a sidecar sample project outside the repo:
 ./scripts/create_unreal_sample_project.sh --out /tmp/AstralSample
 ```
 
+The generated project includes six gameplay components:
+
+| Workflow | Component | Focus |
+| --- | --- | --- |
+| Streaming chat | `Astral Streaming Chat` | Frame-polled UTF-8 streaming, cancellation, and stats |
+| Multiple conversations | `Astral Multiple Conversations` | One executor serving independent conversation slots |
+| Stateful NPC | `Astral Stateful Npc` | Agent history, summary, memory context, and tool calls |
+| Local knowledge | `Astral Local Knowledge` | Chunking, embeddings, native indexing, search, and persistence |
+| Character variants | `Astral Character Variants` | Prompt caches, structured output, stop sequences, and adapters |
+| Multimodal input | `Astral Multimodal Input` | Texture, PCM16 audio, and multimodal embedding requests |
+
+See the [sample README](../../../examples/unreal/AstralSample/README.md) for
+component setup and model requirements.
+
 For release-candidate package evidence, run the package wrapper on a machine
 with UE 5.7:
 

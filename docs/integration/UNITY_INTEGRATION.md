@@ -545,7 +545,21 @@ caller-owned span model for prompt bytes, stream buffers, embedding vectors, or
 memory-search results. See `plugins/unity/ALLOCATOR_INTEGRATION.md` for the
 current contract and validation notes.
 
-## Usage Example (`BasicChatExample.cs`)
+## Workflow Samples
+
+The package ships six focused samples. Install them through Package Manager or
+open their source directly:
+
+| Workflow | Sample |
+| --- | --- |
+| Streaming chat | [`StreamingChat`](../../plugins/unity/Samples~/StreamingChat/README.md) |
+| Multiple conversations | [`MultipleConversations`](../../plugins/unity/Samples~/MultipleConversations/README.md) |
+| Stateful NPC | [`StatefulNpc`](../../plugins/unity/Samples~/StatefulNpc/README.md) |
+| Local knowledge | [`LocalKnowledge`](../../plugins/unity/Samples~/LocalKnowledge/README.md) |
+| Character variants | [`CharacterVariants`](../../plugins/unity/Samples~/CharacterVariants/README.md) |
+| Multimodal input | [`MultimodalInput`](../../plugins/unity/Samples~/MultimodalInput/README.md) |
+
+## Minimal Session Example
 
 ```csharp
 using UnityEngine;
