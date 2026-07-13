@@ -544,6 +544,20 @@ if(UNIX AND NOT APPLE AND EXISTS ${CMAKE_SOURCE_DIR}/scripts/generate_abi_layout
             message(STATUS "Configured test: gate_unreal_compatibility_matrix")
         endif()
 
+        if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_conversation_wrapper.cmake)
+            add_test(
+                NAME gate_unreal_conversation_wrapper
+                COMMAND ${CMAKE_COMMAND}
+                    -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_conversation_wrapper.cmake
+            )
+            set_tests_properties(gate_unreal_conversation_wrapper PROPERTIES
+                TIMEOUT 30
+                LABELS "gate;unreal"
+            )
+            message(STATUS "Configured test: gate_unreal_conversation_wrapper")
+        endif()
+
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_unreal_sample_scaffold.cmake)
             add_test(
                 NAME gate_unreal_sample_scaffold

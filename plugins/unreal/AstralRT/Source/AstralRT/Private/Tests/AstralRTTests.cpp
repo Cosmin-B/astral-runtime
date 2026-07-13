@@ -3,8 +3,9 @@
 #include "Misc/AutomationTest.h"
 
 #include "AstralBlueprintLibrary.h"
-#include "AstralLog.h"
+#include "AstralConversation.h"
 #include "AstralEmbedder.h"
+#include "AstralLog.h"
 #include "AstralMediaLibrary.h"
 #include "AstralModel.h"
 #include "AstralSession.h"
@@ -207,6 +208,28 @@ static int32 drain_stream(UAstralSession& Session, TArray<uint8>& OutBytes) {
     }
 }
 
+static int32 drain_conversation_stream(UAstralConversation& Conversation, TArray<uint8>& OutBytes) {
+  OutBytes.Reset();
+  TArray<uint8> Chunk;
+  Chunk.SetNumUninitialized(512);
+
+  int32 Total = 0;
+  for (;;) {
+    const int32 Count = Conversation.StreamRead(Chunk, 0);
+    if (Count == ASTRAL_E_TIMEOUT) {
+      continue;
+    }
+    if (Count < 0) {
+      return Count;
+    }
+    if (Count == 0) {
+      return Total;
+    }
+    OutBytes.Append(Chunk.GetData(), Count);
+    Total += Count;
+  }
+}
+
 } // namespace
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -236,9 +259,12 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
 
     UAstralModel* Model = UAstralBlueprintLibrary::CreateAstralModel(GetTransientPackage());
     UAstralSession* Session = UAstralBlueprintLibrary::CreateAstralSession(GetTransientPackage());
+    UAstralConversation* Conversation =
+        UAstralBlueprintLibrary::CreateAstralConversation(GetTransientPackage());
     UAstralEmbedder* Embedder = UAstralBlueprintLibrary::CreateAstralEmbedder(GetTransientPackage());
     TestNotNull(TEXT("Blueprint model factory"), Model);
     TestNotNull(TEXT("Blueprint session factory"), Session);
+    TestNotNull(TEXT("Blueprint conversation factory"), Conversation);
     TestNotNull(TEXT("Blueprint embedder factory"), Embedder);
 
     TestEqual(TEXT("timeout error name"),
@@ -1523,6 +1549,86 @@ bool FAstralRTMockE2ETest::RunTest(const FString& Parameters) {
     astral_session_destroy(session);
     astral_model_release(model);
     return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAstralRTMockConversationWrapperTest,
+                                 "AstralRT.Mock.ConversationWrapper",
+                                 EAutomationTestFlags::EditorContext |
+                                     EAutomationTestFlags::EngineFilter)
+
+bool FAstralRTMockConversationWrapperTest::RunTest(const FString& Parameters) {
+  (void)Parameters;
+  if (!ensure_astral_initialized(*this)) {
+    return false;
+  }
+
+  UAstralModel* Model = NewObject<UAstralModel>();
+  UAstralConversation* Conversation = NewObject<UAstralConversation>();
+  TestNotNull(TEXT("conversation model allocated"), Model);
+  TestNotNull(TEXT("conversation allocated"), Conversation);
+
+  FAstralModelDesc ModelDesc{};
+  ModelDesc.BackendName = TEXT("mock");
+  ModelDesc.ContextSize = 128;
+  if (!TestTrue(TEXT("conversation model loads"), Model->Load(ModelDesc))) {
+    return false;
+  }
+
+  FAstralExecutorDesc ExecutorDesc{};
+  ExecutorDesc.MaxSlots = 2;
+  ExecutorDesc.MaxBatchTokens = 16;
+  if (!TestTrue(TEXT("conversation executor configures"), Model->ConfigureExecutor(ExecutorDesc))) {
+    Model->Release();
+    Model->ConditionalBeginDestroy();
+    return false;
+  }
+
+  FAstralConversationDesc ConversationDesc{};
+  ConversationDesc.MaxTokens = 32;
+  ConversationDesc.Temperature = 0.0f;
+  ConversationDesc.TopK = 0;
+  ConversationDesc.TopP = 1.0f;
+  ConversationDesc.bStreamEnabled = true;
+  ConversationDesc.bAutoPumpStream = false;
+  ConversationDesc.Seed = 17;
+  if (!TestTrue(TEXT("conversation creates"), Conversation->Create(Model, ConversationDesc))) {
+    Model->Release();
+    Model->ConditionalBeginDestroy();
+    return false;
+  }
+
+  TestTrue(TEXT("conversation sets system prompt"), Conversation->SetSystemPrompt(TEXT("x")));
+  TestTrue(TEXT("conversation feeds prompt"), Conversation->FeedPrompt(TEXT("hi"), true));
+  TestTrue(TEXT("conversation decodes"), Conversation->Decode());
+
+  TArray<uint8> Output;
+  const int32 DrainedBytes = drain_conversation_stream(*Conversation, Output);
+  TestEqual(TEXT("conversation drains"), DrainedBytes, Output.Num());
+  TestTrue(TEXT("conversation mock output is nonempty"), Output.Num() > 0);
+  TestEqual(TEXT("conversation waits"), Conversation->Wait(5000), static_cast<int32>(ASTRAL_OK));
+
+  FAstralRequestRef Request;
+  const FAstralOperationResult RequestResult =
+      UAstralBlueprintLibrary::CreateConversationRequestResult(
+          static_cast<int64>(Conversation->GetHandle()), Request);
+  TestTrue(TEXT("conversation request ref succeeds"), RequestResult.bSuccess);
+  TestEqual(TEXT("conversation request kind"), Request.Kind, EAstralRequestKind::Conversation);
+
+  const FAstralConversationStats Stats = Conversation->GetStats();
+  TestTrue(TEXT("conversation generated tokens"), Stats.GeneratedTokens > 0);
+
+  TestTrue(TEXT("conversation resets"), Conversation->Reset(ConversationDesc));
+  TestTrue(TEXT("conversation feeds after reset"), Conversation->FeedPrompt(TEXT("cancel"), true));
+  TestTrue(TEXT("conversation decodes before cancel"), Conversation->Decode());
+  TestTrue(TEXT("conversation cancels"), Conversation->Cancel());
+  const int32 CancelWaitResult = Conversation->Wait(5000);
+  TestTrue(TEXT("conversation reaches a terminal state after cancel"),
+           CancelWaitResult == ASTRAL_E_CANCELED || CancelWaitResult == ASTRAL_OK);
+
+  Conversation->ConditionalBeginDestroy();
+  Model->Release();
+  Model->ConditionalBeginDestroy();
+  return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

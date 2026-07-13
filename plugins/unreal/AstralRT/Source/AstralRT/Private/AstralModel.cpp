@@ -348,6 +348,29 @@ bool UAstralModel::GetLimits(FAstralModelLimits& OutLimits) const
     return true;
 }
 
+bool UAstralModel::ConfigureExecutor(const FAstralExecutorDesc& Desc) const {
+  TRACE_CPUPROFILER_EVENT_SCOPE(AstralModel_ConfigureExecutor);
+
+  if (!IsValid() || Desc.MaxSlots <= 0 || Desc.MaxBatchTokens <= 0 || Desc.WorkerHint < 0) {
+    return false;
+  }
+
+  AstralExecutorDesc Native{};
+  Native.size = sizeof(AstralExecutorDesc);
+  Native.max_slots = static_cast<uint32_t>(Desc.MaxSlots);
+  Native.max_batch_tokens = static_cast<uint32_t>(Desc.MaxBatchTokens);
+  Native.worker_hint = static_cast<uint32_t>(Desc.WorkerHint);
+
+  const AstralErr Err =
+      astral_model_executor_configure(static_cast<AstralHandle>(ModelHandle), &Native);
+  if (Err != ASTRAL_OK) {
+    UE_LOG(LogAstralRT, Error, TEXT("AstralRT: astral_model_executor_configure failed (%d)"),
+           static_cast<int32>(Err));
+    return false;
+  }
+  return true;
+}
+
 bool UAstralModel::CountTokens(const FString& Text, bool bAddSpecial, bool bParseSpecial, int32& OutCount) const
 {
     return CountTokensResult(Text, bAddSpecial, bParseSpecial, OutCount).bSuccess;

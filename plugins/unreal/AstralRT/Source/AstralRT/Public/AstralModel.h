@@ -42,6 +42,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool GetLimits(FAstralModelLimits& OutLimits) const;
 
+    /** Configure the model executor before creating conversations. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Conversations")
+    bool ConfigureExecutor(const FAstralExecutorDesc& Desc) const;
+
     /** Load a LoRA or adapter file for later session attachment. */
     UFUNCTION(BlueprintCallable, Category = "Astral|Adapters")
     bool LoadAdapter(const FAstralAdapterDesc& Desc, int64& OutAdapterHandle) const;

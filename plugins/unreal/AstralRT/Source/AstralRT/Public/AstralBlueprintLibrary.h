@@ -6,6 +6,7 @@
 #include "AstralBlueprintLibrary.generated.h"
 
 class UAstralEmbedder;
+class UAstralConversation;
 class UAstralModel;
 class UAstralSession;
 
@@ -23,6 +24,11 @@ public:
     /** Create a session wrapper owned by Outer, or by the transient package when Outer is null. */
     UFUNCTION(BlueprintCallable, Category = "Astral", meta = (DefaultToSelf = "Outer"))
     static UAstralSession* CreateAstralSession(UObject* Outer);
+
+    /** Create a conversation wrapper owned by Outer, or by the transient package when Outer is
+     * null. */
+    UFUNCTION(BlueprintCallable, Category = "Astral", meta = (DefaultToSelf = "Outer"))
+    static UAstralConversation* CreateAstralConversation(UObject* Outer);
 
     /** Create an embedder wrapper owned by Outer, or by the transient package when Outer is null. */
     UFUNCTION(BlueprintCallable, Category = "Astral", meta = (DefaultToSelf = "Outer"))

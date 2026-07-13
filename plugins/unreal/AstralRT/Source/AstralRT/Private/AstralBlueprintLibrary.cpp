@@ -1,5 +1,6 @@
 #include "AstralBlueprintLibrary.h"
 
+#include "AstralConversation.h"
 #include "AstralEmbedder.h"
 #include "AstralLog.h"
 #include "AstralModel.h"
@@ -516,6 +517,10 @@ UAstralModel* UAstralBlueprintLibrary::CreateAstralModel(UObject* Outer)
 UAstralSession* UAstralBlueprintLibrary::CreateAstralSession(UObject* Outer)
 {
     return NewObject<UAstralSession>(resolve_outer(Outer));
+}
+
+UAstralConversation* UAstralBlueprintLibrary::CreateAstralConversation(UObject* Outer) {
+  return NewObject<UAstralConversation>(resolve_outer(Outer));
 }
 
 UAstralEmbedder* UAstralBlueprintLibrary::CreateAstralEmbedder(UObject* Outer)

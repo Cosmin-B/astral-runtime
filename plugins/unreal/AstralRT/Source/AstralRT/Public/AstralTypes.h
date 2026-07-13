@@ -1011,6 +1011,76 @@ struct ASTRALRT_API FAstralSessionDesc
     int32 Seed = 0;
 };
 
+/** Model-scoped executor settings shared by independent conversations. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralExecutorDesc {
+  GENERATED_BODY()
+
+  /** Maximum number of conversations that may own executor slots. */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  int32 MaxSlots = 4;
+
+  /** Maximum prompt and decode tokens submitted in one executor batch. */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  int32 MaxBatchTokens = 64;
+
+  /** Preferred runtime worker. Zero lets Astral choose. */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  int32 WorkerHint = 0;
+};
+
+/** Creation and reset settings for one conversation slot. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralConversationDesc {
+  GENERATED_BODY()
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  int32 MaxTokens = 512;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  float Temperature = 0.7f;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  int32 TopK = 40;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  float TopP = 0.95f;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  bool bStreamEnabled = true;
+
+  /** Broadcast stream delegates from the core ticker. Disable when polling StreamRead directly. */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  bool bAutoPumpStream = true;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Astral|Conversations")
+  int32 Seed = 0;
+};
+
+/** Counters reported for one conversation slot. */
+USTRUCT(BlueprintType)
+struct ASTRALRT_API FAstralConversationStats {
+  GENERATED_BODY()
+
+  UPROPERTY(BlueprintReadOnly, Category = "Astral|Conversations")
+  int32 SlotId = 0;
+
+  UPROPERTY(BlueprintReadOnly, Category = "Astral|Conversations")
+  int32 PromptTokens = 0;
+
+  UPROPERTY(BlueprintReadOnly, Category = "Astral|Conversations")
+  int32 KvTokens = 0;
+
+  UPROPERTY(BlueprintReadOnly, Category = "Astral|Conversations")
+  int64 GeneratedTokens = 0;
+
+  UPROPERTY(BlueprintReadOnly, Category = "Astral|Conversations")
+  double FirstTokenTimeMs = 0.0;
+
+  UPROPERTY(BlueprintReadOnly, Category = "Astral|Conversations")
+  double TokensPerSecond = 0.0;
+};
+
 /** Runtime sampler settings that can be changed after session creation. */
 USTRUCT(BlueprintType)
 struct ASTRALRT_API FAstralSamplerDesc
