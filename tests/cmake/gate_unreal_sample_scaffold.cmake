@@ -26,6 +26,10 @@ set(template_files
   "Source/AstralSample/AstralSampleGameMode.cpp"
   "Source/AstralSample/AstralSampleActor.h"
   "Source/AstralSample/AstralSampleActor.cpp"
+  "Source/AstralSample/Examples/AstralStreamingChatComponent.h"
+  "Source/AstralSample/Examples/AstralStreamingChatComponent.cpp"
+  "Source/AstralSample/Examples/AstralMultipleConversationsComponent.h"
+  "Source/AstralSample/Examples/AstralMultipleConversationsComponent.cpp"
   "README.md"
 )
 foreach(relative_file IN LISTS template_files)
@@ -59,6 +63,10 @@ set(required_files
   "${out_dir}/Source/AstralSample/AstralSampleGameMode.cpp"
   "${out_dir}/Source/AstralSample/AstralSampleActor.h"
   "${out_dir}/Source/AstralSample/AstralSampleActor.cpp"
+  "${out_dir}/Source/AstralSample/Examples/AstralStreamingChatComponent.h"
+  "${out_dir}/Source/AstralSample/Examples/AstralStreamingChatComponent.cpp"
+  "${out_dir}/Source/AstralSample/Examples/AstralMultipleConversationsComponent.h"
+  "${out_dir}/Source/AstralSample/Examples/AstralMultipleConversationsComponent.cpp"
   "${out_dir}/README.md")
 foreach(required_file IN LISTS required_files)
   if(NOT EXISTS "${required_file}")
@@ -82,9 +90,15 @@ file(READ "${out_dir}/Source/AstralSample/AstralSample.Build.cs" build_text)
 file(READ "${out_dir}/Source/AstralSample/AstralSampleGameMode.cpp" game_mode_text)
 file(READ "${out_dir}/Source/AstralSample/AstralSampleActor.h" actor_header_text)
 file(READ "${out_dir}/Source/AstralSample/AstralSampleActor.cpp" actor_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralStreamingChatComponent.h" streaming_chat_header_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralStreamingChatComponent.cpp" streaming_chat_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralMultipleConversationsComponent.h" multiple_conversations_header_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralMultipleConversationsComponent.cpp" multiple_conversations_text)
 file(READ "${out_dir}/README.md" readme_text)
 file(READ "${out_dir}/Content/AstralSample/Models/mock-model.bytes" mock_model_text)
 set(actor_full_text "${actor_header_text}\n${actor_text}")
+set(streaming_chat_full_text "${streaming_chat_header_text}\n${streaming_chat_text}")
+set(multiple_conversations_full_text "${multiple_conversations_header_text}\n${multiple_conversations_text}")
 
 foreach(required_project_text
     "\"EngineAssociation\": \"5.7\""
@@ -92,6 +106,47 @@ foreach(required_project_text
     "\"Enabled\": true")
   if(NOT uproject_text MATCHES "${required_project_text}")
     message(FATAL_ERROR "Unreal sample uproject missing ${required_project_text}")
+  endif()
+endforeach()
+
+foreach(required_streaming_chat_text
+    "UCLASS(ClassGroup = (Astral), BlueprintType, meta = (BlueprintSpawnableComponent))"
+    "class ASTRALSAMPLE_API UAstralStreamingChatComponent"
+    "TObjectPtr<UAstralModel> Model"
+    "TObjectPtr<UAstralSession> Session"
+    "FAstralRequestRef ActiveRequest"
+    "OnStreamBytesNative().AddUObject"
+    "CreateSessionRequestResult"
+    "CancelRequestResult"
+    "SetSystemPrompt"
+    "FeedPrompt"
+    "GetStats"
+    "EndPlay")
+  string(FIND "${streaming_chat_full_text}" "${required_streaming_chat_text}" required_streaming_chat_text_pos)
+  if(required_streaming_chat_text_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal streaming chat component is missing ${required_streaming_chat_text}")
+  endif()
+endforeach()
+
+foreach(required_multiple_conversations_text
+    "UCLASS(ClassGroup = (Astral), BlueprintType, meta = (BlueprintSpawnableComponent))"
+    "class ASTRALSAMPLE_API UAstralMultipleConversationsComponent"
+    "TObjectPtr<UAstralModel> Model"
+    "TArray<TObjectPtr<UAstralConversation>> Conversations"
+    "TArray<FAstralRequestRef> Requests"
+    "TArray<int32> LastErrorCodes"
+    "ConfigureExecutor"
+    "bAutoPumpStream = false"
+    "CreateConversationRequestResult"
+    "StreamRead(StreamBuffers[Index], 0)"
+    "ResetConversation"
+    "CancelConversation"
+    "GetStats"
+    "AbortPartialRun"
+    "EndPlay")
+  string(FIND "${multiple_conversations_full_text}" "${required_multiple_conversations_text}" required_multiple_conversations_text_pos)
+  if(required_multiple_conversations_text_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal multiple-conversation component is missing ${required_multiple_conversations_text}")
   endif()
 endforeach()
 

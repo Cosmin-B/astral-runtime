@@ -6,6 +6,8 @@
 #include "AstralModel.h"
 #include "AstralSession.h"
 #include "AstralTypes.h"
+#include "Examples/AstralMultipleConversationsComponent.h"
+#include "Examples/AstralStreamingChatComponent.h"
 #include "astral_rt.h"
 
 #include "Containers/ArrayView.h"
@@ -54,6 +56,10 @@ static const TCHAR* AstralSamplePathRootName(EAstralUnrealPathRoot Root) {
 
 AAstralSampleActor::AAstralSampleActor() {
   PrimaryActorTick.bCanEverTick = false;
+  StreamingChat =
+      CreateDefaultSubobject<UAstralStreamingChatComponent>(TEXT("AstralStreamingChat"));
+  MultipleConversations = CreateDefaultSubobject<UAstralMultipleConversationsComponent>(
+      TEXT("AstralMultipleConversations"));
 }
 
 void AAstralSampleActor::BeginPlay() {

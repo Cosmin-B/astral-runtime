@@ -8,7 +8,9 @@
 
 class UAstralEmbedder;
 class UAstralModel;
+class UAstralMultipleConversationsComponent;
 class UAstralSession;
+class UAstralStreamingChatComponent;
 
 UCLASS()
 class ASTRALSAMPLE_API AAstralSampleActor : public AActor {
@@ -40,6 +42,12 @@ public:
 
   UPROPERTY(EditAnywhere, Category = "Astral")
   FString Prompt = TEXT("Say hello from Astral.");
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Astral|Examples")
+  TObjectPtr<UAstralStreamingChatComponent> StreamingChat;
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Astral|Examples")
+  TObjectPtr<UAstralMultipleConversationsComponent> MultipleConversations;
 
   UFUNCTION(BlueprintCallable, Category = "Astral")
   void RunGenerationDemo();
