@@ -37,5 +37,21 @@ the media feed demo; leave them unset with `-AstralMediaBackend=mock` for a
 lightweight descriptor/bridge smoke. Real projector validation remains part of
 the MTMD release lane.
 
+## Gameplay components
+
+Add `Astral Stateful Npc` to an actor to keep agent history across level or
+actor recreation. Configure its model, prompt state, and history file, then call
+`Ask`, `Cancel`, `Save History`, or `Load History` from Blueprint. The component
+polls one chat request per frame, reports structured `move_to` tool calls, and
+stores history below `ProjectSavedDir/Astral` by default. Mock models exercise
+the lifecycle and tool parsing; useful dialogue requires a generation model.
+
+Add `Astral Local Knowledge` to an actor to index short lore, quest, or dialogue
+documents. Set an embeddings-capable model, edit `Document Text`, then call
+`Build Index` and `Search`. `Matched Text` contains the original chunks for UI
+or prompt assembly. `Save Index` and `Load Index` persist the native snapshot
+below `ProjectSavedDir/Astral`. A model without embeddings support returns an
+unsupported operation instead of silently substituting vectors.
+
 Real production sign-off still requires packaging this project on the UE 5.7
 release runner and recording the Automation/package logs as release evidence.

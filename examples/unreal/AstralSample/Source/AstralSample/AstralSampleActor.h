@@ -9,6 +9,8 @@
 class UAstralEmbedder;
 class UAstralModel;
 class UAstralMultipleConversationsComponent;
+class UAstralLocalKnowledgeComponent;
+class UAstralStatefulNpcComponent;
 class UAstralSession;
 class UAstralStreamingChatComponent;
 
@@ -48,6 +50,12 @@ public:
 
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Astral|Examples")
   TObjectPtr<UAstralMultipleConversationsComponent> MultipleConversations;
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Astral|Examples")
+  TObjectPtr<UAstralStatefulNpcComponent> StatefulNpc;
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Astral|Examples")
+  TObjectPtr<UAstralLocalKnowledgeComponent> LocalKnowledge;
 
   UFUNCTION(BlueprintCallable, Category = "Astral")
   void RunGenerationDemo();

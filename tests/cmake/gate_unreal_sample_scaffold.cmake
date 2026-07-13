@@ -30,6 +30,10 @@ set(template_files
   "Source/AstralSample/Examples/AstralStreamingChatComponent.cpp"
   "Source/AstralSample/Examples/AstralMultipleConversationsComponent.h"
   "Source/AstralSample/Examples/AstralMultipleConversationsComponent.cpp"
+  "Source/AstralSample/Examples/AstralStatefulNpcComponent.h"
+  "Source/AstralSample/Examples/AstralStatefulNpcComponent.cpp"
+  "Source/AstralSample/Examples/AstralLocalKnowledgeComponent.h"
+  "Source/AstralSample/Examples/AstralLocalKnowledgeComponent.cpp"
   "README.md"
 )
 foreach(relative_file IN LISTS template_files)
@@ -67,6 +71,10 @@ set(required_files
   "${out_dir}/Source/AstralSample/Examples/AstralStreamingChatComponent.cpp"
   "${out_dir}/Source/AstralSample/Examples/AstralMultipleConversationsComponent.h"
   "${out_dir}/Source/AstralSample/Examples/AstralMultipleConversationsComponent.cpp"
+  "${out_dir}/Source/AstralSample/Examples/AstralStatefulNpcComponent.h"
+  "${out_dir}/Source/AstralSample/Examples/AstralStatefulNpcComponent.cpp"
+  "${out_dir}/Source/AstralSample/Examples/AstralLocalKnowledgeComponent.h"
+  "${out_dir}/Source/AstralSample/Examples/AstralLocalKnowledgeComponent.cpp"
   "${out_dir}/README.md")
 foreach(required_file IN LISTS required_files)
   if(NOT EXISTS "${required_file}")
@@ -94,11 +102,17 @@ file(READ "${out_dir}/Source/AstralSample/Examples/AstralStreamingChatComponent.
 file(READ "${out_dir}/Source/AstralSample/Examples/AstralStreamingChatComponent.cpp" streaming_chat_text)
 file(READ "${out_dir}/Source/AstralSample/Examples/AstralMultipleConversationsComponent.h" multiple_conversations_header_text)
 file(READ "${out_dir}/Source/AstralSample/Examples/AstralMultipleConversationsComponent.cpp" multiple_conversations_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralStatefulNpcComponent.h" stateful_npc_header_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralStatefulNpcComponent.cpp" stateful_npc_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralLocalKnowledgeComponent.h" local_knowledge_header_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralLocalKnowledgeComponent.cpp" local_knowledge_text)
 file(READ "${out_dir}/README.md" readme_text)
 file(READ "${out_dir}/Content/AstralSample/Models/mock-model.bytes" mock_model_text)
 set(actor_full_text "${actor_header_text}\n${actor_text}")
 set(streaming_chat_full_text "${streaming_chat_header_text}\n${streaming_chat_text}")
 set(multiple_conversations_full_text "${multiple_conversations_header_text}\n${multiple_conversations_text}")
+set(stateful_npc_full_text "${stateful_npc_header_text}\n${stateful_npc_text}")
+set(local_knowledge_full_text "${local_knowledge_header_text}\n${local_knowledge_text}")
 
 foreach(required_project_text
     "\"EngineAssociation\": \"5.7\""
@@ -106,6 +120,56 @@ foreach(required_project_text
     "\"Enabled\": true")
   if(NOT uproject_text MATCHES "${required_project_text}")
     message(FATAL_ERROR "Unreal sample uproject missing ${required_project_text}")
+  endif()
+endforeach()
+
+foreach(required_stateful_npc_text
+    "UCLASS(ClassGroup = (Astral), BlueprintType, meta = (BlueprintSpawnableComponent))"
+    "class ASTRALSAMPLE_API UAstralStatefulNpcComponent"
+    "FAstralOperationResult LastOperation"
+    "CreateToolsetResult"
+    "CreateAgentResult"
+    "SetAgentSystemPromptResult"
+    "SetAgentSummaryResult"
+    "SetAgentMemoryContextResult"
+    "EnqueueAgentChatResult"
+    "CreateAgentChatRequestResult"
+    "ReadAgentChatResult"
+    "GetAgentChatToolCallResultStatus"
+    "SaveAgentHistoryResult"
+    "LoadAgentHistoryResult"
+    "ReleaseAgentSlotResult"
+    "CancelAgentChatResult"
+    "DestroyAgent"
+    "DestroyToolset"
+    "ProjectSavedDir"
+    "EndPlay")
+  string(FIND "${stateful_npc_full_text}" "${required_stateful_npc_text}" required_stateful_npc_text_pos)
+  if(required_stateful_npc_text_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal stateful NPC component is missing ${required_stateful_npc_text}")
+  endif()
+endforeach()
+
+foreach(required_local_knowledge_text
+    "UCLASS(ClassGroup = (Astral), BlueprintType, meta = (BlueprintSpawnableComponent))"
+    "class ASTRALSAMPLE_API UAstralLocalKnowledgeComponent"
+    "TObjectPtr<UAstralEmbedder> Embedder"
+    "FAstralOperationResult LastOperation"
+    "ChunkText"
+    "CopyChunkTextResult"
+    "MakeMemoryRecordFromChunkResult"
+    "AddMemoryBatchResult"
+    "SearchMemoryIndexResult"
+    "SaveMemoryIndexResult"
+    "LoadMemoryIndexResult"
+    "DestroyMemoryIndex"
+    "EmbedText"
+    "ProjectSavedDir"
+    "embeddings-capable model"
+    "EndPlay")
+  string(FIND "${local_knowledge_full_text}" "${required_local_knowledge_text}" required_local_knowledge_text_pos)
+  if(required_local_knowledge_text_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal local knowledge component is missing ${required_local_knowledge_text}")
   endif()
 endforeach()
 
@@ -182,6 +246,10 @@ foreach(required_actor_text
     "UAstralModel"
     "UAstralSession"
     "UAstralEmbedder"
+    "UAstralStatefulNpcComponent"
+    "UAstralLocalKnowledgeComponent"
+    "CreateDefaultSubobject<UAstralStatefulNpcComponent>"
+    "CreateDefaultSubobject<UAstralLocalKnowledgeComponent>"
     "ProjectContentDir"
     "ProjectSavedDir"
     "LoadFileToArray"
@@ -226,6 +294,9 @@ foreach(required_readme_text
     "image/audio media feed"
     "packaged content bytes"
     "Saved cache bytes"
+    "Stateful Npc"
+    "Local Knowledge"
+    "embeddings-capable model"
     "expected error logging")
   if(NOT readme_text MATCHES "${required_readme_text}")
     message(FATAL_ERROR "Unreal sample README is missing ${required_readme_text}")
