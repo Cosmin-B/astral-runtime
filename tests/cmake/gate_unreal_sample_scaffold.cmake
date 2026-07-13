@@ -34,6 +34,10 @@ set(template_files
   "Source/AstralSample/Examples/AstralStatefulNpcComponent.cpp"
   "Source/AstralSample/Examples/AstralLocalKnowledgeComponent.h"
   "Source/AstralSample/Examples/AstralLocalKnowledgeComponent.cpp"
+  "Source/AstralSample/Examples/AstralCharacterVariantsComponent.h"
+  "Source/AstralSample/Examples/AstralCharacterVariantsComponent.cpp"
+  "Source/AstralSample/Examples/AstralMultimodalInputComponent.h"
+  "Source/AstralSample/Examples/AstralMultimodalInputComponent.cpp"
   "README.md"
 )
 foreach(relative_file IN LISTS template_files)
@@ -75,6 +79,10 @@ set(required_files
   "${out_dir}/Source/AstralSample/Examples/AstralStatefulNpcComponent.cpp"
   "${out_dir}/Source/AstralSample/Examples/AstralLocalKnowledgeComponent.h"
   "${out_dir}/Source/AstralSample/Examples/AstralLocalKnowledgeComponent.cpp"
+  "${out_dir}/Source/AstralSample/Examples/AstralCharacterVariantsComponent.h"
+  "${out_dir}/Source/AstralSample/Examples/AstralCharacterVariantsComponent.cpp"
+  "${out_dir}/Source/AstralSample/Examples/AstralMultimodalInputComponent.h"
+  "${out_dir}/Source/AstralSample/Examples/AstralMultimodalInputComponent.cpp"
   "${out_dir}/README.md")
 foreach(required_file IN LISTS required_files)
   if(NOT EXISTS "${required_file}")
@@ -106,6 +114,10 @@ file(READ "${out_dir}/Source/AstralSample/Examples/AstralStatefulNpcComponent.h"
 file(READ "${out_dir}/Source/AstralSample/Examples/AstralStatefulNpcComponent.cpp" stateful_npc_text)
 file(READ "${out_dir}/Source/AstralSample/Examples/AstralLocalKnowledgeComponent.h" local_knowledge_header_text)
 file(READ "${out_dir}/Source/AstralSample/Examples/AstralLocalKnowledgeComponent.cpp" local_knowledge_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralCharacterVariantsComponent.h" character_variants_header_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralCharacterVariantsComponent.cpp" character_variants_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralMultimodalInputComponent.h" multimodal_input_header_text)
+file(READ "${out_dir}/Source/AstralSample/Examples/AstralMultimodalInputComponent.cpp" multimodal_input_text)
 file(READ "${out_dir}/README.md" readme_text)
 file(READ "${out_dir}/Content/AstralSample/Models/mock-model.bytes" mock_model_text)
 set(actor_full_text "${actor_header_text}\n${actor_text}")
@@ -113,6 +125,8 @@ set(streaming_chat_full_text "${streaming_chat_header_text}\n${streaming_chat_te
 set(multiple_conversations_full_text "${multiple_conversations_header_text}\n${multiple_conversations_text}")
 set(stateful_npc_full_text "${stateful_npc_header_text}\n${stateful_npc_text}")
 set(local_knowledge_full_text "${local_knowledge_header_text}\n${local_knowledge_text}")
+set(character_variants_full_text "${character_variants_header_text}\n${character_variants_text}")
+set(multimodal_input_full_text "${multimodal_input_header_text}\n${multimodal_input_text}")
 
 foreach(required_project_text
     "\"EngineAssociation\": \"5.7\""
@@ -170,6 +184,57 @@ foreach(required_local_knowledge_text
   string(FIND "${local_knowledge_full_text}" "${required_local_knowledge_text}" required_local_knowledge_text_pos)
   if(required_local_knowledge_text_pos EQUAL -1)
     message(FATAL_ERROR "Unreal local knowledge component is missing ${required_local_knowledge_text}")
+  endif()
+endforeach()
+
+foreach(required_character_variants_text
+    "class ASTRALSAMPLE_API UAstralCharacterVariantsComponent"
+    "BlueprintSpawnableComponent"
+    "FAstralOperationResult LastOperation"
+    "CreatePromptCacheResult"
+    "MakePromptCacheKeyResult"
+    "PutPromptCacheTokensResult"
+    "GetPromptCacheTokensResult"
+    "SavePromptCacheResult"
+    "LoadPromptCacheResult"
+    "LoadAdapter"
+    "AddAdapter"
+    "SetAdapterScale"
+    "StopAddString"
+    "SetGrammarJsonSchema"
+    "CountTokensResult"
+    "TokenizeResult"
+    "DetokenizeResult"
+    "DestroyPromptCache"
+    "ReleaseAdapter"
+    "EndPlay")
+  string(FIND "${character_variants_full_text}" "${required_character_variants_text}" required_character_variants_text_pos)
+  if(required_character_variants_text_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal character variants component is missing ${required_character_variants_text}")
+  endif()
+endforeach()
+
+foreach(required_multimodal_input_text
+    "class ASTRALSAMPLE_API UAstralMultimodalInputComponent"
+    "BlueprintSpawnableComponent"
+    "TObjectPtr<UTexture2D> Image"
+    "FAstralOperationResult LastOperation"
+    "MakeRGBA8ImageFromTexture"
+    "MakePCM16AudioFromBytes"
+    "InitMedia"
+    "GetMediaInfo"
+    "HasImageInput"
+    "HasAudioInput"
+    "HasMultimodalEmbeddings"
+    "FeedImage"
+    "FeedAudio"
+    "EnqueueMultimodalResult"
+    "CreateEmbeddingRequestResult"
+    "CancelRequestResult"
+    "EndPlay")
+  string(FIND "${multimodal_input_full_text}" "${required_multimodal_input_text}" required_multimodal_input_text_pos)
+  if(required_multimodal_input_text_pos EQUAL -1)
+    message(FATAL_ERROR "Unreal multimodal input component is missing ${required_multimodal_input_text}")
   endif()
 endforeach()
 
@@ -250,6 +315,10 @@ foreach(required_actor_text
     "UAstralLocalKnowledgeComponent"
     "CreateDefaultSubobject<UAstralStatefulNpcComponent>"
     "CreateDefaultSubobject<UAstralLocalKnowledgeComponent>"
+    "UAstralCharacterVariantsComponent"
+    "UAstralMultimodalInputComponent"
+    "CreateDefaultSubobject<UAstralCharacterVariantsComponent>"
+    "CreateDefaultSubobject<UAstralMultimodalInputComponent>"
     "ProjectContentDir"
     "ProjectSavedDir"
     "LoadFileToArray"
@@ -296,6 +365,8 @@ foreach(required_readme_text
     "Saved cache bytes"
     "Stateful Npc"
     "Local Knowledge"
+    "Character Variants"
+    "Multimodal Input"
     "embeddings-capable model"
     "expected error logging")
   if(NOT readme_text MATCHES "${required_readme_text}")

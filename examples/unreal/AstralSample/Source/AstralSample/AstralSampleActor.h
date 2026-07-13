@@ -7,6 +7,8 @@
 #include "AstralSampleActor.generated.h"
 
 class UAstralEmbedder;
+class UAstralCharacterVariantsComponent;
+class UAstralMultimodalInputComponent;
 class UAstralModel;
 class UAstralMultipleConversationsComponent;
 class UAstralLocalKnowledgeComponent;
@@ -56,6 +58,12 @@ public:
 
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Astral|Examples")
   TObjectPtr<UAstralLocalKnowledgeComponent> LocalKnowledge;
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Astral|Examples")
+  TObjectPtr<UAstralCharacterVariantsComponent> CharacterVariants;
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Astral|Examples")
+  TObjectPtr<UAstralMultimodalInputComponent> MultimodalInput;
 
   UFUNCTION(BlueprintCallable, Category = "Astral")
   void RunGenerationDemo();

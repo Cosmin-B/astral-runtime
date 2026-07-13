@@ -117,6 +117,18 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool StopAddString(const FString& Utf8Text);
 
+    /** Constrain later generation with a GBNF grammar and optional root symbol. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Grammar")
+    bool SetGrammarGbnf(const FString& Grammar, const FString& RootSymbol = TEXT("root"));
+
+    /** Constrain later generation with a JSON schema. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Grammar")
+    bool SetGrammarJsonSchema(const FString& JsonSchema);
+
+    /** Remove the active grammar constraint. */
+    UFUNCTION(BlueprintCallable, Category = "Astral|Grammar")
+    bool ClearGrammar();
+
     /** Read streamed UTF-8 bytes into OutBuffer; negative values are native error codes. */
     int32 StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs = 0);
 

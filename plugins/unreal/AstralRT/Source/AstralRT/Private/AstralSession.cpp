@@ -566,6 +566,41 @@ bool UAstralSession::StopAddString(const FString& Utf8Text)
     return StopAddUtf8Bytes(TConstArrayView<uint8>(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()));
 }
 
+bool UAstralSession::SetGrammarGbnf(const FString& Grammar, const FString& RootSymbol) {
+  if (!IsValid() || Grammar.IsEmpty()) {
+    return false;
+  }
+
+  const FTCHARToUTF8 GrammarUtf8(*Grammar);
+  const FTCHARToUTF8 RootUtf8(*RootSymbol);
+  AstralSpanU8 GrammarSpan{};
+  GrammarSpan.data = reinterpret_cast<const uint8*>(GrammarUtf8.Get());
+  GrammarSpan.len = static_cast<uint32>(GrammarUtf8.Length());
+  AstralSpanU8 RootSpan{};
+  RootSpan.data = reinterpret_cast<const uint8*>(RootUtf8.Get());
+  RootSpan.len = static_cast<uint32>(RootUtf8.Length());
+  return astral_session_set_grammar_gbnf(static_cast<AstralHandle>(SessionHandle), GrammarSpan,
+                                         RootSpan) == ASTRAL_OK;
+}
+
+bool UAstralSession::SetGrammarJsonSchema(const FString& JsonSchema) {
+  if (!IsValid() || JsonSchema.IsEmpty()) {
+    return false;
+  }
+
+  const FTCHARToUTF8 Utf8(*JsonSchema);
+  AstralSpanU8 Span{};
+  Span.data = reinterpret_cast<const uint8*>(Utf8.Get());
+  Span.len = static_cast<uint32>(Utf8.Length());
+  return astral_session_set_grammar_json_schema(static_cast<AstralHandle>(SessionHandle), Span) ==
+         ASTRAL_OK;
+}
+
+bool UAstralSession::ClearGrammar() {
+  return IsValid() &&
+         astral_session_clear_grammar(static_cast<AstralHandle>(SessionHandle)) == ASTRAL_OK;
+}
+
 int32 UAstralSession::StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs)
 {
     if (!IsValid())

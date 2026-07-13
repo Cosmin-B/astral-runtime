@@ -53,5 +53,18 @@ or prompt assembly. `Save Index` and `Load Index` persist the native snapshot
 below `ProjectSavedDir/Astral`. A model without embeddings support returns an
 unsupported operation instead of silently substituting vectors.
 
+Add `Astral Character Variants` to compare prompt and model customization
+without duplicating model ownership. `Prepare Prompt Cache` tokenizes and
+round-trips the system prompt, stores it under a stable cache key, and writes a
+snapshot below `ProjectSavedDir/Astral`. `Run` applies the configured stop
+sequence and JSON-schema grammar, then optionally attaches a model-scoped
+adapter. Adapter paths are optional; an empty path runs the base model.
+
+Add `Astral Multimodal Input` to feed a CPU-readable texture or interleaved
+PCM16 bytes. Set a media projector path or payload before calling the image,
+audio, or embedding controls. The component checks model capabilities before
+each operation, copies Unreal-owned media into Astral descriptors, exposes the
+resulting embedding, and keeps model-dependent auto-run disabled.
+
 Real production sign-off still requires packaging this project on the UE 5.7
 release runner and recording the Automation/package logs as release evidence.

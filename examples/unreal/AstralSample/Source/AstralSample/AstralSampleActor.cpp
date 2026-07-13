@@ -6,7 +6,9 @@
 #include "AstralModel.h"
 #include "AstralSession.h"
 #include "AstralTypes.h"
+#include "Examples/AstralCharacterVariantsComponent.h"
 #include "Examples/AstralLocalKnowledgeComponent.h"
+#include "Examples/AstralMultimodalInputComponent.h"
 #include "Examples/AstralMultipleConversationsComponent.h"
 #include "Examples/AstralStatefulNpcComponent.h"
 #include "Examples/AstralStreamingChatComponent.h"
@@ -65,6 +67,10 @@ AAstralSampleActor::AAstralSampleActor() {
   StatefulNpc = CreateDefaultSubobject<UAstralStatefulNpcComponent>(TEXT("AstralStatefulNpc"));
   LocalKnowledge =
       CreateDefaultSubobject<UAstralLocalKnowledgeComponent>(TEXT("AstralLocalKnowledge"));
+  CharacterVariants =
+      CreateDefaultSubobject<UAstralCharacterVariantsComponent>(TEXT("AstralCharacterVariants"));
+  MultimodalInput =
+      CreateDefaultSubobject<UAstralMultimodalInputComponent>(TEXT("AstralMultimodalInput"));
 }
 
 void AAstralSampleActor::BeginPlay() {

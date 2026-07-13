@@ -10,6 +10,8 @@ set(blueprint_header "${plugin_dir}/Public/AstralBlueprintLibrary.h")
 set(blueprint_source "${plugin_dir}/Private/AstralBlueprintLibrary.cpp")
 set(conv_header "${plugin_dir}/Public/AstralConversation.h")
 set(conv_source "${plugin_dir}/Private/AstralConversation.cpp")
+set(session_header "${plugin_dir}/Public/AstralSession.h")
+set(session_source "${plugin_dir}/Private/AstralSession.cpp")
 set(test_source "${plugin_dir}/Private/Tests/AstralRTTests.cpp")
 
 foreach(required_file IN ITEMS
@@ -20,9 +22,32 @@ foreach(required_file IN ITEMS
     "${blueprint_source}"
     "${conv_header}"
     "${conv_source}"
+    "${session_header}"
+    "${session_source}"
     "${test_source}")
   if(NOT EXISTS "${required_file}")
     message(FATAL_ERROR "Unreal conversation wrapper file missing: ${required_file}")
+  endif()
+endforeach()
+
+file(READ "${session_header}" session_header_text)
+file(READ "${session_source}" session_source_text)
+foreach(required_session_grammar_text IN ITEMS
+    "SetGrammarGbnf"
+    "SetGrammarJsonSchema"
+    "ClearGrammar")
+  string(FIND "${session_header_text}" "${required_session_grammar_text}" grammar_index)
+  if(grammar_index EQUAL -1)
+    message(FATAL_ERROR "Unreal session wrapper is missing ${required_session_grammar_text}")
+  endif()
+endforeach()
+foreach(required_session_grammar_native_text IN ITEMS
+    "astral_session_set_grammar_gbnf"
+    "astral_session_set_grammar_json_schema"
+    "astral_session_clear_grammar")
+  string(FIND "${session_source_text}" "${required_session_grammar_native_text}" grammar_native_index)
+  if(grammar_native_index EQUAL -1)
+    message(FATAL_ERROR "Unreal session wrapper is missing ${required_session_grammar_native_text}")
   endif()
 endforeach()
 

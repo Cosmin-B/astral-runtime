@@ -403,6 +403,12 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     AdapterSessionDesc.bStreamEnabled = false;
     AdapterSessionDesc.Seed = AdapterSessionSeed;
     TestTrue(TEXT("unreal adapter session creates"), Session->Create(Model, AdapterSessionDesc));
+    TestFalse(TEXT("mock reports GBNF grammar unsupported"),
+              Session->SetGrammarGbnf(TEXT("root ::= \"ok\""), TEXT("root")));
+    TestTrue(TEXT("unreal GBNF grammar clears"), Session->ClearGrammar());
+    TestFalse(TEXT("mock reports JSON schema grammar unsupported"),
+              Session->SetGrammarJsonSchema(TEXT("{\"type\":\"string\"}")));
+    TestTrue(TEXT("unreal JSON schema grammar clears"), Session->ClearGrammar());
     TestTrue(TEXT("unreal adapter attaches"), Session->AddAdapter(AdapterHandle, AdapterInitialScale));
 
     int32 AttachedAdapterCount = 0;
@@ -930,14 +936,16 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
 
     TArray<FAstralMemorySearchResult> RemovedMemoryResults;
     const FAstralOperationResult RemovedSearchMemory =
-        UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK, AnyMemoryGroup, RemovedMemoryResults);
+        UAstralBlueprintLibrary::SearchMemoryIndexResult(LoadMemory.Handle, Query, SearchTopK,
+                                                         AnyMemoryGroup, RemovedMemoryResults);
     TestTrue(TEXT("removed memory search succeeds"), RemovedSearchMemory.bSuccess);
     TestEqual(TEXT("removed memory search count"), RemovedSearchMemory.Count, CursorFetchLimit);
     if (RemovedMemoryResults.Num() > 0) {
-        TestEqual(TEXT("removed memory top key"), RemovedMemoryResults[0].Key, RecordB.Key);
+      TestEqual(TEXT("removed memory top key"), RemovedMemoryResults[0].Key, UpdatedRecord.Key);
     }
 
-    const FAstralOperationResult ClearMemory = UAstralBlueprintLibrary::ClearMemoryIndexResult(LoadMemory.Handle);
+    const FAstralOperationResult ClearMemory =
+        UAstralBlueprintLibrary::ClearMemoryIndexResult(LoadMemory.Handle);
     TestTrue(TEXT("memory clear succeeds"), ClearMemory.bSuccess);
 
     const FAstralOperationResult ClearedMemoryCount =
@@ -968,14 +976,16 @@ bool FAstralRTBlueprintLibraryTest::RunTest(const FString& Parameters) {
     const FAstralOperationResult GraphMemoryStatsResult =
         UAstralBlueprintLibrary::GetMemoryStatsResult(GraphMemoryCreate.Handle, GraphMemoryStats);
     TestTrue(TEXT("graph memory stats succeeds"), GraphMemoryStatsResult.bSuccess);
-    TestEqual(TEXT("graph memory stats index kind"), GraphMemoryStats.IndexKind, EAstralMemoryIndexKind::Graph);
-    TestEqual(TEXT("graph memory stats storage kind"), GraphMemoryStats.StorageKind, EAstralMemoryStorageKind::F32);
+    TestEqual(TEXT("graph memory stats index kind"), GraphMemoryStats.IndexKind,
+              EAstralMemoryIndexKind::Graph);
+    TestEqual(TEXT("graph memory stats storage kind"), GraphMemoryStats.StorageKind,
+              EAstralMemoryStorageKind::F32);
     TestEqual(TEXT("graph memory stats neighbors"), GraphMemoryStats.GraphNeighbors,
               GraphMemoryDesc.GraphNeighbors);
     TestEqual(TEXT("graph memory stats search"), GraphMemoryStats.GraphSearch,
-              GraphMemoryDesc.GraphSearch);
+              FMath::Min(GraphMemoryDesc.GraphSearch, GraphMemoryDesc.Capacity));
     TestEqual(TEXT("graph memory stats query search"), GraphMemoryStats.GraphQuerySearch,
-              GraphMemoryDesc.GraphQuerySearch);
+              FMath::Min(GraphMemoryDesc.GraphQuerySearch, GraphMemoryDesc.Capacity));
     TestTrue(TEXT("graph memory stats graph bytes"), GraphMemoryStats.GraphBytes > EmptyByteCount);
     TestTrue(TEXT("graph memory stats graph edges"), GraphMemoryStats.GraphEdges > EmptyByteCount);
     TestTrue(TEXT("graph memory stats base edges"),
