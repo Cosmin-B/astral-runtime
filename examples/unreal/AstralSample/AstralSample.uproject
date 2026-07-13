@@ -1,0 +1,19 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.7",
+  "Category": "Samples",
+  "Description": "AstralRT Unreal sample project",
+  "Modules": [
+    {
+      "Name": "AstralSample",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "AstralRT",
+      "Enabled": true
+    }
+  ]
+}

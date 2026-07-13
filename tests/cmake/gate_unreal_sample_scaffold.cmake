@@ -9,8 +9,30 @@ if(NOT DEFINED ASTRAL_BASH_EXECUTABLE)
 endif()
 
 set(out_dir "${ASTRAL_BUILD_DIR}/unreal-sample-scaffold/AstralSample")
+set(template_dir "${ASTRAL_SOURCE_DIR}/examples/unreal/AstralSample")
 file(REMOVE_RECURSE "${out_dir}")
 file(MAKE_DIRECTORY "${ASTRAL_BUILD_DIR}/unreal-sample-scaffold")
+
+set(template_files
+  "AstralSample.uproject"
+  "Config/DefaultEngine.ini"
+  "Config/DefaultGame.ini"
+  "Content/AstralSample/Models/mock-model.bytes"
+  "Source/AstralSample.Target.cs"
+  "Source/AstralSampleEditor.Target.cs"
+  "Source/AstralSample/AstralSample.Build.cs"
+  "Source/AstralSample/AstralSample.cpp"
+  "Source/AstralSample/AstralSampleGameMode.h"
+  "Source/AstralSample/AstralSampleGameMode.cpp"
+  "Source/AstralSample/AstralSampleActor.h"
+  "Source/AstralSample/AstralSampleActor.cpp"
+  "README.md"
+)
+foreach(relative_file IN LISTS template_files)
+  if(NOT EXISTS "${template_dir}/${relative_file}")
+    message(FATAL_ERROR "Unreal sample template missing ${template_dir}/${relative_file}")
+  endif()
+endforeach()
 
 execute_process(
   COMMAND "${ASTRAL_BASH_EXECUTABLE}" "${ASTRAL_SOURCE_DIR}/scripts/create_unreal_sample_project.sh"
@@ -41,6 +63,14 @@ set(required_files
 foreach(required_file IN LISTS required_files)
   if(NOT EXISTS "${required_file}")
     message(FATAL_ERROR "Unreal sample scaffold missing ${required_file}")
+  endif()
+endforeach()
+
+foreach(relative_file IN LISTS template_files)
+  file(SHA256 "${template_dir}/${relative_file}" template_hash)
+  file(SHA256 "${out_dir}/${relative_file}" generated_hash)
+  if(NOT template_hash STREQUAL generated_hash)
+    message(FATAL_ERROR "Generated Unreal sample differs from template: ${relative_file}")
   endif()
 endforeach()
 
