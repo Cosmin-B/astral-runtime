@@ -60,7 +60,6 @@ astral/plugins/unity/
 │   ├── AstralJobSystem.cs     # Jobs integration
 │   └── Astral.Runtime.asmdef  # Assembly definition
 ├── README.md
-├── IMPLEMENTATION.md
 ├── ALLOCATOR_INTEGRATION.md
 └── package.json
 ```

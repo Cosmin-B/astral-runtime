@@ -23,6 +23,7 @@ evidence required for support claims.
 - [Chunking](api/CHUNKING.md)
 - [Memory index](api/MEMORY_INDEX.md)
 - [Agent runtime](api/AGENT_RUNTIME.md)
+- [Asynchronous delivery](api/ASYNC_DELIVERY.md)
 - [Remote runtime](api/REMOTE_RUNTIME.md)
 - [Model paths](api/MODEL_PATHS.md) and [model presets](api/MODEL_PRESETS.md)
 
@@ -34,7 +35,6 @@ The complete function and descriptor surface is in
 - [Unity integration](integration/UNITY_INTEGRATION.md)
 - [Unreal integration](integration/UNREAL_INTEGRATION.md)
 - [Unreal 5.7 quickstart](integration/UNREAL_57_QUICKSTART.md)
-- [Engine ownership patterns](architecture/ENGINE_INTEGRATION_PATTERNS.md)
 
 Package-specific usage and samples live under [`plugins/unity`](../plugins/unity)
 and [`plugins/unreal/AstralRT`](../plugins/unreal/AstralRT).
@@ -48,9 +48,8 @@ and [`plugins/unreal/AstralRT`](../plugins/unreal/AstralRT).
 - [Embedded profiles](EMBEDDED_PROFILE.md)
 - [Vision and audio](VISION_AUDIO.md)
 
-The architecture documents include implementation constraints and measured
-design targets. Current product support still follows the feature and release
-matrices.
+Architecture documents describe current implementation constraints. They are
+not a roadmap and do not override the feature or release matrices.
 
 ## Profiling And Validation
 
