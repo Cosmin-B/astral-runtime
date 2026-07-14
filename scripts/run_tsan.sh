@@ -16,8 +16,9 @@ cmake -S "${root_dir}" -B "${build_dir}" \
   -DASTRAL_BUILD_TESTS=ON \
   -DASTRAL_BUILD_BENCHMARKS=OFF
 
-echo "[tsan] Build concurrency and memory race gates"
-cmake --build "${build_dir}" --target test_concurrency_tsan test_memory_tsan -j
+echo "[tsan] Build concurrency, memory, and inference race gates"
+cmake --build "${build_dir}" \
+  --target test_concurrency_tsan test_memory_tsan test_inference_tsan -j
 
 export TSAN_OPTIONS="${TSAN_OPTIONS:-halt_on_error=1:second_deadlock_stack=1:history_size=7}"
 

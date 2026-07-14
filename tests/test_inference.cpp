@@ -473,6 +473,68 @@ TEST(inference_conversation_streams_token_pieces_larger_than_ring_cell) {
   astral_shutdown();
 }
 
+TEST(inference_conversation_decode_preserves_active_stream_consumers) {
+  AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
+  cfg.reserve_bytes = 32u * 1024u * 1024u;
+  cfg.thread_count = 2;
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  const AstralHandle model = load_mock_model("sampler");
+  AstralExecutorDesc executor{};
+  executor.size = sizeof(AstralExecutorDesc);
+  executor.max_slots = 1;
+  executor.max_batch_tokens = 4;
+  ASSERT_EQ(astral_model_executor_configure(model, &executor), ASTRAL_OK);
+
+  AstralConvDesc desc{};
+  desc.size = sizeof(AstralConvDesc);
+  desc.model = model;
+  desc.max_tokens = 4;
+  desc.top_k = 2;
+  desc.top_p = 1.0f;
+  desc.stream_enabled = 1;
+
+  AstralHandle conv = 0;
+  ASSERT_EQ(astral_conv_create(&desc, &conv), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_set_logprobs(conv, 2), ASTRAL_OK);
+  ASSERT_EQ(astral_conv_feed(conv, AstralSpanU8{}, 1), ASTRAL_OK);
+
+  std::atomic<uint32_t> readers_started{0};
+  std::atomic<int32_t> token_result{ASTRAL_E_TIMEOUT};
+  std::atomic<int32_t> meta_result{ASTRAL_E_TIMEOUT};
+
+  std::thread token_reader([&]() {
+    uint8_t bytes[16]{};
+    AstralMutSpanU8 out{bytes, sizeof(bytes)};
+    readers_started.fetch_add(1, std::memory_order_release);
+    token_result.store(astral_conv_stream_read(conv, out, 1000), std::memory_order_release);
+  });
+  std::thread meta_reader([&]() {
+    AstralTokenMeta meta[4]{};
+    readers_started.fetch_add(1, std::memory_order_release);
+    meta_result.store(astral_conv_stream_read_meta(conv, meta, 4, 1000), std::memory_order_release);
+  });
+
+  while (readers_started.load(std::memory_order_acquire) != 2) {
+    std::this_thread::yield();
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  ASSERT_EQ(astral_conv_decode(conv), ASTRAL_OK);
+
+  token_reader.join();
+  meta_reader.join();
+  ASSERT_GT(token_result.load(std::memory_order_acquire), 0);
+  ASSERT_GT(meta_result.load(std::memory_order_acquire), 0);
+
+  (void)read_conv_stream_all(conv);
+  ASSERT_EQ(astral_conv_wait(conv, 1000), ASTRAL_OK);
+
+  astral_conv_destroy(conv);
+  astral_model_release(model);
+  astral_shutdown();
+}
+
 TEST(inference_conversation_accepts_full_prompt_capacity_transactionally) {
   AstralInit cfg{};
   cfg.size = sizeof(AstralInit);

@@ -2036,11 +2036,25 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_feed_audio(
     const AstralAudioDesc* audio,
     uint8_t finalize
 );
+/**
+ * Start conversation decoding (non-blocking).
+ *
+ * A single token-stream consumer and a single metadata-stream consumer may
+ * already be waiting when decoding starts. Do not call this concurrently with
+ * other conversation control operations.
+ */
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_decode(AstralHandle conv);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_cancel(AstralHandle conv);
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_state(AstralHandle conv, AstralSessionState* out_state);
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_wait(AstralHandle conv, uint32_t timeout_ms);
+/**
+ * Reset a terminal conversation to idle and discard buffered stream data.
+ *
+ * Not safe to call concurrently with decoding, token-stream reads, or
+ * metadata-stream reads. Returns ASTRAL_E_STATE while one of those operations
+ * owns the conversation.
+ */
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_reset(AstralHandle conv, const AstralConvDesc* desc);
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_sampler(AstralHandle conv, const AstralSamplerDesc* desc);
@@ -2066,7 +2080,20 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_set_toolset(
 );
 ASTRAL_API AstralErr ASTRAL_CALL astral_conv_clear_toolset(AstralHandle conv);
 
+/**
+ * Read conversation UTF-8 output with one consumer thread.
+ *
+ * May run before, during, or after astral_conv_decode(). Do not overlap it with
+ * another token-stream read, astral_conv_reset(), or astral_conv_destroy().
+ */
 ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read(AstralHandle conv, AstralMutSpanU8 out_buf, uint32_t timeout_ms);
+
+/**
+ * Read conversation token metadata with one consumer thread.
+ *
+ * May run before, during, or after astral_conv_decode(). Do not overlap it with
+ * another metadata-stream read, astral_conv_reset(), or astral_conv_destroy().
+ */
 ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(
     AstralHandle conv, AstralTokenMeta* out_events, uint32_t capacity, uint32_t timeout_ms);
 

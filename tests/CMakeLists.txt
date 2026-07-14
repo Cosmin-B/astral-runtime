@@ -167,7 +167,7 @@ endif()
 # Thread Sanitizer tests (optional, for concurrency tests)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     find_program(ASTRAL_SETARCH_EXECUTABLE setarch)
-    foreach(test_file test_concurrency test_memory)
+    foreach(test_file test_concurrency test_memory test_inference)
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${test_file}.cpp)
             add_executable(${test_file}_tsan
                 ${test_file}.cpp
