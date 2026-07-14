@@ -778,8 +778,6 @@ AstralErr conv_decode(Conversation* conv) {
   // Reset per-run state.
   conv->cancel_requested.store(false, std::memory_order_release);
   conv->final_err.store(ASTRAL_OK, std::memory_order_release);
-  conv->pending_len = 0;
-  conv->pending_off = 0;
   conv->prompt_off = 0;
   conv->prompt_chunk_index = 0;
   conv->prompt_chunk_token_off = 0;

@@ -1846,5 +1846,9 @@ if(conversation_decode_block MATCHES "(token|meta)_ring[.]reset\\(")
   message(FATAL_ERROR
     "conv_decode must not reset SPSC stream rings; conv_reset owns queue reset under the consumer guards")
 endif()
+if(conversation_decode_block MATCHES "pending_(len|off)[ ]*=")
+  message(FATAL_ERROR
+    "conv_decode must not reset token consumer spill state; conv_reset owns it under the stream guard")
+endif()
 
 message(STATUS "gate_source_scans: OK (${FILES_LEN} files)")
