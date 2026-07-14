@@ -1832,4 +1832,19 @@ foreach(required_epoch_runtime_text
   endif()
 endforeach()
 
+string(FIND "${conversation_runtime_text}"
+  "AstralErr conv_decode(Conversation* conv)" conversation_decode_begin)
+string(FIND "${conversation_runtime_text}"
+  "AstralErr conv_cancel(Conversation* conv)" conversation_decode_end)
+if(conversation_decode_begin EQUAL -1 OR conversation_decode_end LESS_EQUAL conversation_decode_begin)
+  message(FATAL_ERROR "Could not isolate conv_decode for stream-ring ownership validation")
+endif()
+math(EXPR conversation_decode_length "${conversation_decode_end} - ${conversation_decode_begin}")
+string(SUBSTRING "${conversation_runtime_text}" ${conversation_decode_begin}
+  ${conversation_decode_length} conversation_decode_block)
+if(conversation_decode_block MATCHES "(token|meta)_ring[.]reset\\(")
+  message(FATAL_ERROR
+    "conv_decode must not reset SPSC stream rings; conv_reset owns queue reset under the consumer guards")
+endif()
+
 message(STATUS "gate_source_scans: OK (${FILES_LEN} files)")
