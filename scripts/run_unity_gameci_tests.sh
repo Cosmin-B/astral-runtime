@@ -136,7 +136,7 @@ if [[ "${build_native}" -eq 1 ]]; then
       --workdir /workspace \
       --volume "${root_dir}:/workspace" \
       "${native_build_image}" \
-      bash -lc "set -euo pipefail; export DEBIAN_FRONTEND=noninteractive; apt-get update >/dev/null; apt-get install -y --no-install-recommends ca-certificates build-essential cmake >/dev/null; cmake -S . -B build/unity-linux-ci -DCMAKE_BUILD_TYPE=Release -DLLAMA_CPP_DIR=/workspace/external/llama.cpp -DASTRAL_BUILD_TESTS=OFF -DASTRAL_BUILD_BENCHMARKS=OFF -DASTRAL_BUILD_UNITY_PLUGIN=ON -DASTRAL_BUILD_STATIC_LIB=OFF -DASTRAL_BUILD_SHARED_LIB=ON; cmake --build build/unity-linux-ci -j\"\$(nproc)\" --target astral_unity_plugin_package; chown -R $(id -u):$(id -g) build/unity-linux-ci plugins/unity/Runtime/Plugins/x86_64/libastral_rt.so"
+      bash -lc "set -euo pipefail; export DEBIAN_FRONTEND=noninteractive; apt-get update >/dev/null; apt-get install -y --no-install-recommends ca-certificates build-essential cmake git libssl-dev >/dev/null; cmake -S . -B build/unity-linux-ci -DCMAKE_BUILD_TYPE=Release -DLLAMA_CPP_DIR=/workspace/external/llama.cpp -DASTRAL_BUILD_TESTS=OFF -DASTRAL_BUILD_BENCHMARKS=OFF -DASTRAL_BUILD_UNITY_PLUGIN=ON -DASTRAL_BUILD_STATIC_LIB=OFF -DASTRAL_BUILD_SHARED_LIB=ON; cmake --build build/unity-linux-ci -j\"\$(nproc)\" --target astral_unity_plugin_package; chown -R $(id -u):$(id -g) build/unity-linux-ci plugins/unity/Runtime/Plugins/x86_64/libastral_rt.so"
   else
     echo "[unity-gameci] Configure native plugin"
     cmake --preset unity-plugin
