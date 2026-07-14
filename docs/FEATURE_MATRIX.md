@@ -56,7 +56,6 @@ Notes:
 | Model source | CPU-only (desktop) | CUDA build (desktop) | Embedded presets |
 |---|---:|---:|---:|
 | `PATH` (`astral_model_load`) | ✅ | ✅ | ✅ |
-| `PATH` (`astral_model_load`) | ✅ | ✅ | ✅ |
 | `MEMORY` (`astral_model_load`) | ⚠️ | ⚠️ | 🧪 |
 | `IO` (`astral_model_load`) | ⚠️ | ⚠️ | 🧪 |
 
