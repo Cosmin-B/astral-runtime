@@ -170,8 +170,9 @@ if(TARGET test_provider_harness AND TARGET astral_backend_toy_plugin)
     )
 endif()
 
-# Thread Sanitizer tests (optional, for concurrency tests)
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+# ThreadSanitizer must instrument the runtime and its dependencies, not only the
+# test executable. scripts/run_tsan.sh enables this option in a dedicated build.
+if(ASTRAL_BUILD_TSAN_TESTS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     find_program(ASTRAL_SETARCH_EXECUTABLE setarch)
     foreach(test_file test_concurrency test_memory test_inference)
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${test_file}.cpp)
@@ -761,7 +762,7 @@ message(STATUS "  All tests:         ctest")
 message(STATUS "  Specific test:     ctest -R test_platform")
 message(STATUS "  Verbose output:    ctest -V")
 message(STATUS "  Parallel:          ctest -j8")
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+if(ASTRAL_BUILD_TSAN_TESTS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     message(STATUS "  Thread Sanitizer:  ctest -L tsan")
 endif()
 message(STATUS "========================================")
@@ -793,15 +794,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
             "-Wl,--wrap=posix_memalign"
         )
         target_compile_definitions(gate_allocations PRIVATE ASTRAL_ALLOC_WRAP=1)
-    elseif(APPLE)
-        target_link_options(gate_allocations PRIVATE
-            "-Wl,-wrap,malloc"
-            "-Wl,-wrap,calloc"
-            "-Wl,-wrap,realloc"
-            "-Wl,-wrap,free"
-            "-Wl,-wrap,posix_memalign"
-        )
-        target_compile_definitions(gate_allocations PRIVATE ASTRAL_ALLOC_WRAP=1)
     endif()
 
     add_test(NAME gate_allocations COMMAND gate_allocations)
@@ -812,8 +804,9 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_allocations.cpp)
     message(STATUS "Configured test: gate_allocations")
 endif()
 
-# Gate: no tracked steady-state I/O syscalls in decode/stream.
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
+# Gate: no tracked steady-state I/O syscalls in decode/stream. This relies on
+# GNU ld symbol wrapping and is registered only where that interception exists.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp AND UNIX AND NOT APPLE)
     add_executable(gate_io_syscalls
         gate_io_syscalls.cpp
         main.cpp
@@ -829,36 +822,20 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
         ${CMAKE_SOURCE_DIR}/src
     )
 
-    if(UNIX AND NOT APPLE)
-        target_link_libraries(gate_io_syscalls PRIVATE pthread dl)
-        target_link_options(gate_io_syscalls PRIVATE
-            "-Wl,--wrap=read"
-            "-Wl,--wrap=write"
-            "-Wl,--wrap=pread"
-            "-Wl,--wrap=pwrite"
-            "-Wl,--wrap=lseek"
-            "-Wl,--wrap=close"
-            "-Wl,--wrap=mmap"
-            "-Wl,--wrap=munmap"
-            "-Wl,--wrap=mprotect"
-            "-Wl,--wrap=madvise"
-        )
-        target_compile_definitions(gate_io_syscalls PRIVATE ASTRAL_IO_WRAP=1)
-    elseif(APPLE)
-        target_link_options(gate_io_syscalls PRIVATE
-            "-Wl,-wrap,read"
-            "-Wl,-wrap,write"
-            "-Wl,-wrap,pread"
-            "-Wl,-wrap,pwrite"
-            "-Wl,-wrap,lseek"
-            "-Wl,-wrap,close"
-            "-Wl,-wrap,mmap"
-            "-Wl,-wrap,munmap"
-            "-Wl,-wrap,mprotect"
-            "-Wl,-wrap,madvise"
-        )
-        target_compile_definitions(gate_io_syscalls PRIVATE ASTRAL_IO_WRAP=1)
-    endif()
+    target_link_libraries(gate_io_syscalls PRIVATE pthread dl)
+    target_link_options(gate_io_syscalls PRIVATE
+        "-Wl,--wrap=read"
+        "-Wl,--wrap=write"
+        "-Wl,--wrap=pread"
+        "-Wl,--wrap=pwrite"
+        "-Wl,--wrap=lseek"
+        "-Wl,--wrap=close"
+        "-Wl,--wrap=mmap"
+        "-Wl,--wrap=munmap"
+        "-Wl,--wrap=mprotect"
+        "-Wl,--wrap=madvise"
+    )
+    target_compile_definitions(gate_io_syscalls PRIVATE ASTRAL_IO_WRAP=1)
 
     add_test(NAME gate_io_syscalls COMMAND gate_io_syscalls)
     set_tests_properties(gate_io_syscalls PROPERTIES
@@ -866,6 +843,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
         LABELS "gate"
     )
     message(STATUS "Configured test: gate_io_syscalls")
+elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gate_io_syscalls.cpp)
+    message(STATUS "Skipped gate_io_syscalls: GNU ld symbol wrapping is unavailable")
 endif()
 
 # Gate: RSS cap (embedded validation, Linux-only enforcement).

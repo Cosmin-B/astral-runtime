@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Build options
 option(ASTRAL_BUILD_TESTS "Build tests" ON)
+option(ASTRAL_BUILD_TSAN_TESTS "Build ThreadSanitizer test variants" OFF)
 option(ASTRAL_BUILD_BENCHMARKS "Build benchmarks" ON)
 option(ASTRAL_BUILD_EXAMPLES "Build examples" OFF)
 option(ASTRAL_BUILD_UNITY_PLUGIN "Build Unity plugin" OFF)
