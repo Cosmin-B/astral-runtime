@@ -1,0 +1,92 @@
+:root {
+  --astral-ink: #17212b;
+  --astral-teal: #087f78;
+  --astral-coral: #d65a4a;
+  --md-text-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --md-code-font: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #ffffff;
+  --md-default-fg-color: var(--astral-ink);
+  --md-default-fg-color--light: #52606d;
+  --md-default-fg-color--lighter: #708090;
+  --md-primary-fg-color: var(--astral-ink);
+  --md-primary-fg-color--light: #2f4050;
+  --md-primary-fg-color--dark: #0e151c;
+  --md-accent-fg-color: var(--astral-teal);
+  --md-typeset-a-color: #08766f;
+  --md-code-bg-color: #f4f7f8;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 205;
+  --md-default-bg-color: #11181f;
+  --md-default-bg-color--light: #19232c;
+  --md-default-fg-color: #e7edf1;
+  --md-default-fg-color--light: #bac6ce;
+  --md-primary-fg-color: #0e151c;
+  --md-accent-fg-color: #49b7ae;
+  --md-typeset-a-color: #61c5bc;
+  --md-code-bg-color: #18222b;
+}
+
+.md-header,
+.md-tabs {
+  box-shadow: none;
+}
+
+.md-tabs {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  letter-spacing: 0;
+}
+
+.md-typeset h1 {
+  color: var(--md-default-fg-color);
+  font-weight: 650;
+}
+
+.md-typeset h2 {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  padding-bottom: 0.35rem;
+}
+
+.md-typeset code,
+.md-typeset kbd,
+.md-typeset pre {
+  border-radius: 4px;
+}
+
+.md-typeset table:not([class]) {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.md-typeset table:not([class]) th {
+  background: color-mix(in srgb, var(--md-default-bg-color) 88%, var(--astral-teal));
+}
+
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.md-typeset a:focus-visible,
+.md-nav__link:focus-visible,
+.md-search__input:focus-visible {
+  outline: 2px solid var(--astral-coral);
+  outline-offset: 2px;
+}
+
+@media screen and (max-width: 44.984375em) {
+  .md-typeset table:not([class]) {
+    font-size: 0.72rem;
+  }
+}
