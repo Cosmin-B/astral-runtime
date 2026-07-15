@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Build options
 option(ASTRAL_BUILD_TESTS "Build tests" ON)
+option(ASTRAL_BUILD_TSAN_TESTS "Build ThreadSanitizer test variants" OFF)
 option(ASTRAL_BUILD_BENCHMARKS "Build benchmarks" ON)
 option(ASTRAL_BUILD_EXAMPLES "Build examples" OFF)
 option(ASTRAL_BUILD_UNITY_PLUGIN "Build Unity plugin" OFF)
@@ -197,6 +198,11 @@ function(astral_configure_runtime_target tgt)
     )
 
     target_link_libraries(${tgt} PRIVATE llama ${ASTRAL_LLAMA_COMMON_TARGET})
+    if(TARGET cpp-httplib)
+        # remote_backend.cpp includes httplib types directly. Link the target so
+        # ABI-affecting definitions such as CPPHTTPLIB_OPENSSL_SUPPORT propagate.
+        target_link_libraries(${tgt} PRIVATE cpp-httplib)
+    endif()
     if(ASTRAL_ENABLE_MTMD)
         target_link_libraries(${tgt} PRIVATE mtmd)
     endif()
