@@ -8,6 +8,7 @@
 
 #include "../include/astral_rt.h"
 #include "../src/core/runtime_state.hpp"
+#include "../src/platform/cacheline.hpp"
 #include "test_framework.hpp"
 
 #include <cstddef>
@@ -191,6 +192,21 @@ TEST(arena_runtime_alloc_size_class_boundaries) {
     }
   }
 
+  astral_shutdown();
+}
+
+TEST(arena_runtime_alloc_supports_platform_cache_line_alignment) {
+  alignas(astral::platform::kCacheLineAlign) static uint8_t arena[8u * 1024u * 1024u];
+
+  AstralInit cfg = make_borrowed_arena_init(arena, sizeof(arena));
+  ASSERT_EQ(astral_init(&cfg), ASTRAL_OK);
+
+  constexpr size_t kObjectBytes = astral::platform::kCacheLineAlign * 2u;
+  void* ptr = astral::core::runtime_alloc(kObjectBytes, astral::platform::kCacheLineAlign);
+  ASSERT_NOT_NULL(ptr);
+  ASSERT_EQ(reinterpret_cast<uintptr_t>(ptr) % astral::platform::kCacheLineAlign, 0u);
+
+  astral::core::runtime_free(ptr, kObjectBytes, astral::platform::kCacheLineAlign);
   astral_shutdown();
 }
 

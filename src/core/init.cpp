@@ -178,7 +178,7 @@ public:
 
 private:
     static constexpr uint32_t kInvalidBucket = 0xFFFFFFFFu;
-    static constexpr size_t kMaxAlign = 64;
+    static constexpr size_t kMaxAlign = astral::platform::kCacheLineAlign;
     static constexpr uint32_t kMinPow2 = 32;
     static constexpr uint32_t kMaxPow2 = 1u << 20; // 1 MiB max block size
     static constexpr uint32_t kSubdiv = 8;
