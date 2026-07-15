@@ -197,6 +197,11 @@ function(astral_configure_runtime_target tgt)
     )
 
     target_link_libraries(${tgt} PRIVATE llama ${ASTRAL_LLAMA_COMMON_TARGET})
+    if(TARGET cpp-httplib)
+        # remote_backend.cpp includes httplib types directly. Link the target so
+        # ABI-affecting definitions such as CPPHTTPLIB_OPENSSL_SUPPORT propagate.
+        target_link_libraries(${tgt} PRIVATE cpp-httplib)
+    endif()
     if(ASTRAL_ENABLE_MTMD)
         target_link_libraries(${tgt} PRIVATE mtmd)
     endif()

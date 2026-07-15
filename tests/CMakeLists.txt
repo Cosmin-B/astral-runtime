@@ -140,6 +140,12 @@ foreach(test_file ${TEST_FILES})
     endif()
 endforeach()
 
+# Keep the remote-backend test's TLS expectation in sync with the private
+# cpp-httplib configuration used to compile the runtime.
+if(TARGET test_backend AND TARGET cpp-httplib)
+    target_link_libraries(test_backend PRIVATE cpp-httplib)
+endif()
+
 # Backend plugin test wiring (sample plugin).
 if(TARGET test_provider_harness AND TARGET astral_backend_sample_plugin)
     add_dependencies(test_provider_harness astral_backend_sample_plugin)
