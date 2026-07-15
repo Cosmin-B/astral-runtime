@@ -141,7 +141,8 @@ plugins/unreal/AstralRT/
 ```
 
 The descriptor has `CanContainContent: false`; the maintained sample is a
-generated sidecar project under [`examples/unreal/AstralSample`](../../examples/unreal/AstralSample/README.md),
+generated sidecar project under
+[`examples/unreal/AstralSample`](https://github.com/Cosmin-B/astral/blob/main/examples/unreal/AstralSample/README.md),
 not plugin content.
 
 ## Workflow Samples

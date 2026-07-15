@@ -28,7 +28,7 @@ evidence required for support claims.
 - [Model paths](api/MODEL_PATHS.md) and [model presets](api/MODEL_PRESETS.md)
 
 The complete function and descriptor surface is in
-[`include/astral_rt.h`](../include/astral_rt.h).
+[`include/astral_rt.h`](https://github.com/Cosmin-B/astral/blob/main/include/astral_rt.h).
 
 ## Engine Integration
 
@@ -36,8 +36,9 @@ The complete function and descriptor surface is in
 - [Unreal integration](integration/UNREAL_INTEGRATION.md)
 - [Unreal 5.7 quickstart](integration/UNREAL_57_QUICKSTART.md)
 
-Package-specific usage and samples live under [`plugins/unity`](../plugins/unity)
-and [`plugins/unreal/AstralRT`](../plugins/unreal/AstralRT).
+Package-specific usage and samples live under
+[`plugins/unity`](https://github.com/Cosmin-B/astral/tree/main/plugins/unity) and
+[`plugins/unreal/AstralRT`](https://github.com/Cosmin-B/astral/tree/main/plugins/unreal/AstralRT).
 
 ## Runtime Architecture
 
@@ -57,8 +58,21 @@ not a roadmap and do not override the feature or release matrices.
 - [Tracy profiling](PROFILING_TRACY.md)
 - [CUDA parity](CUDA_PARITY.md)
 - [CUDA kernel strategy](CUDA_KERNEL_STRATEGY.md)
-- [Release manifests](release/)
+- [Release acceptance and manifests](release/RELEASE_ACCEPTANCE_MATRIX.md)
 
 Raw benchmark output, profiler captures, machine-specific paths, and private
 release credentials are not repository documentation. Keep published claims
 tied to reproducible commands and the maintained acceptance gates.
+
+## Documentation Site
+
+The published site renders this Markdown and the maintained root guides
+directly. Build the same strict artifact used by GitHub Pages with:
+
+```bash
+./scripts/build_docs_site.sh
+```
+
+The script uses a local MkDocs Material installation when available and falls
+back to the pinned container image. Generated HTML is written to
+`build/docs-site` and is not committed.

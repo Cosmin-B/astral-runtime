@@ -2,7 +2,7 @@
 
 This document is an implementation map for Astral maintainers. These C++ types
 are private and may change without an ABI revision. The public contract remains
-[`include/astral_rt.h`](../../include/astral_rt.h).
+[`include/astral_rt.h`](https://github.com/Cosmin-B/astral/blob/main/include/astral_rt.h).
 
 ## Selection Rules
 
@@ -23,7 +23,8 @@ backpressure are part of each type's contract, not implementation details.
 
 ## Concurrency Primitives
 
-The maintained implementations live under [`src/concurrency`](../../src/concurrency):
+The maintained implementations live under
+[`src/concurrency`](https://github.com/Cosmin-B/astral/tree/main/src/concurrency):
 
 - `SpscRing` uses cached remote cursors, batch operations, and event signaling.
   The producer and consumer each own their local cursor.
@@ -47,7 +48,8 @@ The exact acquire/release relationships and production uses are documented in
 
 ## Platform Primitives
 
-[`src/platform`](../../src/platform) owns the OS and architecture boundary:
+[`src/platform`](https://github.com/Cosmin-B/astral/tree/main/src/platform) owns
+the OS and architecture boundary:
 
 - `vm.h` provides reserve, commit, decommit, release, and best-effort large-page
   operations;
@@ -64,7 +66,8 @@ succeeded.
 
 ## Memory Primitives
 
-[`src/memory`](../../src/memory) contains storage mechanisms rather than global
+[`src/memory`](https://github.com/Cosmin-B/astral/tree/main/src/memory) contains
+storage mechanisms rather than global
 allocation policy:
 
 - `FrameAllocator`: owner-local aligned bump allocation and reset;
@@ -77,7 +80,8 @@ The runtime size-class heap and session scratch partitioning are described in
 
 ## Text And Diagnostics
 
-[`src/utils`](../../src/utils) contains strict UTF-8 spans and validation,
+[`src/utils`](https://github.com/Cosmin-B/astral/tree/main/src/utils) contains
+strict UTF-8 spans and validation,
 stack-backed string builders, logging, and profiling boundaries.
 
 Use `StackStringBuilder` when truncation is acceptable and spill is forbidden.
