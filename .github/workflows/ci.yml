@@ -2,16 +2,20 @@ name: ci
 
 on:
   push:
-  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   linux-tests:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
       - name: Install deps
         run: |
@@ -39,19 +43,20 @@ jobs:
 
       - name: Upload CTest log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ctest-dev-${{ runner.os }}
           path: build/test-logs/ctest-${{ runner.os }}-dev.log
           if-no-files-found: ignore
 
   bench-features-linux:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
       - name: Install deps
         run: |
@@ -77,21 +82,22 @@ jobs:
             --out benchmarks/results/ci-features-linux.txt
 
       - name: Upload bench log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bench-features-linux
           path: |
             benchmarks/results/ci-features-linux.txt
 
   bench-features-cuda-best-effort:
-    # Non-blocking until v0.2: this is expected to skip on GitHub-hosted runners.
+    # Non-blocking until a dedicated GPU runner is part of the trusted pool.
     continue-on-error: true
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
       - name: Detect CUDA runtime
         id: cuda
@@ -137,102 +143,20 @@ jobs:
 
       - name: Upload bench log
         if: steps.cuda.outputs.has_gpu == 'true' && steps.cuda.outputs.has_nvcc == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bench-features-cuda-best-effort
           path: |
             benchmarks/results/ci-features-cuda.txt
 
-  macos-tests:
-    runs-on: macos-latest
-    env:
-      CMAKE_GENERATOR: Ninja
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          submodules: recursive
-
-      - name: Install deps
-        run: |
-          brew install ninja || true
-
-      - name: Download small GGUF for integration
-        run: |
-          ./tests/model_downloader.sh
-
-      - name: Configure
-        run: |
-          cmake --preset dev
-
-      - name: Build
-        run: |
-          cmake --build --preset dev -j
-
-      - name: Test
-        shell: bash
-        run: |
-          mkdir -p build/test-logs
-          ctest --preset dev -j --output-on-failure 2>&1 | tee "build/test-logs/ctest-${RUNNER_OS}-dev.log"
-          exit "${PIPESTATUS[0]}"
-
-      - name: Upload CTest log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ctest-dev-${{ runner.os }}
-          path: build/test-logs/ctest-${{ runner.os }}-dev.log
-          if-no-files-found: ignore
-
-  windows-tests:
-    runs-on: windows-latest
-    env:
-      CMAKE_GENERATOR: Ninja
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          submodules: recursive
-
-      - name: Install deps
-        run: |
-          choco install -y ninja
-
-      - name: Download small GGUF for integration
-        shell: bash
-        run: |
-          ./tests/model_downloader.sh
-
-      - name: Configure
-        run: |
-          cmake --preset dev
-
-      - name: Build
-        run: |
-          cmake --build --preset dev -j
-
-      - name: Test
-        shell: bash
-        run: |
-          mkdir -p build/test-logs
-          ctest --preset dev -j --output-on-failure 2>&1 | tee "build/test-logs/ctest-${RUNNER_OS}-dev.log"
-          exit "${PIPESTATUS[0]}"
-
-      - name: Upload CTest log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ctest-dev-${{ runner.os }}
-          path: build/test-logs/ctest-${{ runner.os }}-dev.log
-          if-no-files-found: ignore
-
   linux-prof-tracy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
       - name: Install deps
         run: |
@@ -268,19 +192,20 @@ jobs:
 
       - name: Upload dev-prof CTest log
         if: always() && steps.tracy.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ctest-dev-prof-${{ runner.os }}
           path: build/test-logs/ctest-dev-prof-${{ runner.os }}.log
           if-no-files-found: ignore
 
   cross-compile:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
       - name: Install cross toolchains
         run: |
@@ -356,12 +281,13 @@ jobs:
           qemu-arm -L /usr/arm-linux-gnueabihf "${BIN2}"
 
   embedded-host:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
       - name: Install deps
         run: |
@@ -377,34 +303,20 @@ jobs:
           cmake --build --preset embedded-x86_64 -j
 
   unity-plugin-artifacts:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: [self-hosted, linux, x64]
     env:
       CMAKE_GENERATOR: Ninja
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
-      - name: Install deps (Ubuntu)
-        if: runner.os == 'Linux'
+      - name: Install deps
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
-
-      - name: Install deps (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install ninja || true
-
-      - name: Install deps (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install -y ninja
 
       - name: Configure (unity-plugin)
         run: |
@@ -415,21 +327,22 @@ jobs:
           cmake --build --preset unity-plugin -j
 
       - name: Upload Unity plugin native binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unity-native-${{ runner.os }}
           path: |
             plugins/unity/Runtime/Plugins/
 
   unity-android-artifacts:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     env:
       CMAKE_GENERATOR: Ninja
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
       - name: Install deps (Ubuntu)
         run: |
@@ -437,7 +350,7 @@ jobs:
           sudo apt-get install -y cmake ninja-build
 
       - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
+        uses: nttld/setup-ndk@2817442ee7c3346c1eb7d2ec60263c93206ba14f # v1
         with:
           # r27c = 27.2.12479018; matches UE 5.7 Android requirements.
           ndk-version: 27.2.12479018
@@ -455,64 +368,27 @@ jobs:
           cmake --build --preset unity-plugin-android-arm64 -j
 
       - name: Upload Unity Android native binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unity-android-arm64
           path: |
             plugins/unity/Runtime/Plugins/Android/
 
-  unity-ios-artifacts:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          submodules: recursive
-
-      - name: Configure (unity-plugin-ios-arm64)
-        run: |
-          cmake --preset unity-plugin-ios-arm64
-
-      - name: Build (unity-plugin-ios-arm64)
-        run: |
-          cmake --build --preset unity-plugin-ios-arm64 -j
-
-      - name: Upload Unity iOS native binaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: unity-ios-arm64
-          path: |
-            plugins/unity/Runtime/Plugins/iOS/
-
   unreal-plugin-artifacts:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: [self-hosted, linux, x64]
     env:
       CMAKE_GENERATOR: Ninja
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
-      - name: Install deps (Ubuntu)
-        if: runner.os == 'Linux'
+      - name: Install deps
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
-
-      - name: Install deps (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install ninja || true
-
-      - name: Install deps (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install -y ninja
 
       - name: Configure (unreal-plugin)
         run: |
@@ -523,21 +399,22 @@ jobs:
           cmake --build --preset unreal-plugin -j
 
       - name: Upload Unreal plugin ThirdParty artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unreal-thirdparty-${{ runner.os }}
           path: |
             plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/
 
   unreal-android-artifacts:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     env:
       CMAKE_GENERATOR: Ninja
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
       - name: Install deps (Ubuntu)
         run: |
@@ -545,7 +422,7 @@ jobs:
           sudo apt-get install -y cmake ninja-build
 
       - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
+        uses: nttld/setup-ndk@2817442ee7c3346c1eb7d2ec60263c93206ba14f # v1
         with:
           # r27c = 27.2.12479018; matches UE 5.7 Android requirements.
           ndk-version: 27.2.12479018
@@ -563,66 +440,28 @@ jobs:
           cmake --build --preset unreal-plugin-android-arm64 -j
 
       - name: Upload Unreal Android ThirdParty artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unreal-android-arm64
           path: |
             plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/include/
             plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/lib/Android/arm64-v8a/
 
-  unreal-ios-artifacts:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          submodules: recursive
-
-      - name: Configure (unreal-plugin-ios-arm64)
-        run: |
-          cmake --preset unreal-plugin-ios-arm64
-
-      - name: Build (unreal-plugin-ios-arm64)
-        run: |
-          cmake --build --preset unreal-plugin-ios-arm64 -j
-
-      - name: Upload Unreal iOS ThirdParty artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: unreal-ios-arm64
-          path: |
-            plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/include/
-            plugins/unreal/AstralRT/Source/ThirdParty/AstralCore/lib/IOS/
-
   release-desktop-artifacts:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: [self-hosted, linux, x64]
     env:
       CMAKE_GENERATOR: Ninja
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
           submodules: recursive
+          persist-credentials: false
 
-      - name: Install deps (Ubuntu)
-        if: runner.os == 'Linux'
+      - name: Install deps
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
-
-      - name: Install deps (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install ninja || true
-
-      - name: Install deps (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install -y ninja
 
       - name: Download small GGUF for integration
         shell: bash
@@ -636,7 +475,7 @@ jobs:
           ./scripts/package_release.sh --preset release-with-tests --unity --unreal
 
       - name: Upload v0.1 desktop artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: v0.1-desktop-${{ runner.os }}
           path: |

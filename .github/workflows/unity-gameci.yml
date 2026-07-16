@@ -18,14 +18,15 @@ env:
 jobs:
   editmode:
     name: EditMode ABI
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     env:
       ASTRAL_UNITY_REQUIRE_NATIVE: 1
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Install native build tools
         run: |
@@ -39,7 +40,7 @@ jobs:
         run: cmake --build --preset "${ASTRAL_UNITY_BUILD_PRESET}" -j
 
       - name: Run Unity EditMode tests
-        uses: game-ci/unity-test-runner@v4
+        uses: game-ci/unity-test-runner@0ff419b913a3630032cbe0de48a0099b5a9f0ed9 # v4
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
@@ -52,7 +53,7 @@ jobs:
 
       - name: Upload Unity results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ env.ASTRAL_UNITY_ARTIFACT_NAME }}
           path: ${{ env.ASTRAL_UNITY_RESULTS_DIR }}
