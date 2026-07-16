@@ -144,12 +144,19 @@ inner_command='
 set -euo pipefail
 cd /workspace/astral
 engine_root=""
-for candidate in "${UNREAL_ENGINE_DIR:-}" /home/ue4/UnrealEngine /home/ue/UnrealEngine /opt/unreal-engine /UnrealEngine; do
-  if [[ -n "${candidate}" && -d "${candidate}/Engine" ]]; then
-    engine_root="${candidate}"
-    break
+if [[ -n "${UNREAL_ENGINE_DIR:-}" && -d "${UNREAL_ENGINE_DIR}/Engine" ]]; then
+  engine_root="${UNREAL_ENGINE_DIR}"
+else
+  editor_on_path="$(command -v UnrealEditor-Cmd || command -v UnrealEditor || true)"
+  if [[ "${editor_on_path}" == */Engine/Binaries/Linux/* ]]; then
+    engine_root="${editor_on_path%%/Engine/Binaries/Linux/*}"
+  else
+    build_version="$(find / -maxdepth 7 -type f -path "*/Engine/Build/Build.version" -print -quit 2>/dev/null || true)"
+    if [[ -n "${build_version}" ]]; then
+      engine_root="${build_version%/Engine/Build/Build.version}"
+    fi
   fi
-done
+fi
 if [[ -z "${engine_root}" ]]; then
   echo "[unreal_small_matrix_container] Unreal engine root not found" >&2
   exit 2

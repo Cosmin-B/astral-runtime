@@ -301,17 +301,19 @@ echo "[unreal_container] UE version: ${ASTRAL_UNREAL_VERSION}"
 echo "[unreal_container] Test filter: ${UNREAL_TEST_FILTER}"
 
 engine_root=""
-for candidate in \
-  "${UNREAL_ENGINE_DIR:-}" \
-  /home/ue4/UnrealEngine \
-  /home/ue/UnrealEngine \
-  /opt/unreal-engine \
-  /UnrealEngine; do
-  if [[ -n "${candidate}" && -d "${candidate}/Engine" ]]; then
-    engine_root="${candidate}"
-    break
+if [[ -n "${UNREAL_ENGINE_DIR:-}" && -d "${UNREAL_ENGINE_DIR}/Engine" ]]; then
+  engine_root="${UNREAL_ENGINE_DIR}"
+else
+  editor_on_path="$(command -v UnrealEditor-Cmd || command -v UnrealEditor || true)"
+  if [[ "${editor_on_path}" == */Engine/Binaries/Linux/* ]]; then
+    engine_root="${editor_on_path%%/Engine/Binaries/Linux/*}"
+  else
+    build_version="$(find / -maxdepth 7 -type f -path "*/Engine/Build/Build.version" -print -quit 2>/dev/null || true)"
+    if [[ -n "${build_version}" ]]; then
+      engine_root="${build_version%/Engine/Build/Build.version}"
+    fi
   fi
-done
+fi
 
 if [[ -n "${engine_root}" ]]; then
   echo "[unreal_container] Engine root: ${engine_root}"
@@ -399,18 +401,18 @@ if [[ "${ASTRAL_UNREAL_BUILD_NATIVE}" == "1" ]]; then
 fi
 
 if [[ -z "${UNREAL_EDITOR:-}" ]]; then
-  for candidate in \
-    "${engine_root}/Engine/Binaries/Linux/UnrealEditor-Cmd" \
-    "${engine_root}/Engine/Binaries/Linux/UnrealEditor" \
-    /home/ue4/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd \
-    /home/ue/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd \
-    /opt/unreal-engine/Engine/Binaries/Linux/UnrealEditor-Cmd \
-    /UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd; do
-    if [[ -n "${candidate}" && -x "${candidate}" ]]; then
-      export UNREAL_EDITOR="${candidate}"
-      break
-    fi
-  done
+  UNREAL_EDITOR="$(command -v UnrealEditor-Cmd || command -v UnrealEditor || true)"
+  if [[ -z "${UNREAL_EDITOR}" && -n "${engine_root}" ]]; then
+    for candidate in \
+      "${engine_root}/Engine/Binaries/Linux/UnrealEditor-Cmd" \
+      "${engine_root}/Engine/Binaries/Linux/UnrealEditor"; do
+      if [[ -x "${candidate}" ]]; then
+        UNREAL_EDITOR="${candidate}"
+        break
+      fi
+    done
+  fi
+  export UNREAL_EDITOR
 fi
 
 if [[ -z "${UNREAL_EDITOR:-}" ]]; then

@@ -96,6 +96,16 @@ set(private_reference_lower "base")
 string(APPEND private_reference_lower "lib")
 set(private_reference_title "Base")
 string(APPEND private_reference_title "lib")
+set(fixed_aarch64_sysroot "/usr/")
+string(APPEND fixed_aarch64_sysroot "aarch64-linux-gnu")
+set(fixed_armv7_sysroot "/usr/")
+string(APPEND fixed_armv7_sysroot "arm-linux-gnueabihf")
+set(fixed_unreal_home "/home/")
+string(APPEND fixed_unreal_home "ue4/UnrealEngine")
+set(fixed_unreal_home_alt "/home/")
+string(APPEND fixed_unreal_home_alt "ue/UnrealEngine")
+set(fixed_unreal_opt "/opt/")
+string(APPEND fixed_unreal_opt "unreal-engine")
 set(PRIVATE_PROVENANCE_STRINGS
   "${private_linux_home}"
   "${private_macos_home}"
@@ -103,6 +113,11 @@ set(PRIVATE_PROVENANCE_STRINGS
   "${private_workspace_name}"
   "${private_reference_lower}"
   "${private_reference_title}"
+  "${fixed_aarch64_sysroot}"
+  "${fixed_armv7_sysroot}"
+  "${fixed_unreal_home}"
+  "${fixed_unreal_home_alt}"
+  "${fixed_unreal_opt}"
 )
 
 set(tracker_long_term "bea")
@@ -637,6 +652,14 @@ if(NOT EXISTS "${ci_workflow_file}")
   message(FATAL_ERROR "CI workflow missing: ${ci_workflow_file}")
 endif()
 file(READ "${ci_workflow_file}" ci_workflow_content)
+foreach(fixed_ci_runtime_root
+    "${fixed_aarch64_sysroot}"
+    "${fixed_armv7_sysroot}")
+  string(FIND "${ci_workflow_content}" "${fixed_ci_runtime_root}" fixed_ci_runtime_root_pos)
+  if(NOT fixed_ci_runtime_root_pos EQUAL -1)
+    message(FATAL_ERROR "CI cross-runtime roots must be derived from the installed compiler")
+  endif()
+endforeach()
 set(github_runner_os_expr "$")
 string(APPEND github_runner_os_expr "{{ runner.os }}")
 set(shell_runner_os_expr "$")
