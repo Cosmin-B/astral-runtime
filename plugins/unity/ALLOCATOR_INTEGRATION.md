@@ -60,7 +60,7 @@ still live from the bridge's point of view.
 ## Platform Notes
 
 The package layout supports desktop native plugins plus Android ARM64 and iOS
-staging paths. Current repository evidence covers Unity 6/GameCI import,
+staging paths. Current repository evidence covers Unity 6000.0/GameCI import,
 managed compile, and Linux native plugin preload when the native plugin is built
 in an Ubuntu 22.04 container. Licensed EditMode execution and player builds
 still need dedicated Unity runner evidence.

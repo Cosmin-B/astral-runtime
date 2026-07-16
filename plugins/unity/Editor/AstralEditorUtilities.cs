@@ -104,7 +104,7 @@ namespace Astral.Runtime.Editor
         [MenuItem("Tools/Astral/Open Documentation")]
         public static void OpenDocumentation()
         {
-            Application.OpenURL("https://github.com/astral-runtime/astral");
+            Application.OpenURL("https://github.com/Cosmin-B/astral");
         }
 
         private static bool ValidatePlugin(string relativePath, string platformName)

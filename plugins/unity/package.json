@@ -5,10 +5,10 @@
   "description": "Unity bindings and package layout for Astral Runtime, including native C ABI wrappers, streaming session APIs, embeddings, and CPU/CUDA backend packaging support.",
   "unity": "6000.0",
   "unityRelease": "0f1",
-  "license": "SEE LICENSE IN LICENSE",
-  "documentationUrl": "https://github.com/astral-runtime/astral",
-  "changelogUrl": "https://github.com/astral-runtime/astral/blob/main/CHANGELOG.md",
-  "licensesUrl": "https://github.com/astral-runtime/astral/blob/main/LICENSE",
+  "license": "Apache-2.0",
+  "documentationUrl": "https://github.com/Cosmin-B/astral",
+  "changelogUrl": "https://github.com/Cosmin-B/astral/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/Cosmin-B/astral/blob/main/LICENSE",
   "keywords": [
     "llm",
     "inference",
@@ -20,7 +20,8 @@
     "unity"
   ],
   "author": {
-    "name": "Astral Runtime Contributors"
+    "name": "Cosmin Bararu",
+    "url": "https://github.com/Cosmin-B"
   },
   "dependencies": {
     "com.unity.collections": "1.4.0"

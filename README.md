@@ -31,8 +31,8 @@ kept separate from source availability.
 - GCC 11+, Clang 13+, or MSVC 2022+
 - A C++17 toolchain
 
-Unity 2021.3+ and Unreal Engine 5.4+ are optional. UE 5.7 is the primary Unreal
-validation target.
+Unity 6000.0+ and Unreal Engine 5.4+ are optional. Unity 6000.0 and UE 5.7 are
+the primary engine validation targets.
 
 ## Build And Test
 
@@ -145,8 +145,7 @@ tests for behavior changes, and attach performance evidence for hot-path work.
 
 ## License
 
-This source tree is not licensed for redistribution except under a separate
-written agreement with the copyright holders. See
+Astral is licensed under the Apache License 2.0. See
 [LICENSE](https://github.com/Cosmin-B/astral/blob/main/LICENSE),
 [NOTICE](https://github.com/Cosmin-B/astral/blob/main/NOTICE), and the
 [third-party notices](docs/release/THIRD_PARTY_NOTICES.md).

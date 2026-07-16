@@ -43,3 +43,7 @@ Please include:
 
 Avoid drive-by refactors and unrelated formatting changes; keep PRs focused.
 
+## Contribution license
+
+Unless explicitly stated otherwise, contributions submitted for inclusion in
+Astral are licensed under the Apache License 2.0 under the terms in `LICENSE`.

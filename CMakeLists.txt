@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(AstralRT VERSION 0.1.0 LANGUAGES C CXX)
 
+set(PROJECT_DESCRIPTION "Native inference runtime for applications and game engines")
+set(PROJECT_HOMEPAGE_URL "https://github.com/Cosmin-B/astral")
+
 # C++17 required, no extensions.
 #
 # Unreal 5.4 supports C++17 and C++20; Astral keeps the native core at C++17 so
@@ -458,9 +461,14 @@ endif()
 install(FILES include/astral_rt.h DESTINATION include)
 install(FILES include/astral_backend.h DESTINATION include)
 install(FILES include/astral_backend_plugin.h DESTINATION include)
+install(FILES LICENSE NOTICE DESTINATION share/astral)
 
 # Packaging (optional)
 set(CPACK_PACKAGE_NAME "astral")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VENDOR "Astral Runtime Contributors")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_PACKAGE_HOMEPAGE_URL "${PROJECT_HOMEPAGE_URL}")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 set(CPACK_GENERATOR "ZIP")
 include(CPack)

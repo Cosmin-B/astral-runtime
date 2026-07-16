@@ -4,7 +4,7 @@
 
 ## Setup
 
-- Open `ci/unity/AstralCiUnityProject/` in Unity 6.0 or newer. The checked-in
+- Open `ci/unity/AstralCiUnityProject/` in Unity 6000.0 or newer. The checked-in
   CI project currently pins `6000.0.57f1`.
 - Ensure the Astral native plugin binaries are present under `plugins/unity/Runtime/Plugins/<arch>/`.
   - On desktop, you can build/package them from the repo:
@@ -33,7 +33,7 @@ license secrets as repository or environment secrets:
 - `UNITY_EMAIL`
 - `UNITY_PASSWORD`
 
-Run it from GitHub Actions with a Unity 6 editor version and the native plugin
+Run it from GitHub Actions with a Unity 6000.0 editor and the native plugin
 build enabled. The workflow builds `cmake --preset unity-plugin` before invoking
 GameCI so the package tests load the current native library.
 

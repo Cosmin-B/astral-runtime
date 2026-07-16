@@ -1,5 +1,8 @@
 Astral Runtime
-Copyright (c) 2026 Astral Runtime Contributors.
+Copyright (c) 2026 Cosmin Bararu and Astral contributors.
+
+Licensed under the Apache License, Version 2.0. The full license text is in
+the repository root `LICENSE` file.
 
 This repository contains Astral source code plus third-party dependencies used
 for build, test, profiling, and engine packaging.
