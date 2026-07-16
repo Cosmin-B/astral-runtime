@@ -450,7 +450,7 @@ var session = AstralSession.Create(model, config);
 | macOS | ARM64 | Package layout | Editor/player evidence pending |
 | Android | ARM64 | Package layout | Device/player evidence pending |
 | iOS | ARM64 | Static-link binding | Device/player evidence pending |
-| WebGL | WASM | Planned | v0.3 |
+| WebGL | WASM | Unsupported | No maintained native runtime target |
 
 ## Performance
 
@@ -556,7 +556,7 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for contribution guidelines.
 ## Support
 
 - GitHub Issues: https://github.com/astral-runtime/astral/issues
-- Documentation: https://astral-runtime.github.io/astral
+- Documentation: [Astral documentation](../../docs/README.md)
 
 ## Changelog
 

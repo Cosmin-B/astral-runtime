@@ -80,7 +80,8 @@ cmake --build build/examples --target astral_c_quickstart -j
   --backend mock --prompt "Once upon a time"
 ```
 
-The source is [examples/astral_c_quickstart.c](examples/astral_c_quickstart.c).
+The source is
+[examples/astral_c_quickstart.c](https://github.com/Cosmin-B/astral/blob/main/examples/astral_c_quickstart.c).
 It demonstrates initialization, model loading, streaming, error handling,
 reset, and handle release through the public C ABI.
 
@@ -88,13 +89,13 @@ reset, and handle release through the public C ABI.
 
 Unity:
 
-- [Package guide](plugins/unity/README.md)
+- [Package guide](https://github.com/Cosmin-B/astral/blob/main/plugins/unity/README.md)
 - [Integration reference](docs/integration/UNITY_INTEGRATION.md)
 - Maintained samples under `plugins/unity/Samples~`
 
 Unreal Engine:
 
-- [Plugin guide](plugins/unreal/AstralRT/README.md)
+- [Plugin guide](https://github.com/Cosmin-B/astral/blob/main/plugins/unreal/AstralRT/README.md)
 - [Integration reference](docs/integration/UNREAL_INTEGRATION.md)
 - [UE 5.7 quickstart](docs/integration/UNREAL_57_QUICKSTART.md)
 
@@ -145,8 +146,9 @@ tests for behavior changes, and attach performance evidence for hot-path work.
 ## License
 
 This source tree is not licensed for redistribution except under a separate
-written agreement with the copyright holders. See [LICENSE](LICENSE),
-[NOTICE](NOTICE), and the
+written agreement with the copyright holders. See
+[LICENSE](https://github.com/Cosmin-B/astral/blob/main/LICENSE),
+[NOTICE](https://github.com/Cosmin-B/astral/blob/main/NOTICE), and the
 [third-party notices](docs/release/THIRD_PARTY_NOTICES.md).
 
 ## Support

@@ -1,339 +1,123 @@
-# Backend Architecture - Pluggable Provider Design
+# Backend Architecture
 
-## Overview
+This document describes the backend contract implemented by the current
+runtime. Backend availability is a build and release property; consult the
+[feature matrix](../FEATURE_MATRIX.md) before making a platform support claim.
 
-Astral uses a **pluggable backend provider** architecture that allows multiple inference backends (CPU, CUDA, Metal, DirectML) to coexist without breaking the stable C ABI. The backend is selected at model load time and remains opaque to the caller.
+## Boundary
 
-## Design Decision
+Astral exposes models, sessions, embeddings, and conversations through the C
+ABI in
+[`include/astral_rt.h`](https://github.com/Cosmin-B/astral/blob/main/include/astral_rt.h).
+Providers implement the function table in
+[`include/astral_backend.h`](https://github.com/Cosmin-B/astral/blob/main/include/astral_backend.h).
+The core owns ABI
+validation, handles, scheduling, sampling, streaming, and feature orchestration.
+The selected provider owns its model and session contexts.
 
-After evaluating three options:
+The provider table is a POD C structure. It does not expose C++ vtables or
+standard-library types across a shared-library boundary. Every descriptor has a
+size field, and optional provider operations may be null when the corresponding
+capability is not supported.
 
-- **Option A**: Pure CPU First (simplest, most portable)
-- **Option B**: Pluggable Backend Provider (our choice)
-- **Option C**: Engine-Owned Memory Only (orthogonal; implemented alongside Option B)
+## Built-In Providers
 
-We chose **Option B + C**:
-- **Pluggable backends** for flexibility without ABI changes
-- **Engine-owned memory preferred** for maximum control and performance
+The registry is a fixed-capacity array initialized on first use. Current builds
+register these providers:
 
-## Architecture
+| Name | Role | Availability |
+| --- | --- | --- |
+| `cpu` | llama.cpp model, session, tokenizer, grammar, adapter, and embedding operations | Desktop and supported embedded builds |
+| `mock` | Deterministic tests and wrapper validation | All normal test builds |
+| `remote` | HTTP-backed remote inference and embeddings | Builds with the remote transport enabled |
+| `cuda` | The llama.cpp operation table with GGML CUDA offload | `ASTRAL_ENABLE_CUDA=ON` only |
 
-### Backend Provider Interface
+The CUDA provider is not a second inference implementation. CUDA builds reuse
+the CPU provider operation table, while llama.cpp routes eligible work through
+GGML CUDA according to the model configuration.
 
-```cpp
-// astral/src/backend/backend.hpp (internal, not exposed in C ABI)
-namespace astral::backend {
+## Selection
 
-// Zero-copy view of provider logits for sampling.
-// Lifetime: valid until the next provider call that mutates session state.
-struct BackendLogitsView {
-    const float* logits;
-    uint32_t vocab_size;
-};
+`AstralModelDesc.backend_name` is authoritative when non-empty. An unknown or
+unavailable name fails model loading instead of silently selecting another
+provider.
 
-// Provider ops table (POD function pointers).
-// Rationale:
-// - provider-agnostic (llama today, others later)
-// - no C++ vtable/ABI coupling (providers can live in separate libs)
-// - predictable, minimal dispatch cost (single indirect call)
-struct BackendOps {
-    // Model lifetime
-    void* (*model_load)(const AstralModelDesc* desc, AstralErr* out_err);
-    void (*model_unload)(void* model_ctx);
+Without an explicit name, a model with `gpu_layers == 0` selects `cpu`. A model
+requesting GPU layers prefers `cuda`, then any registered `metal` or `directml`
+provider, and finally falls back to `cpu`. The feature matrix records which of
+those names are actually supplied by maintained builds.
 
-    // Text processing
-    AstralErr (*tokenize)(void* model_ctx, AstralSpanU8 text,
-                          int32_t* out_tokens, uint32_t max_tokens,
-                          bool add_special, bool parse_special,
-                          uint32_t* out_count);
-    AstralErr (*detokenize)(void* model_ctx, const int32_t* tokens, uint32_t count,
-                            AstralMutSpanU8 out_text, uint32_t* out_len);
+Provider registration occurs during startup. Registry mutation is not a
+concurrent operation; selection is read-only after initialization.
 
-    // Metadata
-    AstralErr (*model_info)(void* model_ctx, uint32_t* out_vocab_size,
-                            uint32_t* out_ctx_size);
+## Model Sources
 
-    // Session primitives (KV cache owned by provider)
-    void* (*session_create)(void* model_ctx, const AstralSessionDesc* desc, AstralErr* out_err);
-    void (*session_destroy)(void* session_ctx);
-    AstralErr (*session_feed)(void* session_ctx, const int32_t* tokens, uint32_t count);
+The public model descriptor accepts path, memory, and callback-based I/O
+sources. Provider support is independent of the ABI surface:
 
-    // Core-owned sampling:
-    // - provider exposes logits view (zero-copy)
-    // - core chooses next token
-    // - provider advances the KV cache for that token
-    AstralErr (*session_logits)(void* session_ctx, BackendLogitsView* out_view);
-    AstralErr (*session_accept)(void* session_ctx, int32_t token);
-};
+- The llama.cpp provider consumes paths directly.
+- Desktop memory and I/O sources may be materialized to a temporary file when
+  the pinned llama.cpp API has no in-memory loader.
+- Embedded profiles disable that materialization path unless their platform
+  contract explicitly permits it.
+- The mock provider accepts synthetic paths used by the test suite.
 
-struct BackendProvider {
-    const char* name;  // "cpu", "cuda", "metal", "directml"
-    const BackendOps* ops;  // Required
+Applications that require a syscall-free model load must validate the selected
+provider and profile. A successful compile does not establish that property.
 
-    // Capabilities
-    bool supports_gpu;
-    uint32_t min_gpu_layers;  // 0 for pure CPU
-};
+## Ownership And Lifetime
 
-// Registration + selection is handled by BackendRegistry (stores a fixed-size array).
+- `astral_model_load` creates a core model object and a provider-owned model
+  context.
+- Sessions and embedders retain the model through core handles; release them
+  before releasing the model.
+- A provider's model and session contexts remain opaque to the core.
+- Provider-returned views, including logits, obey the lifetime documented on
+  the provider operation. Callers must not retain those pointers across a
+  mutating provider call.
+- Dynamic plugin libraries remain loaded while their provider can be selected.
 
-} // namespace astral::backend
+Provider allocations are not automatically covered by Astral's arena. The core
+allocator governs Astral-owned objects; each provider must document and test its
+own allocation behavior.
+
+## Threading
+
+The core determines which thread invokes each provider operation. A provider
+must honor the operation-level threading contract in `astral_backend.h`:
+
+- model metadata and tokenization operations may be called concurrently when
+  the provider advertises that behavior;
+- provider session state is owned by its assigned decode or model-executor
+  thread;
+- continuous-batching slot operations execute on the model executor;
+- provider destruction must not race an operation using the same context.
+
+The [concurrency model](CONCURRENCY_MODEL.md) describes the core ownership and
+reclamation rules around these calls.
+
+## Dynamic Plugins
+
+`astral_backend_load_plugin` loads a shared library and resolves
+`astral_backend_plugin_provider_v0`. The loader validates the provider version,
+descriptor sizes, required operations, and duplicate name before registration.
+Plugin loading is a startup operation and is disabled by embedded presets.
+
+The sample and toy plugins under
+[`backend_plugins`](https://github.com/Cosmin-B/astral/tree/main/backend_plugins)
+are the maintained build references. A plugin should be tested through
+`test_provider_harness`, not only by loading the library directly.
+
+## Validation
+
+Relevant local gates are:
+
+```bash
+cmake --build --preset release-with-tests -j --target \
+  test_backend test_provider_harness test_model_sources
+ctest --preset release-with-tests --output-on-failure \
+  -R '^(test_backend|test_provider_harness|test_model_sources)$'
 ```
 
-### Backend Selection Logic
-
-```cpp
-// astral/src/backend/backend.cpp
-namespace astral::backend {
-
-// select_backend(gpu_layers):
-// - gpu_layers == 0: pick the first CPU provider
-// - gpu_layers > 0: pick the first GPU provider that supports the requested layers
-// - fallback to CPU if no GPU provider exists
-
-} // namespace astral::backend
-```
-
-## CPU Backend Implementation
-
-### Registration
-
-```cpp
-// astral/src/backend/cpu/cpu_backend.cpp
-namespace astral::backend {
-
-// Implement BackendOps functions for llama.cpp:
-// - model_load/model_unload manage llama_model*
-// - session_create/session_destroy manage llama_context*
-// - session_feed does prompt prefill via llama_decode() on batched tokens
-// - session_logits returns llama_get_logits_ith(ctx, -1) as a BackendLogitsView (zero-copy)
-// - session_accept advances the KV cache by decoding the chosen token (llama_decode on a 1-token batch)
-
-// Provider
-static BackendProvider g_cpu_provider = {
-    .name = "cpu",
-    .ops = &kCpuBackendOps,
-    .supports_gpu = false,
-    .min_gpu_layers = 0
-};
-
-// Auto-register at static init time
-static struct RegisterCpuBackend {
-    RegisterCpuBackend() {
-        BackendRegistry::instance().register_backend(&g_cpu_provider);
-    }
-} g_register_cpu_backend;
-
-} // namespace astral::backend
-```
-
-## Future GPU Backend (CUDA Example)
-
-```cpp
-// astral/src/backend/cuda/cuda_backend.cpp (future implementation)
-namespace astral::backend {
-
-// Provider implements BackendOps; model/session contexts are opaque void* owned by the provider.
-// The core still owns sampling (provider exposes logits view + accept/advance).
-
-static void* cuda_model_load(const AstralModelDesc* desc, AstralErr* out_err);
-static void  cuda_model_unload(void* model_ctx);
-static AstralErr cuda_tokenize(void* model_ctx, AstralSpanU8 text, int32_t* out_tokens, uint32_t max_tokens,
-                               bool add_special, bool parse_special, uint32_t* out_count);
-static AstralErr cuda_detokenize(void* model_ctx, const int32_t* tokens, uint32_t count,
-                                 AstralMutSpanU8 out_text, uint32_t* out_len);
-static AstralErr cuda_model_info(void* model_ctx, uint32_t* out_vocab_size, uint32_t* out_ctx_size);
-static void* cuda_session_create(void* model_ctx, const AstralSessionDesc* desc, AstralErr* out_err);
-static void  cuda_session_destroy(void* session_ctx);
-static AstralErr cuda_session_feed(void* session_ctx, const int32_t* tokens, uint32_t count);
-static AstralErr cuda_session_logits(void* session_ctx, BackendLogitsView* out_view);
-static AstralErr cuda_session_accept(void* session_ctx, int32_t token);
-
-static const BackendOps kCudaBackendOps = {
-    /*model_load=*/cuda_model_load,
-    /*model_unload=*/cuda_model_unload,
-    /*tokenize=*/cuda_tokenize,
-    /*detokenize=*/cuda_detokenize,
-    /*model_info=*/cuda_model_info,
-    /*session_create=*/cuda_session_create,
-    /*session_destroy=*/cuda_session_destroy,
-    /*session_feed=*/cuda_session_feed,
-    /*session_logits=*/cuda_session_logits,
-    /*session_accept=*/cuda_session_accept,
-};
-
-static BackendProvider g_cuda_provider = {
-    .name = "cuda",
-    .ops = &kCudaBackendOps,
-    .supports_gpu = true,
-    .min_gpu_layers = 1
-};
-
-static struct RegisterCudaBackend {
-    RegisterCudaBackend() {
-        BackendRegistry::instance().register_backend(&g_cuda_provider);
-    }
-} g_register_cuda_backend;
-
-} // namespace astral::backend
-```
-
-## Integration with C ABI
-
-The C ABI remains unchanged. Backend selection happens internally:
-
-```c
-// User code (same for CPU or GPU)
-AstralModelDesc desc = {
-    .model_path = model_path_span,
-    .gpu_layers = 32,  // Use GPU if available
-    .n_ctx = 2048,
-    // ...
-};
-
-AstralHandle model;
-AstralErr err = astral_model_load(&desc, &model);
-// Backend auto-selected: CUDA if available, else CPU
-```
-
-### Model Handle Implementation
-
-```cpp
-// astral/src/inference/model.cpp
-struct Model {
-    const backend::BackendProvider* backend;  // selected provider
-    void* backend_model_ctx;                  // provider-owned model context
-};
-
-AstralErr astral_model_load(const AstralModelDesc* desc, AstralHandle* out_model) {
-    // select provider (cpu vs future gpu providers)
-    // call provider->ops->model_load() to get backend_model_ctx
-}
-```
-
-## Memory Strategy: Engine-Owned Memory Preferred
-
-### Allocator Passthrough
-
-Provider implementations may optionally retain an allocator pointer from `astral_init()` and use it for all non-hot-path allocations (model load, session create). In v0.1 this is not fully plumbed through to llama.cpp yet; it is planned work.
-
-### llama.cpp Integration
-
-Pass custom allocator to llama.cpp:
-
-```cpp
-// llama.cpp supports custom allocators via callback
-static void* llama_alloc_wrapper(void* user, size_t size) {
-    AstralAllocator* alloc = static_cast<AstralAllocator*>(user);
-    return alloc->alloc(alloc->user, size, 16 /*align*/);
-}
-
-static void llama_free_wrapper(void* user, void* ptr) {
-    AstralAllocator* alloc = static_cast<AstralAllocator*>(user);
-    alloc->free(alloc->user, ptr, 0, 0);
-}
-
-// Pseudocode: call from provider model_load().
-llama_model_params params = llama_model_default_params();
-if (alloc && alloc->alloc && alloc->free) {
-    params.alloc_fn = llama_alloc_wrapper;
-    params.free_fn = llama_free_wrapper;
-    params.alloc_user = alloc;
-}
-llama_model* model = llama_model_load_from_file(path, params);
-```
-
-## Benefits of Pluggable Architecture
-
-1. **Stable ABI**: Adding GPU backends doesn't change `astral_rt.h`
-2. **Transparent Selection**: User specifies `gpu_layers` (or an optional backend override); we pick best backend
-3. **Future-Proof**: New backends (Metal, DirectML, WebGPU) register at runtime
-4. **Testability**: Mock backends for unit tests (deterministic output)
-5. **Modularity**: Backend code isolated in `src/backend/{cpu,cuda,metal}/`
-
-## Future Backends
-
-| Backend | Platform | Priority | Notes |
-|---------|----------|----------|-------|
-| CPU (llama.cpp) | All | **v0.1** | Current implementation |
-| CUDA | Linux, Windows | v0.2 | NVIDIA GPUs |
-| Metal | macOS, iOS | v0.2 | Apple Silicon |
-| DirectML | Windows | v0.3 | AMD/Intel GPUs |
-| WebGPU | Browser | v1.0 | WASM + WebGPU |
-| Vulkan Compute | Android, Linux | v1.0 | Mobile GPUs |
-
-## Backend Capabilities Query (Future)
-
-```c
-// Future API: query backend capabilities
-typedef struct AstralBackendInfo {
-    const char* name;
-    uint8_t supports_gpu;
-    uint8_t supports_embeddings;
-    uint8_t supports_streaming;
-    uint32_t max_ctx_size;
-} AstralBackendInfo;
-
-// Query available backends
-uint32_t astral_backend_count(void);
-const AstralBackendInfo* astral_backend_info(uint32_t index);
-
-// Force specific backend
-// v0.1: use AstralModelDesc.backend_name (optional override)
-// AstralModelDesc desc = {0};
-// desc.backend_name = {(const uint8_t*)"cpu", 3};
-// astral_model_load(&desc, &model);
-```
-
-## Testing Strategy
-
-### Unit Tests
-
-```cpp
-TEST(backend_cpu_init) {
-    // Selecting the backend does not create provider contexts.
-    // Model/session contexts are created via the ops table.
-    const BackendProvider* provider = BackendRegistry::instance().select_backend(/*gpu_layers=*/0);
-    ASSERT_TRUE(provider != nullptr);
-    ASSERT_TRUE(provider->ops != nullptr);
-}
-
-TEST(backend_selection_priority) {
-    // Future: register a mock GPU provider and ensure selection prefers it when gpu_layers > 0.
-}
-```
-
-### Integration Tests
-
-- Load model with `gpu_layers=0` → CPU backend selected
-- Load model with `gpu_layers=32` → GPU backend selected (if available)
-- Decode 1000 tokens → verify output identical across backends (deterministic seed)
-- Embeddings fast path → verify vector output matches reference
-
-## Performance Targets
-
-| Backend | Decode Latency | Throughput | Notes |
-|---------|----------------|------------|-------|
-| CPU (llama.cpp) | <50ms first token | >20 tok/s | 7B Q4_K_M, Ryzen 7 |
-| CUDA (future) | <20ms first token | >100 tok/s | 7B Q4_K_M, RTX 4090 |
-| Metal (future) | <30ms first token | >80 tok/s | 7B Q4_K_M, M2 Max |
-
-## Migration Path
-
-1. **v0.1**: CPU backend only (llama.cpp)
-2. **v0.2**: Add CUDA backend registration; no ABI change
-3. **v0.2**: Add Metal backend registration; no ABI change
-4. **v0.3**: Add DirectML backend; no ABI change
-5. **v1.0**: Stabilize backend API; expose backend query functions
-
-## References
-
-- Backend interface: `astral/src/backend/backend.hpp`
-- Backend registry/selection: `astral/src/backend/backend.cpp`
-- CPU implementation: `astral/src/backend/cpu/cpu_backend.cpp`
-- Memory architecture: [MEMORY_ARCHITECTURE.md](MEMORY_ARCHITECTURE.md)
-- Coding standards: [../rules/CODING_STANDARDS.md](../rules/CODING_STANDARDS.md)
-
----
-
-**Design principle**: Keep the C ABI stable; add flexibility via internal plugin architecture.
+CUDA, remote transport, media, and real-model support require their dedicated
+release evidence in addition to these provider-agnostic tests.

@@ -104,7 +104,8 @@ Build, test, and package desktop artifacts under `dist/`:
 
 The packaging script produces the core archive and optional Unity and Unreal
 archives. Release metadata, dependency pins, notices, checksums, and signature
-requirements are defined under [docs/release](docs/release/).
+requirements are defined by the
+[release acceptance matrix](docs/release/RELEASE_ACCEPTANCE_MATRIX.md).
 
 ## Platform Notes
 

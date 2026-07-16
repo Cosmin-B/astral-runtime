@@ -14,6 +14,7 @@ cmake -S "${root_dir}" -B "${build_dir}" \
   -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
   -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread" \
   -DASTRAL_BUILD_TESTS=ON \
+  -DASTRAL_BUILD_TSAN_TESTS=ON \
   -DASTRAL_BUILD_BENCHMARKS=OFF
 
 echo "[tsan] Build concurrency, memory, and inference race gates"

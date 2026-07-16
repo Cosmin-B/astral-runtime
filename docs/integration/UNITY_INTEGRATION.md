@@ -60,7 +60,6 @@ astral/plugins/unity/
 │   ├── AstralJobSystem.cs     # Jobs integration
 │   └── Astral.Runtime.asmdef  # Assembly definition
 ├── README.md
-├── IMPLEMENTATION.md
 ├── ALLOCATOR_INTEGRATION.md
 └── package.json
 ```
@@ -552,12 +551,12 @@ open their source directly:
 
 | Workflow | Sample |
 | --- | --- |
-| Streaming chat | [`StreamingChat`](../../plugins/unity/Samples~/StreamingChat/README.md) |
-| Multiple conversations | [`MultipleConversations`](../../plugins/unity/Samples~/MultipleConversations/README.md) |
-| Stateful NPC | [`StatefulNpc`](../../plugins/unity/Samples~/StatefulNpc/README.md) |
-| Local knowledge | [`LocalKnowledge`](../../plugins/unity/Samples~/LocalKnowledge/README.md) |
-| Character variants | [`CharacterVariants`](../../plugins/unity/Samples~/CharacterVariants/README.md) |
-| Multimodal input | [`MultimodalInput`](../../plugins/unity/Samples~/MultimodalInput/README.md) |
+| Streaming chat | [`StreamingChat`](https://github.com/Cosmin-B/astral/blob/main/plugins/unity/Samples~/StreamingChat/README.md) |
+| Multiple conversations | [`MultipleConversations`](https://github.com/Cosmin-B/astral/blob/main/plugins/unity/Samples~/MultipleConversations/README.md) |
+| Stateful NPC | [`StatefulNpc`](https://github.com/Cosmin-B/astral/blob/main/plugins/unity/Samples~/StatefulNpc/README.md) |
+| Local knowledge | [`LocalKnowledge`](https://github.com/Cosmin-B/astral/blob/main/plugins/unity/Samples~/LocalKnowledge/README.md) |
+| Character variants | [`CharacterVariants`](https://github.com/Cosmin-B/astral/blob/main/plugins/unity/Samples~/CharacterVariants/README.md) |
+| Multimodal input | [`MultimodalInput`](https://github.com/Cosmin-B/astral/blob/main/plugins/unity/Samples~/MultimodalInput/README.md) |
 
 ## Minimal Session Example
 

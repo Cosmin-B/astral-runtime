@@ -15,9 +15,6 @@ Implemented:
 - **CPU dispatch probe**: private runtime feature detection for x86_64 AVX2 and ARM NEON dispatch tiers.
 - **Worker pool**: fixed worker threads + internal work queue (`astral::core::submit_work`)
 
-Not implemented yet (planned):
-- Work stealing scheduler.
-
 ## Threading contract
 
 - **Model** objects may be shared across threads, but provider ops must document which calls are thread-safe.

@@ -1,0 +1,153 @@
+site_name: Astral Documentation
+site_description: Native inference runtime reference for applications and game engines
+site_url: https://cosmin-b.github.io/astral/
+repo_url: https://github.com/Cosmin-B/astral
+repo_name: Cosmin-B/astral
+edit_uri: edit/main/
+
+docs_dir: ..
+site_dir: !ENV [ASTRAL_DOCS_SITE_DIR, ../../astral-docs-site]
+strict: true
+
+exclude_docs: |
+  /*
+  !/assets/
+  !/assets/**
+  !/README.md
+  !/BUILD.md
+  !/CHANGELOG.md
+  !/CONTRIBUTING.md
+  !/ROADMAP.md
+  !/SECURITY.md
+  !/docs/
+  !/docs/**
+
+nav:
+  - Overview: README.md
+  - Get Started:
+      - Build and configure: BUILD.md
+      - Feature matrix: docs/FEATURE_MATRIX.md
+      - Model paths: docs/api/MODEL_PATHS.md
+      - Model presets: docs/api/MODEL_PRESETS.md
+      - Error handling: docs/api/ERROR_HANDLING.md
+  - Runtime APIs:
+      - Continuous batching: docs/api/CONTINUOUS_BATCHING.md
+      - Generation controls: docs/api/GENERATION_CONTROLS.md
+      - Tokenization: docs/api/TOKENIZATION.md
+      - Prompt cache: docs/api/PROMPT_CACHE.md
+      - Structured output: docs/api/STRUCTURED_OUTPUT.md
+      - LoRA adapters: docs/api/LORA_ADAPTERS.md
+      - Chunking: docs/api/CHUNKING.md
+      - Memory index: docs/api/MEMORY_INDEX.md
+      - Agent runtime: docs/api/AGENT_RUNTIME.md
+      - Async delivery: docs/api/ASYNC_DELIVERY.md
+      - Remote runtime: docs/api/REMOTE_RUNTIME.md
+      - Hot-path profiling: docs/api/HOT_PATH_PROFILING.md
+  - Architecture:
+      - Backend architecture: docs/architecture/BACKEND_ARCHITECTURE.md
+      - Concurrency model: docs/architecture/CONCURRENCY_MODEL.md
+      - Memory architecture: docs/architecture/MEMORY_ARCHITECTURE.md
+      - Low-level primitives: docs/architecture/LOW_LEVEL_PRIMITIVES.md
+      - Embedded profile: docs/EMBEDDED_PROFILE.md
+      - Embedded examples: docs/embedded/README.md
+      - Vision and audio: docs/VISION_AUDIO.md
+  - Integration:
+      - Unity: docs/integration/UNITY_INTEGRATION.md
+      - Unreal Engine: docs/integration/UNREAL_INTEGRATION.md
+      - Unreal Engine 5.7 quickstart: docs/integration/UNREAL_57_QUICKSTART.md
+  - Profiling and CUDA:
+      - Tracy profiling: docs/PROFILING_TRACY.md
+      - CUDA parity: docs/CUDA_PARITY.md
+      - CUDA kernel strategy: docs/CUDA_KERNEL_STRATEGY.md
+  - Release:
+      - ABI versioning: docs/ABI_VERSIONING.md
+      - Acceptance matrix: docs/release/RELEASE_ACCEPTANCE_MATRIX.md
+      - ABI manifest: docs/release/ABI_MANIFEST.md
+      - Dependency manifest: docs/release/DEPENDENCY_MANIFEST.md
+      - Third-party notices: docs/release/THIRD_PARTY_NOTICES.md
+      - Release notes template: docs/release/RELEASE_NOTES_TEMPLATE.md
+  - Project:
+      - Documentation map: docs/README.md
+      - Contributing: CONTRIBUTING.md
+      - Security: SECURITY.md
+      - Changelog: CHANGELOG.md
+      - Roadmap: ROADMAP.md
+      - Coding standards: docs/rules/CODING_STANDARDS.md
+
+theme:
+  name: material
+  custom_dir: overrides
+  language: en
+  font: false
+  icon:
+    logo: material/orbit
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search:
+      lang: en
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+extra_css:
+  - docs/assets/stylesheets/extra.css
+
+copyright: Copyright &copy; 2026 Astral contributors
