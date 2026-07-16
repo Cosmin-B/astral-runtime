@@ -352,11 +352,6 @@ target_compile_features(astral_platform PUBLIC cxx_std_17)
 - **ARM YIELD**: ARM Architecture Reference Manual, section C6.2.339
 - **Cache line detection**: [What Every Programmer Should Know About Memory](https://people.freebsd.org/~lstewart/articles/cpumemory.pdf) (Ulrich Drepper, 2007)
 
-### Unity allocator Reference
-
-- `/home/user/docs/unity-runtime/src/memory/`
-- `/home/user/docs/unity-runtime/src/platform/`
-
 ## License
 
 Part of the Astral project. See main LICENSE file for details.

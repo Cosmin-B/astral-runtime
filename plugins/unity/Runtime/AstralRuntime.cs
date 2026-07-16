@@ -159,7 +159,7 @@ namespace Astral.Runtime
 
         /// <summary>
         /// Use Unity's native allocator (Allocator.Persistent) for Astral heap allocations.
-        /// This improves profiler visibility and ensures allocations flow through Unity/Unity runtime.
+        /// This improves profiler visibility and routes allocations through Unity's allocator hooks.
         /// </summary>
         public bool useUnityAllocator = true;
 

@@ -84,6 +84,27 @@ set(TRACKED_COMMENT_TOKENS
   "${hack_token}"
 )
 
+set(private_linux_home "/home/")
+string(APPEND private_linux_home "cosmin/")
+set(private_macos_home "/Users/")
+string(APPEND private_macos_home "cosmin/")
+set(private_windows_workspace "Q:")
+string(APPEND private_windows_workspace "/Work")
+set(private_workspace_name "__")
+string(APPEND private_workspace_name "experiments")
+set(private_reference_lower "base")
+string(APPEND private_reference_lower "lib")
+set(private_reference_title "Base")
+string(APPEND private_reference_title "lib")
+set(PRIVATE_PROVENANCE_STRINGS
+  "${private_linux_home}"
+  "${private_macos_home}"
+  "${private_windows_workspace}"
+  "${private_workspace_name}"
+  "${private_reference_lower}"
+  "${private_reference_title}"
+)
+
 set(tracker_long_term "bea")
 string(APPEND tracker_long_term "ds")
 set(tracker_short_term "b")
@@ -107,8 +128,6 @@ set(create_temporary_arrays_phrase "Create")
 string(APPEND create_temporary_arrays_phrase " temporary arrays for intermediate results")
 set(dispose_temporary_arrays_phrase "Dispose")
 string(APPEND dispose_temporary_arrays_phrase " temporary arrays when jobs complete")
-set(unreviewed_name_phrase "review")
-string(APPEND unreviewed_name_phrase " tooling")
 set(handle_error_phrase "handle")
 string(APPEND handle_error_phrase " the error")
 set(process_data_phrase "process")
@@ -340,7 +359,6 @@ set(UNREVIEWED_PROSE_STRINGS
   "${disposed_properly_phrase}"
   "${create_temporary_arrays_phrase}"
   "${dispose_temporary_arrays_phrase}"
-  "${unreviewed_name_phrase}"
   "${handle_error_phrase}"
   "${process_data_phrase}"
   "${ensure_proper_phrase}"
@@ -502,6 +520,12 @@ foreach(path IN LISTS FILES)
         message(FATAL_ERROR "Unreviewed generic prose '${phrase}' found in ${path}:${line_no}; rewrite it with project-specific ownership, lifecycle, or failure-mode language")
       endif()
     endforeach()
+    foreach(phrase IN LISTS PRIVATE_PROVENANCE_STRINGS)
+      string(FIND "${line}" "${phrase}" private_provenance_pos)
+      if(NOT private_provenance_pos EQUAL -1)
+        message(FATAL_ERROR "Private provenance text found in ${path}:${line_no}; keep local paths and investigation sources outside the repository")
+      endif()
+    endforeach()
     if(line MATCHES "(^|[^A-Za-z0-9_])${tracker_long_term}([^A-Za-z0-9_]|$)" OR
        line MATCHES "(^|[^A-Za-z0-9_])${tracker_short_term}([^A-Za-z0-9_]|$)")
       message(FATAL_ERROR "Internal tracker wording found in ${path}:${line_no}; keep coordination metadata outside the repository")
@@ -627,6 +651,80 @@ foreach(required_ci_ctest_text
   string(FIND "${ci_workflow_content}" "${required_ci_ctest_text}" ci_ctest_pos)
   if(ci_ctest_pos EQUAL -1)
     message(FATAL_ERROR "CI native CTest log workflow must keep '${required_ci_ctest_text}'")
+  endif()
+endforeach()
+
+set(TRUSTED_WORKFLOW_FILES
+  "${ROOT}/.github/workflows/ci.yml"
+  "${ROOT}/.github/workflows/docs.yml"
+  "${ROOT}/.github/workflows/release-sign.yml"
+  "${ROOT}/.github/workflows/unity-gameci.yml"
+)
+foreach(workflow_path IN LISTS TRUSTED_WORKFLOW_FILES)
+  if(NOT EXISTS "${workflow_path}")
+    message(FATAL_ERROR "Required workflow missing: ${workflow_path}")
+  endif()
+  file(READ "${workflow_path}" workflow_content)
+  if(workflow_content MATCHES "pull_request:")
+    message(FATAL_ERROR "Self-hosted workflow must not execute on pull_request: ${workflow_path}")
+  endif()
+  if(workflow_content MATCHES "runs-on:[ \t]*(ubuntu|windows|macos)-")
+    message(FATAL_ERROR "Workflow must use the trusted Linux self-hosted runner: ${workflow_path}")
+  endif()
+  if(workflow_content MATCHES "runs-on:[ \t]*\\$\\{\\{[ \t]*matrix\\.os")
+    message(FATAL_ERROR "Workflow must not restore a desktop hosted-runner matrix: ${workflow_path}")
+  endif()
+  if(workflow_content MATCHES "uses:[^\n]+@(v[0-9]+|main|master)([ \t\r\n]|$)")
+    message(FATAL_ERROR "Workflow actions must be pinned to immutable commits: ${workflow_path}")
+  endif()
+  string(REGEX MATCHALL "runs-on:[^\n]*" workflow_runner_lines "${workflow_content}")
+  foreach(workflow_runner_line IN LISTS workflow_runner_lines)
+    if(NOT workflow_runner_line MATCHES "\\[self-hosted,[ \t]*linux,[ \t]*x64\\]")
+      message(FATAL_ERROR "Unexpected runner declaration '${workflow_runner_line}' in ${workflow_path}")
+    endif()
+  endforeach()
+endforeach()
+
+foreach(disabled_ci_job
+    "macos-tests:"
+    "windows-tests:"
+    "unity-ios-artifacts:"
+    "unreal-ios-artifacts:")
+  string(FIND "${ci_workflow_content}" "${disabled_ci_job}" disabled_ci_job_pos)
+  if(NOT disabled_ci_job_pos EQUAL -1)
+    message(FATAL_ERROR "Disabled platform job is still present in CI: ${disabled_ci_job}")
+  endif()
+endforeach()
+
+file(READ "${ROOT}/LICENSE" root_license_content)
+foreach(required_license_text
+    "Apache License"
+    "Version 2.0, January 2004"
+    "TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION")
+  string(FIND "${root_license_content}" "${required_license_text}" license_text_pos)
+  if(license_text_pos EQUAL -1)
+    message(FATAL_ERROR "Root license is not the complete Apache License 2.0 text: missing '${required_license_text}'")
+  endif()
+endforeach()
+
+file(READ "${ROOT}/README.md" root_readme_content)
+string(FIND "${root_readme_content}" "Astral is licensed under the Apache License 2.0" readme_license_pos)
+if(readme_license_pos EQUAL -1)
+  message(FATAL_ERROR "README must state the Apache License 2.0 project license")
+endif()
+string(FIND "${root_readme_content}" "Unity 6000.0+" readme_unity_pos)
+if(readme_unity_pos EQUAL -1)
+  message(FATAL_ERROR "README must keep Unity 6000.0 as the minimum supported editor")
+endif()
+
+file(READ "${ROOT}/plugins/unity/package.json" unity_package_content)
+foreach(required_unity_package_text
+    "\"unity\": \"6000.0\""
+    "\"license\": \"Apache-2.0\""
+    "https://github.com/Cosmin-B/astral")
+  string(FIND "${unity_package_content}" "${required_unity_package_text}" unity_package_pos)
+  if(unity_package_pos EQUAL -1)
+    message(FATAL_ERROR "Unity package metadata is missing '${required_unity_package_text}'")
   endif()
 endforeach()
 
