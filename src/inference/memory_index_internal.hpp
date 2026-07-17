@@ -17,6 +17,19 @@ inline constexpr float kE3M2InvScale = 1.0f / 16.0f;
 inline constexpr float kWorstScore = -3.4028234663852886e38f;
 inline constexpr uint32_t kInlineSearchCursorResults = 8;
 inline constexpr uint32_t kMemorySearchBatchParallelMaxWorkers = 16;
+inline constexpr uint32_t kSaveMagic = 0x414D454Du;
+inline constexpr uint32_t kSaveVersionF32 = 1;
+inline constexpr uint32_t kSaveVersionCompactStorage = 2;
+inline constexpr uint32_t kSaveVersionGraphTopology = 3;
+inline constexpr uint32_t kSaveVersionLegacyLayout = 4;
+inline constexpr uint32_t kSaveVersionModernLayout = 5;
+inline constexpr uint32_t kSaveVersionNormalizedF32Cosine = 6;
+inline constexpr uint32_t kSaveVersionGraphQuerySearch = 7;
+inline constexpr uint32_t kSaveVersionCompactScoreScales = 8;
+inline constexpr uint32_t kSaveVersionCompactGraphCounts = 9;
+inline constexpr uint32_t kSaveVersionAlignedVectorData = 10;
+inline constexpr uint32_t kSaveVersion = kSaveVersionAlignedVectorData;
+inline constexpr uint32_t kSaveGraphTopologyFlag = 1;
 
 #if defined(__AVX2__)
 inline constexpr size_t kVectorStorageAlign = 32;
@@ -524,5 +537,14 @@ bool memory_search_graph_batch_parallel(MemoryIndex* index, const AstralMemorySe
 void memory_search_flat_fallback(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                                  const float* query, AstralMemorySearchResult* out_results,
                                  uint32_t* out_count);
+uint64_t memory_save_byte_count(const MemoryIndex* index);
+uint32_t save_graph_count_bytes(uint32_t version);
+bool memory_save_layout(uint32_t version, uint32_t dim, uint32_t count,
+                        AstralMemoryStorageKind storage, uint32_t index_kind,
+                        uint32_t graph_base_neighbors, uint32_t graph_neighbors,
+                        uint32_t graph_levels, SaveLayout* out_layout);
+uint32_t save_graph_header_bytes(uint32_t version);
+void read_save_graph_header(uint32_t version, const uint8_t* bytes,
+                            SaveGraphHeader* out_header);
 
 } // namespace astral::inference
