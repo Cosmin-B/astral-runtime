@@ -18,6 +18,18 @@
 
 namespace astral::inference {
 
+constexpr uint32_t kInlineSearchCursorResults = 8;
+
+struct MemorySearchCursor {
+  AstralHandle handle;
+  uint32_t capacity;
+  uint32_t count;
+  uint32_t offset;
+  std::atomic<uint32_t> canceled;
+  AstralMemorySearchResult* results;
+  AstralMemorySearchResult inline_results[kInlineSearchCursorResults];
+};
+
 namespace {
 
 constexpr uint32_t kNoResults = 0;
@@ -372,8 +384,6 @@ inline void memory_parallel_job_complete(std::atomic<uint32_t>* remaining) {
 
 namespace {
 
-
-
 inline uint32_t slot_to_key_ref(uint32_t slot) {
   return slot + kKeyTableSlotRefBias;
 }
@@ -531,8 +541,6 @@ void store_f32_vector(MemoryIndex* index, uint32_t slot, const float* src) {
   normalize_f32_vector(dst, src, index->dim);
   index->slots[slot].score_scale = 1.0f;
 }
-
-
 
 void memory_search_dot(MemoryIndex* index, const AstralMemorySearchDesc* desc, const float* query,
                        AstralMemorySearchResult* out_results, uint32_t* out_count) {

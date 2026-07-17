@@ -2,8 +2,6 @@
 
 #include "memory_index.hpp"
 
-#include "../platform/file_map.h"
-
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -15,7 +13,6 @@ inline constexpr uint32_t kU32Max = 0xFFFFFFFFu;
 inline constexpr float kE2M3InvScale = 1.0f / 16.0f;
 inline constexpr float kE3M2InvScale = 1.0f / 16.0f;
 inline constexpr float kWorstScore = -3.4028234663852886e38f;
-inline constexpr uint32_t kInlineSearchCursorResults = 8;
 inline constexpr uint32_t kMemorySearchBatchParallelMaxWorkers = 16;
 inline constexpr uint32_t kSaveMagic = 0x414D454Du;
 inline constexpr uint32_t kSaveVersionF32 = 1;
@@ -180,35 +177,6 @@ struct MemoryIndex {
   uint8_t graph_batch_scratch_count;
   uint8_t dense_active;
   uint8_t i16_vectors_aligned;
-};
-
-struct MemorySearchCursor {
-  AstralHandle handle;
-  uint32_t capacity;
-  uint32_t count;
-  uint32_t offset;
-  std::atomic<uint32_t> canceled;
-  AstralMemorySearchResult* results;
-  AstralMemorySearchResult inline_results[kInlineSearchCursorResults];
-};
-
-struct SnapshotGraphLayout {
-  SaveGraphHeader header;
-  uint64_t levels_offset;
-  uint64_t counts_offset;
-  uint64_t neighbors_offset;
-  uint32_t candidate_capacity;
-  uint32_t scratch_capacity;
-};
-
-struct MemorySnapshotView {
-  AstralHandle handle;
-  platform::ReadOnlyFileMap map;
-  AstralMemorySnapshotInfo info;
-  SnapshotGraphLayout graph;
-  GraphSearchScratch graph_scratch;
-  uint8_t graph_ready;
-  uint8_t e5m2_clamp_non_finite;
 };
 
 float dot_f32(const float* a, const float* b, uint32_t dim);

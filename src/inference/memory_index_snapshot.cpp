@@ -2,6 +2,7 @@
 
 #include "../core/handles.hpp"
 #include "../core/runtime_alloc.hpp"
+#include "../platform/file_map.h"
 
 #include <cmath>
 #include <cstddef>
@@ -10,6 +11,25 @@
 #include <string>
 
 namespace astral::inference {
+
+struct SnapshotGraphLayout {
+  SaveGraphHeader header;
+  uint64_t levels_offset;
+  uint64_t counts_offset;
+  uint64_t neighbors_offset;
+  uint32_t candidate_capacity;
+  uint32_t scratch_capacity;
+};
+
+struct MemorySnapshotView {
+  AstralHandle handle;
+  platform::ReadOnlyFileMap map;
+  AstralMemorySnapshotInfo info;
+  SnapshotGraphLayout graph;
+  GraphSearchScratch graph_scratch;
+  uint8_t graph_ready;
+  uint8_t e5m2_clamp_non_finite;
+};
 
 namespace {
 
@@ -1663,6 +1683,5 @@ AstralErr memory_snapshot_view_search(MemorySnapshotView* view, const AstralMemo
                                           &view->info, desc, query, out_results, max_results,
                                           out_count, view->e5m2_clamp_non_finite);
 }
-
 
 } // namespace astral::inference
