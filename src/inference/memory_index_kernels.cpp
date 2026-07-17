@@ -1531,6 +1531,39 @@ float dot_e5m2_f32_384(const int8_t* a, const float* b) {
 #endif
 }
 
+E5m2DotPair dot_e5m2_f32_384x2(const int8_t* a, const int8_t* b, const float* query) {
+#if defined(__AVX2__) && defined(ASTRAL_X86_F16C)
+  __m256 acc_a0 = _mm256_setzero_ps();
+  __m256 acc_a1 = _mm256_setzero_ps();
+  __m256 acc_b0 = _mm256_setzero_ps();
+  __m256 acc_b1 = _mm256_setzero_ps();
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC unroll 24
+#endif
+  for (uint32_t i = 0; i < 384u; i += kAvx2F32Lanes * 2u) {
+    const __m256 query0 = _mm256_loadu_ps(query + i);
+    const __m256 query1 = _mm256_loadu_ps(query + i + kAvx2F32Lanes);
+#if defined(__FMA__)
+    acc_a0 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i), query0, acc_a0);
+    acc_b0 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(b + i), query0, acc_b0);
+    acc_a1 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2F32Lanes), query1, acc_a1);
+    acc_b1 = _mm256_fmadd_ps(e5m2_load8_f32_avx2<false>(b + i + kAvx2F32Lanes), query1, acc_b1);
+#else
+    acc_a0 = _mm256_add_ps(acc_a0, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i), query0));
+    acc_b0 = _mm256_add_ps(acc_b0, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(b + i), query0));
+    acc_a1 = _mm256_add_ps(
+        acc_a1, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(a + i + kAvx2F32Lanes), query1));
+    acc_b1 = _mm256_add_ps(
+        acc_b1, _mm256_mul_ps(e5m2_load8_f32_avx2<false>(b + i + kAvx2F32Lanes), query1));
+#endif
+  }
+  return E5m2DotPair{reduce_avx2_f32(_mm256_add_ps(acc_a0, acc_a1)),
+                     reduce_avx2_f32(_mm256_add_ps(acc_b0, acc_b1))};
+#else
+  return E5m2DotPair{dot_e5m2_f32_384(a, query), dot_e5m2_f32_384(b, query)};
+#endif
+}
+
 template <bool UseF16c, bool ClampA>
 float dot_e5m2_e5m2_impl(const int8_t* a, const int8_t* b, uint32_t dim) {
 #if defined(__AVX2__)

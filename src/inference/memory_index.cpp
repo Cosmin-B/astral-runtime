@@ -1283,6 +1283,20 @@ void memory_search_record_shard_work(void* user) {
   memory_parallel_job_complete(job->remaining);
 }
 
+inline void memory_search_consider_dense_e5m2(
+    const MemoryIndex* index, const AstralMemorySearchDesc* desc, uint32_t slot, float dot,
+    float query_scale, AstralMemorySearchResult* out_results, uint32_t* filled) {
+  const MemorySlot& s = index->slots[slot];
+  const float score = dot * index->compact_score_scales[slot] * query_scale;
+  if (*filled == desc->top_k &&
+      !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+    return;
+  }
+  AstralMemorySearchResult candidate{};
+  fill_result(&candidate, s, score);
+  insert_result(out_results, desc->top_k, filled, candidate);
+}
+
 template <bool Use384Kernel>
 void memory_search_dense_e5m2_range(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                                     const float* query, uint32_t begin_active,
@@ -1291,28 +1305,32 @@ void memory_search_dense_e5m2_range(MemoryIndex* index, const AstralMemorySearch
   uint32_t filled = 0;
   const uint32_t dim = index->dim;
   const int8_t* vectors = index->q8_vectors;
-  const float* score_scales = index->compact_score_scales;
   const float query_scale =
       index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, dim) : 1.0f;
   const DotE5m2F32Fn dot_kernel = index->e5m2_kernels->dot_f32;
 
-  for (uint32_t slot = begin_active; slot < end_active; ++slot) {
-    const MemorySlot& s = index->slots[slot];
+  uint32_t slot = begin_active;
+  if constexpr (Use384Kernel) {
+    for (; slot + 1u < end_active; slot += 2u) {
+      const int8_t* vector0 = vectors + static_cast<size_t>(slot) * dim;
+      const int8_t* vector1 = vector0 + dim;
+      const E5m2DotPair dots = dot_e5m2_f32_384x2(vector0, vector1, query);
+      memory_search_consider_dense_e5m2(index, desc, slot, dots.first, query_scale, out_results,
+                                        &filled);
+      memory_search_consider_dense_e5m2(index, desc, slot + 1u, dots.second, query_scale,
+                                        out_results, &filled);
+    }
+  } else {
+    for (; slot < end_active; ++slot) {
+      const int8_t* vector = vectors + static_cast<size_t>(slot) * dim;
+      memory_search_consider_dense_e5m2(index, desc, slot, dot_kernel(vector, query, dim),
+                                        query_scale, out_results, &filled);
+    }
+  }
+  if (slot < end_active) {
     const int8_t* vector = vectors + static_cast<size_t>(slot) * dim;
-    float dot = 0.0f;
-    if constexpr (Use384Kernel) {
-      dot = dot_e5m2_f32_384(vector, query);
-    } else {
-      dot = dot_kernel(vector, query, dim);
-    }
-    const float score = dot * score_scales[slot] * query_scale;
-    if (filled == desc->top_k &&
-        !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
-      continue;
-    }
-    AstralMemorySearchResult candidate{};
-    fill_result(&candidate, s, score);
-    insert_result(out_results, desc->top_k, &filled, candidate);
+    memory_search_consider_dense_e5m2(index, desc, slot, dot_e5m2_f32_384(vector, query),
+                                      query_scale, out_results, &filled);
   }
   *out_count = filled;
 }
