@@ -6,6 +6,28 @@ The graph index is a bounded native candidate graph for larger all-group
 searches. Treat it as an approximate index: tune it against the target dataset
 and keep the flat index as the recall oracle.
 
+## Implementation Map
+
+The native implementation is split by ownership and execution role:
+
+- [`memory_index.cpp`](../../src/inference/memory_index.cpp) owns index lifetime,
+  slots, the key table, add/update/remove operations, flat search, cursors, and
+  reconstruction of a loaded index.
+- [`memory_index_kernels.cpp`](../../src/inference/memory_index_kernels.cpp)
+  contains scalar and architecture-specific scoring, conversion,
+  normalization, quantization, and runtime kernel selection.
+- [`memory_index_graph.cpp`](../../src/inference/memory_index_graph.cpp) owns
+  graph construction, neighbor selection, traversal, graph-local scoring, and
+  per-worker graph scratch.
+- [`memory_index_snapshot.cpp`](../../src/inference/memory_index_snapshot.cpp)
+  owns the versioned snapshot layout, serialization, validation, mapped views,
+  and direct search over mapped snapshot data.
+
+The files share only private POD state and narrow internal entry points through
+`memory_index_internal.hpp`. Search workers write to disjoint output ranges and
+private scratch. Query loops do not allocate or coordinate through a shared
+result heap.
+
 ## C ABI
 
 - `AstralMemoryIndexDesc`
