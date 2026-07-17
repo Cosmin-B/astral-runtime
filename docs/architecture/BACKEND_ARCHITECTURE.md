@@ -8,9 +8,9 @@ runtime. Backend availability is a build and release property; consult the
 
 Astral exposes models, sessions, embeddings, and conversations through the C
 ABI in
-[`include/astral_rt.h`](https://github.com/Cosmin-B/astral/blob/main/include/astral_rt.h).
+[`include/astral_rt.h`](https://github.com/Cosmin-B/astral-runtime/blob/main/include/astral_rt.h).
 Providers implement the function table in
-[`include/astral_backend.h`](https://github.com/Cosmin-B/astral/blob/main/include/astral_backend.h).
+[`include/astral_backend.h`](https://github.com/Cosmin-B/astral-runtime/blob/main/include/astral_backend.h).
 The core owns ABI
 validation, handles, scheduling, sampling, streaming, and feature orchestration.
 The selected provider owns its model and session contexts.
@@ -104,7 +104,7 @@ descriptor sizes, required operations, and duplicate name before registration.
 Plugin loading is a startup operation and is disabled by embedded presets.
 
 The sample and toy plugins under
-[`backend_plugins`](https://github.com/Cosmin-B/astral/tree/main/backend_plugins)
+[`backend_plugins`](https://github.com/Cosmin-B/astral-runtime/tree/main/backend_plugins)
 are the maintained build references. A plugin should be tested through
 `test_provider_harness`, not only by loading the library directly.
 

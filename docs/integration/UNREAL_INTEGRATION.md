@@ -142,7 +142,7 @@ plugins/unreal/AstralRT/
 
 The descriptor has `CanContainContent: false`; the maintained sample is a
 generated sidecar project under
-[`examples/unreal/AstralSample`](https://github.com/Cosmin-B/astral/blob/main/examples/unreal/AstralSample/README.md),
+[`examples/unreal/AstralSample`](https://github.com/Cosmin-B/astral-runtime/blob/main/examples/unreal/AstralSample/README.md),
 not plugin content.
 
 ## Workflow Samples
@@ -175,10 +175,10 @@ The committed descriptor is:
   "Description": "Native LLM runtime bindings for Unreal Engine",
   "Category": "AI",
   "CreatedBy": "Astral",
-  "CreatedByURL": "https://github.com/Cosmin-B/astral",
-  "DocsURL": "https://github.com/Cosmin-B/astral/tree/main/docs/integration",
+  "CreatedByURL": "https://github.com/Cosmin-B/astral-runtime",
+  "DocsURL": "https://github.com/Cosmin-B/astral-runtime/tree/main/docs/integration",
   "MarketplaceURL": "",
-  "SupportURL": "https://github.com/Cosmin-B/astral/issues",
+  "SupportURL": "https://github.com/Cosmin-B/astral-runtime/issues",
   "CanContainContent": false,
   "IsBetaVersion": true,
   "IsExperimentalVersion": false,

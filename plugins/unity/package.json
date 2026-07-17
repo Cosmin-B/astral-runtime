@@ -6,9 +6,9 @@
   "unity": "6000.0",
   "unityRelease": "0f1",
   "license": "Apache-2.0",
-  "documentationUrl": "https://github.com/Cosmin-B/astral",
-  "changelogUrl": "https://github.com/Cosmin-B/astral/blob/main/CHANGELOG.md",
-  "licensesUrl": "https://github.com/Cosmin-B/astral/blob/main/LICENSE",
+  "documentationUrl": "https://github.com/Cosmin-B/astral-runtime",
+  "changelogUrl": "https://github.com/Cosmin-B/astral-runtime/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/Cosmin-B/astral-runtime/blob/main/LICENSE",
   "keywords": [
     "llm",
     "inference",

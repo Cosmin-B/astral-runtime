@@ -39,7 +39,7 @@ the primary engine validation targets.
 Clone with submodules, then use the checked-in presets:
 
 ```bash
-git clone --recurse-submodules https://github.com/Cosmin-B/astral.git
+git clone --recurse-submodules https://github.com/Cosmin-B/astral-runtime.git
 cd astral
 
 cmake --preset release-with-tests
@@ -81,7 +81,7 @@ cmake --build build/examples --target astral_c_quickstart -j
 ```
 
 The source is
-[examples/astral_c_quickstart.c](https://github.com/Cosmin-B/astral/blob/main/examples/astral_c_quickstart.c).
+[examples/astral_c_quickstart.c](https://github.com/Cosmin-B/astral-runtime/blob/main/examples/astral_c_quickstart.c).
 It demonstrates initialization, model loading, streaming, error handling,
 reset, and handle release through the public C ABI.
 
@@ -89,13 +89,13 @@ reset, and handle release through the public C ABI.
 
 Unity:
 
-- [Package guide](https://github.com/Cosmin-B/astral/blob/main/plugins/unity/README.md)
+- [Package guide](https://github.com/Cosmin-B/astral-runtime/blob/main/plugins/unity/README.md)
 - [Integration reference](docs/integration/UNITY_INTEGRATION.md)
 - Maintained samples under `plugins/unity/Samples~`
 
 Unreal Engine:
 
-- [Plugin guide](https://github.com/Cosmin-B/astral/blob/main/plugins/unreal/AstralRT/README.md)
+- [Plugin guide](https://github.com/Cosmin-B/astral-runtime/blob/main/plugins/unreal/AstralRT/README.md)
 - [Integration reference](docs/integration/UNREAL_INTEGRATION.md)
 - [UE 5.7 quickstart](docs/integration/UNREAL_57_QUICKSTART.md)
 
@@ -146,11 +146,11 @@ tests for behavior changes, and attach performance evidence for hot-path work.
 ## License
 
 Astral is licensed under the Apache License 2.0. See
-[LICENSE](https://github.com/Cosmin-B/astral/blob/main/LICENSE),
-[NOTICE](https://github.com/Cosmin-B/astral/blob/main/NOTICE), and the
+[LICENSE](https://github.com/Cosmin-B/astral-runtime/blob/main/LICENSE),
+[NOTICE](https://github.com/Cosmin-B/astral-runtime/blob/main/NOTICE), and the
 [third-party notices](docs/release/THIRD_PARTY_NOTICES.md).
 
 ## Support
 
-Use [GitHub Issues](https://github.com/Cosmin-B/astral/issues) for reproducible
+Use [GitHub Issues](https://github.com/Cosmin-B/astral-runtime/issues) for reproducible
 bugs and integration problems.

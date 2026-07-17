@@ -33,7 +33,7 @@ EditMode execution and player builds still need dedicated Unity runner evidence.
 
 1. Open Unity Package Manager (Window > Package Manager)
 2. Click '+' > Add package from git URL
-3. Enter: `https://github.com/Cosmin-B/astral.git?path=/plugins/unity`
+3. Enter: `https://github.com/Cosmin-B/astral-runtime.git?path=/plugins/unity`
 
 ### Manual Installation
 
@@ -555,7 +555,7 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for contribution guidelines.
 
 ## Support
 
-- GitHub Issues: https://github.com/Cosmin-B/astral/issues
+- GitHub Issues: https://github.com/Cosmin-B/astral-runtime/issues
 - Documentation: [Astral documentation](../../docs/README.md)
 
 ## Changelog

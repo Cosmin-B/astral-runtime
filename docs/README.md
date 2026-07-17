@@ -28,7 +28,7 @@ evidence required for support claims.
 - [Model paths](api/MODEL_PATHS.md) and [model presets](api/MODEL_PRESETS.md)
 
 The complete function and descriptor surface is in
-[`include/astral_rt.h`](https://github.com/Cosmin-B/astral/blob/main/include/astral_rt.h).
+[`include/astral_rt.h`](https://github.com/Cosmin-B/astral-runtime/blob/main/include/astral_rt.h).
 
 ## Engine Integration
 
@@ -37,8 +37,8 @@ The complete function and descriptor surface is in
 - [Unreal 5.7 quickstart](integration/UNREAL_57_QUICKSTART.md)
 
 Package-specific usage and samples live under
-[`plugins/unity`](https://github.com/Cosmin-B/astral/tree/main/plugins/unity) and
-[`plugins/unreal/AstralRT`](https://github.com/Cosmin-B/astral/tree/main/plugins/unreal/AstralRT).
+[`plugins/unity`](https://github.com/Cosmin-B/astral-runtime/tree/main/plugins/unity) and
+[`plugins/unreal/AstralRT`](https://github.com/Cosmin-B/astral-runtime/tree/main/plugins/unreal/AstralRT).
 
 ## Runtime Architecture
 

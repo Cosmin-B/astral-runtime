@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-DEFAULT_REPOSITORY_URL = "https://github.com/Cosmin-B/astral"
+DEFAULT_REPOSITORY_URL = "https://github.com/Cosmin-B/astral-runtime"
 REPOSITORY_URL_ENV = "ASTRAL_REPOSITORY_URL"
 
 

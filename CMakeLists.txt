@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(AstralRT VERSION 0.1.0 LANGUAGES C CXX)
 
 set(PROJECT_DESCRIPTION "Native inference runtime for applications and game engines")
-set(PROJECT_HOMEPAGE_URL "https://github.com/Cosmin-B/astral")
+set(PROJECT_HOMEPAGE_URL "https://github.com/Cosmin-B/astral-runtime")
 
 # C++17 required, no extensions.
 #

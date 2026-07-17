@@ -744,7 +744,7 @@ file(READ "${ROOT}/plugins/unity/package.json" unity_package_content)
 foreach(required_unity_package_text
     "\"unity\": \"6000.0\""
     "\"license\": \"Apache-2.0\""
-    "https://github.com/Cosmin-B/astral")
+    "https://github.com/Cosmin-B/astral-runtime")
   string(FIND "${unity_package_content}" "${required_unity_package_text}" unity_package_pos)
   if(unity_package_pos EQUAL -1)
     message(FATAL_ERROR "Unity package metadata is missing '${required_unity_package_text}'")

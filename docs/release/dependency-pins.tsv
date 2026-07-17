@@ -10,9 +10,9 @@ unity_package	plugins/unity/package.json	unity	6000.0
 unity_package	plugins/unity/package.json	unityRelease	0f1
 unity_dependency	plugins/unity/package.json	com.unity.collections	1.4.0
 unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	VersionName	0.1.0
-unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	CreatedByURL	https://github.com/Cosmin-B/astral
-unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	DocsURL	https://github.com/Cosmin-B/astral/tree/main/docs/integration
-unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	SupportURL	https://github.com/Cosmin-B/astral/issues
+unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	CreatedByURL	https://github.com/Cosmin-B/astral-runtime
+unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	DocsURL	https://github.com/Cosmin-B/astral-runtime/tree/main/docs/integration
+unreal_plugin	plugins/unreal/AstralRT/AstralRT.uplugin	SupportURL	https://github.com/Cosmin-B/astral-runtime/issues
 unreal_support	plugins/unreal/AstralRT/AstralRT.uplugin	compatibility_floor	5.4
 unreal_support	plugins/unreal/AstralRT/AstralRT.uplugin	production_target	5.7
 github_workflow	.github/workflows/ci.yml	android_ndk_version	27.2.12479018
