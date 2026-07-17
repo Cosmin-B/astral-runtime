@@ -1283,38 +1283,55 @@ void memory_search_record_shard_work(void* user) {
   memory_parallel_job_complete(job->remaining);
 }
 
+template <bool Use384Kernel>
+void memory_search_dense_e5m2_range(MemoryIndex* index, const AstralMemorySearchDesc* desc,
+                                    const float* query, uint32_t begin_active,
+                                    uint32_t end_active, AstralMemorySearchResult* out_results,
+                                    uint32_t* out_count) {
+  uint32_t filled = 0;
+  const uint32_t dim = index->dim;
+  const int8_t* vectors = index->q8_vectors;
+  const float* score_scales = index->compact_score_scales;
+  const float query_scale =
+      index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, dim) : 1.0f;
+  const DotE5m2F32Fn dot_kernel = index->e5m2_kernels->dot_f32;
+
+  for (uint32_t slot = begin_active; slot < end_active; ++slot) {
+    const MemorySlot& s = index->slots[slot];
+    const int8_t* vector = vectors + static_cast<size_t>(slot) * dim;
+    float dot = 0.0f;
+    if constexpr (Use384Kernel) {
+      dot = dot_e5m2_f32_384(vector, query);
+    } else {
+      dot = dot_kernel(vector, query, dim);
+    }
+    const float score = dot * score_scales[slot] * query_scale;
+    if (filled == desc->top_k &&
+        !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
+      continue;
+    }
+    AstralMemorySearchResult candidate{};
+    fill_result(&candidate, s, score);
+    insert_result(out_results, desc->top_k, &filled, candidate);
+  }
+  *out_count = filled;
+}
+
 void memory_search_flat_single_range(MemoryIndex* index, const AstralMemorySearchDesc* desc,
                                      const float* query, uint32_t begin_active, uint32_t end_active,
                                      AstralMemorySearchResult* out_results, uint32_t* out_count) {
   if (index->storage_kind == ASTRAL_MEMORY_STORAGE_F8_E5M2 && index->dense_active != 0 &&
       desc->group_id == ASTRAL_MEMORY_GROUP_ANY && index->metric != ASTRAL_MEMORY_METRIC_L2) {
-    uint32_t filled = 0;
     const uint32_t dim = index->dim;
-    const int8_t* vectors = index->q8_vectors;
-    const float* score_scales = index->compact_score_scales;
-    const float query_scale =
-        index->metric == ASTRAL_MEMORY_METRIC_COSINE ? cosine_scale(query, dim) : 1.0f;
-    const DotE5m2F32Fn dot_kernel = index->e5m2_kernels->dot_f32;
     const bool use_384_kernel =
         dim == 384u && platform::cpu_supports_avx2() && platform::cpu_supports_f16c();
-
-    // Dense slots make the vector address and score scale direct functions of the loop index.
-    // Storage and metric are fixed for the shard, so neither needs redispatch for every record.
-    for (uint32_t slot = begin_active; slot < end_active; ++slot) {
-      const MemorySlot& s = index->slots[slot];
-      const int8_t* vector = vectors + static_cast<size_t>(slot) * dim;
-      const float dot =
-          use_384_kernel ? dot_e5m2_f32_384(vector, query) : dot_kernel(vector, query, dim);
-      const float score = dot * score_scales[slot] * query_scale;
-      if (filled == desc->top_k &&
-          !result_better_values(score, s.record.key, out_results[desc->top_k - 1u])) {
-        continue;
-      }
-      AstralMemorySearchResult candidate{};
-      fill_result(&candidate, s, score);
-      insert_result(out_results, desc->top_k, &filled, candidate);
+    if (use_384_kernel) {
+      memory_search_dense_e5m2_range<true>(index, desc, query, begin_active, end_active,
+                                           out_results, out_count);
+    } else {
+      memory_search_dense_e5m2_range<false>(index, desc, query, begin_active, end_active,
+                                            out_results, out_count);
     }
-    *out_count = filled;
     return;
   }
 
