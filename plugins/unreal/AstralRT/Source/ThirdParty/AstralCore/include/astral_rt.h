@@ -1396,25 +1396,42 @@ ASTRAL_STATIC_ASSERT(sizeof(AstralMediaInfo) == 28, "AstralMediaInfo must be 28 
 #else
 ASTRAL_STATIC_ASSERT(sizeof(AstralArenaDesc) == 56, "AstralArenaDesc must be 56 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralInit) == 120, "AstralInit must be 120 bytes on 32-bit");
+#if defined(__arm__) || defined(_M_ARM)
+ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 120, "AstralModelDesc must be 120 bytes on ARM32");
+#else
 ASTRAL_STATIC_ASSERT(sizeof(AstralModelDesc) == 116, "AstralModelDesc must be 116 bytes on 32-bit");
+#endif
 ASTRAL_STATIC_ASSERT(sizeof(AstralModelPathResolveDesc) == ASTRAL_MODEL_PATH_RESOLVE_DESC_BYTES_32,
                      "AstralModelPathResolveDesc must be 56 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralSessionDesc) == 32,
                      "AstralSessionDesc must be 32 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorDesc) == 16, "AstralExecutorDesc must be 16 bytes");
 ASTRAL_STATIC_ASSERT(sizeof(AstralExecutorTuning) == 8, "AstralExecutorTuning must be 8 bytes");
+#if defined(__arm__) || defined(_M_ARM)
+ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 40, "AstralConvDesc must be 40 bytes on ARM32");
+#else
 ASTRAL_STATIC_ASSERT(sizeof(AstralConvDesc) == 36, "AstralConvDesc must be 36 bytes on 32-bit");
+#endif
 ASTRAL_STATIC_ASSERT(sizeof(AstralConvStats) == 40, "AstralConvStats must be 40 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralSamplerDesc) == 56, "AstralSamplerDesc must be 56 bytes");
 ASTRAL_STATIC_ASSERT(sizeof(AstralTokenMeta) == 140, "AstralTokenMeta must be 140 bytes");
 ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterDesc) == 12,
                      "AstralAdapterDesc must be 12 bytes on 32-bit");
+#if defined(__arm__) || defined(_M_ARM)
+ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 24,
+                     "AstralAdapterInfo must be 24 bytes on ARM32");
+ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 56, "AstralImageDesc must be 56 bytes on ARM32");
+ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 64, "AstralAudioDesc must be 64 bytes on ARM32");
+ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 80,
+                     "AstralModelMediaDesc must be 80 bytes on ARM32");
+#else
 ASTRAL_STATIC_ASSERT(sizeof(AstralAdapterInfo) == 20,
                      "AstralAdapterInfo must be 20 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralImageDesc) == 52, "AstralImageDesc must be 52 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralAudioDesc) == 60, "AstralAudioDesc must be 60 bytes on 32-bit");
 ASTRAL_STATIC_ASSERT(sizeof(AstralModelMediaDesc) == 72,
                      "AstralModelMediaDesc must be 72 bytes on 32-bit");
+#endif
 ASTRAL_STATIC_ASSERT(sizeof(AstralMediaInfo) == 28, "AstralMediaInfo must be 28 bytes on 32-bit");
 #endif
 
@@ -1580,7 +1597,11 @@ typedef struct AstralAgentChatResult {
 #else
   ASTRAL_STATIC_ASSERT(sizeof(AstralRequestRef) == 24, "AstralRequestRef must be 24 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralRequestStatus) == 40, "AstralRequestStatus must be 40 bytes on 32-bit");
+#if defined(__arm__) || defined(_M_ARM)
+  ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 112, "AstralAgentDesc must be 112 bytes on ARM32");
+#else
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentDesc) == 108, "AstralAgentDesc must be 108 bytes on 32-bit");
+#endif
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMessage) == 16, "AstralAgentMessage must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentChatDesc) == 16, "AstralAgentChatDesc must be 16 bytes on 32-bit");
   ASTRAL_STATIC_ASSERT(sizeof(AstralAgentMemoryContextDesc) == 40, "AstralAgentMemoryContextDesc must be 40 bytes on 32-bit");

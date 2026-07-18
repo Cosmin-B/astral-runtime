@@ -28,6 +28,10 @@ Astral exposes a C ABI in `include/astral_rt.h`. The intent is to keep it stable
   - Struct layout and alignment for all public POD structs
   - Enum numeric values (or provide explicit compatibility strategy)
 
+Layout compatibility is defined per target ABI. In particular, 32-bit ARM
+AAPCS aligns 64-bit scalar fields differently from 32-bit x86, so the public
+header validates those layouts separately.
+
 ## Patterns to keep ABI stable
 
 - Prefer adding new functions over changing existing signatures.
@@ -39,4 +43,3 @@ Astral exposes a C ABI in `include/astral_rt.h`. The intent is to keep it stable
 
 - Keep Unity/Unreal ABI layout tests updated (e.g., Unity Editor tests and Unreal Automation tests).
 - Add a CI job that runs ABI/layout assertions on all Tier-1 platforms when possible.
-

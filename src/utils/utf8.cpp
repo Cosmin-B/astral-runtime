@@ -252,10 +252,11 @@ uint32_t count_codepoints(Span input) {
       uint8x16_t is_cont = vceqq_u8(masked, cont);
 
       // Count non-continuation bytes
-      uint8x16_t not_cont = vmvnq_u8(is_cont);
-      uint8x8_t low = vget_low_u8(not_cont);
-      uint8x8_t high = vget_high_u8(not_cont);
-      count += vaddv_u8(low) + vaddv_u8(high);
+      uint8x16_t not_cont = vshrq_n_u8(vmvnq_u8(is_cont), 7);
+      uint16x8_t sum16 = vpaddlq_u8(not_cont);
+      uint32x4_t sum32 = vpaddlq_u16(sum16);
+      uint64x2_t sum64 = vpaddlq_u32(sum32);
+      count += static_cast<uint32_t>(vgetq_lane_u64(sum64, 0) + vgetq_lane_u64(sum64, 1));
 
       ptr += 16;
     }

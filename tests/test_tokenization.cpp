@@ -121,6 +121,7 @@ TEST(tokenization_cpu_detokenize_count_output_and_short_buffer) {
   }
 
   AstralInit cfg{};
+  cfg.size = sizeof(AstralInit);
   cfg.reserve_bytes = 512ull * 1024ull * 1024ull;
   cfg.thread_count = 1;
   cfg.numa_node = 0xFFFFFFFFu;

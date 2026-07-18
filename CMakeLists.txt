@@ -396,8 +396,9 @@ if(TARGET cpu_backend)
     endif()
 endif()
 
-# Consumers of `astral_rt` need these when linking static builds on Linux.
-if(UNIX AND NOT APPLE)
+# Consumers of `astral_rt` need these when linking static builds on Unix hosts
+# where pthread and dl are separate libraries.
+if(UNIX AND NOT APPLE AND NOT ANDROID)
     if(TARGET astral_rt)
         target_link_libraries(astral_rt PUBLIC pthread)
         if(ASTRAL_ENABLE_DYNAMIC_BACKENDS)

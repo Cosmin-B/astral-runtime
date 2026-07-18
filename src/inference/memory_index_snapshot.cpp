@@ -33,7 +33,6 @@ struct MemorySnapshotView {
 
 namespace {
 
-constexpr uint32_t kNoResults = 0;
 constexpr uint32_t kGraphMaxNeighbors = 64;
 constexpr uint32_t kGraphBaseNeighborMultiplier = 2;
 constexpr uint32_t kGraphMaxBaseNeighbors = kGraphMaxNeighbors * kGraphBaseNeighborMultiplier;

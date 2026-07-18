@@ -363,14 +363,15 @@ jobs:
           sudo apt-get install -y cmake ninja-build
 
       - name: Setup Android NDK
+        id: setup-ndk
         uses: nttld/setup-ndk@2817442ee7c3346c1eb7d2ec60263c93206ba14f # v1
         with:
           # r27c = 27.2.12479018; matches UE 5.7 Android requirements.
-          ndk-version: 27.2.12479018
+          ndk-version: r27c
 
       - name: Export ANDROID_NDK_HOME
         run: |
-          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
 
       - name: Configure (unity-plugin-android-arm64)
         run: |
@@ -435,14 +436,15 @@ jobs:
           sudo apt-get install -y cmake ninja-build
 
       - name: Setup Android NDK
+        id: setup-ndk
         uses: nttld/setup-ndk@2817442ee7c3346c1eb7d2ec60263c93206ba14f # v1
         with:
           # r27c = 27.2.12479018; matches UE 5.7 Android requirements.
-          ndk-version: 27.2.12479018
+          ndk-version: r27c
 
       - name: Export ANDROID_NDK_HOME
         run: |
-          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
 
       - name: Configure (unreal-plugin-android-arm64)
         run: |

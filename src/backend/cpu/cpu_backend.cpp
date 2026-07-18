@@ -68,7 +68,6 @@ namespace astral::backend {
 
 static constexpr uint32_t kCpuStateMagic = 0x41535443u; // 'ASTC'
 static constexpr uint16_t kCpuStateVersion = 1;
-static constexpr uint32_t kCpuModelIoCopyChunkBytes = 64u * 1024u;
 
 struct CpuStateHeaderV1 {
     uint32_t magic;
@@ -632,6 +631,8 @@ struct MemReader {
 };
 
 #if ASTRAL_CPU_MEMORY_SOURCE_MMAP
+static constexpr uint32_t kCpuModelIoCopyChunkBytes = 64u * 1024u;
+
 static uint32_t ASTRAL_CALL astral_io_read_at_noexcept(const AstralModelIO* io, uint64_t offset, void* dst, uint32_t dst_len) {
     if (io == nullptr || io->read_at == nullptr) {
         return 0;
