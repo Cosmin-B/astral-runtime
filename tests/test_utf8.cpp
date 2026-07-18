@@ -265,6 +265,17 @@ TEST(count_codepoints_empty) {
     ASSERT_EQ(count, 0);
 }
 
+TEST(count_codepoints_simd_width_ascii) {
+    const uint8_t data[16] = {
+        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+        'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+    };
+    Span s(data, sizeof(data));
+
+    size_t count = count_codepoints(s);
+    ASSERT_EQ(count, 16);
+}
+
 //
 // Inline String Builder Tests
 //

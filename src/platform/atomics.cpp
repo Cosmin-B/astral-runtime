@@ -95,10 +95,9 @@ size_t detect_cache_line_size() {
 
   uint32_t dmin_line = (ctr >> 16) & 0xF;
 
-  size_t detected_cache_line = 4 << dmin_line;
-
-  if (detected_cache_line >= 32 && detected_cache_line <= 256) {
-    return detected_cache_line;
+  const size_t valid_size = valid_cache_line_size(4ull << dmin_line);
+  if (valid_size != 0) {
+    return valid_size;
   }
 #endif
 
