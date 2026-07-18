@@ -35,7 +35,7 @@ foreach(required
   "\"name\": \"unity-plugin-android-arm64\""
   "\"CMAKE_TOOLCHAIN_FILE\": \"[$]env\\{ANDROID_NDK_HOME\\}/build/cmake/android.toolchain.cmake\""
   "\"ANDROID_ABI\": \"arm64-v8a\""
-  "\"ANDROID_PLATFORM\": \"android-21\""
+  "\"ANDROID_PLATFORM\": \"android-23\""
   "\"name\": \"unity-plugin-ios-arm64\""
   "\"CMAKE_SYSTEM_NAME\": \"iOS\""
   "\"CMAKE_OSX_ARCHITECTURES\": \"arm64\""
