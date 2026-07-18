@@ -193,6 +193,13 @@ float e5m2_to_f32(uint8_t raw);
 void copy_finite_e5m2(int8_t* dst, const int8_t* src, uint32_t dim);
 bool f32_values_finite(const float* values, size_t count);
 float dot_e5m2_f32_384(const int8_t* a, const float* b);
+
+struct E5m2DotPair {
+  float first;
+  float second;
+};
+
+E5m2DotPair dot_e5m2_f32_384x2(const int8_t* a, const int8_t* b, const float* query);
 const E5m2Kernels* select_e5m2_kernels();
 
 float l2_score_q8_f32(const int8_t* a, float scale, const float* b, uint32_t dim);
