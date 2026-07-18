@@ -13,11 +13,11 @@ Committed pins live in `docs/release/dependency-pins.tsv` and are checked by:
 | Dependency | Pin source | Current value |
 |---|---|---|
 | Astral runtime | `CMakeLists.txt`, `include/astral_rt.h` | `0.1.0` |
-| llama.cpp | Git submodule `external/llama.cpp` | `b9025`, `eff06702b2a52e1020ea009ebd86cb9f5acabab5` |
-| Tracy | Git submodule `external/tracy` | `v0.13.1`, `05cceee0df3b8d7c6fa87e9638af311dbabc63cb` |
+| llama.cpp | Git submodule `external/llama.cpp` | `eff06702b2a52e1020ea009ebd86cb9f5acabab5` (`b9025`) |
+| Tracy | Git submodule `external/tracy` | `05cceee0df3b8d7c6fa87e9638af311dbabc63cb` (`v0.13.1`) |
 | Unity package | `plugins/unity/package.json` | `com.astral.runtime` `0.1.0`, Unity `6000.0`, Collections `1.4.0` |
 | Unreal package | `plugins/unreal/AstralRT/AstralRT.uplugin` | UE 5.4+ compatibility floor; UE 5.7 is the production target |
-| Android NDK | `.github/workflows/ci.yml` | `27.2.12479018` (`r27c`) for Unity and Unreal Android artifacts |
+| Android NDK | `.github/workflows/ci.yml` | `r27c` (`27.2.12479018`) for Unity and Unreal Android artifacts |
 
 ## Generated Manifest
 
