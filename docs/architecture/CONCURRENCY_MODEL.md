@@ -1,8 +1,9 @@
 # Concurrency and Threading Model
 
-This document describes the **current** (v0.1) concurrency primitives and the runtime threading contract. Astral is intentionally conservative: correctness first, then measurable performance.
+This document describes the current concurrency primitives and runtime
+threading contract.
 
-## Status (v0.1)
+## Current primitives
 
 Implemented:
 - **SPSC ring**: bounded token ring for streaming with cached owner cursors, batch transfer, backpressure, and event signaling.
@@ -52,11 +53,11 @@ Astral uses lightweight CPU hints instead of OS waits in hot paths:
 - `cpu_wait_for_event()` maps to ARM WFE (x86 fallback: pause).
 - `cpu_signal_event()` maps to ARM SEV (x86 fallback: no-op).
 
-See `astral/src/platform/atomics.h` for the exact mappings.
+See `src/platform/atomics.h` for the exact mappings.
 
 ## MPSC ring (fan-in)
 
-File: `astral/src/concurrency/mpsc_ring.hpp`
+File: `src/concurrency/mpsc_ring.hpp`
 
 ### Design
 
@@ -81,7 +82,7 @@ ownership model can be reduced to one producer and one consumer.
 
 ## MPSC ticket ring (backpressured fan-in)
 
-File: `astral/src/concurrency/mpsc_ticket_ring.hpp`
+File: `src/concurrency/mpsc_ticket_ring.hpp`
 
 ### Design
 
@@ -135,7 +136,7 @@ number is not sufficient if the producer reservation path still regresses.
 
 ## SPSC fan-in lanes
 
-File: `astral/src/concurrency/spsc_fan_in.hpp`
+File: `src/concurrency/spsc_fan_in.hpp`
 
 Use this topology when the producer set is known: worker 0 writes lane 0,
 worker 1 writes lane 1, and so on. The consumer polls lanes in round-robin
@@ -149,7 +150,7 @@ cannot be mapped to stable lanes.
 
 ## MPMC queue (work dispatch)
 
-File: `astral/src/concurrency/mpmc_queue.hpp`
+File: `src/concurrency/mpmc_queue.hpp`
 
 ### Design
 
@@ -191,7 +192,7 @@ If non-blocking variants are needed in the future (`try_enqueue`/`try_dequeue`),
 
 ## SPSC ring (token streaming)
 
-File: `astral/src/concurrency/spsc_ring.hpp`
+File: `src/concurrency/spsc_ring.hpp`
 
 ### Design
 

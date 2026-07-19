@@ -11,7 +11,7 @@ and UE 5.7 Linux container/sample runs have current evidence. UE 5.4, 5.5, and
 This repo includes a CMake preset that packages the native static library + headers into the plugin's `ThirdParty/` layout:
 
 ```bash
-cd astral
+cd astral-runtime
 cmake --preset unreal-plugin
 cmake --build --preset unreal-plugin -j
 ```
@@ -57,7 +57,7 @@ UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
 
 ## Use in a UE project
 
-Copy `astral/plugins/unreal/AstralRT/` into your Unreal project:
+Copy `astral-runtime/plugins/unreal/AstralRT/` into your Unreal project:
 
 ```
 <YourProject>/Plugins/AstralRT/

@@ -258,7 +258,7 @@
     {
       "name": "unity-plugin-android-arm64",
       "displayName": "Unity Plugin (Android arm64)",
-      "description": "Build Unity native plugin for Android arm64-v8a (requires ANDROID_NDK_HOME; v0.1.1)",
+      "description": "Build Unity native plugin for Android arm64-v8a (requires ANDROID_NDK_HOME)",
       "binaryDir": "${sourceDir}/build/unity-android-arm64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -276,7 +276,7 @@
     {
       "name": "unity-plugin-ios-arm64",
       "displayName": "Unity Plugin (iOS arm64)",
-      "description": "Build Unity native plugin for iOS device arm64 (Xcode; v0.1.1)",
+      "description": "Build Unity native plugin for iOS device arm64 (Xcode)",
       "generator": "Xcode",
       "binaryDir": "${sourceDir}/build/unity-ios-arm64",
       "cacheVariables": {
@@ -333,7 +333,7 @@
     {
       "name": "unreal-plugin-android-arm64",
       "displayName": "Unreal Plugin (Android arm64)",
-      "description": "Build Unreal ThirdParty libs for Android arm64-v8a (requires ANDROID_NDK_HOME; v0.1.1)",
+      "description": "Build Unreal ThirdParty libs for Android arm64-v8a (requires ANDROID_NDK_HOME)",
       "binaryDir": "${sourceDir}/build/unreal-android-arm64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -351,7 +351,7 @@
     {
       "name": "unreal-plugin-ios-arm64",
       "displayName": "Unreal Plugin (iOS arm64)",
-      "description": "Build Unreal ThirdParty libs for iOS device arm64 (Xcode; v0.1.1)",
+      "description": "Build Unreal ThirdParty libs for iOS device arm64 (Xcode)",
       "generator": "Xcode",
       "binaryDir": "${sourceDir}/build/unreal-ios-arm64",
       "cacheVariables": {

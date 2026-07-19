@@ -355,8 +355,11 @@ Streaming:
 
 - `StreamRead` writes UTF-8 bytes into a caller-sized buffer and returns a byte
   count or a negative native error.
-- `StreamReadString` returns a decoded `FString`; empty string also represents
-  timeout or no data.
+- `StreamReadString` decodes one byte chunk into an `FString`. Empty string can
+  mean timeout, end of stream, or a native error. Use `StreamRead` when those
+  outcomes must remain distinct.
+- A native read may end within a UTF-8 code point. Keep bytes across reads and
+  decode complete sequences when arbitrary Unicode output must be preserved.
 - `OnStreamBytesNative` is the low-overhead C++ delegate.
 - `OnStreamTextNative` exposes decoded text as an `FStringView` for C++.
 - `OnBytesReceived` and `OnTokenReceived` are Blueprint delegates and may

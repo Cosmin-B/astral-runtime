@@ -17,7 +17,7 @@ In ggml-cuda, matrix multiplies may be executed by:
 
 This is not an either/or choice for Astral: **the best product story is to support both** and validate both modes.
 
-## v0.1 policy
+## Current policy
 
 - Default mode is **auto** selection (whatever ggml-cuda decides).
 - We treat forced modes as **first-class supported** for parity validation:
@@ -35,7 +35,7 @@ Validation:
 
 - Run all three via `scripts/run_cuda_parity_matrix.sh`.
 
-## v0.2 direction
+## Next measurements
 
 We keep the same “support both” stance, but expand it from *parity* to *performance*:
 

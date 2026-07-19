@@ -28,6 +28,15 @@ The files share only private POD state and narrow internal entry points through
 private scratch. Query loops do not allocate or coordinate through a shared
 result heap.
 
+## Thread Safety
+
+There is no lock around an index handle. Do not overlap search, cursor creation,
+save, or statistics calls with add, update, remove, clear, load, or destroy on
+the same handle. Internal search sharding does not make concurrent application
+access safe. Immutable snapshot spans may be searched concurrently while their
+backing bytes remain valid. Mapped snapshot view handles follow the same
+single-owner rule as index handles.
+
 ## C ABI
 
 - `AstralMemoryIndexDesc`
@@ -68,6 +77,11 @@ lookups without repeated ABI crossings while still using caller-owned buffers.
 Flat batch search processes small query chunks against the vector table in one
 pass per chunk, so multi-query RAG can reuse cache-hot vector rows instead of
 re-running a full scan for every query.
+
+Parallel flat and graph batch search use at most the smaller of the available
+runtime worker count, query count, and 16. Calls made from a runtime worker leave
+that worker out of the submitted set. Smaller batches and unsupported shapes
+stay on the calling thread.
 
 Single-query flat searches above 32,768 records and through top-k 10 can shard
 contiguous record ranges when the runtime has at least one worker. Each worker

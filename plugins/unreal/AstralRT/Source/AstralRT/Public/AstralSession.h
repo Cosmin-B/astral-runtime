@@ -132,7 +132,7 @@ public:
     /** Read streamed UTF-8 bytes into OutBuffer; negative values are native error codes. */
     int32 StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs = 0);
 
-    /** Read one streamed chunk as FString. Empty string also represents timeout or no data. */
+    /** Read one byte chunk as FString. Empty may mean timeout, end of stream, or error. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     FString StreamReadString(int32 TimeoutMs = 0);
 

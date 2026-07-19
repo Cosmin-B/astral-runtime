@@ -487,7 +487,7 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Configure extended sampler controls (v0.2+).
+        /// Configure extended sampler controls when the provider exposes sampler support.
         /// Preconditions: Must not be decoding (Cancel + Wait first).
         /// </summary>
         public void SetSampler(ref AstralNative.AstralSamplerDesc desc)

@@ -609,7 +609,7 @@ namespace Astral.Runtime
         /// <summary>
         /// Number of layers to offload to GPU (0 = CPU only).
         ///  Requires CUDA/Metal backend support.
-        /// Recommended: 0 (CPU) for v0.1; 32+ for v0.2 GPU backends.
+        /// Use 0 for CPU-only execution or a positive value with a GPU-enabled backend.
         /// </summary>
         public uint gpuLayers = 0;
 
@@ -673,7 +673,7 @@ namespace Astral.Runtime
         /// </summary>
         public static AstralModelConfig HighPerformance => new AstralModelConfig
         {
-            gpuLayers = 0, // CPU-only for v0.1; set to 32+ for v0.2 GPU support
+            gpuLayers = 0, // Set to a positive value with a GPU-enabled backend.
             contextSize = 8192,
             batchSize = 1024,
             threads = 0, // Auto-detect
