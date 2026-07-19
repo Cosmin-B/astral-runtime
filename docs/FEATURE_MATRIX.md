@@ -1,6 +1,6 @@
-# Feature Matrix (v0.1)
+# Feature Matrix
 
-This document is the maintained "what actually works where" map for Astral v0.1:
+This document is the maintained "what actually works where" map for Astral:
 CPU-only builds, CUDA builds, and embedded/minimal presets. It intentionally
 does not track competitor parity notes or roadmap promises; support claims here
 must map to local tests, release evidence, or an explicit caveat.
@@ -78,6 +78,10 @@ Caveats (MEMORY/IO):
 | GBNF grammar (`set_grammar_gbnf`) | ✅ | ✅ | ✅ |
 | JSON schema grammar (`set_grammar_json_schema`) | ✅ (optional) | ✅ (optional) | ❌ (presets disable) |
 
+Streaming rows describe the complete output stream. Individual reads return
+byte chunks and may end within a UTF-8 code point, so text consumers need an
+incremental decoder.
+
 Notes:
 - KV save/load now includes an Astral header that serializes sampler + RNG state so continuations can be deterministic after load.
 - Cross-backend (CPU vs CUDA) **exact token determinism** is not guaranteed in general; see `docs/CUDA_PARITY.md` for current policy/tests.
@@ -100,15 +104,16 @@ Notes:
 | Toolsets and tool-call parsing | ✅ | ✅ | ✅ |
 | Text/token chunk planning | ✅ | ✅ | ✅ |
 | Vector memory index, save/load, cursor fetch | ✅ | ✅ | ✅ |
-| Continuous-batching conversations | ✅ | ✅ | ✅ |
-| Native agents with system prompt/history/prompt cache stats | ✅ | ✅ | ✅ |
+| Continuous-batching conversations | ✅ | ✅ | ❌ (threads disabled) |
+| Native agents with system prompt/history/prompt cache stats | ✅ | ✅ | ❌ (threads disabled) |
 | Remote runtime transport | ⚠️ | ⚠️ | 🧪 |
 
 Notes:
 - Vector memory supports exact flat search and bounded graph search. Group
   filters use the exact flat scanner.
 - Continuous batching requires a backend with slot/batch operations; built-in
-  mock and CPU backends implement that surface.
+  mock and CPU backends implement that surface. It also requires
+  `ASTRAL_ENABLE_THREADS=ON`.
 - Remote runtime support uses `backend_name = "remote"` with a loopback-tested
   HTTP provider for health, tokenization, streaming completion chunks, auth
   failure, and embeddings. Transient health retry and timeout status mapping are

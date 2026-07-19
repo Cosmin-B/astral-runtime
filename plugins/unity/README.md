@@ -385,7 +385,7 @@ AstralRuntime.Initialize(config);
 ```csharp
 var config = new AstralModelConfig
 {
-    gpuLayers = 0,          // CPU-only (v0.1); 32+ for GPU (v0.2)
+    gpuLayers = 0,          // Use a positive value with a GPU-enabled backend
     contextSize = 2048,     // Context window in tokens
     batchSize = 512,        // Prompt processing batch size
     threads = 0,            // Auto-detect

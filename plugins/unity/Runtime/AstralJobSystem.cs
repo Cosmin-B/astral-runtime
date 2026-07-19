@@ -232,7 +232,9 @@ namespace Astral.Runtime
         }
 
         /// <summary>
-        /// Schedules feed, decode, and one stream read as a dependent job chain.
+        /// Runs feed, decode, and one stream read as a dependent job chain.
+        /// This helper completes the chain before returning, so the returned handle is
+        /// already complete. It reads at most one chunk and does not drain the stream.
         /// The caller owns all NativeArray inputs and outputs.
         /// </summary>
         public static JobHandle ScheduleInference(

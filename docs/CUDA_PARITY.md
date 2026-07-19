@@ -1,8 +1,12 @@
-# CUDA Parity (v0.2 workbench)
+# CUDA Parity
 
-This document defines the concrete “parity checklist” for Astral’s CUDA backend (CUDA first; Metal + DirectML later).
+This document defines the validation checklist for Astral's CUDA build.
 
-Today (v0.1), the `cuda` provider is a *scaffold*: it reuses the CPU provider ops table, and CUDA is enabled through llama.cpp/ggml (`GGML_CUDA=ON`). Parity work in v0.2 is about making this behavior reliable, testable, and fast.
+The `cuda` provider uses the same provider operation table as the CPU path while
+llama.cpp routes eligible work through ggml-cuda (`GGML_CUDA=ON`). Always-on
+tests cover the API surface on CPU hosts. Release support also requires the real
+GPU matrix below. An unchecked item records missing release evidence. It does
+not represent a separate public API.
 
 ## What “Parity” Means
 

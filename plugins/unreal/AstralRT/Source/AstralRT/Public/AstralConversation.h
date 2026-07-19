@@ -74,6 +74,7 @@ public:
   /** Read UTF-8 bytes into a caller-sized buffer. Negative values are native errors. */
   int32 StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs = 0);
 
+  /** Read one byte chunk as FString. Empty may mean timeout, end of stream, or error. */
   UFUNCTION(BlueprintCallable, Category = "Astral|Conversations")
   FString StreamReadString(int32 TimeoutMs = 0);
 

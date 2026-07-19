@@ -23,6 +23,9 @@ of the native hot path.
 - `ASTRAL_CHUNK_MODE_SENTENCE`: delimiter-terminated sentence ranges.
 - `ASTRAL_CHUNK_MODE_TOKEN`: token ranges over already-tokenized input.
 
+Sentence mode uses `.`, `!`, `?`, and newline when `delimiters` is empty. A
+non-empty delimiter span replaces that default set. It does not extend it.
+
 Text chunk ranges fill `byte_begin` and `byte_end`. Token chunk ranges fill
 `token_begin` and `token_end`. The unused half of the range is set to a sentinel
 value for text ranges and zero for token ranges.

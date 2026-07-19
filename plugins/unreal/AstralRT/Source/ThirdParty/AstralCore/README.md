@@ -3,7 +3,7 @@
 This folder is populated by the CMake preset `unreal-plugin`:
 
 ```bash
-cd astral
+cd astral-runtime
 cmake --preset unreal-plugin
 cmake --build --preset unreal-plugin -j
 ```

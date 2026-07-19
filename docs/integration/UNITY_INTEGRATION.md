@@ -48,7 +48,7 @@ sign-off still requires a real Unity Editor runner with native binaries present.
 ## Plugin Structure
 
 ```
-astral/plugins/unity/
+astral-runtime/plugins/unity/
 ├── Runtime/
 │   ├── AstralNative.cs        # P/Invoke declarations
 │   ├── AstralNativeArray.cs   # NativeArray ↔ span helpers
@@ -479,7 +479,8 @@ namespace Astral
         }
 
         /// <summary>
-        /// Helper: Read tokens as UTF-8 string (allocates managed string).
+        /// Helper: Decode one byte chunk as a string (allocates managed memory).
+        /// Use StreamRead with a stateful Decoder when a code point may span reads.
         /// </summary>
         public string StreamReadString(uint timeoutMs = 100)
         {
@@ -730,6 +731,9 @@ job.bytesRead.Dispose();
 
 - Use `StreamRead()` with persistent `NativeArray`, not `StreamReadString()`
 - Avoid `string.Format()` in hot path; use `StringBuilder` or `UnsafeUtility.WriteArrayElement`
+- Dispose model, session, conversation, and embedder wrappers explicitly on
+  their owning thread. Finalizers run on the GC thread and are not a supported
+  lifetime or synchronization boundary.
 
 ### Player Build Failures
 

@@ -104,7 +104,7 @@ typedef struct AstralTokenizeRequest {
 /**
  * Opaque handle (model, session, embedder).
  *
- * v0.1 ABI hardening:
+ * Handle representation:
  * - Handles are 64-bit values encoding (type, slot index, generation).
  * - 0 is always invalid.
  */
@@ -1125,6 +1125,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_token_chunk_ranges(
     uint32_t* out_count
 );
 
+/*
+ * Memory index. Full reference: docs/api/MEMORY_INDEX.md.
+ *
+ * Thread-safety: there is no lock around an index handle. Do not overlap
+ * searches or reads with mutation, load, or destruction on the same handle.
+ * Internal search sharding does not make concurrent application access safe.
+ */
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_create(const AstralMemoryIndexDesc* desc, AstralHandle* out_index);
 ASTRAL_API void ASTRAL_CALL astral_memory_destroy(AstralHandle index);
 ASTRAL_API AstralErr ASTRAL_CALL astral_memory_count(AstralHandle index, uint32_t* out_count);
@@ -1215,8 +1222,14 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_load(const AstralModelDesc* desc,
                                                    AstralHandle* out_model);
 
 /**
- * Release a model.
- * Thread-safety: Not thread-safe; must not be in use by any session.
+ * Release the caller's reference to a model.
+ *
+ * Sessions, conversations, and embedders retain the model. Releasing the load
+ * handle while dependent objects exist does not unload provider state yet.
+ * Backend memory is returned after the last reference is released.
+ *
+ * Do not race this call with creation of a dependent object from the same
+ * handle.
  *
  * @param model Model handle (from astral_model_load; must not be NULL)
  */
@@ -1245,7 +1258,7 @@ typedef struct AstralSessionDesc {
 // ============================================================================
 
 /**
- * Model executor configuration (v0.2+).
+ * Model executor configuration.
  *
  * An executor is a model-scoped decode engine that can run multiple independent
  * conversations ("slots") through a single backend session context, enabling
@@ -1263,7 +1276,7 @@ typedef struct AstralExecutorDesc {
 } AstralExecutorDesc;
 
 /**
- * Executor tuning (v0.2+).
+ * Executor tuning.
  *
  * Allows adjusting non-ABI-critical scheduling knobs at runtime.
  *
@@ -1277,7 +1290,7 @@ typedef struct AstralExecutorTuning {
 } AstralExecutorTuning;
 
 /**
- * Conversation configuration (v0.2+).
+ * Conversation configuration.
  *
  * A conversation is an independent token stream (prompt + generation) that runs
  * inside a model-scoped executor slot.
@@ -1300,7 +1313,7 @@ typedef struct AstralConvDesc {
 } AstralConvDesc;
 
 /**
- * Conversation statistics (v0.2+).
+ * Conversation statistics.
  *
  * Note: these are approximate and are primarily intended for scheduling/observability.
  */
@@ -1315,7 +1328,7 @@ typedef struct AstralConvStats {
 } AstralConvStats;
 
 /**
- * Extended sampler controls (v0.2+).
+ * Extended sampler controls.
  *
  * Notes:
  * - `size` must be set to sizeof(AstralSamplerDesc).
@@ -1677,7 +1690,8 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_wait(AstralHandle session, uint3
  *
  * Preconditions:
  * - Session must not be decoding (call cancel + wait first).
- * - Not thread-safe; must not be called concurrently with astral_stream_read().
+ * - Fails with ASTRAL_E_STATE while a token or metadata reader owns the
+ *   session. It does not wait for the reader.
  *
  * @param desc Optional: new session parameters. If provided, desc->model must match the session's model.
  *             NOTE: reset/reuse cannot grow internal scratch buffers; increasing top_k beyond the
@@ -1760,6 +1774,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_stop_set_utf8(
  * Notes:
  * - `n_probs == 0` disables meta events.
  * - `n_probs` is clamped to `ASTRAL_LOGPROBS_MAX`.
+ * - Greedy decoding reports zero logprob values.
  *
  * Preconditions:
  * - Session must not be decoding (cancel + wait first).
@@ -1768,6 +1783,9 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_logprobs(AstralHandle sessio
 
 /**
  * Read meta events from the side-channel stream.
+ *
+ * The buffer holds 256 events. New events are dropped when it is full. The
+ * current API does not expose a dropped-event count.
  *
  * Return values:
  * - > 0: number of events written to out_events
@@ -1889,10 +1907,18 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_gbnf(AstralHandle se
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_set_grammar_json_schema(AstralHandle session, AstralSpanU8 json_schema);
 ASTRAL_API AstralErr ASTRAL_CALL astral_session_clear_grammar(AstralHandle session);
 
+/*
+ * Toolset ownership: spans returned by astral_toolset_get point into
+ * toolset-owned storage and remain valid until the toolset is destroyed.
+ */
 ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_create(const AstralToolsetDesc* desc, AstralHandle* out_toolset);
 ASTRAL_API void ASTRAL_CALL astral_toolset_destroy(AstralHandle toolset);
 ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_count(AstralHandle toolset, uint32_t* out_count);
 ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_get(AstralHandle toolset, uint32_t index, AstralToolInfo* out_info);
+/*
+ * out_result->arguments_json is a slice of generated_text, not a copy. It is
+ * invalid after that caller-owned buffer is freed or reused.
+ */
 ASTRAL_API AstralErr ASTRAL_CALL astral_toolset_parse_call(
     AstralHandle toolset,
     AstralSpanU8 generated_text,
@@ -1979,6 +2005,10 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_feed_audio(
  * Submits work to thread pool; returns immediately.
  * Thread-safety: Not thread-safe; single-threaded access per session.
  *
+ * A streaming caller must keep draining astral_stream_read() or cancel the
+ * session. The bounded stream applies backpressure when full, so abandoning it
+ * can park the decode worker and keep astral_session_wait() timing out.
+ *
  * @param session Session handle (must not be NULL)
  * @return ASTRAL_OK on success; ASTRAL_E_INVALID if session is NULL; error code on failure
  */
@@ -1993,7 +2023,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_session_decode(AstralHandle session);
  * - Not safe to call `astral_stream_read()` from multiple threads concurrently.
  *
  * @param session Session handle (must not be NULL)
- * @param out_buf Output buffer for UTF-8 token data (data must not be NULL)
+ * Reads return byte chunks, not complete text fragments. A chunk may end in
+ * the middle of a UTF-8 code point. Incremental decoders must carry an
+ * incomplete trailing sequence into the next read.
+ *
+ * @param out_buf Output buffer for detokenized bytes (data must not be NULL)
  * @param timeout_ms Timeout in milliseconds (0 = non-blocking)
  * @return Bytes written to out_buf (>= 0), or error code (< 0)
  *         0 indicates end-of-stream (session is terminal and no buffered data remains).
@@ -2009,7 +2043,7 @@ ASTRAL_API int32_t ASTRAL_CALL astral_stream_read(AstralHandle session, AstralMu
 // ============================================================================
 
 /**
- * Configure the model-scoped executor used for continuous batching (v0.2+).
+ * Configure the model-scoped executor used for continuous batching (requires ASTRAL_CAP_SLOTS).
  *
  * Must be called before creating any conversations for this model. If the executor is
  * already created, returns ASTRAL_E_STATE.
@@ -2018,14 +2052,14 @@ ASTRAL_API int32_t ASTRAL_CALL astral_stream_read(AstralHandle session, AstralMu
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_configure(AstralHandle model, const AstralExecutorDesc* desc);
 
 /**
- * Tune an already-created model executor (v0.2+).
+ * Tune an already-created model executor (requires ASTRAL_CAP_SLOTS).
  *
  * Thread-safety: Safe to call concurrently with conversations.
  */
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_executor_tune(AstralHandle model, const AstralExecutorTuning* tuning);
 
 /**
- * Create a conversation (slot) for a model executor (v0.2+).
+ * Create a conversation (slot) for a model executor (requires ASTRAL_CAP_SLOTS).
  *
  * Thread-safety: Not thread-safe; single-threaded access per conversation.
  */
@@ -2104,6 +2138,8 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_clear_toolset(AstralHandle conv);
 /**
  * Read conversation UTF-8 output with one consumer thread.
  *
+ * Reads are byte chunks and may end within a UTF-8 code point.
+ *
  * May run before, during, or after astral_conv_decode(). Do not overlap it with
  * another token-stream read, astral_conv_reset(), or astral_conv_destroy().
  */
@@ -2112,6 +2148,9 @@ ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read(AstralHandle conv, Astral
 /**
  * Read conversation token metadata with one consumer thread.
  *
+ * The buffer holds 256 events. New events are dropped when it is full. The
+ * current API does not expose a dropped-event count.
+ *
  * May run before, during, or after astral_conv_decode(). Do not overlap it with
  * another metadata-stream read, astral_conv_reset(), or astral_conv_destroy().
  */
@@ -2119,7 +2158,7 @@ ASTRAL_API int32_t ASTRAL_CALL astral_conv_stream_read_meta(
     AstralHandle conv, AstralTokenMeta* out_events, uint32_t capacity, uint32_t timeout_ms);
 
 /**
- * Conversation statistics (v0.2+).
+ * Conversation statistics.
  *
  * Thread-safety: Safe to call concurrently with decoding/streaming.
  */
@@ -2128,6 +2167,11 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_conv_stats(AstralHandle conv, AstralConv
 // ============================================================================
 // Agents
 // ============================================================================
+
+/*
+ * Agents own copied system-prompt, summary, memory-context, and history data.
+ * Text getters copy into caller-provided buffers.
+ */
 
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_create(const AstralAgentDesc* desc, AstralHandle* out_agent);
 ASTRAL_API void ASTRAL_CALL astral_agent_destroy(AstralHandle agent);
@@ -2158,6 +2202,7 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_agent_get_memory_context(
     AstralMutSpanU8 out_text,
     uint32_t* out_len
 );
+/* out_result->arguments_json is a slice of generated_text, not a copy. */
 ASTRAL_API AstralErr ASTRAL_CALL astral_agent_parse_tool_call(
     AstralHandle agent,
     AstralSpanU8 generated_text,

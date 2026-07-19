@@ -1,6 +1,7 @@
 # Generation Controls (C ABI)
 
-This page describes Astral’s provider-agnostic “generation controls” surface in `astral/include/astral_rt.h`.
+This page describes Astral's provider-agnostic generation controls in
+`include/astral_rt.h`.
 
 ## Capabilities / Limits
 
@@ -54,7 +55,14 @@ The UTF-8 stream (`astral_stream_read`) remains bytes-first and unchanged. Optio
 - Enable/disable: `astral_session_set_logprobs(session, n_probs)` (`0` disables, clamped to `ASTRAL_LOGPROBS_MAX`)
 - Consume: `astral_stream_read_meta(session, out_events, capacity, timeout_ms)`
 
-`AstralTokenMeta.logprob` is `log(p(token))` in the sampling distribution actually used for the token (post filters).
+`AstralTokenMeta.logprob` is `log(p(token))` in the sampling distribution used
+for the token after filtering. Greedy decoding (`temperature <= 0`) is the
+exception: it reports `0.0` for `logprob` and every `top_logprobs` entry.
+
+Session and conversation metadata rings hold 256 events. When a reader falls
+behind, new events are dropped rather than blocking decode. The current public
+API does not expose a dropped-event counter, so drain the metadata stream at the
+pace of generation when every event matters.
 
 ## KV State Save/Load
 

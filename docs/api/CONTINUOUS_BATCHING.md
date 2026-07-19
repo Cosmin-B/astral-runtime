@@ -1,6 +1,9 @@
-# Continuous Batching (v0.2+)
+# Continuous Batching
 
-Astral v0.2 introduces **continuous batching across slots** via **conversations** (`astral_conv_*`). A conversation is an independent prompt+generation stream that runs inside a **model-scoped executor**. The executor batches work from multiple conversations into a single provider eval call when possible.
+Astral provides **continuous batching across slots** through **conversations**
+(`astral_conv_*`). A conversation is an independent prompt and generation
+stream inside a **model-scoped executor**. The executor batches work from
+multiple conversations into one provider evaluation when possible.
 
 This keeps provider selection and model ownership **out of per-token paths**: the hot loop is a single executor thread per model.
 
@@ -23,6 +26,10 @@ Continuous batching requires a threads-enabled Astral build. Configuration retur
 
 Conversations are **not thread-safe** for multi-producer use; keep single-threaded control per conversation (similar to sessions).
 
+When every configured slot is occupied, `astral_conv_create()` returns
+`ASTRAL_E_BUSY` immediately. The runtime does not queue conversation creation.
+The caller owns admission and retry policy.
+
 ### 3) Feed + decode
 
 - `astral_conv_feed()`: tokenizes and appends prompt tokens.
@@ -33,7 +40,9 @@ Conversations are **not thread-safe** for multi-producer use; keep single-thread
 
 If `AstralConvDesc.stream_enabled=1`:
 
-- `astral_conv_stream_read()` returns UTF-8 bytes (detokenized).
+- `astral_conv_stream_read()` returns detokenized bytes. Individual reads are
+  byte chunks and may end within a UTF-8 code point, so incremental text
+  decoders must carry an incomplete trailing sequence into the next read.
 - `astral_conv_stream_read_meta()` returns optional per-token metadata events.
   - Enable meta events via `astral_conv_set_logprobs()` (non-zero `n_probs`).
 
@@ -53,14 +62,26 @@ Grammar compilation/binding happens in the executor thread before the conversati
 - `astral_conv_wait()`: joins completion/cancel/failure state.
 - `astral_conv_reset()`: resets for reuse (must not be decoding).
 
+## History
+
+Conversations do not retain a transcript between runs. Reset clears the prompt,
+and each decode requests a provider slot reset before reuse. The current
+executor does not surface a slot-reset failure, so external providers must make
+that operation reliable. Callers must submit the complete context for each
+turn. Use the [agents API](AGENT_RUNTIME.md) when the runtime should own chat
+history and prompt assembly.
+
 ## Provider requirements
 
-Continuous batching uses optional backend ops from `include/astral_backend.h`:
+Continuous batching uses backend ops from `include/astral_backend.h`:
 
 - `session_create_ex(..., max_slots, ...)`
 - `session_batch_eval(tokens[], token_count, out_output_count)`
 - `session_batch_logits(output_index, out_view)`
-- `session_slot_reset(slot_id)` clears provider-owned slot state; the scheduler also resets Astral-owned slot counters before reuse.
+- `session_slot_reset(slot_id)` clears provider-owned slot state. The scheduler
+  also resets Astral-owned slot counters before reuse. The current admission
+  check does not reject a provider that omits this operation, so external
+  providers must supply it to make slot reuse reliable.
 
 Per-slot grammar binding uses additional optional ops:
 
@@ -90,6 +111,10 @@ Scheduling policy (current):
 
 - Prompt ingest: round-robin across slots with a per-slot cap.
 - Decode: at most 1 token per slot per tick (round-robin) to avoid starvation.
+- The model executor owns one thread and does not steal work from other
+  executors.
+- Session, embedding, and memory-index jobs use per-worker bounded queues.
+  Submitting to a full queue waits until its worker drains capacity.
 
 ## Multi-model story
 

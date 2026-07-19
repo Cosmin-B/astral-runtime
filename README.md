@@ -13,8 +13,8 @@ kept separate from source availability.
 
 - CPU inference through the built-in llama.cpp provider, plus mock, dynamic,
   and remote provider surfaces.
-- Asynchronous sessions and continuous-batching conversations with streamed
-  UTF-8 output, cancellation, reset, logprobs, grammar, prompt cache, and LoRA.
+- Asynchronous sessions and continuous-batching conversations with bytes-first
+  streamed text, cancellation, reset, logprobs, grammar, prompt cache, and LoRA.
 - Text and multimodal embedding APIs, with multimodal support opt-in at build
   time and dependent on compatible model assets.
 - Exact flat and bounded graph vector search with compact storage lanes,
@@ -22,8 +22,8 @@ kept separate from source availability.
 - Native chunking, toolsets, agents, model presets, and request-status APIs.
 - Unity and Unreal packages that preserve bytes-first ownership at the native
   boundary.
-- Fixed-capacity concurrency primitives and allocation gates for maintained
-  runtime hot paths.
+- Fixed-capacity concurrency primitives, plus allocation checks for the mock
+  provider and selected CPU decode paths when a compatible model is available.
 
 ## Requirements
 
@@ -40,7 +40,7 @@ Clone with submodules, then use the checked-in presets:
 
 ```bash
 git clone --recurse-submodules https://github.com/Cosmin-B/astral-runtime.git
-cd astral
+cd astral-runtime
 
 cmake --preset release-with-tests
 cmake --build --preset release-with-tests -j
@@ -110,8 +110,9 @@ lifecycle operations into the same native handles and spans used by C callers.
   SPSC queues transfer tokens and metadata without a compare-and-swap loop.
 - Continuous-batching slot snapshots use epoch reclamation once per scheduling
   pass rather than per-conversation reference-count traffic.
-- Runtime-owned scratch and fixed-capacity structures keep maintained decode,
-  sampling, and streaming paths inside their allocation contracts.
+- Runtime-owned scratch and fixed-capacity structures bound core decode,
+  sampling, and streaming storage. Provider allocation behavior is validated
+  separately.
 - Compact memory-index lanes use runtime-dispatched x86 and ARM kernels where
   available, with scalar paths retained for portability and correctness.
 

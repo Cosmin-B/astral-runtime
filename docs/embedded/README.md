@@ -19,7 +19,7 @@ This profile targets small Linux edge devices (Pi-class ARM SBCs) and robotics w
 ## Build + run (host)
 
 ```bash
-cd astral
+cd astral-runtime
 cmake --preset embedded-x86_64
 cmake --build --preset embedded-x86_64 -j
 
@@ -29,14 +29,14 @@ cmake --build --preset embedded-x86_64 -j
 Or run the scripted smoke (downloads the default small GGUF if missing):
 
 ```bash
-cd astral
+cd astral-runtime
 ./scripts/run_embedded_smoke.sh
 ```
 
 Or run the “validation” wrapper that also enforces the allocation gate:
 
 ```bash
-cd astral
+cd astral-runtime
 ./scripts/run_embedded_validation.sh
 ```
 
@@ -49,14 +49,14 @@ This validation wrapper runs the following gates (release-with-tests) before the
 ## Native build (on device)
 
 ```bash
-cd astral
+cd astral-runtime
 cmake --preset embedded-native
 cmake --build --preset embedded-native -j
 ```
 
 ## Cross-compile (templates)
 
-Toolchain templates live under `astral/toolchains/`. They assume a Debian-style cross compiler is installed and available in `PATH`.
+Toolchain templates live under `toolchains/`. They assume a Debian-style cross compiler is installed and available in `PATH`.
 
 ```bash
 cmake --preset embedded-arm64-cross
