@@ -278,6 +278,22 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_source_scans.cmake)
     message(STATUS "Configured test: gate_source_scans")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_queue_capacity_contract.cmake)
+    add_test(
+        NAME gate_queue_capacity_contract
+        COMMAND ${CMAKE_COMMAND}
+            -DASTRAL_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DASTRAL_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DASTRAL_CXX_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_queue_capacity_contract.cmake
+    )
+    set_tests_properties(gate_queue_capacity_contract PROPERTIES
+        TIMEOUT 30
+        LABELS "gate;concurrency"
+    )
+    message(STATUS "Configured test: gate_queue_capacity_contract")
+endif()
+
 if(TARGET astral_rt_shared AND UNIX AND NOT APPLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_shared_exports.cmake)
     add_test(
         NAME gate_shared_exports

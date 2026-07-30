@@ -61,7 +61,7 @@ File: `src/concurrency/mpsc_ring.hpp`
 
 ### Design
 
-- Bounded ring with `Capacity` (power of 2).
+- Bounded ring with `Capacity` at least 2 and a power of 2.
 - Multiple producers reserve publish positions with one producer-arbitration CAS.
 - A single consumer owns dequeue order and does not need consumer-side CAS.
 - Each slot contains a `seq` number that controls when a slot may be written or read.
@@ -86,7 +86,7 @@ File: `src/concurrency/mpsc_ticket_ring.hpp`
 
 ### Design
 
-- Bounded ring with `Capacity` (power of 2).
+- Bounded ring with `Capacity` at least 2 and a power of 2.
 - Producers reserve publish positions with `fetch_add(relaxed)`.
 - Batched producers can reserve several publish positions with one
   `fetch_add(relaxed)` via `push_batch_wait`.
@@ -154,12 +154,18 @@ File: `src/concurrency/mpmc_queue.hpp`
 
 ### Design
 
-- Bounded ring with `Capacity` (power of 2).
+- Bounded ring with `Capacity` at least 2 and a power of 2.
 - Producers and consumers reserve positions via monotonically increasing tickets:
   - `enqueue_pos.fetch_add(1)`
   - `dequeue_pos.fetch_add(1)`
 - Each slot contains a `seq` number that indicates whether the slot is ready for enqueue/dequeue.
 - Waiting uses short spinning followed by `cpu_wait_for_event()`; successful operations call `cpu_signal_event()`.
+
+Capacity 1 is not valid for the MPMC or MPSC sequence rings. A slot sequence
+must distinguish the published generation from the next writable generation.
+Those values are identical when one physical slot is reused for every ticket,
+which would allow a producer to overwrite data before a consumer reads it. The
+templates reject that configuration at compile time.
 
 ### Memory-order contract
 

@@ -17,10 +17,10 @@ COMPONENTS
 
 1. MpmcQueue<T, Capacity>
    - Multi-producer multi-consumer bounded queue
-   - Lock-free ring buffer with ticket-based ordering
+   - Blocking ring buffer with ticket-based ordering
+   - Capacity must be a power of 2 and at least 2
    - Cache-line aligned head/tail atomics (64 bytes)
-   - Exponential backoff on contention
-   - Target: 20M+ ops/s on modern hardware
+   - Short active wait followed by the platform wait hint
 
 2. SpscRing<T, Capacity>
    - Single-producer single-consumer ring buffer
@@ -72,6 +72,7 @@ CRITICAL FIXES
 
 Current queue requirements:
 - MPMC: Use per-slot sequence + acquire/release for ARM correctness
+- MPMC: Keep published and reusable sequence generations distinct with Capacity >= 2
 - MPMC: Add backoff in wait loops (reduces cache thrashing)
 - Both: Cache-line align head/tail atomics to prevent false sharing
 

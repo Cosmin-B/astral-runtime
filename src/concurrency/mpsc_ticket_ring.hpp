@@ -21,8 +21,8 @@ namespace astral::concurrency {
 template<typename T, size_t Capacity>
 class MpscTicketRing {
 public:
+    static_assert(Capacity >= 2, "Capacity must be at least 2");
     static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be power of 2");
-    static_assert(Capacity > 0, "Capacity must be greater than 0");
     static_assert(std::is_trivially_copyable<T>::value, "T must be trivially copyable");
 
     MpscTicketRing() : enqueue_pos_(0), dequeue_pos_(0) {

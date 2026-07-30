@@ -160,8 +160,9 @@ void test_compilation_constraints() {
 
     // These should fail to compile (commented out):
     // MpmcQueue<TestItem, 15> bad_queue1; // Not power of 2
-    // MpmcQueue<TestItem, 0> bad_queue2;  // Zero capacity
-    // MpmcQueue<std::string, 16> bad_queue3; // Not trivially copyable
+    // MpmcQueue<TestItem, 1> bad_queue2;  // Published and reusable generations alias
+    // MpmcQueue<TestItem, 0> bad_queue3;  // Zero capacity
+    // MpmcQueue<std::string, 16> bad_queue4; // Not trivially copyable
 
     // Verify cache-line sizes
     static_assert(alignof(MpmcQueue<TestItem, 16>) >= 64, "MPMC head/tail cache-aligned");
