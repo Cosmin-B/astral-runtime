@@ -31,15 +31,11 @@ inline void signal() {
 }
 
 inline void slot_table_lock(ModelExecutor* ex) {
-  uint32_t spins = 0;
-  while (ex->model->executor_lock.test_and_set(std::memory_order_acquire)) {
-    wait_hint(spins);
-  }
+  ex->model->executor_lock.lock();
 }
 
 inline void slot_table_unlock(ModelExecutor* ex) {
-  ex->model->executor_lock.clear(std::memory_order_release);
-  signal();
+  ex->model->executor_lock.unlock();
 }
 
 inline uint32_t next_mask_slot(uint32_t mask) {

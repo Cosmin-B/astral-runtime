@@ -10,13 +10,13 @@
  * - Detect stale handles after free (generation mismatch).
  * - Provider-agnostic (stores opaque pointers only).
  * - No dynamic allocation (fixed-size table).
- * - No atomic compare-and-swap usage.
+ * - Fixed storage with no allocation during lookup or registration.
  */
 
 #pragma once
 
 #include "../../include/astral_rt.h"
-#include "../platform/atomics.h"
+#include "../concurrency/backoff_spin_lock.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -193,25 +193,14 @@ private:
     Slot slots_[kMaxHandles];
     std::atomic<uint32_t> next_index_;
 
-    mutable std::atomic_flag table_lock_ = ATOMIC_FLAG_INIT;
+    mutable concurrency::BackoffSpinLock table_lock_;
 
     void lock_() const {
-        uint32_t spins = 0;
-        while (table_lock_.test_and_set(std::memory_order_acquire)) {
-            if (spins < 64) {
-                astral::platform::cpu_pause();
-            } else {
-                astral::platform::cpu_wait_for_event();
-            }
-            if (spins < 1024) {
-                ++spins;
-            }
-        }
+        table_lock_.lock();
     }
 
     void unlock_() const {
-        table_lock_.clear(std::memory_order_release);
-        astral::platform::cpu_signal_event();
+        table_lock_.unlock();
     }
 };
 

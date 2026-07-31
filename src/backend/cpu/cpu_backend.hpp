@@ -12,6 +12,7 @@
 #pragma once
 
 #include "../backend.hpp"
+#include "../../concurrency/backoff_spin_lock.hpp"
 #include <atomic>
 #include <vector>
 #include <ggml-backend.h>
@@ -60,7 +61,7 @@ struct CpuModel {
     uint32_t image_min_tokens;
     uint32_t image_max_tokens;
     int32_t audio_sample_rate;
-    std::atomic_flag mtmd_lock = ATOMIC_FLAG_INIT;
+    concurrency::BackoffSpinLock mtmd_lock;
 #endif
 };
 

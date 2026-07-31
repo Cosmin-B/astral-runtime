@@ -1,16 +1,20 @@
-Astral Lock-Free Concurrency Primitives
-========================================
+Astral Concurrency Primitives
+=============================
 
-This directory contains lock-free concurrency primitives for the Astral runtime.
+This directory contains bounded queues, reclamation, and short internal locks.
 
 FILES
 -----
 
 concurrency.hpp       - Main header that includes all primitives
+backoff_spin_lock.hpp - Bounded-backoff lock for short internal critical sections
 mpmc_queue.hpp        - Multi-producer multi-consumer bounded queue
+mpsc_ring.hpp         - Non-blocking multi-producer single-consumer ring
+mpsc_ticket_ring.hpp  - Backpressured multi-producer single-consumer ring
+spsc_fan_in.hpp       - Fixed-owner SPSC lanes with one consumer
 spsc_ring.hpp         - Single-producer single-consumer ring buffer
 epoch.hpp             - Epoch-based memory reclamation
-test_concurrency.cpp  - Test suite and usage examples
+tests/test_concurrency.cpp - Maintained unit and concurrent stress tests
 
 COMPONENTS
 ----------
@@ -22,20 +26,25 @@ COMPONENTS
    - Cache-line aligned head/tail atomics (64 bytes)
    - Short active wait followed by the platform wait hint
 
-2. SpscRing<T, Capacity>
+2. BackoffSpinLock
+   - Reads before attempting an atomic exchange
+   - Uses bounded exponential pause backoff
+   - Yields after the pause budget
+   - Unlock is one release store with no wake broadcast
+
+3. SpscRing<T, Capacity>
    - Single-producer single-consumer ring buffer
    - Zero contention (faster than MPMC)
    - Cache-line aligned head/tail atomics (64 bytes)
-   - Target: 40M+ ops/s
 
-3. EpochManager
+4. EpochManager
    - Epoch-based memory reclamation
    - Safe deferred deletion without hazard pointers
    - Reusable fixed-size participant registration (128 concurrent threads max)
    - One fixed 256-entry SPSC retirement queue per participant
    - Explicit deleters; queue overflow leaves ownership with the caller
 
-4. StreamToken
+5. StreamToken
    - Fixed-size token struct for streaming (40 bytes)
    - Contains token_id, utf8_len, and utf8_data
    - Trivially copyable for efficient ring buffer operations
@@ -67,14 +76,13 @@ EpochManager:
 - Leave: memory_order_release on thread epoch store
 - Collect: drain the previously safe frontier, then seq_cst global epoch increment
 
-CRITICAL FIXES
---------------
+QUEUE REQUIREMENTS
+------------------
 
-Current queue requirements:
-- MPMC: Use per-slot sequence + acquire/release for ARM correctness
-- MPMC: Keep published and reusable sequence generations distinct with Capacity >= 2
-- MPMC: Add backoff in wait loops (reduces cache thrashing)
-- Both: Cache-line align head/tail atomics to prevent false sharing
+- Sequence-based MPSC and MPMC queues require Capacity >= 2
+- Published and reusable sequence generations must remain distinct
+- Per-slot acquire and release operations publish and consume payload data
+- Shared producer and consumer cursors stay on separate cache lines
 
 USAGE EXAMPLES
 --------------
@@ -134,21 +142,11 @@ Compile test suite:
 Run tests:
     ./test_concurrency
 
-REFERENCES
-----------
-
-- docs/architecture/CONCURRENCY_MODEL.md
-- docs/rules/CODING_STANDARDS.md
-- Custom MPMC design optimized for game engines
-- Influenced by research on lock-free data structures:
-  * "Simple, Fast, and Practical Non-Blocking..." (Michael & Scott, 1996)
-  * Facebook Folly's ProducerConsumerQueue design patterns
-
 NOTES
 -----
 
-- All structures require power-of-2 capacity (compile-time enforced)
-- All data types must be trivially copyable (compile-time enforced)
+- Ring capacities that use bit masks must be powers of two
+- Queue payloads must be trivially copyable
 - Cache-line size is assumed to be 64 bytes (standard for x86/ARM)
 - EpochManager defaults to 128 participants and 256 pending retirements per participant;
   both fixed capacities are configurable template arguments

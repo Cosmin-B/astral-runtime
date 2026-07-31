@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "backoff_spin_lock.hpp"
 #include "../platform/atomics.h"
 #include "../platform/cacheline.hpp"
 #include "../platform/compiler.hpp"
@@ -231,14 +232,11 @@ private:
   }
 
   void lock_registration() noexcept {
-    while (registration_lock_.test_and_set(std::memory_order_acquire)) {
-      astral::platform::cpu_pause();
-    }
+    registration_lock_.lock();
   }
 
   void unlock_registration() noexcept {
-    registration_lock_.clear(std::memory_order_release);
-    astral::platform::cpu_signal_event();
+    registration_lock_.unlock();
   }
 
   static size_t drain_through(RetireQueue& queue, uint64_t safe_epoch) noexcept {
@@ -307,7 +305,7 @@ private:
   }
 
   alignas(kCacheLineSize) std::atomic<uint64_t> global_epoch_;
-  alignas(kCacheLineSize) std::atomic_flag registration_lock_ = ATOMIC_FLAG_INIT;
+  alignas(kCacheLineSize) BackoffSpinLock registration_lock_;
   alignas(kCacheLineSize) std::atomic_flag collecting_ = ATOMIC_FLAG_INIT;
   Participant participants_[kMaxThreads];
 

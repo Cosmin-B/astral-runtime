@@ -12,7 +12,10 @@ Implemented:
 - **MPSC ticket ring**: bounded fan-in ring for internal backpressured paths that reserve producer slots with one unconditional ticket.
 - **MPMC queue**: bounded ring with **ticket + per-slot sequence**, blocking `enqueue_wait` / `dequeue_wait` (no atomic compare-and-swap usage).
 - **Epoch reclamation**: fixed-capacity, per-participant retirement queues with cache-line-isolated reader epochs.
-- **ARM-friendly waiting**: `cpu_pause`, `cpu_wait_for_event`, `cpu_signal_event` primitives for low overhead spin/wait.
+- **Backoff spin lock**: read-before-exchange acquisition with bounded exponential
+  pause backoff and a scheduler yield after the pause budget.
+- **Queue waiting hints**: `cpu_pause`, `cpu_wait_for_event`, and
+  `cpu_signal_event` support blocking queue and state-transition waits.
 - **CPU dispatch probe**: private runtime feature detection for x86_64 AVX2 and ARM NEON dispatch tiers.
 - **Worker pool**: fixed worker threads + internal work queue (`astral::core::submit_work`)
 
@@ -48,10 +51,16 @@ waits for collection; it never destroys protected memory as a fallback.
 
 ## Platform wait primitives
 
-Astral uses lightweight CPU hints instead of OS waits in hot paths:
+Blocking queues and state-transition waits use lightweight CPU hints:
 - `cpu_pause()` is used for short spin phases (x86 PAUSE, ARM YIELD).
 - `cpu_wait_for_event()` maps to ARM WFE (x86 fallback: pause).
 - `cpu_signal_event()` maps to ARM SEV (x86 fallback: no-op).
+
+Short internal locks use `BackoffSpinLock`. A contender reads the lock word
+before attempting an atomic exchange. Failed acquisition uses
+bounded exponential pause backoff, then yields to the scheduler. Unlock is a
+release store. It does not issue ARM SEV, so one handoff does not wake every
+event waiter.
 
 See `src/platform/atomics.h` for the exact mappings.
 

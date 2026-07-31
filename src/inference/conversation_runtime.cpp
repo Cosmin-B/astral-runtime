@@ -109,25 +109,6 @@ struct ScopedAtomicFlagGuard {
   }
 };
 
-inline void lock_flag(std::atomic_flag& f) {
-  uint32_t spins = 0;
-  while (f.test_and_set(std::memory_order_acquire)) {
-    if (spins < 64) {
-      platform::cpu_pause();
-    } else {
-      platform::cpu_wait_for_event();
-    }
-    if (spins < 1024) {
-      ++spins;
-    }
-  }
-}
-
-inline void unlock_flag(std::atomic_flag& f) {
-  f.clear(std::memory_order_release);
-  platform::cpu_signal_event();
-}
-
 inline uint32_t clamp_u32(uint32_t v, uint32_t lo, uint32_t hi) {
   if (v < lo)
     return lo;
@@ -273,7 +254,7 @@ AstralErr ensure_executor(Model* model, ModelExecutor** out_executor) {
   }
 
   AstralErr result = ASTRAL_OK;
-  lock_flag(model->executor_lock);
+  model->executor_lock.lock();
   ex = model->executor.load(std::memory_order_acquire);
   if (ex == nullptr) {
     auto* created = core::runtime_new<ModelExecutor>(model);
@@ -313,7 +294,7 @@ AstralErr ensure_executor(Model* model, ModelExecutor** out_executor) {
     model->executor.store(created, std::memory_order_release);
     ex = created;
   }
-  unlock_flag(model->executor_lock);
+  model->executor_lock.unlock();
   *out_executor = ex;
   return result;
 }
@@ -460,7 +441,7 @@ AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity,
   conv->mirostat_mu = 0.0f;
 
   // Allocate slot by scanning under executor lock (not a hot path).
-  lock_flag(model->executor_lock);
+  model->executor_lock.lock();
   uint32_t sid = kInvalidExecutorSlot;
   if (slot_affinity != 0) {
     const uint32_t preferred = slot_affinity - 1u;
@@ -480,7 +461,7 @@ AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity,
       }
     }
   }
-  unlock_flag(model->executor_lock);
+  model->executor_lock.unlock();
 
   if (sid == kInvalidExecutorSlot) {
     model_release(model);
@@ -492,10 +473,10 @@ AstralErr conv_create_affine(const AstralConvDesc* desc, uint32_t slot_affinity,
 
   const AstralHandle handle = core::register_handle(core::HandleKind::Conversation, conv);
   if (handle == 0) {
-    lock_flag(model->executor_lock);
+    model->executor_lock.lock();
     ex->slots[sid].store(nullptr, std::memory_order_release);
     ex->active_slot_mask &= ~(1u << sid);
-    unlock_flag(model->executor_lock);
+    model->executor_lock.unlock();
     conv->slot_id.store(kInvalidExecutorSlot, std::memory_order_release);
     model_release(model);
     ::astral::core::runtime_session_scratch_release(allocator_memory, allocator_capacity);
@@ -545,7 +526,7 @@ void conv_destroy(Conversation* conv) {
 
   bool epoch_retired = false;
   if (ex != nullptr && sid < ex->max_slots) {
-    lock_flag(model->executor_lock);
+    model->executor_lock.lock();
     if (ex->slots[sid].load(std::memory_order_relaxed) == conv) {
       ex->slots[sid].store(nullptr, std::memory_order_release);
       ex->active_slot_mask &= ~(1u << sid);
@@ -558,14 +539,14 @@ void conv_destroy(Conversation* conv) {
           break;
         }
         ex->conversation_retire_count.fetch_sub(1, std::memory_order_acq_rel);
-        unlock_flag(model->executor_lock);
+        model->executor_lock.unlock();
         platform::cpu_signal_event();
         platform::cpu_wait_for_event();
-        lock_flag(model->executor_lock);
+        model->executor_lock.lock();
       }
       epoch_retired = true;
     }
-    unlock_flag(model->executor_lock);
+    model->executor_lock.unlock();
 
     platform::cpu_signal_event();
   }

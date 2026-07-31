@@ -2,6 +2,7 @@
 
 #include "../../include/astral_rt.h"
 #include "../backend/backend.hpp"
+#include "../concurrency/backoff_spin_lock.hpp"
 #include "../core/handles.hpp"
 #include <atomic>
 
@@ -30,7 +31,7 @@ struct Model {
     // Continuous batching executor (v0.2+)
     std::atomic<ModelExecutor*> executor; // lazily created
     AstralExecutorDesc executor_desc;     // configured by astral_model_executor_configure()
-    std::atomic_flag executor_lock = ATOMIC_FLAG_INIT;
+    concurrency::BackoffSpinLock executor_lock;
     Agent* agents;                        // model-local agent list for control-path slot reuse
     Agent* agent_reclaim_cursor; // next model-local agent to consider for completed-slot reuse
 };

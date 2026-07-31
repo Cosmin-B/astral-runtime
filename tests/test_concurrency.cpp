@@ -6,7 +6,7 @@
  */
 
 #include "../src/concurrency/epoch.hpp"
-#include "../src/concurrency/event_spin_lock.hpp"
+#include "../src/concurrency/backoff_spin_lock.hpp"
 #include "../src/concurrency/mpmc_queue.hpp"
 #include "../src/concurrency/mpsc_ring.hpp"
 #include "../src/concurrency/mpsc_ticket_ring.hpp"
@@ -74,8 +74,8 @@ static void run_spsc_backpressure_producer(SpscBackpressureProducerContext* ctx)
 // MPMC Queue Tests
 //
 
-TEST(event_spin_lock_serializes_access) {
-  EventSpinLock lock;
+TEST(backoff_spin_lock_serializes_access) {
+  BackoffSpinLock lock;
   ASSERT_TRUE(lock.try_lock());
   ASSERT_FALSE(lock.try_lock());
   lock.unlock();
@@ -100,6 +100,24 @@ TEST(event_spin_lock_serializes_access) {
   }
 
   ASSERT_EQ(counter, kThreadCount * kIterations);
+}
+
+TEST(backoff_spin_lock_publishes_and_resets) {
+  BackoffSpinLock lock;
+  uint32_t published = 0;
+
+  {
+    BackoffSpinLockGuard guard(lock);
+    published = 42;
+  }
+  {
+    BackoffSpinLockGuard guard(lock);
+    ASSERT_EQ(published, 42u);
+  }
+
+  lock.reset();
+  ASSERT_TRUE(lock.try_lock());
+  lock.unlock();
 }
 
 TEST(mpmc_enqueue_dequeue_basic) {

@@ -1,4 +1,4 @@
-#include "../concurrency/event_spin_lock.hpp"
+#include "../concurrency/backoff_spin_lock.hpp"
 #include "../utils/string_builder.hpp"
 #include "model_sources.hpp"
 
@@ -18,7 +18,7 @@ struct Slot {
 };
 
 static std::atomic<uint64_t> g_next_id{1};
-static concurrency::EventSpinLock g_lock;
+static concurrency::BackoffSpinLock g_lock;
 static Slot g_slots[kMaxSources]{};
 
 static uint32_t format_token(uint64_t id, char* out_token, uint32_t cap) {
@@ -46,7 +46,7 @@ AstralErr model_source_register(const ModelSource& source, uint64_t* out_id, cha
     return ASTRAL_E_INVALID;
   }
 
-  concurrency::EventSpinLockGuard lock(g_lock);
+  concurrency::BackoffSpinLockGuard lock(g_lock);
 
   uint32_t slot_idx = kMaxSources;
   for (uint32_t i = 0; i < kMaxSources; ++i) {
@@ -83,7 +83,7 @@ bool model_source_take(uint64_t id, ModelSource* out_source) {
     return false;
   }
 
-  concurrency::EventSpinLockGuard lock(g_lock);
+  concurrency::BackoffSpinLockGuard lock(g_lock);
   for (uint32_t i = 0; i < kMaxSources; ++i) {
     if (g_slots[i].id == id) {
       *out_source = g_slots[i].src;
@@ -99,7 +99,7 @@ void model_source_release(uint64_t id) {
   if (id == kInvalidId) {
     return;
   }
-  concurrency::EventSpinLockGuard lock(g_lock);
+  concurrency::BackoffSpinLockGuard lock(g_lock);
   for (uint32_t i = 0; i < kMaxSources; ++i) {
     if (g_slots[i].id == id) {
       g_slots[i].id = kInvalidId;
@@ -113,7 +113,7 @@ bool model_source_present(uint64_t id) {
   if (id == kInvalidId) {
     return false;
   }
-  concurrency::EventSpinLockGuard lock(g_lock);
+  concurrency::BackoffSpinLockGuard lock(g_lock);
   for (uint32_t i = 0; i < kMaxSources; ++i) {
     if (g_slots[i].id == id) {
       return true;

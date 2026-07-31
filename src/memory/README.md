@@ -65,7 +65,7 @@ Thread-safe object pool using an intrusive freelist protected by a small spinloc
 **Features**:
 - Thread-safe acquire/release
 - No dynamic allocation after construction
-- No compare-and-swap loop in the pool path
+- Read-before-exchange locking with bounded backoff
 - Fixed capacity (template parameter)
 - Intrusive freelist (overwrites first 8 bytes on release)
 

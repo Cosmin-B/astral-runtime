@@ -1,11 +1,10 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <cstddef>
 #include <type_traits>
 
-#include "../platform/atomics.h"
+#include "../concurrency/backoff_spin_lock.hpp"
 #include "../platform/compiler.hpp"
 
 namespace astral::memory {
@@ -17,7 +16,7 @@ inline constexpr size_t kObjectPoolMaxObjects = size_t{1} << kObjectPoolPointerB
 /// ObjectPool - Thread-safe object pool using intrusive freelist
 ///
 /// Design:
-/// - Thread-safe acquire/release protected by a tiny spinlock (no CAS usage)
+/// - Thread-safe acquire/release protected by BackoffSpinLock
 /// - Intrusive freelist: next pointer stored in freed object's first 8 bytes
 /// - Fixed capacity determined at compile time
 /// - Pre-allocated backing storage (no dynamic allocation)
@@ -118,28 +117,11 @@ private:
     // Freelist head (protected by table_lock_)
     T* head_ = nullptr;
 
-    std::atomic<uint32_t> table_lock_{0};
+    concurrency::BackoffSpinLock table_lock_;
 
-    void lock_() {
-      uint32_t spins = 0;
-      while (table_lock_.exchange(1u, std::memory_order_acquire) != 0u) {
-        while (table_lock_.load(std::memory_order_relaxed) != 0u) {
-          if (spins < 64) {
-            astral::platform::cpu_pause();
-          } else {
-            astral::platform::cpu_wait_for_event();
-          }
-          if (spins < 1024) {
-            ++spins;
-          }
-        }
-      }
-    }
+    void lock_() { table_lock_.lock(); }
 
-    void unlock_() {
-      table_lock_.store(0u, std::memory_order_release);
-      astral::platform::cpu_signal_event();
-    }
+    void unlock_() { table_lock_.unlock(); }
 };
 
 template<typename T, size_t MaxObjects>

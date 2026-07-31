@@ -1,6 +1,7 @@
 #include "embedder.hpp"
 
 #include "model.hpp"
+#include "../concurrency/backoff_spin_lock.hpp"
 #include "../core/runtime_alloc.hpp"
 #include "../platform/atomics.h"
 #include "../utils/trace.hpp"
@@ -43,7 +44,7 @@ struct Embedder {
         std::atomic<uint32_t> state;
         std::atomic<uint64_t> ticket;
         std::atomic<int32_t> result;
-        std::atomic_flag lock = ATOMIC_FLAG_INIT;
+        concurrency::BackoffSpinLock lock;
         uint32_t token_count;
         int32_t tokens[kMaxEmbedTokens];
         InputKind kind;
@@ -75,7 +76,7 @@ struct Embedder {
 
     std::atomic<uint64_t> ticket_counter;
     std::atomic<uint32_t> free_mask;
-    std::atomic_flag completed_lock = ATOMIC_FLAG_INIT;
+    concurrency::BackoffSpinLock completed_lock;
     uint32_t completed_cursor;
     CompletedTicket completed[kCompletedTicketHistory];
 
@@ -84,23 +85,12 @@ struct Embedder {
 
 namespace {
 
-static void lock(std::atomic_flag* f) {
-    uint32_t spins = 0;
-    while (f->test_and_set(std::memory_order_acquire)) {
-        if (spins < 64) {
-            astral::platform::cpu_pause();
-        } else {
-            astral::platform::cpu_wait_for_event();
-        }
-        if (spins < 1024) {
-            ++spins;
-        }
-    }
+static void lock(concurrency::BackoffSpinLock* lock) {
+    lock->lock();
 }
 
-static void unlock(std::atomic_flag* f) {
-    f->clear(std::memory_order_release);
-    astral::platform::cpu_signal_event();
+static void unlock(concurrency::BackoffSpinLock* lock) {
+    lock->unlock();
 }
 
 static uint32_t ticket_index(uint64_t ticket) {

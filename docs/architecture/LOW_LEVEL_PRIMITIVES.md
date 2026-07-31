@@ -37,8 +37,9 @@ The maintained implementations live under
   acceptable.
 - `MpmcQueue` uses tickets plus per-slot sequence values for bounded blocking
   transfer.
-- `EventSpinLock` combines a short pause phase with the platform event hint and
-  signals on unlock.
+- `BackoffSpinLock` reads before attempting an atomic exchange. It
+  uses bounded exponential pause backoff and yields after the pause budget.
+  Unlock is one release store and does not broadcast a wake.
 - `EpochManager` uses per-participant SPSC retirement queues and cache-line
   isolated epoch announcements. Queue overflow retains ownership with the
   caller; exactly one collector advances safe frontiers.
@@ -72,7 +73,7 @@ allocation policy:
 
 - `FrameAllocator`: owner-local aligned bump allocation and reset;
 - `LocalObjectPool`: owner-local fixed object reuse;
-- `ObjectPool`: shared fixed object reuse under `EventSpinLock`;
+- `ObjectPool`: shared fixed object reuse under `BackoffSpinLock`;
 - `MemoryStats`: plain accounting data.
 
 The runtime size-class heap and session scratch partitioning are described in

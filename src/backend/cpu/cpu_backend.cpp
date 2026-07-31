@@ -35,7 +35,6 @@
 #include <cstdio>
 #include <limits>
 #include <string>
-#include <thread>
 
 #include <nlohmann/json.hpp>
 #include "json-schema-to-grammar.h"
@@ -549,14 +548,12 @@ static AstralErr prepare_audio_f32(const AstralAudioDesc* desc, MediaBuffer* out
     return ASTRAL_E_UNSUPPORTED;
 }
 
-static void mtmd_lock_acquire(std::atomic_flag& flag) {
-    while (flag.test_and_set(std::memory_order_acquire)) {
-        std::this_thread::yield();
-    }
+static void mtmd_lock_acquire(concurrency::BackoffSpinLock& lock) {
+    lock.lock();
 }
 
-static void mtmd_lock_release(std::atomic_flag& flag) {
-    flag.clear(std::memory_order_release);
+static void mtmd_lock_release(concurrency::BackoffSpinLock& lock) {
+    lock.unlock();
 }
 #endif
 
@@ -1031,7 +1028,7 @@ void* cpu_model_load(const AstralModelDesc* desc, AstralErr* out_err) {
     cpu_model->image_min_tokens = 0;
     cpu_model->image_max_tokens = 0;
     cpu_model->audio_sample_rate = 0;
-    cpu_model->mtmd_lock.clear(std::memory_order_release);
+    cpu_model->mtmd_lock.reset();
 #endif
 
     *out_err = ASTRAL_OK;

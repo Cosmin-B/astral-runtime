@@ -81,7 +81,7 @@ The runtime also provides focused fixed-capacity primitives:
 - `LocalObjectPool` is an owner-local intrusive free list with no atomic
   operations;
 - `ObjectPool` is a shared fixed-capacity pool whose free list is protected by
-  a small event spin lock;
+  `BackoffSpinLock`;
 - `StackStringBuilder` keeps bytes inline and truncates on overflow;
 - `StringBuilder` keeps bytes inline and may spill through the runtime allocator
   on a cold overflow path.

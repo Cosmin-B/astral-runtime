@@ -14,7 +14,7 @@
  */
 
 #include "../../include/astral_rt.h"
-#include "../concurrency/event_spin_lock.hpp"
+#include "../concurrency/backoff_spin_lock.hpp"
 #include "../concurrency/mpsc_ticket_ring.hpp"
 #include "../memory/frame_allocator.hpp"
 #include "../platform/atomics.h"
@@ -189,7 +189,7 @@ private:
     static constexpr uint32_t kLocalFlush = 32;
 
     struct Bucket {
-      concurrency::EventSpinLock lock;
+      concurrency::BackoffSpinLock lock;
       void* free_list = nullptr;
       uint32_t grow = 0;
     };
@@ -437,7 +437,7 @@ private:
     std::atomic<size_t> committed_{0};
     uint64_t epoch_{1};
     bool vm_backed_{false};
-    concurrency::EventSpinLock arena_lock_;
+    concurrency::BackoffSpinLock arena_lock_;
     Bucket buckets_[kBucketCount]{};
 };
 
@@ -492,7 +492,7 @@ struct AstralRuntime {
     uint8_t* session_blocks_base;
     uint32_t* session_block_next; // lives inside arena memory
     uint32_t session_block_free_head;
-    concurrency::EventSpinLock session_block_lock;
+    concurrency::BackoffSpinLock session_block_lock;
 
     // Logging
     AstralLogFn log_cb;

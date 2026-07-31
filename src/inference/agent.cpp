@@ -50,25 +50,6 @@ constexpr char kAssistantLabel[] = "Assistant: ";
 constexpr char kToolLabel[] = "Tool: ";
 constexpr char kLineBreak[] = "\n";
 
-inline void lock_flag(std::atomic_flag& f) {
-    uint32_t spins = 0;
-    while (f.test_and_set(std::memory_order_acquire)) {
-        if (spins < 64) {
-            platform::cpu_pause();
-        } else {
-            platform::cpu_wait_for_event();
-        }
-        if (spins < 1024) {
-            ++spins;
-        }
-    }
-}
-
-inline void unlock_flag(std::atomic_flag& f) {
-    f.clear(std::memory_order_release);
-    platform::cpu_signal_event();
-}
-
 struct AgentMessageStorage {
     AstralAgentRole role;
     uint32_t offset;
@@ -239,7 +220,7 @@ void invalidate_prompt_metadata(Agent* agent) {
 }
 
 void model_agent_link(Model* model, Agent* agent) {
-    lock_flag(model->executor_lock);
+    model->executor_lock.lock();
     agent->model = model;
     agent->model_prev = nullptr;
     agent->model_next = model->agents;
@@ -247,7 +228,7 @@ void model_agent_link(Model* model, Agent* agent) {
         model->agents->model_prev = agent;
     }
     model->agents = agent;
-    unlock_flag(model->executor_lock);
+    model->executor_lock.unlock();
 }
 
 void model_agent_unlink(Agent* agent) {
@@ -255,7 +236,7 @@ void model_agent_unlink(Agent* agent) {
     if (model == nullptr) {
         return;
     }
-    lock_flag(model->executor_lock);
+    model->executor_lock.lock();
     if (model->agent_reclaim_cursor == agent) {
       if (agent->model_next != nullptr) {
         model->agent_reclaim_cursor = agent->model_next;
@@ -276,7 +257,7 @@ void model_agent_unlink(Agent* agent) {
     agent->model = nullptr;
     agent->model_prev = nullptr;
     agent->model_next = nullptr;
-    unlock_flag(model->executor_lock);
+    model->executor_lock.unlock();
 }
 
 void release_history(Agent* agent) {
@@ -1075,7 +1056,7 @@ AstralErr reclaim_completed_agent_slot(Agent* requester) {
   }
 
   Agent* reclaim = nullptr;
-  lock_flag(model->executor_lock);
+  model->executor_lock.lock();
   Agent* start =
       model->agent_reclaim_cursor != nullptr ? model->agent_reclaim_cursor : model->agents;
   for (Agent* candidate = start; candidate != nullptr; candidate = candidate->model_next) {
@@ -1096,7 +1077,7 @@ AstralErr reclaim_completed_agent_slot(Agent* requester) {
     model->agent_reclaim_cursor =
         reclaim->model_next != nullptr ? reclaim->model_next : model->agents;
   }
-  unlock_flag(model->executor_lock);
+  model->executor_lock.unlock();
   return reclaim != nullptr ? agent_release_slot(reclaim) : ASTRAL_E_BUSY;
 }
 

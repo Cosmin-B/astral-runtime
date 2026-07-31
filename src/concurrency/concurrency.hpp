@@ -1,8 +1,8 @@
 #pragma once
 
-/// Lock-free concurrency primitives for Astral runtime.
+/// Concurrency primitives for the Astral runtime.
 ///
-/// This header includes all lock-free data structures and synchronization primitives
+/// This header includes the queues and reclamation primitives
 /// used throughout the Astral inference runtime.
 ///
 /// Components:
@@ -24,10 +24,7 @@
 /// - docs/architecture/CONCURRENCY_MODEL.md
 /// - docs/rules/CODING_STANDARDS.md
 /// - Custom MPMC design optimized for game engines
-/// - Influenced by research on lock-free data structures:
-///   * "Simple, Fast, and Practical Non-Blocking..." (Michael & Scott, 1996)
-///   * Facebook Folly's ProducerConsumerQueue design patterns
-
+#include "backoff_spin_lock.hpp"
 #include "mpmc_queue.hpp"
 #include "mpsc_ring.hpp"
 #include "mpsc_ticket_ring.hpp"
