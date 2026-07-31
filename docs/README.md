@@ -66,8 +66,9 @@ tied to reproducible commands and the maintained acceptance gates.
 
 ## Documentation Site
 
-The published site renders this Markdown and the maintained root guides
-directly. Build the same strict artifact used by GitHub Pages with:
+The [published documentation](https://astral.cosminbararu.com/docs/) renders
+this Markdown and the maintained root guides directly. Build the same strict
+artifact with:
 
 ```bash
 ./scripts/build_docs_site.sh
