@@ -1,12 +1,13 @@
-# Native Memory Index
+# Native memory index
 
 Astral memory indexes store embedding vectors in native memory and return stable
-keys and scores for retrieval. The flat index is the exact correctness baseline.
+keys and scores for retrieval. The flat index exhaustively scores every
+matching active row and is exact for the selected storage representation.
 The graph index is a bounded native candidate graph for larger all-group
 searches. Treat it as an approximate index: tune it against the target dataset
 and keep the flat index as the recall oracle.
 
-## Implementation Map
+## Implementation map
 
 The native implementation is split by ownership and execution role:
 
@@ -28,7 +29,7 @@ The files share only private POD state and narrow internal entry points through
 private scratch. Query loops do not allocate or coordinate through a shared
 result heap.
 
-## Thread Safety
+## Thread safety
 
 There is no lock around an index handle. Do not overlap search, cursor creation,
 save, or statistics calls with add, update, remove, clear, load, or destroy on
@@ -98,8 +99,8 @@ and NEON integer bit construction on baseline ARMv8 targets.
 
 `AstralMemoryIndexDesc::index_kind` selects storage/search behavior:
 
-- `ASTRAL_MEMORY_INDEX_FLAT` scans contiguous row-major vectors and returns exact
-  top-k results.
+- `ASTRAL_MEMORY_INDEX_FLAT` scans contiguous row-major vectors and returns
+  exact top-k results for the stored scores.
 - `ASTRAL_MEMORY_INDEX_GRAPH` builds a bounded adjacency graph during ingest and
   uses fixed-size frontier and top-candidate pools for all-group top-1 and top-k
   search.
@@ -107,7 +108,7 @@ and NEON integer bit construction on baseline ARMv8 targets.
   recall/latency, or leave them zero for the native defaults. `graph_search`
   controls construction expansion. `graph_query_search` controls the index
   default query expansion; zero uses `graph_search`. Group-filtered searches use
-  the exact flat scanner. Use the graph recall benchmark before choosing this
+  the exhaustive flat scanner. Use the graph recall benchmark before choosing this
   path for retrieval. Graph construction assigns deterministic upper levels from
   each record key, descends those levels before base-layer expansion, selects a
   diverse bounded neighbor set from the construction candidate pool, and
@@ -142,8 +143,9 @@ and NEON integer bit construction on baseline ARMv8 targets.
   validate recall and latency against flat f32 before choosing it for retrieval.
 - `ASTRAL_MEMORY_STORAGE_F8_E5M2_F32_RERANK` stores the E5M2 byte block plus a
   hidden float32 rerank block. Graph construction, graph routing, final result
-  ordering, and snapshot scoring use the f32 block; the E5M2 block is retained
-  for compact snapshot payloads and storage inspection.
+  ordering, and snapshot scoring use the f32 block. Snapshots retain both
+  blocks, so this is a dual-format payload rather than a compact replacement
+  for f32 storage.
 
 Graph snapshots include the routing topology when the load descriptor matches
 the saved graph neighbor, search, and level capacities. If those knobs differ,
@@ -156,7 +158,7 @@ corpora matter more than avoiding a full scan. Choose the graph index only after
 measuring recall on the target vectors. Higher `graph_neighbors`,
 `graph_search`, and `graph_query_search` values usually improve recall, but they
 also increase ingest cost, memory traffic, and query latency; high-recall graph
-settings can be slower than exact flat search on smaller collections.
+settings can be slower than exhaustive flat search on smaller collections.
 
 `astral_memory_record_from_chunk()` maps an `AstralChunkRange` into an
 `AstralMemoryRecord` before `astral_memory_add_batch()`. It keeps document,
@@ -210,7 +212,7 @@ whether to load the full native index. Older snapshots still load through
 `astral_memory_load()`, but their reported strides describe the legacy
 interleaved layout.
 
-`astral_memory_snapshot_search()` runs an exact flat scan directly over a saved
+`astral_memory_snapshot_search()` runs an exhaustive flat scan directly over a saved
 snapshot span. It is intended for read-only memory-mapped snapshots and oracle
 checks: callers can search staged f32, q8, f6, or f8 snapshots without allocating a
 native index handle or copying vector storage first. Graph topology in the
@@ -244,7 +246,7 @@ search budget for one query without rebuilding the index. Leave it zero to use
 preallocated graph scratch, so create the index with enough construction or
 default query expansion for the largest per-query budget you plan to test.
 
-## Search Selection
+## Search selection
 
 Start with the flat index. It is the recall oracle, supports every metric and
 group filter, and has the simplest operating model. Move away from it only when
@@ -261,13 +263,13 @@ the target corpus and latency budget justify the extra tuning work.
 
 Do not use the graph index for group-filtered retrieval unless the group is
 large enough to justify all-group search followed by application filtering.
-Native group-filtered graph searches use the exact scanner because sparse group
+Native group-filtered graph searches use the exhaustive scanner because sparse group
 filters usually destroy graph locality.
 
-For release candidates, capture one exact flat run and one candidate run with
+For release candidates, capture one exhaustive flat run and one candidate run with
 the same dimension, metric, capacity, query set, and corpus. A graph or compact
 configuration is ready only when it meets the product recall target and beats
-the exact baseline on the deployment hardware. Keep the exact flat path
+the exhaustive baseline on the deployment hardware. Keep the flat path
 available in tooling and tests so recall can be rechecked when the embedding
 model or document distribution changes.
 
@@ -294,14 +296,14 @@ the bounded top-candidate pool. Add/update/remove are colder ingest operations;
 updates and removals may rebuild the graph to keep neighbor links consistent.
 Treat flat search as the recall oracle when tuning graph search. The
 `features.memory graph_recall` benchmark reports aggregate top-k overlap
-between graph search and exact flat search across deterministic, high-entropy
+between graph search and exhaustive flat search across deterministic, high-entropy
 recall queries spread across the indexed capacity, so graph improvements can be
 judged by both latency and recall. Do not select a graph configuration solely
 because it is faster than flat search; use the recall target for the dataset
 and embedding model as the acceptance check.
 `features.memory graph_recall_top1` reports exact top-1 matches against the
 flat oracle, which is useful when tuning search that only needs the best hit.
-`features.memory graph_recall_search` precomputes the exact flat oracle outside
+`features.memory graph_recall_search` precomputes the exhaustive flat oracle outside
 the timed region, then reports graph-only query latency with the same recall
 percentage. Use that marker for ANN perf counters when exact-search work would
 otherwise dominate the profile. `features.memory graph_recall_latency` uses the
@@ -333,7 +335,7 @@ prompt cache, tool, chunk, and agent benchmarks do not dilute the memory-index
 counter profile. Use `scripts/run_memory_bench_matrix.sh` to run the
 memory-only benchmark across multiple metrics, dimensions, and capacities in one
 log. Use `scripts/run_memory_search_acceptance.sh` to capture the common exact
-flat, exact flat latency, reduced flat, q8 recall, graph build cost, graph
+flat, exhaustive flat latency, reduced flat, q8 recall, graph build cost, graph
 snapshot load cost, latency, f32/q8 graph recall, and f32/q8 graph top-1 recall lanes into one
 output directory for a single dataset shape. Recall lanes run with an effective
 iteration count no smaller than the requested recall-query count, even when the
@@ -379,7 +381,7 @@ work and build-cost changes remain visible. It also records the first exact
 flat f32 latency baseline and each graph row's speedup against that baseline.
 When multiple requested budgets clamp to the same effective budget for a graph
 shape, the runner reuses the first capture and still writes one CSV row per
-requested budget. The first captured shape includes the exact flat baseline
+requested budget. The first captured shape includes the exhaustive flat baseline
 lanes; later graph shapes skip those duplicate flat lanes because the flat
 baseline only depends on the dataset shape, metric, and storage. Flat batch
 search can split query rows across the runtime worker pool for cache-resident
@@ -412,7 +414,7 @@ For release tuning, capture `features.memory flat_search_top1`,
 `features.memory graph_recall_top1`
 for the same dimension, metric,
 capacity, neighbor count, and search budget. A graph run is useful only when its
-recall meets the product target, its latency beats the exact flat baseline, and
+recall meets the product target, its latency beats the exhaustive flat baseline, and
 its ingest cost is acceptable for that dataset. Keep the flat index available as
 the correctness oracle while tuning new embedding models or document
 distributions.
@@ -513,7 +515,7 @@ desc.graph_query_search = 512;
 err = astral_memory_create(&desc, &index);
 ```
 
-## Chunked Document Ingest
+## Chunked document ingest
 
 For document-backed retrieval, keep text storage outside the memory index and
 store only stable metadata in native records:

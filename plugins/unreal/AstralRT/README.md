@@ -1,10 +1,13 @@
-# AstralRT (Unreal Engine Plugin)
+# AstralRT (Unreal Engine plugin)
 
-This is a UE5 plugin scaffold that wraps Astral's C ABI (`astral_rt.h`) with engine-friendly types and a bytes-first streaming path (UTF-8 chunks via `TConstArrayView<uint8>` / `TArray<uint8>`).
+AstralRT wraps the C ABI with Unreal-owned objects and a bytes-first streaming
+path through `TConstArrayView<uint8>` and `TArray<uint8>`. The native runtime
+still owns inference handles and decode work. The plugin owns UObject lifetimes
+and moves Blueprint delivery onto the game thread.
 
-Current status: the native ThirdParty package can be staged and checked locally,
-and UE 5.7 Linux container/sample runs have current evidence. UE 5.4, 5.5, and
-5.6 editor compatibility runs still need dedicated validation.
+The checked-in automation targets UE 5.7. Compatibility runners accept UE 5.4
+through 5.7 installations. The [feature matrix](../../../docs/FEATURE_MATRIX.md)
+records the supported range for a release.
 
 ## Build and package (native)
 
@@ -20,11 +23,10 @@ After this, the plugin will contain:
 - `AstralRT/Source/ThirdParty/AstralCore/include/astral_rt.h`
 - `AstralRT/Source/ThirdParty/AstralCore/lib/<Platform>/*`
 
-The package target hashes the staged header and native library after copy, then
-fails if either one differs from the current source header or built `astral_rt`
-target.
+The package target checks that the staged header and native library match the
+current source header and built `astral_rt` target.
 
-For the full UE 5.7 path, including container commands and release evidence,
+For the full UE 5.7 path, including container and editor commands,
 see [UNREAL_57_QUICKSTART.md](../../../docs/integration/UNREAL_57_QUICKSTART.md).
 
 To generate a sidecar sample project outside the repo:
@@ -47,8 +49,7 @@ The generated project includes six gameplay components:
 See the [sample README](../../../examples/unreal/AstralSample/README.md) for
 component setup and model requirements.
 
-For release-candidate package evidence, run the package wrapper on a machine
-with UE 5.7:
+To build and package the sample on a machine with UE 5.7:
 
 ```bash
 UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
@@ -63,8 +64,8 @@ Copy `astral-runtime/plugins/unreal/AstralRT/` into your Unreal project:
 <YourProject>/Plugins/AstralRT/
 ```
 
-Enable the plugin and build the project. Treat a local native package build as
-staging evidence only; use UnrealEditor Automation for engine validation.
+Enable the plugin and build the project. The CMake package target validates the
+staged native files. UnrealEditor Automation validates the engine-facing code.
 
 ## Minimal example (mock backend)
 
@@ -131,7 +132,7 @@ public:
 
 For Blueprint convenience, `UAstralSession` also exposes:
 - `OnBytesReceived` (UTF-8 bytes, per tick)
-- `OnTokenReceived` (decoded text, per tick; allocates an `FString` only when bound)
+- `OnTokenReceived` (decoded text per tick, allocating an `FString` only when bound)
 
 ## Remote backend
 
@@ -151,7 +152,7 @@ Model->Load(ModelDesc);
 `RemoteApiKey` is passed to native code for the load call only and is not stored
 by the Unreal wrapper after `Load` returns.
 
-## Vision / Audio (Media)
+## Vision and audio
 
 Media support requires a projector/encoder GGUF and a native Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:
 
@@ -193,9 +194,9 @@ Session->FeedAudio(Audio, true);
 `PF_B8G8R8A8` texture data into an RGBA8 descriptor. It returns `false` when the
 texture is compressed, GPU-only, stripped, or otherwise not readable.
 
-## Multimodal Embeddings
+## Multimodal embeddings
 
-Load the model with `FAstralModelDesc::bEmbeddingsOnly = true`; call `InitMedia` first when image or audio embeddings are used.
+Load the model with `FAstralModelDesc::bEmbeddingsOnly = true`. Call `InitMedia` first when image or audio embeddings are used.
 
 ```cpp
 UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>(this);
@@ -211,7 +212,7 @@ Embedder->Collect(Ticket, Vec);
 ## Notes
 
 - The module initializes Astral at startup and shuts it down on module unload.
-- Runtime allocations cross the native ABI through Unreal's `FMemory` callbacks; `IAstralRT::GetAllocatorStats()` exposes debug counters for Automation.
+- Runtime allocations cross the native ABI through Unreal's `FMemory` callbacks. `IAstralRT::GetAllocatorStats()` exposes debug counters for Automation.
 - Streaming is pull-based via `astral_stream_read()` into a pre-sized `TArray<uint8>`.
 
 ## Automation tests

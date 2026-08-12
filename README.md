@@ -1,42 +1,77 @@
 # Astral
 
-Astral is a C++17 native inference runtime for applications and game engines.
-It exposes a C ABI over llama.cpp-class backends, with bounded streaming,
-continuous batching, embeddings, native retrieval, and Unity and Unreal
-wrappers.
+Astral is a C++17 inference control plane for native applications and game
+engines. Applications call one C ABI for models, requests, retrieval, and
+agents. Astral owns handles, bounded queues, cancellation, streaming, and
+scheduling around those calls. Providers own model execution.
 
-The ABI is pre-1.0 and may still change. Capability claims are tracked in the
-[feature matrix](docs/FEATURE_MATRIX.md); release evidence requirements are
-kept separate from source availability.
+That split matters when inference shares a process with a frame loop. A Unity,
+Unreal, or C caller can drain a bounded byte stream on its own thread while a
+model executor batches active conversations. Switching from a local GGUF model
+to the remote provider does not require a second request lifecycle in engine
+code.
 
-## Capabilities
+## What is in the runtime
 
-- CPU inference through the built-in llama.cpp provider, plus mock, dynamic,
-  and remote provider surfaces.
-- Asynchronous sessions and continuous-batching conversations with bytes-first
-  streamed text, cancellation, reset, logprobs, grammar, prompt cache, and LoRA.
-- Text and multimodal embedding APIs, with multimodal support opt-in at build
-  time and dependent on compatible model assets.
-- Exact flat and bounded graph vector search with compact storage lanes,
-  batch search, persistence, mapped snapshots, and optional f32 reranking.
-- Native chunking, toolsets, agents, model presets, and request-status APIs.
-- Unity and Unreal packages that preserve bytes-first ownership at the native
-  boundary.
-- Fixed-capacity concurrency primitives, plus allocation checks for the mock
-  provider and selected CPU decode paths when a compatible model is available.
+- A C ABI built from sized POD descriptors, byte spans, explicit handles, and
+  error codes. C++ exceptions do not cross it.
+- Built-in CPU, CUDA-offload, mock, and remote providers, plus a C provider
+  table for dynamic plugins.
+- Asynchronous sessions and model-scoped continuous batching with bounded
+  streaming, cancellation, grammar, prompt caches, logprobs, and LoRA.
+- Text and multimodal embedding surfaces, native chunking, tool-call parsing,
+  and fixed-capacity memory search.
+- Native agents that assemble system prompts, summaries, retrieved context,
+  history, and the current turn before entering the same conversation executor.
+- Unity and Unreal wrappers that keep native bytes and handles intact until the
+  engine chooses to marshal them.
 
-## Requirements
+The [runtime architecture](docs/architecture/RUNTIME_ARCHITECTURE.md) follows
+one request across those pieces. The [feature matrix](docs/FEATURE_MATRIX.md)
+is the shorter answer for a specific build or platform.
 
-- CMake 3.20+
-- GCC 11+, Clang 13+, or MSVC 2022+
-- A C++17 toolchain
+## Ownership across one request
 
-Unity 6000.0+ and Unreal Engine 5.4+ are optional. Unity 6000.0 and UE 5.7 are
-the primary engine validation targets.
+| Boundary | What crosses it | Who owns the work |
+| --- | --- | --- |
+| Application to C ABI | Sized descriptors, spans, and handles | The caller owns input and output buffers |
+| C ABI to Astral core | Validated native state | Astral owns lifetimes, scheduling, cancellation, and streams |
+| Astral to provider | Provider operation table and contexts | The provider owns model evaluation |
+| Astral back to application | Bounded byte, metadata, embedding, and search output | The caller decides when and where to consume it |
 
-## Build And Test
+A normal asynchronous session uses a runtime worker as its single decode
+producer. A continuous-batching model uses one dedicated executor thread for
+all active slots on that model. In both cases, one consumer drains each stream.
+The stream is a bounded SPSC ring, so a slow consumer creates backpressure
+instead of unbounded memory growth.
 
-Clone with submodules, then use the checked-in presets:
+Engine wrappers preserve this ownership. Native code writes into caller-owned
+buffers. Unity can poll into a `NativeArray<byte>`, and Unreal can move delivery
+onto the game thread without asking the decode loop to invoke an engine
+callback.
+
+## Retrieval and agents
+
+The memory index stores fixed-dimension vectors and stable record keys in
+native memory. Flat search scans every matching row and is exact for the scores
+in the selected storage format. The bounded graph index trades that exhaustive
+scan for a smaller candidate set. Group filters use the flat scanner because a
+sparse filter breaks the locality that the graph depends on.
+
+Storage is independent of traversal. Current lanes include f32, q8, scaled
+Float6 formats, E5M2, and compact-plus-f32 rerank variants. Astral selects the
+metric and storage kernel before the scoring loop, with x86, ARM, and scalar
+implementations behind the same API.
+
+The [retrieval architecture](docs/architecture/RETRIEVAL_ARCHITECTURE.md)
+explains the flat and graph paths, snapshot ownership, and E5M2 widening.
+Agents build on that retrieval layer: the application may search directly, or
+copy selected document chunks into an agent's bounded memory context.
+
+## Build and run the C quickstart
+
+Astral requires CMake 3.20 or later, GCC 11+, Clang 13+, or MSVC 2022+ with
+C++17 support. Clone the public repository with its submodules:
 
 ```bash
 git clone --recurse-submodules https://github.com/Cosmin-B/astral-runtime.git
@@ -47,28 +82,8 @@ cmake --build --preset release-with-tests -j
 ctest --preset release-with-tests --output-on-failure
 ```
 
-For a debug build:
-
-```bash
-cmake --preset dev
-cmake --build --preset dev -j
-ctest --preset dev --output-on-failure
-```
-
-Sanitizers are separate validation lanes:
-
-```bash
-./scripts/run_asan.sh
-./scripts/run_tsan.sh
-```
-
-See [BUILD.md](BUILD.md) for presets, optional CUDA and profiling builds,
-packaging, and platform notes.
-
-## Native Quickstart
-
-Build the maintained C example without a model download by using the mock
-provider:
+The maintained C example uses the deterministic mock provider, so it does not
+need a model download:
 
 ```bash
 cmake -S . -B build/examples \
@@ -80,78 +95,47 @@ cmake --build build/examples --target astral_c_quickstart -j
   --backend mock --prompt "Once upon a time"
 ```
 
-The source is
-[examples/astral_c_quickstart.c](https://github.com/Cosmin-B/astral-runtime/blob/main/examples/astral_c_quickstart.c).
-It demonstrates initialization, model loading, streaming, error handling,
-reset, and handle release through the public C ABI.
+The [example source](https://github.com/Cosmin-B/astral-runtime/blob/main/examples/astral_c_quickstart.c)
+shows initialization, model loading, streaming, reset, error handling, and
+handle release through the public ABI. [BUILD.md](BUILD.md) covers the other
+presets, CUDA, shared libraries, packaging, and sanitizers.
 
-## Engine Integration
+## Platforms and integrations
 
-Unity:
+| Surface | Current public code |
+| --- | --- |
+| Desktop core | Linux, macOS, and Windows platform implementations |
+| CPU inference | Built-in llama.cpp provider |
+| GPU inference | Optional GGML CUDA offload through the same provider contract |
+| Embedded | x86-64, ARM64, and ARMv7 presets with arena-backed core memory |
+| Unity | Unity 6000.0+ package, native buffers, jobs, samples, and editor tests |
+| Unreal Engine | UE 5.4+ plugin surface with a UE 5.7 sample and automation project |
 
-- [Package guide](https://github.com/Cosmin-B/astral-runtime/blob/main/plugins/unity/README.md)
-- [Integration reference](docs/integration/UNITY_INTEGRATION.md)
-- Maintained samples under `plugins/unity/Samples~`
+Embedded presets disable threads, dynamic loading, and other desktop services.
+Continuous batching and native agents are therefore desktop features in those
+profiles. The [embedded guide](docs/EMBEDDED_PROFILE.md),
+[Unity guide](plugins/unity/README.md), and
+[Unreal guide](plugins/unreal/AstralRT/README.md) carry the build and packaging
+rules.
 
-Unreal Engine:
+## Public API and docs
 
-- [Plugin guide](https://github.com/Cosmin-B/astral-runtime/blob/main/plugins/unreal/AstralRT/README.md)
-- [Integration reference](docs/integration/UNREAL_INTEGRATION.md)
-- [UE 5.7 quickstart](docs/integration/UNREAL_57_QUICKSTART.md)
+- [C runtime header](https://github.com/Cosmin-B/astral-runtime/blob/main/include/astral_rt.h)
+- [Provider ABI](https://github.com/Cosmin-B/astral-runtime/blob/main/include/astral_backend.h)
+- [Documentation map](docs/README.md)
+- [Continuous batching](docs/api/CONTINUOUS_BATCHING.md)
+- [Memory index](docs/api/MEMORY_INDEX.md)
+- [Agent runtime](docs/api/AGENT_RUNTIME.md)
+- [ABI versioning](docs/ABI_VERSIONING.md)
 
-The wrappers do not own model execution. They translate engine-facing data and
-lifecycle operations into the same native handles and spans used by C callers.
+The ABI is still pre-1.0. Descriptor sizes and ABI version checks make changes
+detectable, but they do not promise that every pre-1.0 descriptor will remain
+unchanged.
 
-## Runtime Design
+## License and support
 
-- The public boundary is a C ABI with sized POD descriptors, UTF-8 spans,
-  explicit handles, and error codes. Exceptions never cross that boundary.
-- Sessions and conversations have one decode producer and one stream consumer.
-  SPSC queues transfer tokens and metadata without a compare-and-swap loop.
-- Continuous-batching slot snapshots use epoch reclamation once per scheduling
-  pass rather than per-conversation reference-count traffic.
-- Runtime-owned scratch and fixed-capacity structures bound core decode,
-  sampling, and streaming storage. Provider allocation behavior is validated
-  separately.
-- Compact memory-index lanes use runtime-dispatched x86 and ARM kernels where
-  available, with scalar paths retained for portability and correctness.
+Astral is licensed under the Apache License 2.0. See [LICENSE](LICENSE), [NOTICE](NOTICE),
+and the [third-party notices](docs/release/THIRD_PARTY_NOTICES.md).
 
-Read [docs/README.md](docs/README.md) for the maintained documentation map.
-
-## Validation
-
-The normal local release check is:
-
-```bash
-git diff --check
-cmake --build --preset release-with-tests -j
-ctest --preset release-with-tests --output-on-failure
-```
-
-Additional scripts cover sanitizers, memory and syscall gates, CUDA parity,
-model matrices, engine runners, packaging, and release metadata. Those lanes
-are documented beside the subsystem they validate rather than summarized as
-blanket platform support.
-
-Real Unity Editor, Unreal Editor, CUDA, multimodal, mobile, Windows large-page,
-and protected-signing runs remain release-evidence requirements. See
-[ROADMAP.md](ROADMAP.md) and the
-[release acceptance matrix](docs/release/RELEASE_ACCEPTANCE_MATRIX.md).
-
-## Contributing
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[coding standards](docs/rules/CODING_STANDARDS.md). Keep changes scoped, add
-tests for behavior changes, and attach performance evidence for hot-path work.
-
-## License
-
-Astral is licensed under the Apache License 2.0. See
-[LICENSE](https://github.com/Cosmin-B/astral-runtime/blob/main/LICENSE),
-[NOTICE](https://github.com/Cosmin-B/astral-runtime/blob/main/NOTICE), and the
-[third-party notices](docs/release/THIRD_PARTY_NOTICES.md).
-
-## Support
-
-Use [GitHub Issues](https://github.com/Cosmin-B/astral-runtime/issues) for reproducible
-bugs and integration problems.
+Use [GitHub Issues](https://github.com/Cosmin-B/astral-runtime/issues) for
+reproducible bugs and integration problems.

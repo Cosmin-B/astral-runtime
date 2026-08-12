@@ -1,15 +1,14 @@
-# Feature Matrix
+# Feature matrix
 
-This document is the maintained "what actually works where" map for Astral:
-CPU-only builds, CUDA builds, and embedded/minimal presets. It intentionally
-does not track competitor parity notes or roadmap promises; support claims here
-must map to local tests, release evidence, or an explicit caveat.
+This is the maintained map from Astral features to CPU-only, CUDA, and embedded
+builds. A check means the implementation is available in that configuration. A
+warning points to an optional dependency or provider constraint described below.
 
 ## Legend
 
-- ✅ locally exercised by the named tests or build presets
-- ⚠️ implemented with caveats or external release evidence still required
-- 🧪 build surface exists, but platform/config validation is still pending
+- ✅ available in the named build or preset
+- ⚠️ implemented with the caveat described below the table
+- 🧪 available but not yet a supported configuration
 - ❌ not available in that configuration
 
 ## Core runtime / build knobs
@@ -24,11 +23,11 @@ must map to local tests, release evidence, or an explicit caveat.
 | Exceptions across ABI | ✅ (caught at ABI) | ✅ (caught at ABI) | ✅ (presets build with `ASTRAL_NO_EXCEPTIONS=ON`) |
 | Dynamic backends (`dlopen`/`LoadLibrary`) | ✅ (optional) | ✅ (optional) | ❌ (presets disable) |
 | JSON-schema grammar helper | ✅ (optional) | ✅ (optional) | ❌ (presets disable) |
-| Multimodal media (`ASTRAL_ENABLE_MTMD`) | ⚠️ (opt-in; real fixtures required for release) | ⚠️ (opt-in; CUDA media routing still needs real fixture evidence) | ❌ |
+| Multimodal media (`ASTRAL_ENABLE_MTMD`) | ⚠️ (opt-in, compatible projector required) | ⚠️ (opt-in, CUDA routing is model-dependent) | ❌ |
 
 Notes:
 - Embedded presets are intended to be “no VM / no dynamic loader / no JSON-schema grammar” by default (`docs/EMBEDDED_PROFILE.md`).
-- “No exceptions” is a build constraint; third-party code may still throw unless fully audited.
+- “No exceptions” is a build constraint. Third-party code may still throw.
 - Multimodal media requires `ASTRAL_ENABLE_MTMD=ON` and a media projector file initialized via `astral_model_media_init`.
 
 ## Providers / backends
@@ -38,18 +37,19 @@ Notes:
 | `cpu` (llama.cpp) | ✅ | ✅ | ✅ |
 | `cuda` (llama.cpp GGML_CUDA offload) | ❌ | ✅ | 🧪 (generally not targeted) |
 | `mock` | ✅ | ✅ | ✅ |
+| `remote` (HTTP transport) | ⚠️ | ⚠️ | ❌ (threads disabled) |
+| Dynamic provider plugins | ✅ (optional) | ✅ (optional) | ❌ |
 
 Notes:
-- CUDA support is implemented through llama.cpp GGML_CUDA offload. Production
-  release sign-off still requires the real CUDA parity/e2e matrix in
-  `docs/CUDA_PARITY.md`.
+- CUDA support uses llama.cpp GGML_CUDA offload. The supported selection modes
+  and parity commands are in `docs/CUDA_PARITY.md`.
 - CUDA builds support multiple ggml-cuda kernel selection modes:
   - Default “auto” selection (`dev-cuda` / `release-cuda`)
   - Forced cuBLAS (`dev-cuda-cublas`)
   - Forced MMQ kernels (`dev-cuda-mmq`)
   - Validate all three modes via `scripts/run_cuda_parity_matrix.sh` (see `docs/CUDA_PARITY.md`).
-- CUDA builds expose multi-GPU selection/split fields through `AstralModelDesc`;
-  release sign-off still needs real multi-GPU routing evidence.
+- CUDA builds expose multi-GPU selection and split fields through
+  `AstralModelDesc`. Availability depends on the GGML CUDA build and devices.
 
 ## Model loading (PATH / MEMORY / IO)
 
@@ -61,7 +61,7 @@ Notes:
 
 Caveats (MEMORY/IO):
 - Current llama.cpp no longer exposes an in-memory loader API that Astral can call directly, so CPU/CUDA providers currently **materialize to a temp file** and then call `llama_model_load_from_file` on desktop.
-- This means MEMORY/IO is **not yet a hard guarantee** of “no filesystem/syscalls” in embedded mode; making that guarantee is tracked under the embedded pillars work.
+- MEMORY/IO does not guarantee a filesystem-free embedded load while this materialization path is in use.
 
 ## Inference features (sessions)
 
@@ -72,7 +72,7 @@ Caveats (MEMORY/IO):
 | Logprobs meta stream (`set_logprobs` + `stream_read_meta`) | ✅ | ✅ | ✅ |
 | Stop sequences (tokenized) | ✅ | ✅ | ✅ |
 | Slots (`astral_session_set_slot`) | ✅ (provider-dependent) | ✅ (provider-dependent) | ✅ (provider-dependent) |
-| Image/audio prompt feed (`astral_session_feed_image/audio`) | ⚠️ (mtmd + media init; real fixtures required for release) | ⚠️ (mtmd + media init; CUDA routing still needs real fixture evidence) | ❌ |
+| Image/audio prompt feed (`astral_session_feed_image/audio`) | ⚠️ (MTMD and media init required) | ⚠️ (MTMD, media init, and model support required) | ❌ |
 | KV/state save/load (`state_size/save/load`) | ✅ | ✅ | ✅ |
 | KV/state deterministic continuation | ✅ | ✅ | ✅ |
 | GBNF grammar (`set_grammar_gbnf`) | ✅ | ✅ | ✅ |
@@ -84,8 +84,8 @@ incremental decoder.
 
 Notes:
 - KV save/load now includes an Astral header that serializes sampler + RNG state so continuations can be deterministic after load.
-- Cross-backend (CPU vs CUDA) **exact token determinism** is not guaranteed in general; see `docs/CUDA_PARITY.md` for current policy/tests.
-- Conversation media prompts require provider slot position queries (`session_slot_pos`); mock + CPU backends support this when mtmd is enabled.
+- Cross-backend CPU/CUDA token determinism is not guaranteed. See `docs/CUDA_PARITY.md` for the comparison policy.
+- Conversation media prompts require provider slot position queries (`session_slot_pos`). Mock and CPU backends support them when MTMD is enabled.
 
 ## Embeddings
 
@@ -106,21 +106,20 @@ Notes:
 | Vector memory index, save/load, cursor fetch | ✅ | ✅ | ✅ |
 | Continuous-batching conversations | ✅ | ✅ | ❌ (threads disabled) |
 | Native agents with system prompt/history/prompt cache stats | ✅ | ✅ | ❌ (threads disabled) |
-| Remote runtime transport | ⚠️ | ⚠️ | 🧪 |
+| Remote runtime transport | ⚠️ | ⚠️ | ❌ (threads disabled) |
 
 Notes:
-- Vector memory supports exact flat search and bounded graph search. Group
-  filters use the exact flat scanner.
-- Continuous batching requires a backend with slot/batch operations; built-in
+- Vector memory supports exhaustive flat search and bounded graph search. Flat
+  results are exact for scores produced by the selected storage format. Group
+  filters use that flat scanner.
+- Continuous batching requires a backend with slot/batch operations. Built-in
   mock and CPU backends implement that surface. It also requires
   `ASTRAL_ENABLE_THREADS=ON`.
-- Remote runtime support uses `backend_name = "remote"` with a loopback-tested
-  HTTP provider for health, tokenization, streaming completion chunks, auth
-  failure, and embeddings. Transient health retry and timeout status mapping are
-  covered.
+- Remote runtime support uses `backend_name = "remote"` with an HTTP provider
+  for health, tokenization, streaming completion chunks, authentication, and
+  embeddings.
   HTTPS is rejected with `ASTRAL_E_UNSUPPORTED` when the HTTP client is built
-  without TLS support. TLS-enabled builds and production service evidence are
-  still required.
+  without TLS support.
 
 ## Test validation map
 
@@ -134,7 +133,7 @@ Notes:
 | `test_backend` | backend selection, mock provider, remote loopback provider | CPU-only + CUDA build |
 | `test_continuous_batching` | conversation slot fairness and CPU probe | CPU-only + CUDA build |
 | `test_cuda_parity` | CUDA surface + (optional) CPU-vs-CUDA parity harness | CUDA build (optional inference via env) |
-| `test_cuda_e2e` | end-to-end logprobs/grammar/kv/embeddings on real model | CPU-only always; CUDA when `ASTRAL_TEST_CUDA_E2E=1` |
+| `test_cuda_e2e` | end-to-end logprobs/grammar/kv/embeddings on real model | CPU-only always, CUDA when `ASTRAL_TEST_CUDA_E2E=1` |
 
 Useful invocations:
 

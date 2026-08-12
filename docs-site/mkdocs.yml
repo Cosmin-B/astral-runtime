@@ -21,6 +21,10 @@ exclude_docs: |
   !/SECURITY.md
   !/docs/
   !/docs/**
+  !/plugins/unity/README.md
+  !/plugins/unreal/AstralRT/README.md
+  /docs/integration/UNITY_INTEGRATION.md
+  /docs/integration/UNREAL_INTEGRATION.md
 
 nav:
   - Overview: README.md
@@ -44,6 +48,8 @@ nav:
       - Remote runtime: docs/api/REMOTE_RUNTIME.md
       - Hot-path profiling: docs/api/HOT_PATH_PROFILING.md
   - Architecture:
+      - Runtime architecture: docs/architecture/RUNTIME_ARCHITECTURE.md
+      - Retrieval architecture: docs/architecture/RETRIEVAL_ARCHITECTURE.md
       - Backend architecture: docs/architecture/BACKEND_ARCHITECTURE.md
       - Concurrency model: docs/architecture/CONCURRENCY_MODEL.md
       - Memory architecture: docs/architecture/MEMORY_ARCHITECTURE.md
@@ -52,8 +58,8 @@ nav:
       - Embedded examples: docs/embedded/README.md
       - Vision and audio: docs/VISION_AUDIO.md
   - Integration:
-      - Unity: docs/integration/UNITY_INTEGRATION.md
-      - Unreal Engine: docs/integration/UNREAL_INTEGRATION.md
+      - Unity: plugins/unity/README.md
+      - Unreal Engine: plugins/unreal/AstralRT/README.md
       - Unreal Engine 5.7 quickstart: docs/integration/UNREAL_57_QUICKSTART.md
   - Profiling and CUDA:
       - Tracy profiling: docs/PROFILING_TRACY.md
