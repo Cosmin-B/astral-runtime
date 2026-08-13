@@ -1,25 +1,26 @@
-# Astral Runtime - Unity Plugin
+# Astral Runtime Unity package
 
 Unity bindings and package layout for Astral Runtime. The package exposes native
 runtime initialization, model/session handles, streaming reads, embeddings, and
 mock media tests through the public C ABI.
 
-Current status: the package has native packaging, EditMode test tooling, GameCI
-import/compile evidence, and Linux native plugin preload evidence. Licensed
-EditMode execution and player builds still need dedicated Unity runner evidence.
+The package keeps native handles behind `IDisposable` wrappers and reads stream
+bytes into caller-owned `NativeArray` storage. Jobs and main-thread code can
+choose where those bytes become managed text.
 
 ## Features
 
-- **NativeArray streaming path**: `ReadStream(NativeArray<byte>)` reads UTF-8 bytes into caller-owned buffers.
+- **NativeArray streaming path**: `ReadStream(NativeArray<byte>)` reads UTF-8 bytes into caller-owned buffers with native backpressure.
 - **Burst-friendly job wrappers**: Job structs use blittable fields and `NativeArray` buffers.
 - **Explicit P/Invoke ABI**: Declarations use the public C ABI and EditMode tests check key struct layouts.
-- **Streaming support**: Frame-polled token reads with native backpressure control
 - **Deterministic ownership**: Native handles are released through `IDisposable`.
 - **LoRA adapter ownership**: `AstralAdapter` owns model-scoped adapter handles and sessions attach them between requests.
 - **Structured output tools**: `AstralToolset` owns native tool definitions and sessions can bind toolsets or grammar.
 - **Continuous batching conversations**: `AstralConversation` wraps model-scoped executor slots for multi-stream generation.
-- **Thread ownership**: Native buffers are owned by `NativeArray`; session concurrency still needs real Unity runner evidence.
-- **Platform package surface**: desktop and mobile plugin layouts exist; each target still needs real Unity import/player evidence.
+- **Thread ownership**: Native buffers are owned by `NativeArray`. Callers
+  choose the job or main-thread boundary that consumes them.
+- **Platform package surface**: Desktop and mobile plugin layouts are checked
+  in. Editor and player validation is platform-specific.
 
 ## Requirements
 
@@ -35,15 +36,15 @@ EditMode execution and player builds still need dedicated Unity runner evidence.
 2. Click '+' > Add package from git URL
 3. Enter: `https://github.com/Cosmin-B/astral-runtime.git?path=/plugins/unity`
 
-### Manual Installation
+### Manual installation
 
 1. Copy `plugins/unity` to your Unity project's `Packages/` directory
 2. Rename to `com.astral.runtime`
 3. Unity will automatically import the package
 
-## Quick Start
+## Quick start
 
-### 1. Initialize Runtime
+### 1. Initialize the runtime
 
 Add `AstralRuntimeInitializer` component to a persistent GameObject:
 
@@ -72,7 +73,7 @@ public class GameManager : MonoBehaviour
 }
 ```
 
-### 2. Load Model
+### 2. Load a model
 
 ```csharp
 using Astral.Runtime;
@@ -93,7 +94,7 @@ remoteConfig.remoteApiKey = "";
 using var remote = AstralModel.Load("http://127.0.0.1:8080", remoteConfig);
 ```
 
-### 3. Run Inference (Streaming)
+### 3. Run streaming inference
 
 ```csharp
 using Astral.Runtime;
@@ -116,7 +117,7 @@ IEnumerator RunInference(AstralModel model, string prompt)
 }
 ```
 
-### 4. NativeArray Streaming
+### 4. Stream into a NativeArray
 
 ```csharp
 using Astral.Runtime;
@@ -155,7 +156,7 @@ IEnumerator RunInferenceNativeArray(AstralModel model, string prompt)
 }
 ```
 
-## API Reference
+## API reference
 
 ### AstralRuntime
 
@@ -195,7 +196,7 @@ bool isValid = model.IsValid;
 
 **Configs**: `Default`, `Mobile`, `HighPerformance`, `Embeddings`
 
-Note: embeddings are supported; `Embeddings` preset selects `embeddingsOnly=1` and related defaults.
+Note: the `Embeddings` preset selects `embeddingsOnly=1` and related defaults.
 
 For local smoke tests, use the shared preset manifest instead of hard-coding
 model URLs:
@@ -261,19 +262,19 @@ Conversations support grammar, toolsets, stop sequences, logprob metadata,
 media chunks, cancellation, reset, and stats. Prefer
 `ReadStream(NativeArray<byte>)` for frame-polled gameplay paths.
 
-### Prompt Cache
+### Prompt cache
 
 `AstralPromptCache` owns native token storage and uses `NativeArray<int>` for
 direct token copy calls. Use `KeyFromBytes()` for section-aware cache keys and
 `GetTokenView()` only when the cache lifetime stays local to the read.
 
-### LoRA Adapters
+### LoRA adapters
 
 `AstralAdapter.GetInfo()` and `GetPath()` expose native adapter diagnostics.
 Attach adapters to sessions between requests with `AddAdapter()` and update
 their fixed-slot scale with `SetAdapterScale()`.
 
-### Structured Output
+### Structured output
 
 `AstralToolset` owns native tool definitions. `AstralToolCall.Parsed`,
 `Missing`, and `Malformed` expose native parse status after `ParseCall()`
@@ -293,13 +294,13 @@ caller-owned `NativeArray` buffers for ingest paths.
 buffers. Use `CountTextBytes()` before materializing selected text when a chunk
 will cross back into Unity strings.
 
-### Memory Search
+### Memory search
 
 `AstralMemoryIndex` owns native vector storage. Cursor searches can be wrapped
 with `AstralRequest.FromMemorySearch(cursor)` for polling remaining results
 before fetching batches.
 
-### Vision / Audio (Media)
+### Vision and audio
 
 Media support requires a model projector/encoder GGUF and an Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:
 
@@ -307,7 +308,7 @@ Media support requires a model projector/encoder GGUF and an Astral build compil
 model.InitMediaFromPath("/path/to/media.gguf");
 ```
 
-Feed media into a session prompt. The backing `NativeArray` must stay alive for the duration of the feed call; Astral copies or consumes the data before the method returns.
+Feed media into a session prompt. The backing `NativeArray` must stay alive for the duration of the feed call. Astral copies or consumes the data before the method returns.
 
 ```csharp
 // Image (RGB8)
@@ -317,7 +318,7 @@ session.FeedImage(pixels, width: 224, height: 224, AstralNative.AstralImageForma
 session.FeedAudio(audioF32, channels: 1, sampleRate: 16000);
 ```
 
-### Multimodal Embeddings
+### Multimodal embeddings
 
 Load embedding models with `embeddingsOnly = true`, initialize media first when image/audio input is used, and size the output vector from `embedder.Dimension`.
 
@@ -344,7 +345,7 @@ embedder.Collect(mmTicket, outVec);
 `Cancel(ticket)` releases queued embedding work that no longer needs to be
 collected.
 
-### Request Status
+### Request status
 
 `AstralRequest` wraps the native request lifecycle for sessions, conversations,
 agent chat, embedding tickets, and memory search cursors. The wrapper returns
@@ -365,7 +366,7 @@ if (AstralRequest.TryGetStatus(request, out var status, out int err))
 
 ## Configuration
 
-### Runtime Configuration
+### Runtime configuration
 
 ```csharp
 var config = new AstralConfig
@@ -380,7 +381,7 @@ AstralRuntime.Initialize(config);
 
 **Presets**: `Default`, `Mobile`, `HighPerformance`
 
-### Model Configuration
+### Model configuration
 
 ```csharp
 var config = new AstralModelConfig
@@ -402,7 +403,7 @@ Use `AstralModelPath.StreamingAssets(...)` for files staged with the player and
 cache files. Absolute paths and `AstralModelPath.Raw(...)` are passed through
 unchanged.
 
-### Mobile Model Setup
+### Mobile model setup
 
 Use the smallest preset that proves the target workflow before raising context
 length or model size:
@@ -421,10 +422,10 @@ Keep partial downloads and GGUF files out of source control.
 
 Start mobile players with `AstralConfig.Mobile` and `AstralModelConfig.Mobile`.
 Measure target devices before increasing `contextSize`, `batchSize`, or worker
-thread count. The wrapper does not pin Unity threads or select big/little cores;
+thread count. The wrapper does not pin Unity threads or select big/little cores.
 those settings must be validated on the actual device runner.
 
-### Session Configuration
+### Session configuration
 
 ```csharp
 var config = new AstralSessionConfig
@@ -441,29 +442,16 @@ var session = AstralSession.Create(model, config);
 
 **Presets**: `Default`, `Greedy`, `Creative`
 
-## Platform Support
+## Platform support
 
 | Platform | Arch | Status | Notes |
 |----------|------|--------|-------|
-| Windows | x86_64 | Package layout | Player evidence pending |
-| Linux | x86_64 | Native preload evidence | Licensed EditMode execution pending |
-| macOS | ARM64 | Package layout | Editor/player evidence pending |
-| Android | ARM64 | Package layout | Device/player evidence pending |
-| iOS | ARM64 | Static-link binding | Device/player evidence pending |
+| Windows | x86_64 | Package surface | Native player library required |
+| Linux | x86_64 | Package surface | Native preload path included |
+| macOS | ARM64 | Package surface | Native player library required |
+| Android | ARM64 | Package surface | Device library and import settings required |
+| iOS | ARM64 | Static-link surface | Xcode static library integration required |
 | WebGL | WASM | Unsupported | No maintained native runtime target |
-
-## Performance
-
-Representative local CPU measurements should be captured with the native
-benchmark suite for the target model and platform. Unity player numbers are not
-release evidence until the corresponding Unity runner and native plugin artifact
-have been validated.
-
-| Model | Platform | Tokens/sec | First Token (ms) | Memory (MB) |
-|-------|----------|------------|------------------|-------------|
-| Target GGUF | Target runner | Measure locally | Measure locally | Measure locally |
-
-**Note**: Performance varies based on model size, quantization, and hardware.
 
 ## Troubleshooting
 
@@ -485,7 +473,7 @@ have been validated.
 2. Verify native library exports match C# declarations
 3. Use `nm -D libastral_rt.so` (Linux) or `dumpbin /EXPORTS astral_rt.dll` (Windows)
 
-### IL2CPP Crashes
+### IL2CPP crashes
 
 **Cause**: Incorrect P/Invoke marshaling or unsafe code.
 
@@ -494,7 +482,7 @@ have been validated.
 2. Verify struct layouts with `StructLayout(LayoutKind.Sequential)`
 3. Check `allowUnsafeCode: true` in asmdef
 
-### GC Allocations During Streaming
+### GC allocations during streaming
 
 **Cause**: Using managed strings in hot paths.
 
@@ -516,16 +504,16 @@ Install the package samples from Package Manager or open them under `Samples~`:
 | Character variants | [CharacterVariants](Samples~/CharacterVariants/README.md) | Prompt caches, structured output, stop sequences, and adapters |
 | Multimodal input | [MultimodalInput](Samples~/MultimodalInput/README.md) | Texture, audio, and multimodal embedding requests |
 
-## Building Native Plugins
+## Building native plugins
 
 See `Runtime/Plugins/README.md` for build instructions for each platform.
 
-## Plugin Tests
+## Plugin tests
 
 The package includes small, focused Unity EditMode tests under `Tests/Editor/`:
 - ABI layout assertions for key C ABI structs (`AstralSpanU8`, `AstralModelDesc`, `AstralSessionDesc`, …).
 - Mock-backend smoke (init → model → session → decode → stream → reset → repeat).
-- Mock media feed + multimodal embedding smoke (mock backend; no GGUF required).
+- Mock media feed and multimodal embedding smoke with no GGUF required.
 
 Release and CI runs must provide a native `astral_rt` library for the Editor.
 `scripts/run_unity_ci_tests.sh` fails before Unity starts when the platform
@@ -542,7 +530,7 @@ The wrapper follows the current GameCI v4 Docker documentation, reads the Unity
 version from the CI project, defaults to
 `unityci/editor:ubuntu-6000.0.57f1-base-3.2.2`, builds the native Unity plugin
 on the host, then runs the same EditMode ABI lane inside the container. License
-environment variables are forwarded by name only when already set; license files
+environment variables are forwarded by name only when already set. License files
 and activation responses are not read or written by the wrapper.
 
 ## License

@@ -19,7 +19,7 @@ The script builds the native Unity plugin first and sets `ASTRAL_UNITY_REQUIRE_N
 Example:
 
 ```bash
-cd astral
+cd astral-runtime
 UNITY_EDITOR="/path/to/Unity" ./scripts/run_unity_ci_tests.sh
 ```
 

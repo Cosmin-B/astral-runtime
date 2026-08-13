@@ -1,17 +1,17 @@
 # External Dependencies
 
-Astral expects some third-party dependencies to live under `astral/external/` (preferred) so builds and CI are reproducible.
+Astral pins third-party source dependencies as submodules under
+`astral-runtime/external/`.
 
 ## llama.cpp
 
-Preferred strategy: add llama.cpp as a git submodule at `astral/external/llama.cpp`.
-
-Example:
+Initialize the pinned llama.cpp and Tracy revisions from a public clone:
 
 ```bash
-cd astral
-git submodule add https://github.com/ggml-org/llama.cpp.git external/llama.cpp
+cd astral-runtime
 git submodule update --init --recursive
 ```
 
-`astral/src/backend/CMakeLists.txt` prefers `external/llama.cpp` automatically, and falls back to a sibling checkout at `../llama.cpp` for local dev.
+The build prefers `external/llama.cpp` and can use a sibling `../llama.cpp`
+checkout for local development. Do not update either submodule as part of an
+unrelated Astral change.

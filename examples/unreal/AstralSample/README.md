@@ -33,7 +33,7 @@ AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit \
 `-AstralMemoryBackend=mock` keeps the packaged Content/Saved byte demos on the
 mock backend while text generation and embeddings use the real CPU backend.
 `-AstralMediaPath` and `-AstralMediaPathRoot` initialize a media projector for
-the media feed demo; leave them unset with `-AstralMediaBackend=mock` for a
+the media feed demo. Leave them unset with `-AstralMediaBackend=mock` for a
 lightweight descriptor/bridge smoke. Real projector validation remains part of
 the MTMD release lane.
 
@@ -44,7 +44,7 @@ actor recreation. Configure its model, prompt state, and history file, then call
 `Ask`, `Cancel`, `Save History`, or `Load History` from Blueprint. The component
 polls one chat request per frame, reports structured `move_to` tool calls, and
 stores history below `ProjectSavedDir/Astral` by default. Mock models exercise
-the lifecycle and tool parsing; useful dialogue requires a generation model.
+the lifecycle and tool parsing. Useful dialogue requires a generation model.
 
 Add `Astral Local Knowledge` to an actor to index short lore, quest, or dialogue
 documents. Set an embeddings-capable model, edit `Document Text`, then call
@@ -58,7 +58,7 @@ without duplicating model ownership. `Prepare Prompt Cache` tokenizes and
 round-trips the system prompt, stores it under a stable cache key, and writes a
 snapshot below `ProjectSavedDir/Astral`. `Run` applies the configured stop
 sequence and JSON-schema grammar, then optionally attaches a model-scoped
-adapter. Adapter paths are optional; an empty path runs the base model.
+adapter. Adapter paths are optional. An empty path runs the base model.
 
 Add `Astral Multimodal Input` to feed a CPU-readable texture or interleaved
 PCM16 bytes. Set a media projector path or payload before calling the image,
@@ -66,5 +66,5 @@ audio, or embedding controls. The component checks model capabilities before
 each operation, copies Unreal-owned media into Astral descriptors, exposes the
 resulting embedding, and keeps model-dependent auto-run disabled.
 
-Real production sign-off still requires packaging this project on the UE 5.7
-release runner and recording the Automation/package logs as release evidence.
+Use `scripts/run_unreal_sample_package.sh` on a UE 5.7 runner to build, cook,
+package, and validate the generated project.

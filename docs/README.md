@@ -1,10 +1,10 @@
 # Documentation
 
 This directory is the maintained documentation source for Astral. The public
-header defines the ABI; these documents explain behavior, integration, and the
-evidence required for support claims.
+header defines the ABI. These documents explain behavior, ownership, and
+integration. Release manifests remain separate from reader guides.
 
-## Start Here
+## Start here
 
 - [Build guide](../BUILD.md)
 - [Feature matrix](FEATURE_MATRIX.md)
@@ -30,18 +30,20 @@ evidence required for support claims.
 The complete function and descriptor surface is in
 [`include/astral_rt.h`](https://github.com/Cosmin-B/astral-runtime/blob/main/include/astral_rt.h).
 
-## Engine Integration
+## Engine integration
 
-- [Unity integration](integration/UNITY_INTEGRATION.md)
-- [Unreal integration](integration/UNREAL_INTEGRATION.md)
+- [Unity package guide](../plugins/unity/README.md)
+- [Unreal plugin guide](../plugins/unreal/AstralRT/README.md)
 - [Unreal 5.7 quickstart](integration/UNREAL_57_QUICKSTART.md)
 
 Package-specific usage and samples live under
 [`plugins/unity`](https://github.com/Cosmin-B/astral-runtime/tree/main/plugins/unity) and
 [`plugins/unreal/AstralRT`](https://github.com/Cosmin-B/astral-runtime/tree/main/plugins/unreal/AstralRT).
 
-## Runtime Architecture
+## Runtime architecture
 
+- [Runtime architecture](architecture/RUNTIME_ARCHITECTURE.md)
+- [Retrieval architecture](architecture/RETRIEVAL_ARCHITECTURE.md)
 - [Backend architecture](architecture/BACKEND_ARCHITECTURE.md)
 - [Concurrency model](architecture/CONCURRENCY_MODEL.md)
 - [Memory architecture](architecture/MEMORY_ARCHITECTURE.md)
@@ -52,7 +54,7 @@ Package-specific usage and samples live under
 Architecture documents describe current implementation constraints. They are
 not a roadmap and do not override the feature or release matrices.
 
-## Profiling And Validation
+## Profiling and measurement
 
 - [Hot-path profiling boundaries](api/HOT_PATH_PROFILING.md)
 - [Tracy profiling](PROFILING_TRACY.md)
@@ -60,11 +62,11 @@ not a roadmap and do not override the feature or release matrices.
 - [CUDA kernel strategy](CUDA_KERNEL_STRATEGY.md)
 - [Release acceptance and manifests](release/RELEASE_ACCEPTANCE_MATRIX.md)
 
-Raw benchmark output, profiler captures, machine-specific paths, and private
-release credentials are not repository documentation. Keep published claims
-tied to reproducible commands and the maintained acceptance gates.
+Raw benchmark output, profiler files, machine-specific paths, and release
+credentials do not belong in repository documentation. Performance pages carry
+the command and configuration needed to reproduce a published result.
 
-## Documentation Site
+## Documentation site
 
 The [published documentation](https://astral.cosminbararu.com/docs/) renders
 this Markdown and the maintained root guides directly. Build the same strict
