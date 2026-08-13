@@ -1,6 +1,6 @@
 site_name: Astral Documentation
 site_description: Native inference runtime reference for applications and game engines
-site_url: https://astral.cosminbararu.com/docs/
+site_url: https://astralruntime.dev/docs/
 repo_url: https://github.com/Cosmin-B/astral-runtime
 repo_name: Cosmin-B/astral-runtime
 edit_uri: edit/main/
