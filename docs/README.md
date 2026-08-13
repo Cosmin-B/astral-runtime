@@ -68,7 +68,7 @@ the command and configuration needed to reproduce a published result.
 
 ## Documentation site
 
-The [published documentation](https://astral.cosminbararu.com/docs/) renders
+The [published documentation](https://astralruntime.dev/docs/) renders
 this Markdown and the maintained root guides directly. Build the same strict
 artifact with:
 
