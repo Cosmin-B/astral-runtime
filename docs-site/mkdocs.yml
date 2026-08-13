@@ -14,6 +14,8 @@ exclude_docs: |
   !/assets/
   !/assets/**
   !/README.md
+  !/LICENSE
+  !/NOTICE
   !/BUILD.md
   !/CHANGELOG.md
   !/CONTRIBUTING.md
@@ -22,7 +24,10 @@ exclude_docs: |
   !/docs/
   !/docs/**
   !/plugins/unity/README.md
+  !/plugins/unity/Samples~/
+  !/plugins/unity/Samples~/**
   !/plugins/unreal/AstralRT/README.md
+  !/examples/unreal/AstralSample/README.md
   /docs/integration/UNITY_INTEGRATION.md
   /docs/integration/UNREAL_INTEGRATION.md
 
@@ -59,7 +64,15 @@ nav:
       - Vision and audio: docs/VISION_AUDIO.md
   - Integration:
       - Unity: plugins/unity/README.md
+      - Unity samples:
+          - Streaming chat: plugins/unity/Samples~/StreamingChat/README.md
+          - Multiple conversations: plugins/unity/Samples~/MultipleConversations/README.md
+          - Stateful NPC: plugins/unity/Samples~/StatefulNpc/README.md
+          - Local knowledge: plugins/unity/Samples~/LocalKnowledge/README.md
+          - Character variants: plugins/unity/Samples~/CharacterVariants/README.md
+          - Multimodal input: plugins/unity/Samples~/MultimodalInput/README.md
       - Unreal Engine: plugins/unreal/AstralRT/README.md
+      - Unreal sample: examples/unreal/AstralSample/README.md
       - Unreal Engine 5.7 quickstart: docs/integration/UNREAL_57_QUICKSTART.md
   - Profiling and CUDA:
       - Tracy profiling: docs/PROFILING_TRACY.md
