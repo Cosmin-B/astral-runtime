@@ -47,9 +47,35 @@ typedef struct AstralBackendBatchToken {
 
 /// Provider ops table.
 ///
-/// Thread-safety notes:
-/// - model_* and tokenize/detokenize must be thread-safe for a shared model_ctx.
-/// - session_* are NOT thread-safe for the same session_ctx (single-session thread rule).
+/// Required operations are `model_load`, `model_unload`, `tokenize`, `detokenize`,
+/// `model_info`, `session_create`, `session_destroy`, `session_feed`,
+/// `session_logits`, and `session_accept`. Plugin registration fails with
+/// `ASTRAL_E_INVALID` if any required pointer is NULL. Every other operation is
+/// optional. Set an unsupported optional operation to NULL. Astral reports
+/// `ASTRAL_E_UNSUPPORTED` from the corresponding public API unless a comment below
+/// specifies a fallback.
+///
+/// Lifetime and failure contract:
+/// - `model_load` and each `*_create` function return a provider-owned context. On
+///   success they return a non-NULL pointer and write `ASTRAL_OK` to `out_err`. On
+///   failure they return NULL and write the failure code. Their matching unload or
+///   destroy function must accept every successfully returned context exactly once.
+/// - Model contexts remain live until `model_unload`. Session, embedder, and adapter
+///   contexts must not outlive the model context from which they were created.
+/// - Input spans and descriptor storage are borrowed for the duration of the call
+///   unless a specific operation says otherwise. Providers must copy data they retain.
+/// - On an `AstralErr` failure, output parameters contain no usable result unless the
+///   operation's comment explicitly defines a sizing or partial-result contract.
+/// - Provider functions must not throw exceptions across this C ABI.
+///
+/// Threading and reentrancy contract:
+/// - `model_*`, `tokenize`, and `detokenize` must support concurrent calls that share
+///   one `model_ctx`.
+/// - `session_*` operations are not required to support concurrent calls on the same
+///   `session_ctx`; Astral serializes provider work for a session. Providers must not
+///   call back into Astral while servicing an operation.
+/// - Operations run synchronously on the calling Astral thread and may block for
+///   provider work. They must not retain caller-owned output buffers after returning.
 typedef struct AstralBackendOps {
     // Model lifetime
     void* (ASTRAL_CALL * model_load)(const AstralModelDesc* desc, AstralErr* out_err);

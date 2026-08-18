@@ -1,10 +1,10 @@
-# Low-Level Primitives
+# Low-level primitives
 
 This document is an implementation map for Astral maintainers. These C++ types
 are private and may change without an ABI revision. The public contract remains
 [`include/astral_rt.h`](https://github.com/Cosmin-B/astral-runtime/blob/main/include/astral_rt.h).
 
-## Selection Rules
+## Selection rules
 
 Choose a primitive from the ownership topology before considering its peak
 throughput:
@@ -21,7 +21,7 @@ throughput:
 Prefer owner-local state over a more general queue. Fixed capacity and explicit
 backpressure are part of each type's contract, not implementation details.
 
-## Concurrency Primitives
+## Concurrency primitives
 
 The maintained implementations live under
 [`src/concurrency`](https://github.com/Cosmin-B/astral-runtime/tree/main/src/concurrency):
@@ -47,7 +47,7 @@ The maintained implementations live under
 The exact acquire/release relationships and production uses are documented in
 [the concurrency model](CONCURRENCY_MODEL.md).
 
-## Platform Primitives
+## Platform primitives
 
 [`src/platform`](https://github.com/Cosmin-B/astral-runtime/tree/main/src/platform) owns
 the OS and architecture boundary:
@@ -65,7 +65,7 @@ Platform functions return explicit failure values. Callers must not update
 allocation or mapping state until the corresponding platform operation has
 succeeded.
 
-## Memory Primitives
+## Memory primitives
 
 [`src/memory`](https://github.com/Cosmin-B/astral-runtime/tree/main/src/memory) contains
 storage mechanisms rather than global
@@ -79,7 +79,7 @@ allocation policy:
 The runtime size-class heap and session scratch partitioning are described in
 [the memory architecture](MEMORY_ARCHITECTURE.md).
 
-## Text And Diagnostics
+## Text and diagnostics
 
 [`src/utils`](https://github.com/Cosmin-B/astral-runtime/tree/main/src/utils) contains
 strict UTF-8 spans and validation,
@@ -90,7 +90,7 @@ Use `StringBuilder` only when the owner accepts a cold runtime-allocation spill.
 Neither builder is shared across threads. Public ABI text remains pointer-plus-
 length UTF-8; NUL termination is not part of span semantics.
 
-## CPU Dispatch
+## CPU dispatch
 
 Architecture-specific kernels must have a scalar implementation and a runtime
 feature guard. Compile-time availability only determines whether a specialized
@@ -107,7 +107,7 @@ On x86, AVX2 conversion paths that use F16C require all of:
 On ARM, current dispatch identifies the NEON tier. Any future optional ISA
 extension needs its own runtime capability evidence before use.
 
-## Review Checklist
+## Review checklist
 
 For a new or changed primitive:
 

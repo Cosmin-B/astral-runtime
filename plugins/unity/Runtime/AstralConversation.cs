@@ -51,6 +51,13 @@ namespace Astral.Runtime
     /// <summary>
     /// Continuous batching conversation bound to one model executor slot.
     /// </summary>
+    /// <remarks>
+    /// Keep the source <see cref="AstralModel"/> alive until this conversation is disposed.
+    /// Instance methods are not thread-safe. Call them from one coordinating thread, except
+    /// that a different thread may request cancellation while another call is waiting.
+    /// Streaming has one consumer. Read methods block for at most their timeout and preserve
+    /// native byte order.
+    /// </remarks>
     public sealed class AstralConversation : IDisposable
     {
         public const int DefaultStreamBufferBytes = 4096;
@@ -69,6 +76,10 @@ namespace Astral.Runtime
         internal AstralNative.AstralHandle Handle => m_handle;
         public bool IsValid => !m_disposed && m_handle.IsValid;
 
+        /// <summary>Creates a conversation and reserves one executor slot on <paramref name="model"/>.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="model"/> is null.</exception>
+        /// <exception cref="ArgumentException"><paramref name="model"/> is not valid.</exception>
+        /// <exception cref="AstralException">The native runtime cannot create the conversation.</exception>
         public static AstralConversation Create(AstralModel model, AstralConversationConfig? config = null)
         {
             if (model == null)
@@ -98,6 +109,8 @@ namespace Astral.Runtime
             };
         }
 
+        /// <summary>Appends UTF-8 prompt text and optionally marks the prompt complete.</summary>
+        /// <remarks>Call <see cref="Decode"/> only after a feed with <paramref name="finalize"/> set to true.</remarks>
         public void Feed(string promptChunk, bool finalize = true)
         {
             ThrowIfDisposed();
@@ -163,6 +176,8 @@ namespace Astral.Runtime
             ThrowIfError(err, "astral_conv_feed_audio");
         }
 
+        /// <summary>Queues generation for the finalized prompt.</summary>
+        /// <remarks>Output becomes available through the stream read methods. This call queues work and does not wait for completion.</remarks>
         public void Decode()
         {
             ThrowIfDisposed();
@@ -170,6 +185,8 @@ namespace Astral.Runtime
             ThrowIfError(err, "astral_conv_decode");
         }
 
+        /// <summary>Requests cancellation of the current generation.</summary>
+        /// <remarks>Cancellation is asynchronous. Call <see cref="WaitResult"/> to observe the terminal native result.</remarks>
         public void Cancel()
         {
             ThrowIfDisposed();
@@ -186,12 +203,19 @@ namespace Astral.Runtime
             return (AstralSessionState)state;
         }
 
+        /// <summary>Waits for generation to complete, cancel, fail, or reach the timeout.</summary>
+        /// <param name="timeoutMs">Maximum wait in milliseconds. 0 performs a nonblocking status check.</param>
+        /// <returns>A native Astral error code, including <c>ASTRAL_OK</c>, <c>ASTRAL_E_CANCELED</c>, or <c>ASTRAL_E_TIMEOUT</c>.</returns>
         public int WaitResult(uint timeoutMs)
         {
             ThrowIfDisposed();
             return AstralNative.astral_conv_wait(m_handle, timeoutMs);
         }
 
+        /// <summary>Waits for a successful or canceled terminal state.</summary>
+        /// <param name="timeoutMs">Maximum wait in milliseconds. 0 performs a nonblocking status check.</param>
+        /// <returns><c>true</c> after success or cancellation, or <c>false</c> on timeout.</returns>
+        /// <exception cref="AstralException">The native wait fails with another error.</exception>
         public bool Wait(uint timeoutMs)
         {
             int err = WaitResult(timeoutMs);
@@ -207,6 +231,8 @@ namespace Astral.Runtime
             return false;
         }
 
+        /// <summary>Clears conversation state for reuse with the same model.</summary>
+        /// <remarks>Do not reset while generation is running. Passing null reuses the current configuration.</remarks>
         public void Reset(AstralConversationConfig? config = null)
         {
             ThrowIfDisposed();
@@ -336,6 +362,11 @@ namespace Astral.Runtime
             ThrowIfError(err, "astral_conv_clear_toolset");
         }
 
+        /// <summary>Reads the next contiguous UTF-8 byte chunk into caller-owned storage.</summary>
+        /// <param name="outBuffer">Writable buffer that remains owned by the caller.</param>
+        /// <param name="timeoutMs">Maximum wait in milliseconds. 0 performs a nonblocking read.</param>
+        /// <returns>The byte count, 0 when no bytes arrive before the timeout, or a negative native error code.</returns>
+        /// <remarks>Use one stream consumer. Bytes are valid in <paramref name="outBuffer"/> after return.</remarks>
         public int ReadStream(NativeArray<byte> outBuffer, uint timeoutMs = DefaultReadTimeoutMs)
         {
             ThrowIfDisposed();
@@ -343,6 +374,9 @@ namespace Astral.Runtime
             return AstralNative.astral_conv_stream_read(m_handle, span, timeoutMs);
         }
 
+        /// <summary>Reads one stream chunk and decodes it as UTF-8.</summary>
+        /// <param name="timeoutMs">Maximum wait in milliseconds. 0 performs a nonblocking read.</param>
+        /// <returns>The decoded chunk, or an empty string when no bytes arrive before the timeout.</returns>
         public string ReadStreamAsString(uint timeoutMs = DefaultReadTimeoutMs)
         {
             int bytesRead = ReadStream(m_streamBuffer, timeoutMs);
@@ -356,6 +390,10 @@ namespace Astral.Runtime
             return Encoding.UTF8.GetString(managed);
         }
 
+        /// <summary>Reads one UTF-8 stream chunk and its token metadata.</summary>
+        /// <param name="timeoutMs">Maximum wait in milliseconds. 0 performs a nonblocking read.</param>
+        /// <returns>The byte count, 0 when no bytes arrive before the timeout, or a negative native error code.</returns>
+        /// <remarks>The caller owns both output arrays. Use one stream consumer so text and metadata remain ordered.</remarks>
         public unsafe int ReadStreamMeta(
             NativeArray<AstralNative.AstralTokenMeta> outEvents,
             uint timeoutMs = NonBlockingTimeoutMs)

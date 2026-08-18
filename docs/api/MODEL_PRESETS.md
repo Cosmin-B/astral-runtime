@@ -1,4 +1,4 @@
-# Model Presets
+# Model presets
 
 Astral model presets describe known GGUF fixtures and sample models without
 committing model files. The manifest lives at `scripts/model_presets.json` and
@@ -89,7 +89,7 @@ default and resumes through a `.part` file before replacing the final path after
 checksum validation. Download progress is written to stderr so setup tools can
 keep stdout reserved for JSON, paths, or repeatable commands.
 
-## Engine Use
+## Engine use
 
 Unreal and Unity wrappers should use preset names only for setup tools,
 samples, and editor workflows. Runtime model loading still receives a concrete

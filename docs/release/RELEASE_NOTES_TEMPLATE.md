@@ -1,4 +1,4 @@
-# Astral <version> Release Notes
+# Astral <version> release notes
 
 ## Compatibility
 
@@ -20,7 +20,7 @@
 - Signing key or fingerprint: <public verification key URL or fingerprint>
 - Signature verification command: `./scripts/validate_release_artifacts.sh --dist dist --expect-unity --expect-unreal --require-signature`
 
-## Validation Evidence
+## Validation evidence
 
 - Native debug gate: <command and result>
 - Native release gate: <command and result>
@@ -28,7 +28,7 @@
 - MTMD gate: <vision/audio fixtures, command, and result>
 - HF matrix: <manifest, logs, and summary>
 
-## Engine Evidence
+## Engine evidence
 
 - Unity Editor ABI tests: <editor version, command, and result>
 - Unreal Automation tests: <UE versions, command, and result>
@@ -40,6 +40,6 @@
 - Previous dependency pins: <llama.cpp, Tracy, engine package versions>
 - Rollback command or release-manager procedure: <link or command>
 
-## Known Gaps
+## Known gaps
 
 - <gap, owner, waiver, waiver expiration date, and follow-up issue reference>

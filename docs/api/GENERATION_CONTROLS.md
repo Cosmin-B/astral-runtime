@@ -1,9 +1,9 @@
-# Generation Controls (C ABI)
+# Generation controls (C ABI)
 
 This page describes Astral's provider-agnostic generation controls in
 `include/astral_rt.h`.
 
-## Capabilities / Limits
+## Capabilities / limits
 
 Before using optional features, query `astral_model_caps()` and `astral_model_limits()`:
 
@@ -32,7 +32,7 @@ Supported knobs (core-implemented, provider-agnostic):
 - Mirostat:
   - `mirostat` (0/1/2), `mirostat_tau`, `mirostat_eta`
 
-### Penalty Prompt (token span)
+### Penalty prompt (token span)
 
 For “penalize repeats of a fixed prefix/system prompt”, use:
 
@@ -40,7 +40,7 @@ For “penalize repeats of a fixed prefix/system prompt”, use:
 
 The token ids are counted once and included in the penalty counts for each generated token (without per-token work in wrappers).
 
-## Stop Sequences
+## Stop sequences
 
 Stop sequences are matched by **token ids** (tokenized once) and are **suppressed** from the UTF-8 stream.
 
@@ -48,7 +48,7 @@ Stop sequences are matched by **token ids** (tokenized once) and are **suppresse
 - `astral_session_stop_add_utf8(session, utf8)`
 - `astral_session_stop_set_utf8(session, seqs, count)` (bulk)
 
-## Logprobs / Per-token Metadata (side-channel)
+## Logprobs / per-token metadata (side-channel)
 
 The UTF-8 stream (`astral_stream_read`) remains bytes-first and unchanged. Optional per-token metadata is published via a parallel stream:
 
@@ -64,7 +64,7 @@ behind, new events are dropped rather than blocking decode. The current public
 API does not expose a dropped-event counter, so drain the metadata stream at the
 pace of generation when every event matters.
 
-## KV State Save/Load
+## KV state save/load
 
 If `ASTRAL_CAP_KV_STATE` is set:
 
@@ -116,7 +116,7 @@ Notes:
 - JSON schema is compiled provider-side into an internal grammar representation (typically GBNF).
 - Providers may reject unsupported schemas (e.g. external `$ref`s) with `ASTRAL_E_INVALID`.
 
-## Structured Output And Tools
+## Structured output and tools
 
 Toolsets are native setup-time objects:
 

@@ -1,4 +1,4 @@
-# Native Agents
+# Native agents
 
 Astral agents own system prompt bytes, memory context bytes, chat history,
 prompt assembly, and a conversation handle in native memory. Engine wrappers
@@ -106,7 +106,7 @@ prompt exceeds `max_prompt_bytes`. `ASTRAL_AGENT_OVERFLOW_TRUNCATE_OLDEST`
 removes oldest history messages during message add or prompt setup until the
 configured bounds are met.
 
-## Thread Safety
+## Thread safety
 
 Creation and destruction are control-path operations. A single control thread
 should mutate one agent's system prompt, summary, memory context, or history.

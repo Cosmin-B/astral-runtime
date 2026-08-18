@@ -1,4 +1,4 @@
-# Astral Runtime Unity package
+# Astral runtime Unity package
 
 Unity bindings and package layout for Astral Runtime. The package exposes native
 runtime initialization, model/session handles, streaming reads, embeddings, and
@@ -30,7 +30,7 @@ choose where those bytes become managed text.
 
 ## Installation
 
-### Unity Package Manager
+### Unity package manager
 
 1. Open Unity Package Manager (Window > Package Manager)
 2. Click '+' > Add package from git URL
@@ -543,7 +543,7 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for contribution guidelines.
 
 ## Support
 
-- GitHub Issues: https://github.com/Cosmin-B/astral-runtime/issues
+- [Report a bug in GitHub Issues](https://github.com/Cosmin-B/astral-runtime/issues)
 - Documentation: [Astral documentation](../../docs/README.md)
 
 ## Changelog

@@ -1,4 +1,4 @@
-# Streaming Chat
+# Streaming chat
 
 Attach `StreamingChatExample` and `AstralRuntimeInitializer` to a GameObject.
 The default `mock` model runs without an external asset. For a local model, set

@@ -1,4 +1,4 @@
-# Model Paths
+# Model paths
 
 `astral_model_path_resolve` converts an engine-relative model path into the
 UTF-8 filesystem path passed to `AstralModelDesc::model_path`.
@@ -17,7 +17,7 @@ Absolute POSIX, Windows drive, and separator-rooted paths pass through unchanged
 Relative paths join with one `/` if the selected root does not already end with
 `/` or `\`.
 
-## Runtime Flow
+## Runtime flow
 
 Use the resolver at setup time, before calling `astral_model_load()`.
 
@@ -39,7 +39,7 @@ Input spans are borrowed for the call. The caller owns `out_path` and can pass a
 null or undersized buffer to retrieve the required byte count in `out_len`. The
 count excludes a trailing NUL.
 
-## Engine Roots
+## Engine roots
 
 Native hosts usually pass `RAW` for absolute paths supplied on the command line
 and `CACHE` or `DOWNLOAD` for managed model directories.

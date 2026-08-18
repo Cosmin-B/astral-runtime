@@ -1,11 +1,11 @@
-# Memory Architecture
+# Memory architecture
 
 Astral separates core runtime allocation, per-session scratch storage, caller
 buffers, and provider-owned memory. This document describes the implemented
 core contract. Provider libraries may allocate independently unless their own
 documentation states otherwise.
 
-## Initialization Modes
+## Initialization modes
 
 `AstralInit.memory_mode` selects one of three modes:
 
@@ -18,7 +18,7 @@ documentation states otherwise.
 VM mode is zero and therefore the default for a zero-initialized descriptor.
 Every caller must set `AstralInit.size = sizeof(AstralInit)`.
 
-## VM Mode
+## VM mode
 
 The default reserve is 2 GiB when `reserve_bytes` is zero. Astral initially
 commits up to 2 MiB and grows the committed portion of the core heap on cold
@@ -36,7 +36,7 @@ loops. The maintained allocation and syscall gates enforce the supported
 steady-state paths on platforms that provide the required interception
 mechanism.
 
-## Arena Layout
+## Arena layout
 
 Arena modes partition the supplied region in this order:
 
@@ -55,7 +55,7 @@ fails if the requested partitions do not fit. Session creation fails with
 `ASTRAL_E_NOMEM` when no suitable fixed block remains, and destroying the
 session returns its block to the pool.
 
-## Core Heap
+## Core heap
 
 Astral-owned objects use a bounded size-class allocator implemented in
 `src/core/init.cpp`:
@@ -73,7 +73,7 @@ In VM mode, requests outside the core heap's handled range may use the
 configured system allocator. In arena modes, the arena is a hard ownership and
 capacity boundary for Astral-owned objects.
 
-## Short-Lived Storage
+## Short-lived storage
 
 The runtime also provides focused fixed-capacity primitives:
 
@@ -89,7 +89,7 @@ The runtime also provides focused fixed-capacity primitives:
 These types do not acquire backing memory themselves. Their owner supplies or
 constructs the storage before entering the hot path.
 
-## Caller And Provider Memory
+## Caller and provider memory
 
 Input and output spans are borrowed for the duration documented by each ABI
 operation. Streaming reads write into caller-owned buffers. Astral handles own
@@ -109,7 +109,7 @@ third-party provider is allocation-free or arena-backed.
 Provider memory and mapped model files are outside those counters. Use process
 RSS and provider-specific telemetry when measuring total application memory.
 
-## Failure Rules
+## Failure rules
 
 - Allocation functions return null or an Astral error; they do not silently
   continue after an OS commit failure.

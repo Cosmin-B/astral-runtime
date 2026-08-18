@@ -1,4 +1,4 @@
-# Multimodal Input
+# Multimodal input
 
 Attach `MultimodalInputExample` and `AstralRuntimeInitializer` to a GameObject.
 Assign a readable `RGBA32` texture for image calls and an accessible `AudioClip`

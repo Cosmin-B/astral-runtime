@@ -1,11 +1,11 @@
-# Prompt Cache API
+# Prompt cache API
 
 Astral prompt caches store tokenized prompt sections behind an explicit native
 handle. They are intended for setup and prompt assembly work: system prompts,
 tool instructions, memory context, chat history, current user text, and raw
 caller-defined sections.
 
-## Entry Points
+## Entry points
 
 - `astral_prompt_cache_create(desc, out_cache)` creates a bounded cache.
 - `astral_prompt_cache_destroy(cache)` releases all cached token storage.
@@ -36,7 +36,7 @@ caller-defined sections.
 - `astral_conv_set_system_prompt(conv, system_prompt)` does the same for a
   conversation slot.
 
-## Ownership And Lifetime
+## Ownership and lifetime
 
 Cache descriptors define `max_entries`, `max_tokens`, and optionally
 `max_bytes`. Token entries are copied into native runtime memory and stay valid
@@ -69,7 +69,7 @@ copy only once into the prompt buffer.
 System prompts must be set before normal prompt text is fed. A late call returns
 `ASTRAL_E_STATE`.
 
-## Performance Model
+## Performance model
 
 The cache uses a fixed-size open-addressed table with a power-of-two backing
 array and bounded token storage. Lookups allocate no memory. FIFO eviction
@@ -85,7 +85,7 @@ cache lifetime is already controlled. Feed that view directly with
 `astral_prompt_cache_get_tokens()` when crossing ABI or engine ownership
 boundaries.
 
-## Minimal Example
+## Minimal example
 
 ```c
 AstralPromptCacheDesc desc = {0};

@@ -1,4 +1,4 @@
-# LoRA Adapters
+# LoRA adapters
 
 Astral loads LoRA adapters as model-scoped native handles, then attaches them to
 sessions between requests. Adapter changes are setup operations; decoding must

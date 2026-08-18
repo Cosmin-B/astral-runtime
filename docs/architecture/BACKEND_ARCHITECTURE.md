@@ -1,4 +1,4 @@
-# Backend Architecture
+# Backend architecture
 
 This document describes the backend contract implemented by the current
 runtime. Backend availability is a build and release property; consult the
@@ -21,7 +21,7 @@ configuration descriptors carry size fields. The provider descriptor and its
 operation table currently do not, so separately built plugins must use the
 exact header revision shipped with the host runtime.
 
-## Built-In Providers
+## Built-in providers
 
 The registry is a fixed-capacity array initialized on first use. Current builds
 register these providers:
@@ -51,7 +51,7 @@ those names are actually supplied by maintained builds.
 Provider registration occurs during startup. Registry mutation is not a
 concurrent operation; selection is read-only after initialization.
 
-## Model Sources
+## Model sources
 
 The public model descriptor accepts path, memory, and callback-based I/O
 sources. Provider support is independent of the ABI surface:
@@ -66,7 +66,7 @@ sources. Provider support is independent of the ABI surface:
 Applications that require a syscall-free model load must validate the selected
 provider and profile. A successful compile does not establish that property.
 
-## Ownership And Lifetime
+## Ownership and lifetime
 
 - `astral_model_load` creates a core model object and a provider-owned model
   context.
@@ -97,7 +97,7 @@ must honor the operation-level threading contract in `astral_backend.h`:
 The [concurrency model](CONCURRENCY_MODEL.md) describes the core ownership and
 reclamation rules around these calls.
 
-## Dynamic Plugins
+## Dynamic plugins
 
 `astral_backend_load_plugin` loads a shared library and resolves
 `astral_backend_plugin_provider_v0`. The `v0` entry point selects the contract,

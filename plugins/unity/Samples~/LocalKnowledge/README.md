@@ -1,4 +1,4 @@
-# Local Knowledge
+# Local knowledge
 
 Attach `LocalKnowledgeExample` and `AstralRuntimeInitializer` to a GameObject.
 `BuildIndex` splits the serialized document into overlapping word ranges,

@@ -10,7 +10,9 @@
 
 class UAstralModel;
 
+/** Invoked by the core ticker. The byte view is valid only until the delegate returns. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FAstralStreamBytesNative, TConstArrayView<uint8>);
+/** Invoked by the core ticker. The string view is valid only until the delegate returns. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FAstralStreamTextNative, FStringView);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAstralStreamBytesReceived, const TArray<uint8>&, Bytes);
@@ -23,6 +25,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAstralTokenReceived, const FString&
  * native delegates, while Blueprint delegates trade convenience for per-tick
  * marshaling. The session keeps the model handle value used at creation so
  * Reset can rebuild native state with the same model.
+ * Call state-changing methods from one coordinating thread. The ticker invokes stream
+ * delegates on the thread that ticks FTSTicker, normally the game thread. Keep the model
+ * and runtime initialized until this UObject is destroyed.
  */
 UCLASS(BlueprintType)
 class ASTRALRT_API UAstralSession : public UObject
@@ -32,11 +37,15 @@ class ASTRALRT_API UAstralSession : public UObject
 public:
     UAstralSession();
 
-    /** Create a native session from a loaded model. Stream ticking follows Desc.bStreamEnabled. */
+    /**
+     * Create a native session from a loaded model. Stream ticking follows Desc.bStreamEnabled.
+     * Returns false for an invalid model or runtime, an existing session, or a native creation
+     * failure. The plugin writes the reason to LogAstralRT.
+     */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Create(UAstralModel* Model, const FAstralSessionDesc& Desc);
 
-    /** Feed text after converting FString to UTF-8. Use FeedPromptRaw from C++ for byte-owned input. */
+    /** Feed text after converting FString to UTF-8. Returns false and logs the native error on failure. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool FeedPrompt(const FString& Prompt, bool bFinalize = true);
 
@@ -58,15 +67,19 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool FeedAudio(const FAstralAudioDesc& Audio, bool bFinalize = true);
 
-    /** Advance generation once. Streaming output is read through StreamRead or the tick delegates. */
+    /** Queue generation once. Returns before completion; read output through StreamRead or the tick delegates. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Decode();
 
-    /** Request cancellation for the current decode. Wait returns the native cancellation code. */
+    /** Request cancellation for the current decode. The request is asynchronous; Wait observes completion. */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     bool Cancel();
 
-    /** Returns 0 for OK, -7 for canceled, -4 for timeout, or another native error code. */
+    /**
+     * Block for at most TimeoutMs milliseconds. A value of 0 performs a nonblocking check.
+     * Returns 0 for OK, -7 for canceled, -4 for timeout, or another native error code.
+     * Do not block the game thread when it must continue pumping stream delegates.
+     */
     UFUNCTION(BlueprintCallable, Category = "Astral")
     int32 Wait(int32 TimeoutMs = 0);
 
@@ -129,7 +142,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Astral|Grammar")
     bool ClearGrammar();
 
-    /** Read streamed UTF-8 bytes into OutBuffer; negative values are native error codes. */
+    /**
+     * Read streamed UTF-8 bytes into caller-owned OutBuffer. TimeoutMs is in milliseconds,
+     * and 0 performs a nonblocking read. Returns the byte count, 0 when no bytes are available,
+     * or a negative native error code. Use one stream consumer to preserve byte ordering.
+     */
     int32 StreamRead(TArray<uint8>& OutBuffer, uint32 TimeoutMs = 0);
 
     /** Read one byte chunk as FString. Empty may mean timeout, end of stream, or error. */
@@ -146,17 +163,17 @@ public:
 
     uint64 GetHandle() const { return IsValid() ? SessionHandle : 0; }
 
-    /** Raw bytes streaming (UTF-8). Recommended for low-overhead C++ consumers. */
+    /** Raw UTF-8 delivery on the core ticker thread. The view is borrowed for the callback only. */
     FAstralStreamBytesNative& OnStreamBytesNative() { return StreamBytesNative; }
 
-    /** Text streaming view (UTF-8 decoded). Avoids FString allocation for C++ consumers. */
+    /** Decoded delivery on the core ticker thread. The view is borrowed for the callback only. */
     FAstralStreamTextNative& OnStreamTextNative() { return StreamTextNative; }
 
-    /** Raw bytes streaming (UTF-8). Convenience for Blueprints; may copy/marshal data. */
+    /** Raw UTF-8 delivery on the core ticker thread. The array belongs to the delegate invocation. */
     UPROPERTY(BlueprintAssignable, Category = "Astral")
     FAstralStreamBytesReceived OnBytesReceived;
 
-    /** Text streaming (decoded). Convenience for Blueprints; allocates an FString per tick when bound. */
+    /** Decoded delivery on the core ticker thread; allocates an FString per tick when bound. */
     UPROPERTY(BlueprintAssignable, Category = "Astral")
     FAstralTokenReceived OnTokenReceived;
 

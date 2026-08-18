@@ -1,4 +1,4 @@
-# Engine CI Projects (Local / Optional)
+# Engine CI projects (local / optional)
 
 This folder contains **minimal** Unity/Unreal “CI project” scaffolds intended for running the plugin tests inside the engine test frameworks.
 
@@ -8,4 +8,3 @@ These are **not** executed by the default GitHub Actions workflow (Unity/UE inst
 - Unreal: `ci/unreal/AstralCiUnrealProject/`
 
 See each subfolder README for how to run tests locally.
-

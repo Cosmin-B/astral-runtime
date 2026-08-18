@@ -1,9 +1,9 @@
-# Hot-Path Profiling
+# Hot-path profiling
 
 Astral keeps engine profiling and native profiling separate so captures stay
 useful without adding noise to inner loops.
 
-## Native Runtime
+## Native runtime
 
 Native code uses Astral's Tracy wrapper macros from `src/utils/trace.hpp`.
 Profiling builds enable those zones through the existing `*-prof` presets.

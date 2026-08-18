@@ -1,4 +1,4 @@
-# ABI and Versioning Policy (Draft)
+# ABI and versioning policy (draft)
 
 Astral exposes a C ABI in `include/astral_rt.h`. The intent is to keep it stable within a major version once `v1.0.0` is tagged.
 

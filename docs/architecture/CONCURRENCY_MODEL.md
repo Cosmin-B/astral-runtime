@@ -1,4 +1,4 @@
-# Concurrency and Threading Model
+# Concurrency and threading model
 
 This document describes the current concurrency primitives and runtime
 threading contract.

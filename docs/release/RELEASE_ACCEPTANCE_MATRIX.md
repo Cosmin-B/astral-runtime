@@ -1,9 +1,9 @@
-# Release Acceptance Matrix
+# Release acceptance matrix
 
 This matrix is the minimum evidence required before calling an Astral build a
 release candidate.
 
-## Fast Native Gate
+## Fast native gate
 
 | Area | Command | Required for RC |
 |---|---|---|
@@ -20,7 +20,7 @@ release candidate.
 | Release notes | `./scripts/validate_release_notes.sh <release-notes.md>` | Yes |
 | Dependency pins | `./scripts/validate_dependency_pins.sh` | Yes |
 
-## Unreal Gate
+## Unreal gate
 
 | Area | Command or lane | Required for RC |
 |---|---|---|
@@ -59,7 +59,7 @@ UE sample package logs must show `AstralSample.uproject`, copied plugin mode,
 runtime log must show `AstralSampleAutoQuit`, pak/IoStore mounts, and successful
 packaged-content plus Saved-cache memory model loads.
 
-## Backend And Model Gate
+## Backend and model gate
 
 | Area | Required evidence | Required for RC |
 |---|---|---|
@@ -69,7 +69,7 @@ packaged-content plus Saved-cache memory model loads.
 | HF matrix | Pinned GGUF matrix logs and pass/fail summary. The pinned manifest includes narrow Qwen3 0.6B text and Qwen3 Embedding 0.6B includes for fast real-model coverage, alongside the larger release matrix repos. | Yes |
 | Windows large pages | `pwsh -File .\scripts\run_windows_large_page_validation.ps1 -ExpectFallback`, then `-ExpectLargePages` from a token with `SeLockMemoryPrivilege` | Yes |
 
-## Release Artifacts
+## Release artifacts
 
 | Artifact | Required evidence |
 |---|---|
@@ -83,7 +83,7 @@ Release notes must name the checksum signature file, identify the public
 verification key or signer fingerprint, and include the exact checksum signature
 verification command used for the release candidate.
 
-## Release Evidence Manifest
+## Release evidence manifest
 
 Use `docs/release/RELEASE_EVIDENCE_TEMPLATE.json` as the starting point for
 `dist/release-evidence.json`. Every required lane must be marked `pass` and must

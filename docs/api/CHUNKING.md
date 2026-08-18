@@ -1,4 +1,4 @@
-# Native Chunking
+# Native chunking
 
 Astral chunking turns UTF-8 text or token counts into stable ranges without
 allocating per chunk. It is intended for RAG ingest, editor tooling, and engine

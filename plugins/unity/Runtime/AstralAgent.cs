@@ -14,6 +14,11 @@ namespace Astral.Runtime
     /// <summary>
     /// Native agent wrapper. Dispose releases the native agent handle.
     /// </summary>
+    /// <remarks>
+    /// Keep the model and any configured cache, memory index, or toolset alive until the
+    /// agent is disposed. Instance methods are not thread-safe. Use one stream consumer;
+    /// a different thread may request cancellation while a read is waiting.
+    /// </remarks>
     public sealed class AstralAgent : IDisposable
     {
         private const uint DefaultStreamReadBytes = 4096;
@@ -255,6 +260,7 @@ namespace Astral.Runtime
             }
         }
 
+        /// <summary>Queues one chat turn and returns without waiting for generation.</summary>
         public void EnqueueChat(string userMessage, bool warmupOnly = false)
         {
             ThrowIfInvalid();
@@ -281,6 +287,7 @@ namespace Astral.Runtime
             }
         }
 
+        /// <summary>Requests asynchronous cancellation of the current chat turn.</summary>
         public void CancelChat()
         {
             ThrowIfInvalid();
@@ -288,6 +295,10 @@ namespace Astral.Runtime
             ThrowIfError(err, "astral_agent_chat_cancel");
         }
 
+        /// <summary>Reads the next contiguous UTF-8 chat bytes into caller-owned storage.</summary>
+        /// <param name="timeoutMs">Maximum wait in milliseconds. 0 performs a nonblocking read.</param>
+        /// <returns>The byte count, <c>ASTRAL_E_TIMEOUT</c>, or <c>ASTRAL_E_CANCELED</c>.</returns>
+        /// <remarks>Use one stream consumer to preserve byte ordering.</remarks>
         public int ReadChat(NativeArray<byte> buffer, uint timeoutMs = 0)
         {
             ThrowIfInvalid();
@@ -306,6 +317,10 @@ namespace Astral.Runtime
             return result;
         }
 
+        /// <summary>Reads one chat stream chunk and decodes it as UTF-8.</summary>
+        /// <param name="timeoutMs">Maximum wait in milliseconds. 0 performs a nonblocking read.</param>
+        /// <param name="maxBytes">Maximum bytes to read for this chunk.</param>
+        /// <returns>The decoded chunk, or an empty string on timeout or cancellation.</returns>
         public string ReadChatString(uint timeoutMs = 0, uint maxBytes = DefaultStreamReadBytes)
         {
             ThrowIfInvalid();

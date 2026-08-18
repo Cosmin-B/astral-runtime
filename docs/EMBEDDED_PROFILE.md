@@ -1,4 +1,4 @@
-# Embedded / Robotics Profile
+# Embedded / robotics profile
 
 This document describes the build-time feature matrix for Astral when targeting embedded/robotics-style deployments (tight memory, limited syscalls, deterministic latency).
 

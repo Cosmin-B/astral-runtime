@@ -1,4 +1,4 @@
-# Structured Output And Tools
+# Structured output and tools
 
 Astral exposes tool definitions as native runtime objects. Toolsets are copied
 once at setup, can be attached to sessions or conversations, and can parse a
@@ -47,7 +47,7 @@ remain valid until the next chat enqueue or until the agent is destroyed. The
 agent captures bytes as `astral_agent_chat_stream_read()` drains them, so call
 it after the stream has reached end-of-stream.
 
-## Error Behavior
+## Error behavior
 
 Malformed descriptors return `ASTRAL_E_INVALID`. Missing tool calls or unknown
 tool names return `ASTRAL_E_NOT_FOUND`. If a known tool is found but
@@ -70,7 +70,7 @@ Agent chat capture is enabled only when the agent has a toolset. It reuses a
 bounded native buffer sized from the request token limit and appends drained
 stream bytes outside the decode loop.
 
-## Dispatch Pattern
+## Dispatch pattern
 
 Use stable numeric `tool_id` values as the application dispatch key. The native
 parser already verifies the tool name against the bound toolset, so callers can
@@ -97,7 +97,7 @@ if (err == ASTRAL_OK && call.parse_status == ASTRAL_OK) {
 }
 ```
 
-## Unreal And Unity
+## Unreal and Unity
 
 Unreal exposes Blueprint-safe helpers on `UAstralBlueprintLibrary`:
 

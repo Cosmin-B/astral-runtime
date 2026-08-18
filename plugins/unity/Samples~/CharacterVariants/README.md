@@ -1,4 +1,4 @@
-# Character Variants
+# Character variants
 
 Attach `CharacterVariantsExample` and `AstralRuntimeInitializer` to a GameObject.
 The component exposes two focused paths:

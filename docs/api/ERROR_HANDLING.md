@@ -1,4 +1,4 @@
-# Error Handling
+# Error handling
 
 Astral's public C ABI reports failures through `AstralErr`. Functions that return
 payloads write to output parameters only when they return `ASTRAL_OK`, unless the
@@ -6,7 +6,7 @@ function documentation says otherwise. Engine integrations should log both the
 numeric code and `astral_last_error()` for failures that come from the runtime or
 backend.
 
-## Error Codes
+## Error codes
 
 | Code | Meaning | Caller response |
 |---|---|---|
@@ -43,7 +43,7 @@ if (Err != ASTRAL_OK)
 For Unity or standalone C# bindings, convert the last-error pointer immediately
 after the failing call. Later Astral calls on the same thread may overwrite it.
 
-## Stream Reads
+## Stream reads
 
 `astral_stream_read()` and `astral_conv_stream_read()` return byte counts instead
 of `AstralErr`:
@@ -56,7 +56,7 @@ of `AstralErr`:
 deadline. A normal engine tick should treat it as "try again later", not as a
 failure. Other negative values should be logged and surfaced.
 
-## Ownership Boundaries
+## Ownership boundaries
 
 `astral_handle_valid()` only reports whether a handle currently resolves in the
 runtime table. It does not make stale handle use safe and it does not detect every

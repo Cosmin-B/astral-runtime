@@ -1,4 +1,4 @@
-# Continuous Batching
+# Continuous batching
 
 Astral provides **continuous batching across slots** through **conversations**
 (`astral_conv_*`). A conversation is an independent prompt and generation

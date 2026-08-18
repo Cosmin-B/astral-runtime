@@ -1,8 +1,8 @@
-# Dependency Manifest
+# Dependency manifest
 
 Astral release artifacts must be traceable to exact source and dependency pins.
 
-## Current Pins
+## Current pins
 
 Committed pins live in `docs/release/dependency-pins.tsv` and are checked by:
 
@@ -19,7 +19,7 @@ Committed pins live in `docs/release/dependency-pins.tsv` and are checked by:
 | Unreal package | `plugins/unreal/AstralRT/AstralRT.uplugin` | UE 5.4+ compatibility floor; UE 5.7 is the production target |
 | Android NDK | `.github/workflows/ci.yml` | `r27c` (`27.2.12479018`) for Unity and Unreal Android artifacts |
 
-## Generated Manifest
+## Generated manifest
 
 Generate the release dependency manifest and artifact checksums after packaging:
 

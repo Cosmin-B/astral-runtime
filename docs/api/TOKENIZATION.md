@@ -4,7 +4,7 @@ Astral exposes model-scoped tokenization through the C ABI. Native callers pass
 UTF-8 byte spans and caller-owned token or byte buffers. Unreal and Unity
 wrappers only convert engine strings and arrays around the same native calls.
 
-## Entry Points
+## Entry points
 
 - `astral_tokenize_count(model, text, add_special, parse_special, out_count)`
   returns the token count for a UTF-8 span without writing token ids.
@@ -29,14 +29,14 @@ Unreal exposes compatibility bool helpers on `UAstralModel` plus
 `CountTokensResult()`, `TokenizeResult()`, and `DetokenizeResult()` for
 Blueprint graphs that need the native error code and output count.
 
-## Ownership And Lifetime
+## Ownership and lifetime
 
 The model handle owns tokenizer metadata. Text spans, token arrays, offsets, and
 output byte buffers are caller-owned and only need to remain valid for the call.
 The functions are safe to call from multiple threads on the same model when the
 backend tokenizer is thread-safe, which is part of the Astral backend contract.
 
-## Performance Model
+## Performance model
 
 Sizing calls let callers allocate once. Batch tokenization has two paths:
 passing `NULL` tokens computes offsets and total count only, while passing a
@@ -46,7 +46,7 @@ does not allocate per string or per token. Public ABI functions validate
 handles and buffer pointers; provider hot paths receive caller-owned output
 spans.
 
-## Minimal Example
+## Minimal example
 
 ```c
 uint32_t count = 0;
