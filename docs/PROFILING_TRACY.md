@@ -1,4 +1,4 @@
-# Tracy Profiling
+# Tracy profiling
 
 Astral can be built with Tracy to capture coarse profiling zones around native runtime work with low overhead.
 

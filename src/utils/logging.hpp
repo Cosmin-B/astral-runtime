@@ -1,5 +1,5 @@
 /**
- * logging.hpp - Non-blocking logging system
+ * logging.hpp - Allocation-free logging callback dispatch
  *
  * Thread-safe logging with callback dispatch.
  * Uses thread-local buffers to avoid allocations.
@@ -8,8 +8,8 @@
  * - Thread-local buffer per thread (4KB)
  * - Format message into TLS buffer
  * - Dispatch to callback (if set)
- * - Drop logs if the callback exceeds the 10ms logging budget
- * - Never block on logging
+ * - Invoke the callback synchronously on the emitting thread
+ * - Warn to stderr when the callback exceeds the 10ms logging budget
  *
  * Thread Safety: Safe to call from multiple threads.
  */
@@ -40,8 +40,8 @@ enum class Level : uint8_t {
  * @param msg UTF-8 log message (not NUL-terminated)
  * @param len Message length in bytes
  *
- *  Callback MUST be non-blocking.
- * If callback takes >10ms, logs will be dropped.
+ * The emitting thread waits for the callback. Calls that take more than 10ms emit a
+ * warning to stderr once per thread.
  */
 using LogCallback = void (*)(void* user, int level, const uint8_t* msg, uint32_t len);
 
@@ -74,7 +74,7 @@ void set_min_level(Level level);
  * @param ... Format arguments
  *
  * Thread-safety: Safe to call from multiple threads.
- * Performance: ~100-500ns per call (format + callback dispatch).
+ * The callback's execution time is part of this call's latency.
  *
  * Behavior:
  * - Formats into thread-local buffer (4KB)

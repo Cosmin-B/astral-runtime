@@ -12,6 +12,11 @@ namespace Astral.Runtime
     /// <summary>
     /// Embeddings handle wrapper with explicit native ownership.
     /// </summary>
+    /// <remarks>
+    /// Keep the source model alive until this embedder is disposed. Enqueue methods are
+    /// thread-safe, but do not dispose the embedder while an enqueue or collection is in
+    /// progress. The caller owns every input and output array.
+    /// </remarks>
     public sealed class AstralEmbedder : IDisposable
     {
         private AstralNative.AstralHandle m_handle;
@@ -344,6 +349,10 @@ namespace Astral.Runtime
             }
         }
 
+        /// <summary>Blocks until a ticket completes and copies its embedding into caller-owned storage.</summary>
+        /// <param name="ticket">A ticket returned by an enqueue method.</param>
+        /// <param name="outVector">A writable array with at least <see cref="Dimension"/> float elements.</param>
+        /// <remarks>Do not call this method on Unity's main thread when blocking would stall a frame.</remarks>
         public void Collect(ulong ticket, NativeArray<float> outVector)
         {
             if (!IsValid)
@@ -377,6 +386,8 @@ namespace Astral.Runtime
             }
         }
 
+        /// <summary>Requests cancellation of an outstanding embedding ticket.</summary>
+        /// <remarks>Cancellation can race with completion; collect or request-status APIs determine the terminal result.</remarks>
         public void Cancel(ulong ticket)
         {
             if (!IsValid)

@@ -156,6 +156,7 @@ markdown_extensions:
       custom_checkbox: true
 
 validation:
+  # `strict: true` promotes each warning below to a build failure.
   nav:
     omitted_files: warn
     not_found: warn

@@ -1,4 +1,4 @@
-# Multiple Conversations
+# Multiple conversations
 
 Attach `MultipleConversationsExample` and `AstralRuntimeInitializer` to a
 GameObject. The default mock backend starts two independent NPC conversations

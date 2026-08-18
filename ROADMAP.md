@@ -1,4 +1,4 @@
-# Astral Roadmap
+# Astral roadmap
 
 Astral's next platform work is WebAssembly and WebGPU. The goal is to preserve
 the same C ABI and explicit ownership model while adding a browser deployment

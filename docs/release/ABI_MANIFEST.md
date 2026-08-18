@@ -1,4 +1,4 @@
-# ABI Manifest
+# ABI manifest
 
 Astral's public ABI is the C surface exported through:
 
@@ -8,7 +8,7 @@ Astral's public ABI is the C surface exported through:
 
 Current runtime version: `0.1.0`.
 
-## Compatibility Rules
+## Compatibility rules
 
 - Public structs with a `size` field must keep that field first.
 - Existing enum numeric values must not be reused for different meanings.
@@ -18,7 +18,7 @@ Current runtime version: `0.1.0`.
 - C++ types, exceptions, STL containers, and ownership transfer by implication
   must not cross the public C ABI.
 
-## Required Local Checks
+## Required local checks
 
 Run these before packaging a release candidate:
 
@@ -50,7 +50,7 @@ For engine binding layout checks:
 - Unity ABI tests must pass in the Unity package lane.
 - Unreal Automation tests must pass in the UE 5.7 lane.
 
-## Current Status
+## Current status
 
 `gate_shared_exports` now enforces the public runtime symbol surface on Linux,
 and `scripts/generate_abi_layout_report.sh` produces release-candidate ABI

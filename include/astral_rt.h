@@ -94,6 +94,20 @@ typedef struct AstralMutSpanU8 {
 #endif
 } AstralMutSpanU8;
 
+/**
+ * Shared span and output-buffer contract.
+ *
+ * Input spans are borrowed for the duration of the call. Their `data` pointer may
+ * be NULL only when `len` is 0, unless a function documents a different rule.
+ * Mutable spans remain caller-owned and describe writable capacity in bytes.
+ * Astral does not retain either pointer after the call returns.
+ *
+ * Required output-count pointers must not be NULL. On `ASTRAL_OK`, the count is
+ * the number of elements or bytes written, or the required capacity for a count
+ * function. On failure, callers must ignore output storage and output counts unless
+ * the function explicitly documents a sizing or partial-result guarantee.
+ */
+
 typedef struct AstralTokenizeRequest {
     AstralSpanU8 text;
     uint8_t add_special;
@@ -356,8 +370,7 @@ typedef struct AstralMemorySnapshotInfo {
   uint64_t total_bytes;
 } AstralMemorySnapshotInfo;
 
-// Compile-time validation: Ensure struct sizes are correct
-// Use static_assert for C++ and _Static_assert for C
+// Keep the public span layouts identical in C and C++ on each pointer width.
 #ifdef __cplusplus
 #define ASTRAL_STATIC_ASSERT(expr, msg) static_assert(expr, msg)
 #else
@@ -572,8 +585,14 @@ enum {
 };
 
 /**
- * Logging callback.
- * WARNING: Must be non-blocking. Astral drops logs if callback is slow (>10ms).
+ * Receives one log message during the Astral call that emits it.
+ *
+ * Astral can invoke this callback concurrently from caller and worker threads. The
+ * callback must be thread-safe, must not call back into Astral, and should return
+ * promptly because the emitting thread waits for it. Astral measures each invocation
+ * and writes a warning to stderr once per thread when a call takes more than 10
+ * milliseconds. `msg.data` remains valid only for the duration of the callback and
+ * must not be retained.
  * @param user User data (passed from AstralInit.log_user)
  * @param level Log level (ASTRAL_LOG_*)
  * @param msg UTF-8 log message
@@ -691,8 +710,12 @@ ASTRAL_API void ASTRAL_CALL astral_shutdown(void);
  * Returns 1 if valid, 0 if invalid/null.
  * Thread-safety: Safe to call from any thread.
  *
- * NOTE: A handle being "valid" only means it's non-null and the internal magic matches.
- * It does not prove lifetime ownership; passing a freed handle is invalid API usage and can alias reused memory.
+ * A handle is valid when its type, slot index, and generation match a live entry in
+ * Astral's handle table. Releasing an object clears its entry, and reusing the slot
+ * increments the generation, so a stale handle does not resolve to the new object.
+ * This check does not retain the object. Another thread can release the handle after
+ * `astral_handle_valid` returns, so callers must still follow each object's lifetime and
+ * synchronization contract.
  *
  * @param handle Handle to validate
  * @return 1 if valid, 0 if invalid
@@ -996,7 +1019,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_model_media_info(AstralHandle model, Ast
 ASTRAL_API AstralErr ASTRAL_CALL astral_model_embedding_dim(AstralHandle model, uint32_t* out_dim);
 
 /**
- * Tokenize UTF-8 text to token ids.
+ * Tokenize UTF-8 text into a caller-owned token buffer.
+ *
+ * `out_tokens` must point to `max_tokens` entries, and `max_tokens` must be
+ * greater than 0. Call `astral_tokenize_count()` first to determine the required
+ * capacity. `out_count` is required. On success it receives the number of tokens
+ * written. On failure, its value is provider-dependent and callers must ignore it.
+ * `text.data` may be NULL only when `text.len` is 0.
  *
  * Thread-safety: Safe to call from multiple threads on the same model.
  */
@@ -1011,7 +1040,10 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize(
 );
 
 /**
- * Count tokens for UTF-8 text without writing token ids.
+ * Count tokens for UTF-8 text without writing token IDs.
+ *
+ * `out_count` is required and receives the required token capacity on success.
+ * `text.data` may be NULL only when `text.len` is 0. Ignore `out_count` on failure.
  *
  * Thread-safety: Safe to call from multiple threads on the same model.
  */
@@ -1026,10 +1058,15 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_count(
 /**
  * Tokenize many UTF-8 spans into one caller-owned token buffer.
  *
- * `out_offsets` must have `request_count + 1` entries. On success,
+ * `requests`, `out_offsets`, and `out_count` are required. `out_offsets` must
+ * have `request_count + 1` entries. On success,
  * `out_offsets[i]` is the first token for request `i`, and the final entry is
  * the total token count. If `out_tokens == NULL` and `max_tokens == 0`, this
- * function only writes offsets and the required total token count.
+ * function only writes offsets and the required total token count. Otherwise,
+ * `out_tokens` must point to `max_tokens` entries. If that buffer is too small,
+ * the function returns `ASTRAL_E_NOMEM`, writes the required total to `out_count`,
+ * and writes cumulative required offsets. Token contents before the failure are
+ * partial output and must not be used. Ignore all outputs after any other error.
  *
  * Thread-safety: Safe to call from multiple threads on the same model.
  */
@@ -1044,7 +1081,13 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_tokenize_batch(
 );
 
 /**
- * Detokenize token ids to UTF-8.
+ * Detokenize token IDs into a caller-owned UTF-8 buffer.
+ *
+ * `tokens` may be NULL only when `count` is 0. `out_text.data` and `out_len` are
+ * required. Call `astral_detokenize_count()` first to determine `out_text.len`.
+ * On success, `out_len` receives the number of bytes written. The output is not
+ * NUL-terminated unless the decoded text itself contains a NUL byte. Ignore
+ * `out_len` and the output buffer on failure.
  *
  * Thread-safety: Safe to call from multiple threads on the same model.
  */
@@ -1057,7 +1100,10 @@ ASTRAL_API AstralErr ASTRAL_CALL astral_detokenize(
 );
 
 /**
- * Count UTF-8 bytes required to detokenize token ids.
+ * Count UTF-8 bytes required to detokenize token IDs.
+ *
+ * `tokens` may be NULL only when `count` is 0. `out_len` is required and receives
+ * the required byte capacity on success. Ignore `out_len` on failure.
  *
  * Thread-safety: Safe to call from multiple threads on the same model.
  */

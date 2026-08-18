@@ -1,4 +1,4 @@
-# Remote Runtime
+# Remote runtime
 
 Astral can load a `remote` backend that forwards completion, tokenization, and
 embedding work to an HTTP service while preserving the same native session and
@@ -9,7 +9,7 @@ runtime experiments where the engine should not own a separate client stack.
 Latency and retry behavior are bounded by the remote service and network path,
 so the local CPU/CUDA providers remain the low-latency path.
 
-## Model Setup
+## Model setup
 
 Select the backend with `AstralModelDesc::backend_name = "remote"`.
 `model_path` contains the base URL, for example `http://127.0.0.1:8080`.

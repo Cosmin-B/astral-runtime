@@ -1,4 +1,4 @@
-# CUDA Parity
+# CUDA parity
 
 This document defines the validation checklist for Astral's CUDA build.
 
@@ -8,7 +8,7 @@ tests cover the API surface on CPU hosts. Release support also requires the real
 GPU matrix below. An unchecked item records missing release evidence. It does
 not represent a separate public API.
 
-## What “Parity” Means
+## What “Parity” means
 
 Parity is not just “it runs”. For a given model + prompt + sampler config:
 
@@ -16,7 +16,7 @@ Parity is not just “it runs”. For a given model + prompt + sampler config:
 - Feature coverage: every API surface works (streaming, logprobs, grammar, KV save/load, embeddings, slots).
 - Performance: stable throughput and latency without regressions vs CPU-only for CPU workloads.
 
-## Correctness Checklist
+## Correctness checklist
 
 **Kernel modes / backend variants**
 - [ ] Default CUDA kernels (mmq auto / cuBLAS auto) pass the CUDA parity suite.
@@ -73,13 +73,13 @@ ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity_m
 **Slots / executor**
 - [ ] Slot selection works; multi-slot scheduling does not deadlock and is callback-safe.
 
-## Performance Checklist
+## Performance checklist
 
 - [ ] TTFT and tok/s benchmarks for representative model tiers (small, medium).
 - [ ] No pathological GPU/CPU synchronization in the decode loop.
 - [ ] Optional profiling build (`*-prof` presets) shows sensible Tracy zones for CUDA hot paths.
 
-## Testing Strategy
+## Testing strategy
 
 1) **Always-on smoke tests** (CPU machines, CI-friendly):
 - CUDA backend presence/absence surface behavior.

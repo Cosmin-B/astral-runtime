@@ -1,14 +1,13 @@
-# Unreal 5.7 Quickstart
+# Unreal 5.7 quickstart
 
 This path is for the AstralRT Unreal plugin on Linux with Unreal Engine 5.7 as
 the production target. It builds the native Astral runtime, stages the
 ThirdParty files into the plugin, and runs the same Automation entrypoint used
 by CI.
 
-Real UE 5.7 validation requires access to Epic's UE image or an installed
-editor. The local native build proves the plugin package is current; use the
-container or editor lane below when you need UnrealEditor evidence. UE 5.4,
-5.5, and 5.6 compatibility still require their own editor runs.
+Running Unreal Automation requires access to Epic's UE image or an installed
+editor. A local native build checks the plugin package without launching
+UnrealEditor. Test UE 5.4, 5.5, and 5.6 with their matching editors.
 
 ## Prerequisites
 
@@ -16,13 +15,13 @@ container or editor lane below when you need UnrealEditor evidence. UE 5.4,
 - CMake and a C++17 compiler for the native package build.
 - Unreal Engine 5.7.4 for the production lane.
 - Access to Epic's GitHub Container Registry packages for the container lanes.
-- Unreal 5.4, 5.5, 5.6, and 5.7 editor paths for compatibility evidence.
+- Unreal 5.4, 5.5, 5.6, and 5.7 editor paths for compatibility testing.
 
 UE 5.7 Linux validation should report clang `20.1.8` from Epic's Linux toolchain
 metadata. The container wrapper prints `Build.version`, `Linux_SDK.json`, and
 `clang --version` before running Automation.
 
-## Build The ThirdParty Package
+## Build the ThirdParty package
 
 From the Astral repo root:
 
@@ -40,7 +39,7 @@ The build hashes the staged header and native library after copy. A successful
 build prints `Unreal ThirdParty provenance OK`, which means the staged plugin
 files match the current source header and built `astral_rt` target.
 
-## Install In A Project
+## Install in a project
 
 For a project-level install, copy the plugin directory:
 
@@ -53,7 +52,7 @@ The repo CI path can stage a sidecar project for you. Leave
 `ASTRAL_UNREAL_PROJECT` unset to use `build/unreal-ci-project`, or point it at
 an existing project that already has `Plugins/AstralRT`.
 
-## Generate The Sample Project
+## Generate the sample project
 
 To create a sidecar UE 5.7 sample project without committing generated files:
 
@@ -65,12 +64,10 @@ The script creates `AstralSample.uproject`, links the local `AstralRT` plugin,
 stages a small mock model payload as UFS content, and writes C++ code that
 demonstrates model load, streaming, cancellation, embeddings, packaged content
 bytes, Saved cache bytes, native memory search, and expected failure logging through
-`LogAstralSample`. Use `--plugin-mode copy` when the project must be packaged on
-a machine without access to the Astral checkout. Real sign-off still requires
-packaging that generated project in UE 5.7 and keeping the logs as release
-evidence.
+`LogAstralSample`. If the packaging machine cannot access the Astral checkout, use
+`--plugin-mode copy`.
 
-For release-candidate sample packaging, use the maintained runner:
+To package the maintained sample, use the runner:
 
 ```bash
 UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
@@ -79,7 +76,7 @@ UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
 
 The runner rebuilds the native ThirdParty package, creates the sidecar sample
 with a copied `AstralRT` plugin, runs `RunUAT BuildCookRun`, and prints
-`[unreal_sample]` evidence lines for the project, archive, platform, package
+`[unreal_sample]` status lines for the project, archive, platform, package
 mode, and result.
 
 For a packaged runtime smoke, launch the archived binary with
@@ -102,7 +99,7 @@ UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
   --sample-memory-backend mock --sample-media-backend mock
 ```
 
-## Run Local Automation
+## Run local Automation
 
 Use an installed UnrealEditor or UnrealEditor-Cmd:
 
@@ -115,7 +112,7 @@ The runner rebuilds the native package unless told otherwise, stages the plugin,
 runs `AstralRT` Automation, and validates that the log/report are non-empty
 and free of clear Automation failure markers.
 
-## Run UE 5.7 Containers
+## Run UE 5.7 containers
 
 Slim image:
 
@@ -131,12 +128,10 @@ docker pull ghcr.io/epicgames/unreal-engine:dev-5.7.4@sha256:582895c09ada64db1f3
 ./scripts/run_unreal_container_ci.sh --variant full --install-cmake
 ```
 
-Use `--skip-native-build` only when the ThirdParty package was already rebuilt
-with the UE Linux SDK and the provenance check has passed in the same workspace.
-For release-candidate UE 5.7 evidence, run the full container first with
-`--install-cmake` so the native package is compiled by Epic's clang/libc++
-toolchain, then run the slim container with `--skip-native-build` to reuse the
-staged package.
+If the ThirdParty package was already rebuilt with the UE Linux SDK in the same
+workspace, use `--skip-native-build`. To compile the native package with Epic's
+clang/libc++ toolchain, run the full container with `--install-cmake`, then run
+the slim container with `--skip-native-build` to reuse the staged package.
 
 For compatibility probes, pass the UE version so the runner selects the matching
 Epic image tag and bundled Linux SDK preflight:
@@ -151,10 +146,10 @@ Use `--pull-timeout` or `ASTRAL_UNREAL_PULL_TIMEOUT` when a first-time Epic
 image pull needs more than the default bounded wait. If Docker already has the
 image, use `--skip-pull` so the run starts from the cached image digest.
 
-The compatibility container commands are smoke evidence. Release sign-off still
-requires the editor matrix below with all supported UE versions.
+The compatibility container commands are smoke tests. Run the editor matrix
+below to test every supported UE version.
 
-### Run Real-Model Smoke Probes
+### Run real-model smoke probes
 
 The real-model Automation tests stay opt-in so ordinary fast lanes do not depend
 on local GGUF files. Download the small fixtures first:
@@ -178,11 +173,11 @@ ASTRAL_UNREAL_REQUIRE_REAL_EMBEDDING=1 \
 ./scripts/run_unreal_container_ci.sh --ue-version 5.7 --variant slim --skip-pull --skip-native-build --filter AstralRT.Real
 ```
 
-The Automation JSON report records `[unreal_generation_smoke]` and
+The Automation JSON report contains `[unreal_generation_smoke]` and
 `[unreal_session_lifecycle]` entries for the text model, plus
 `[unreal_embedding_probe]` entries for the embedding model. Keep the report and
-command line with release evidence; generated model files and container logs
-stay out of git.
+command line status entries. Generated model files and container logs stay out
+of git.
 
 To cycle the packaged sample through the downloaded small Hugging Face text
 fixtures, use the matrix wrapper. It auto-selects known small GGUFs already
@@ -220,7 +215,7 @@ validate their `runtime.log` files automatically; use
 `--skip-runtime-validation` only for local bring-up while debugging a broken
 sample.
 
-To recheck a matrix result manually before copying it into release evidence, run:
+To recheck a matrix result manually, run:
 
 ```bash
 ./scripts/validate_unreal_sample_runtime_log.py \
@@ -230,7 +225,7 @@ To recheck a matrix result manually before copying it into release evidence, run
   --expect-embedding-model Qwen3-Embedding-0.6B-Q8_0.gguf
 ```
 
-## Run The Compatibility Matrix
+## Run the compatibility matrix
 
 ```bash
 UNREAL_54_EDITOR=/opt/Unreal-5.4/Engine/Binaries/Linux/UnrealEditor-Cmd \
@@ -240,16 +235,5 @@ UNREAL_57_EDITOR=/opt/Unreal-5.7/Engine/Binaries/Linux/UnrealEditor-Cmd \
   ./scripts/run_unreal_compatibility_matrix.sh
 ```
 
-The matrix is required evidence for UE 5.4+ support. Do not claim that older
-engine range from the native package build alone.
-
-## Evidence To Keep
-
-For release candidates, keep the logs from:
-
-- `./scripts/run_unreal_container_ci.sh --variant full --install-cmake`
-- `./scripts/run_unreal_container_ci.sh --variant slim --skip-native-build`
-- `./scripts/run_unreal_compatibility_matrix.sh`
-
-Record those files in `release-evidence.json` using
-`docs/release/RELEASE_EVIDENCE_TEMPLATE.json`.
+The matrix tests UE 5.4 and later. A native package build alone does not test
+compatibility with each editor version.

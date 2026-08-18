@@ -1,4 +1,4 @@
-# Model Sources (GGUF) for Tests/Bench
+# Model sources (GGUF) for tests/bench
 
 Astral tests and benchmarks use GGUF models downloaded from Hugging Face. The helper script is `astral/tests/model_downloader.sh`.
 
@@ -6,7 +6,7 @@ Astral tests and benchmarks use GGUF models downloaded from Hugging Face. The he
 - Preset: `gpt2-q2k`
 - Notes: small generative GGUF (good for CI and quick local runs).
 
-## Embeddings Models
+## Embeddings models
 These are encoder/embedding GGUFs for local RAG and embedding smoke runs:
 - Preset: `embed-minilm-q2k`
   - Repo: `second-state/All-MiniLM-L6-v2-Embedding-GGUF`

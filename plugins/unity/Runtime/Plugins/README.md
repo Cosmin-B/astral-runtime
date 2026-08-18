@@ -1,8 +1,8 @@
-# Astral Native Plugins
+# Astral native plugins
 
 This directory contains platform-specific native libraries for Astral runtime.
 
-## Directory Structure
+## Directory structure
 
 ```
 Plugins/
@@ -19,7 +19,7 @@ Plugins/
     └── libastral_rt.a       # iOS static library (ARM64)
 ```
 
-## Build Instructions
+## Build instructions
 
 Note: `cmake --preset unity-plugin` now also packages the built native library into this `Runtime/Plugins/<arch>/` folder automatically as part of the build. The manual `cp` commands below are still valid if you prefer explicit copying.
 
@@ -59,7 +59,7 @@ cmake --preset unity-plugin-ios-arm64
 cmake --build --preset unity-plugin-ios-arm64 -j
 ```
 
-## Unity Import Settings
+## Unity import settings
 
 Unity will automatically detect platform-specific plugins based on directory structure.
 Ensure the following import settings in Unity Editor:
@@ -99,7 +99,7 @@ Ensure the following import settings in Unity Editor:
 - Check function name, calling convention, and parameter types
 - Use `nm -D libastral_rt.so` (Linux) or `dumpbin /EXPORTS astral_rt.dll` (Windows) to verify exports
 
-### IL2CPP Crashes
+### IL2CPP crashes
 - Ensure all P/Invoke declarations use `CallingConvention.Cdecl`
 - Verify struct layouts with `StructLayout(LayoutKind.Sequential)`
 - Check for missing `allowUnsafeCode: true` in asmdef

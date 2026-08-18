@@ -1,4 +1,4 @@
-# Coding Standards
+# Coding standards
 
 These rules apply to Astral core, platform code, providers, tests, and engine
 wrappers. Public ABI declarations in `include/` take precedence over examples
@@ -14,7 +14,7 @@ or prose.
 - Keep private investigation notes, benchmark captures, machine paths, and
   credentials outside the product repository.
 
-## Language And Formatting
+## Language and formatting
 
 - Core C++ uses C++17 unless a platform preset explicitly requires otherwise.
 - Public headers expose a C ABI and must compile as C11 and C++17.
@@ -110,7 +110,7 @@ implemented primitive contracts.
 - Keep raw counter output and disassembly captures outside the repository;
   repository docs contain reproducible commands and supported conclusions.
 
-## Engine Wrappers
+## Engine wrappers
 
 - Unity and Unreal wrappers remain thin owners of native handles and caller
   buffers. Product behavior belongs in the native runtime.
@@ -162,7 +162,7 @@ performance changes.
   absolute claims.
 - Keep examples compilable against the canonical public header.
 
-## Review Checklist
+## Review checklist
 
 - The public and internal ownership contracts agree.
 - Failure is explicit and leaves state valid.

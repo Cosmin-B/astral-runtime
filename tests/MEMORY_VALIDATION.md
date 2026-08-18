@@ -1,4 +1,4 @@
-# Memory Validation
+# Memory validation
 
 Astral's current memory validation is handled by CTest gates that run against
 the maintained runtime paths:

@@ -1,4 +1,4 @@
-# Async Delivery
+# Async delivery
 
 Astral keeps async work native and lets engine wrappers decide how to deliver
 results on their main threads. Public async calls return native status codes,
@@ -71,7 +71,7 @@ carry the cursor handle and report remaining cursor results in
 `AstralRequestStatus::queue_depth`. The ref does not extend the lifetime of the
 owner handle.
 
-## Error Behavior
+## Error behavior
 
 Bounded queues report `ASTRAL_E_BUSY` when capacity is exhausted. Polling calls
 use `ASTRAL_E_TIMEOUT` when no data is ready before the requested deadline.

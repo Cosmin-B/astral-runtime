@@ -1,4 +1,4 @@
-# Unity Native Allocator Integration
+# Unity native allocator integration
 
 Astral's Unity package can pass a Unity-backed allocator into `astral_init()`.
 When `AstralConfig.useUnityAllocator` is enabled, `AstralRuntime.Initialize()`
@@ -57,7 +57,7 @@ AstralRuntime.Shutdown();
 used. A leak warning means some native handle or runtime-owned allocation is
 still live from the bridge's point of view.
 
-## Platform Notes
+## Platform notes
 
 The package layout supports desktop native plugins plus Android ARM64 and iOS
 staging paths. Current repository evidence covers Unity 6000.0/GameCI import,

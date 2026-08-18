@@ -1,4 +1,4 @@
-# CUDA Kernel Strategy (ggml-cuda + cuBLAS)
+# CUDA kernel strategy (ggml-cuda + cuBLAS)
 
 Astral’s CUDA provider is built on llama.cpp’s **ggml-cuda** backend. There is no separate “Astral CUDA backend”: we rely
 on ggml-cuda’s kernel portfolio and focus Astral work on:

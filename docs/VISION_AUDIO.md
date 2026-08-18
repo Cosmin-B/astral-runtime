@@ -1,4 +1,4 @@
-# Vision + Audio Support
+# Vision + audio support
 
 Astral supports multimodal GGUF models (vision + audio) via the optional **libmtmd** path in the CPU backend. This enables:
 

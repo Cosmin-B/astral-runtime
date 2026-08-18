@@ -1,8 +1,8 @@
 /**
- * logging.cpp - Non-blocking logging implementation
+ * logging.cpp - Allocation-free logging callback dispatch
  *
  * Thread-local buffers prevent allocation on every log call.
- * Callback dispatch is non-blocking; slow callbacks cause log drops.
+ * Callback dispatch is synchronous. Slow callbacks warn to stderr.
  */
 
 #include "logging.hpp"
@@ -88,7 +88,7 @@ void logv(Level level, const char* fmt, va_list args) {
         g_buffer[kBufferSize - 1] = '\0';
     }
 
-    // Dispatch to callback with timeout detection
+    // Time synchronous callback dispatch so a slow sink is visible without recursion.
     void* user = g_user.load(std::memory_order_acquire);
     uint64_t start = monotonic_now_ns();
 

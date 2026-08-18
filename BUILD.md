@@ -10,7 +10,7 @@
 CUDA, Tracy, Unity, and Unreal are optional and only required for their
 corresponding build or validation lanes.
 
-## Preset Workflow
+## Preset workflow
 
 Use CMake configure, build, and test presets from the repository root:
 
@@ -46,7 +46,7 @@ Release desktop presets build both `astral_rt` (static) and
 `astral_rt_static.lib`; the shared output is `astral_rt.dll` with
 `astral_rt.lib` as its import library.
 
-## Optional CUDA Build
+## Optional CUDA build
 
 CUDA is disabled by default:
 
@@ -107,7 +107,7 @@ archives. Release metadata, dependency pins, notices, checksums, and signature
 requirements are defined by the
 [release acceptance matrix](docs/release/RELEASE_ACCEPTANCE_MATRIX.md).
 
-## Platform Notes
+## Platform notes
 
 - Linux links the threaded runtime against `pthread` and `dl` where required.
 - macOS uses Mach virtual-memory APIs.

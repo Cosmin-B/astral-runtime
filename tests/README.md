@@ -1,4 +1,4 @@
-# Astral Tests
+# Astral tests
 
 This directory contains the native unit tests, integration tests, and hard validation gates for Astral.
 
