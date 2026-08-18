@@ -1919,7 +1919,7 @@ endforeach()
 
 file(READ "${ROOT}/FEATURE_MATRIX.md" root_feature_matrix_text)
 foreach(required_feature_overview
-    "## Current Support"
+    "## Current support"
     "docs/FEATURE_MATRIX.md"
     "CPU"
     "CUDA"

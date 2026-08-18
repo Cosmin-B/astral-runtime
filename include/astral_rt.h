@@ -714,7 +714,7 @@ ASTRAL_API void ASTRAL_CALL astral_shutdown(void);
  * Astral's handle table. Releasing an object clears its entry, and reusing the slot
  * increments the generation, so a stale handle does not resolve to the new object.
  * This check does not retain the object. Another thread can release the handle after
- * this function returns, so callers must still follow each object's lifetime and
+ * `astral_handle_valid` returns, so callers must still follow each object's lifetime and
  * synchronization contract.
  *
  * @param handle Handle to validate
