@@ -62,7 +62,7 @@ For stronger small Hugging Face text fixtures, use one of:
 
 ## Media (vision/audio) tests
 
-`test_media` exercises mock vision/audio feeds + multimodal embeddings. Real CPU media init smoke checks run when:
+CPU media initialization checks run when:
 
 - `ASTRAL_TEST_VISION_MODEL` + `ASTRAL_TEST_VISION_MEDIA` are set
 - `ASTRAL_TEST_AUDIO_MODEL` + `ASTRAL_TEST_AUDIO_MEDIA` are set
@@ -106,19 +106,14 @@ Set `ASTRAL_TEST_REQUIRE_MEDIA=1` to make missing or undersized fixtures fail in
 - `gate_hf_matrix_log`: checks that HF matrix logs can be parsed and that failed, empty, skipped-only, or incomplete feature logs are rejected when pass evidence is required.
 - `gate_mtmd_fixture_manifest`: checks that the MTMD fixture manifest uses pinned revisions, license metadata, required vision/audio model/projector files, manifest-driven path resolution, and the runner's fast fixture preflight.
 - `gate_cuda_parity_runner`: checks that CUDA parity runners require real inference/e2e flags and GPU/toolkit runner visibility unless probe-only mode is explicit, and that the release matrix still covers auto, cuBLAS, and MMQ presets.
-- `gate_model_churn_soak`: repeated model/session load, decode, reset, unload, and RSS-drift sampling. It runs a fast mock churn by default; real GGUF churn is opt-in with `ASTRAL_SOAK_MODEL`.
 - `gate_release_notes`: checks release notes include artifact, validation, engine, rollback, and known-gap evidence.
 - `gate_dependency_pins`: checks the committed release pin manifest against submodule and engine package versions.
 - `gate_embedded_presets`: checks embedded presets keep VM, temp-file mmap, dynamic loading, JSON-schema grammar, and Astral worker threads disabled.
-- `gate_allocations`: tracked heap allocation gate for steady-state decode/stream. It runs mock coverage by default; CPU model coverage is opt-in with `ASTRAL_GATE_CPU_ALLOC=1`.
 
-`test_embeddings` always runs mock lifecycle and queue-pressure coverage,
-including queued-ticket cancellation and a small mock throughput sample. Set
-`ASTRAL_TEST_EMBED_MODEL` to a readable embeddings GGUF, using either an
+Set `ASTRAL_TEST_EMBED_MODEL` to a readable embeddings GGUF, using either an
 absolute path or a repo-relative path such as `tests/models/...`, to run the CPU
 fixture probe and throughput loop. The log prints `[embedding_probe]` with model
-path, dimension, and vector sanity metadata, `[embedding_mock_acceptance]` for
-batch/cancel/backpressure coverage, then `[embedding_throughput]` with iteration
+path, dimension, and vector sanity metadata, then `[embedding_throughput]` with iteration
 count and embeds-per-second. Use `ASTRAL_TEST_EMBED_THROUGHPUT_ITERS` to raise
 the default 16 iterations for a slower release-lane sample.
 

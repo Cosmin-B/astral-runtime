@@ -30,7 +30,7 @@ Providers implement the POD function table in `include/astral_backend.h`. The
 core calls it for model loading, sessions, tokenization, evaluation, logits,
 embeddings, adapters, and slot operations when the provider supplies them.
 
-The built-in names are `cpu`, `cuda`, `mock`, and `remote`. Dynamic providers
+The production provider names are `cpu`, `cuda`, and `remote`. Dynamic providers
 use the same table through a shared-library entry point. Astral validates the
 table at load time and keeps the library resident while its provider can still
 be selected. An explicit provider name is authoritative, and an unknown name

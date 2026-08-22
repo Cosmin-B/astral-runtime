@@ -29,7 +29,6 @@ register these providers:
 | Name | Role | Availability |
 | --- | --- | --- |
 | `cpu` | llama.cpp model, session, tokenizer, grammar, adapter, and embedding operations | Desktop and supported embedded builds |
-| `mock` | Deterministic tests and wrapper validation | All normal test builds |
 | `remote` | HTTP-backed remote inference and embeddings | Builds with the remote transport enabled |
 | `cuda` | The llama.cpp operation table with GGML CUDA offload | `ASTRAL_ENABLE_CUDA=ON` only |
 
@@ -61,7 +60,6 @@ sources. Provider support is independent of the ABI surface:
   the pinned llama.cpp API has no in-memory loader.
 - Embedded profiles disable that materialization path unless their platform
   contract explicitly permits it.
-- The mock provider accepts synthetic paths used by the test suite.
 
 Applications that require a syscall-free model load must validate the selected
 provider and profile. A successful compile does not establish that property.
@@ -108,7 +106,7 @@ read. Until the table gains an explicit size contract, rebuild external plugins
 against the same `astral_backend.h` revision as the host. Plugin loading is a
 startup operation and is disabled by embedded presets.
 
-The sample and toy plugins under
+The provider plugins under
 [`backend_plugins`](https://github.com/Cosmin-B/astral-runtime/tree/main/backend_plugins)
 are the maintained build references. They compile through the root build. There
 is not yet a standalone external plugin example. A plugin should be tested

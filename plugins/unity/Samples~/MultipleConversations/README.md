@@ -1,8 +1,8 @@
 # Multiple conversations
 
 Attach `MultipleConversationsExample` and `AstralRuntimeInitializer` to a
-GameObject. The default mock backend starts two independent NPC conversations
-through one model executor.
+GameObject. Configure a generation model before starting the two independent NPC
+conversations through one model executor.
 
 Each conversation owns its native slot and stream buffer. The coroutine polls
 every active slot once per frame, so one quiet NPC does not block the others.

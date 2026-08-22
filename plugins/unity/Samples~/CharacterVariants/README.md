@@ -9,6 +9,5 @@ The component exposes two focused paths:
 - `RunAdaptedSession` applies JSON-schema output, a stop sequence, and an
   optional model-scoped LoRA adapter with a configurable scale.
 
-The mock backend exercises cache, grammar, stop, and lifecycle behavior. Set a
-real adapter path only when the selected provider reports LoRA support. Adapter
+Set an adapter path only when the selected provider reports LoRA support. Adapter
 ownership remains with the model and outlives the session that references it.

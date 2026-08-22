@@ -90,7 +90,7 @@ Per-slot grammar binding uses additional optional ops:
 - `session_grammar_clear_for_slot(session_ctx, slot_id)`
 - `session_apply_grammar_for_slot(session_ctx, slot_id, tokens, logits, count)`
 
-The built-in `cpu` and `mock` backends implement these.
+The built-in `cpu` backend implements these.
 
 ## Notes / current limitations
 

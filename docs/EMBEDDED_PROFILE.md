@@ -92,7 +92,7 @@ These are used to reserve a small front slice of the arena for:
 Astral exposes `astral_model_load()` with `AstralModelDesc` to select a model source (`PATH` / `MEMORY` / custom `IO`) so embedded targets can avoid filesystem paths.
 
 Status:
-- The public ABI and mock provider support `MEMORY` and `IO` sources without requiring a filesystem path.
+- The public ABI accepts `MEMORY` and `IO` sources.
 - The built-in CPU llama backend does not currently provide a true callback-backed no-filesystem real-model path. On desktop builds with `ASTRAL_CPU_MEMORY_SOURCE_MMAP=ON`, it may materialize `MEMORY`/`IO` input to a temporary file so llama.cpp can use file-backed mmap.
 - Embedded presets keep both `ASTRAL_ENABLE_VIRTUAL_MEMORY=OFF` and `ASTRAL_CPU_MEMORY_SOURCE_MMAP=OFF`, so they cannot silently take the desktop temp-file mmap path.
 

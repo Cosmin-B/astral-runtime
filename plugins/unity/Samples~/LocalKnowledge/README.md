@@ -10,5 +10,4 @@ batch. `Search` embeds a question and prints the highest-scoring source chunks.
 when restoring a snapshot because search results refer to the original chunk
 indices and vector dimension.
 
-The mock backend exercises the complete ownership and retrieval flow. Replace
-it with an embeddings-capable GGUF model for meaningful semantic ranking.
+Configure an embeddings-capable GGUF model before indexing content.

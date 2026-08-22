@@ -61,11 +61,10 @@ To create a sidecar UE 5.7 sample project without committing generated files:
 ```
 
 The script creates `AstralSample.uproject`, links the local `AstralRT` plugin,
-stages a small mock model payload as UFS content, and writes C++ code that
-demonstrates model load, streaming, cancellation, embeddings, packaged content
-bytes, Saved cache bytes, native memory search, and expected failure logging through
-`LogAstralSample`. If the packaging machine cannot access the Astral checkout, use
-`--plugin-mode copy`.
+and writes C++ code for model load, streaming, cancellation, embeddings,
+packaged content bytes, Saved cache bytes, native memory search, and expected
+failure logging through `LogAstralSample`. If the packaging machine cannot
+access the Astral checkout, use `--plugin-mode copy`.
 
 To package the maintained sample, use the runner:
 
@@ -96,7 +95,7 @@ UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
   --runtime-log build/unreal-sample-package/runtime.log \
   --sample-model "$PWD/tests/models/Qwen3-0.6B-Q8_0.gguf" \
   --sample-embedding-model "$PWD/tests/models/Qwen3-Embedding-0.6B-Q8_0.gguf" \
-  --sample-memory-backend mock --sample-media-backend mock
+  --sample-memory-backend cpu --sample-media-backend cpu
 ```
 
 ## Run local Automation

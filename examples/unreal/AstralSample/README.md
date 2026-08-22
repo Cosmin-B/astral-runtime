@@ -21,8 +21,8 @@ generated project:
 ```bash
 AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit \
   -AstralBackend=cpu \
-  -AstralMemoryBackend=mock \
-  -AstralMediaBackend=mock \
+  -AstralMemoryBackend=cpu \
+  -AstralMediaBackend=cpu \
   -AstralModel=/absolute/path/to/Qwen3-0.6B-Q8_0.gguf \
   -AstralEmbeddingModel=/absolute/path/to/Qwen3-Embedding-0.6B-Q8_0.gguf \
   -AstralMediaPath=/absolute/path/to/mmproj.gguf \
@@ -30,12 +30,10 @@ AstralSample.sh -NullRHI -Unattended -NoSplash -NoSound -AstralSampleAutoQuit \
   -AstralPrompt="Say hello from Astral."
 ```
 
-`-AstralMemoryBackend=mock` keeps the packaged Content/Saved byte demos on the
-mock backend while text generation and embeddings use the real CPU backend.
+`-AstralMemoryBackend=cpu` loads the packaged Content and Saved byte sources
+through the CPU backend.
 `-AstralMediaPath` and `-AstralMediaPathRoot` initialize a media projector for
-the media feed demo. Leave them unset with `-AstralMediaBackend=mock` for a
-lightweight descriptor/bridge smoke. Real projector validation remains part of
-the MTMD release lane.
+the media feed sample.
 
 ## Gameplay components
 
@@ -43,8 +41,7 @@ Add `Astral Stateful Npc` to an actor to keep agent history across level or
 actor recreation. Configure its model, prompt state, and history file, then call
 `Ask`, `Cancel`, `Save History`, or `Load History` from Blueprint. The component
 polls one chat request per frame, reports structured `move_to` tool calls, and
-stores history below `ProjectSavedDir/Astral` by default. Mock models exercise
-the lifecycle and tool parsing. Useful dialogue requires a generation model.
+stores history below `ProjectSavedDir/Astral` by default.
 
 Add `Astral Local Knowledge` to an actor to index short lore, quest, or dialogue
 documents. Set an embeddings-capable model, edit `Document Text`, then call

@@ -36,7 +36,6 @@ Notes:
 |---|---:|---:|---:|
 | `cpu` (llama.cpp) | ✅ | ✅ | ✅ |
 | `cuda` (llama.cpp GGML_CUDA offload) | ❌ | ✅ | 🧪 (generally not targeted) |
-| `mock` | ✅ | ✅ | ✅ |
 | `remote` (HTTP transport) | ⚠️ | ⚠️ | ❌ (threads disabled) |
 | Dynamic provider plugins | ✅ (optional) | ✅ (optional) | ❌ |
 
@@ -85,7 +84,7 @@ incremental decoder.
 Notes:
 - KV save/load now includes an Astral header that serializes sampler + RNG state so continuations can be deterministic after load.
 - Cross-backend CPU/CUDA token determinism is not guaranteed. See `docs/CUDA_PARITY.md` for the comparison policy.
-- Conversation media prompts require provider slot position queries (`session_slot_pos`). Mock and CPU backends support them when MTMD is enabled.
+- Conversation media prompts require provider slot position queries (`session_slot_pos`). The CPU backend supports them when MTMD is enabled.
 
 ## Embeddings
 
@@ -112,8 +111,8 @@ Notes:
 - Vector memory supports exhaustive flat search and bounded graph search. Flat
   results are exact for scores produced by the selected storage format. Group
   filters use that flat scanner.
-- Continuous batching requires a backend with slot/batch operations. Built-in
-  mock and CPU backends implement that surface. It also requires
+- Continuous batching requires a backend with slot/batch operations. The CPU
+  backend implements that surface. It also requires
   `ASTRAL_ENABLE_THREADS=ON`.
 - Remote runtime support uses `backend_name = "remote"` with an HTTP provider
   for health, tokenization, streaming completion chunks, authentication, and
@@ -125,12 +124,9 @@ Notes:
 
 | Test | What it covers | Where it should run |
 |---|---|---|
-| `test_embeddings` | embeddings mock + CPU e2e | CPU-only + CUDA build |
-| `test_media` | mock media feed + multimodal embeddings | CPU-only + CUDA build |
 | `test_tokenization` | tokenization sizing, batch, detokenize | CPU-only + CUDA build |
 | `test_prompt_cache` | prompt cache hits, eviction, save/load | CPU-only + CUDA build |
 | `test_inference` | sessions, grammar, LoRA, prompt cache, agents, vector memory | CPU-only + CUDA build |
-| `test_backend` | backend selection, mock provider, remote loopback provider | CPU-only + CUDA build |
 | `test_continuous_batching` | conversation slot fairness and CPU probe | CPU-only + CUDA build |
 | `test_cuda_parity` | CUDA surface + (optional) CPU-vs-CUDA parity harness | CUDA build (optional inference via env) |
 | `test_cuda_e2e` | end-to-end logprobs/grammar/kv/embeddings on real model | CPU-only always, CUDA when `ASTRAL_TEST_CUDA_E2E=1` |

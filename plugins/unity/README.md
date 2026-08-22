@@ -1,8 +1,8 @@
 # Astral runtime Unity package
 
 Unity bindings and package layout for Astral Runtime. The package exposes native
-runtime initialization, model/session handles, streaming reads, embeddings, and
-mock media tests through the public C ABI.
+runtime initialization, model/session handles, streaming reads, and embeddings
+through the public C ABI.
 
 The package keeps native handles behind `IDisposable` wrappers and reads stream
 bytes into caller-owned `NativeArray` storage. Jobs and main-thread code can
@@ -512,8 +512,6 @@ See `Runtime/Plugins/README.md` for build instructions for each platform.
 
 The package includes small, focused Unity EditMode tests under `Tests/Editor/`:
 - ABI layout assertions for key C ABI structs (`AstralSpanU8`, `AstralModelDesc`, `AstralSessionDesc`, …).
-- Mock-backend smoke (init → model → session → decode → stream → reset → repeat).
-- Mock media feed and multimodal embedding smoke with no GGUF required.
 
 Release and CI runs must provide a native `astral_rt` library for the Editor.
 `scripts/run_unity_ci_tests.sh` fails before Unity starts when the platform

@@ -32,7 +32,6 @@ UNREAL_EDITOR=/path/to/UnrealEditor-Cmd ./scripts/run_unreal_ci_tests.sh
 
 Useful overrides:
 
-- `UNREAL_TEST_FILTER=AstralRT.Mock*` narrows the Automation filter.
 - `ASTRAL_UNREAL_PROJECT=/path/to/project` runs against an existing project that already has `Plugins/AstralRT` installed.
 
 Manual Editor path: `Window > Developer Tools > Session Frontend > Automation`, then run `AstralRT.*`.

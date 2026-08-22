@@ -70,7 +70,7 @@ astral_conv_feed_audio(conv, &audio, /*finalize=*/1);
 astral_conv_decode(conv);
 ```
 
-Conversations require provider slot-position support (`session_slot_pos`); mock + CPU backends implement this when mtmd is enabled.
+Conversations require provider slot-position support (`session_slot_pos`). The CPU backend implements this when MTMD is enabled.
 
 ## Embeddings
 

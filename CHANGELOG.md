@@ -8,7 +8,7 @@ release.
 ### Added
 
 - C++17 native runtime with a sized C ABI, static and shared library builds,
-  mock and llama.cpp CPU providers, and optional CUDA offload.
+  a llama.cpp CPU provider, and optional CUDA offload.
 - Streaming generation, continuous batching, embeddings, prompt caches, LoRA
   adapters, structured output, model presets, native agents, and vector search.
 - Unity 6000.0 and Unreal Engine 5.4+ packages with maintained samples and

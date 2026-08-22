@@ -1,9 +1,8 @@
 # Stateful NPC
 
 Attach `StatefulNpcExample` and `AstralRuntimeInitializer` to a GameObject. Call
-`Ask` from a UI button or gameplay interaction. The default mock backend covers
-agent lifecycle, history ownership, cancellation, and tool-call parsing without
-an external model.
+`Ask` from a UI button or gameplay interaction. Configure a generation model
+before starting the agent.
 
 The component keeps system prompt, summary, and retrieved memory context in the
 native agent. It saves history under `Application.persistentDataPath`, restores

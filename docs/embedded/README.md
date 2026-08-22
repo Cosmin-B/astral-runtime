@@ -43,7 +43,7 @@ cd astral-runtime
 
 This wrapper runs the following gates before the embedded smoke:
 - `gate_embedded_presets`: embedded CMake presets keep VM, temp-file mmap, dynamic loading, JSON-schema grammar, and Astral worker threads disabled
-- `gate_allocations`: no allocations during steady-state decode/stream. The mock path always runs, and CPU runs when a GGUF is available.
+- `gate_allocations`: no allocations during steady-state decode/stream. CPU coverage runs when a GGUF is available.
 - `gate_io_syscalls`: no I/O-ish syscalls in steady-state (warmup/reset excluded)
 - `gate_rss_cap`: RSS cap check (Linux-only, configurable via `ASTRAL_RSS_MAX_MB`)
 
@@ -73,4 +73,4 @@ If your toolchain uses different compiler names/paths, edit the toolchain file o
 
 ## CI and QEMU
 
-The GitHub Actions `cross-compile` job cross-compiles the embedded binaries for arm64/armv7 and runs a small QEMU smoke using the mock backend (no GGUF needed). This is a basic correctness gate for ARM execution + wait/wake behavior.
+The GitHub Actions `cross-compile` job cross-compiles the embedded binaries for arm64 and ARMv7 and checks them under QEMU.

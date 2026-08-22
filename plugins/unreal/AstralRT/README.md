@@ -67,9 +67,10 @@ Copy `astral-runtime/plugins/unreal/AstralRT/` into your Unreal project:
 Enable the plugin and build the project. The CMake package target validates the
 staged native files. UnrealEditor Automation validates the engine-facing code.
 
-## Minimal example (mock backend)
+## Minimal CPU example
 
-This uses the mock backend (no GGUF needed) and streams UTF-8 bytes via `UAstralSession::OnStreamBytesNative()`:
+Set `ModelPath` to a readable GGUF file. The session streams UTF-8 bytes through
+`UAstralSession::OnStreamBytesNative()`:
 
 ```cpp
 // AMyAIActor.h
@@ -95,8 +96,10 @@ public:
 
         Model = NewObject<UAstralModel>(this);
         FAstralModelDesc ModelDesc;
-        ModelDesc.BackendName = TEXT("mock");
+        ModelDesc.BackendName = TEXT("cpu");
         ModelDesc.SourceKind = EAstralModelSourceKind::Path;
+        ModelDesc.PathRoot = EAstralUnrealPathRoot::Raw;
+        ModelDesc.ModelPath = TEXT("/absolute/path/to/model.gguf");
         if (!Model->Load(ModelDesc))
         {
             UE_LOG(LogAstralRT, Error, TEXT("AstralRT: Model load failed"));
@@ -220,9 +223,6 @@ Embedder->Collect(Ticket, Vec);
 Editor-only Automation tests live under `Source/AstralRT/Private/Tests/`:
 - `AstralRT.Module.Init`
 - `AstralRT.Memory.FMemoryAllocator`
-- `AstralRT.Mock.E2E`
-- `AstralRT.Mock.MediaFeed`
-- `AstralRT.Mock.MultimodalEmbed`
 
 Run from Unreal's Automation window or via console:
 `Automation RunTests AstralRT`

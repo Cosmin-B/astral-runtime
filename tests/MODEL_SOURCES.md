@@ -95,7 +95,7 @@ Astral uses a single model for decode/stream gates and (optionally) a different 
 
 Fixture-dependent tests use explicit `SKIP_TEST(...)` reporting when the needed
 model or projector is absent. A skipped fixture probe is acceptable in the fast
-mock/default lane; release lanes set the required environment variables and fail
+default lane; release lanes set the required environment variables and fail
 before CTest when required fixtures are missing.
 
 Multimodal (optional):

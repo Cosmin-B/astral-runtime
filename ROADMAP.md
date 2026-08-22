@@ -6,9 +6,9 @@ profile and a portable GPU execution path.
 
 ## WebAssembly
 
-The first step is a WebAssembly CPU build that can run the mock provider,
-tokenization, embeddings, and compact memory search without dynamic loading or
-native virtual-memory assumptions.
+The first step is a WebAssembly CPU build that can run tokenization, embeddings,
+and compact memory search without dynamic loading or native virtual-memory
+assumptions.
 
 The maintained profile will define:
 

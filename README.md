@@ -15,7 +15,7 @@ code.
 
 - A C ABI built from sized POD descriptors, byte spans, explicit handles, and
   error codes. C++ exceptions do not cross it.
-- Built-in CPU, CUDA-offload, mock, and remote providers, plus a C provider
+- Built-in CPU, CUDA-offload, and remote providers, plus a C provider
   table for dynamic plugins.
 - Asynchronous sessions and model-scoped continuous batching with bounded
   streaming, cancellation, grammar, prompt caches, logprobs, and LoRA.
@@ -82,8 +82,7 @@ cmake --build --preset release-with-tests -j
 ctest --preset release-with-tests --output-on-failure
 ```
 
-The maintained C example uses the deterministic mock provider, so it does not
-need a model download:
+Before running the C example, provide a readable GGUF model:
 
 ```bash
 cmake -S . -B build/examples \
@@ -92,7 +91,8 @@ cmake -S . -B build/examples \
   -DASTRAL_BUILD_BENCHMARKS=OFF
 cmake --build build/examples --target astral_c_quickstart -j
 ./build/examples/examples/astral_c_quickstart \
-  --backend mock --prompt "Once upon a time"
+  --backend cpu --model /absolute/path/to/model.gguf \
+  --prompt "Once upon a time"
 ```
 
 The [example source](https://github.com/Cosmin-B/astral-runtime/blob/main/examples/astral_c_quickstart.c)
