@@ -1,0 +1,605 @@
+{
+  "source": "previously published Astral docs fragment IDs",
+  "pages": [
+    {
+      "route": "",
+      "anchors": [
+        {
+          "id": "astral",
+          "headingKey": "astral",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "BUILD",
+      "anchors": [
+        {
+          "id": "building-astral",
+          "headingKey": "buildingastral",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "CHANGELOG",
+      "anchors": [
+        {
+          "id": "changelog",
+          "headingKey": "changelog",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "CONTRIBUTING",
+      "anchors": [
+        {
+          "id": "contributing-to-astral",
+          "headingKey": "contributingtoastral",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "ROADMAP",
+      "anchors": [
+        {
+          "id": "astral-roadmap",
+          "headingKey": "astralroadmap",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "SECURITY",
+      "anchors": [
+        {
+          "id": "security-policy",
+          "headingKey": "securitypolicy",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs",
+      "anchors": [
+        {
+          "id": "documentation",
+          "headingKey": "documentation",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/ABI_VERSIONING",
+      "anchors": [
+        {
+          "id": "abi-and-versioning-policy-draft",
+          "headingKey": "abiandversioningpolicydraft",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/CUDA_KERNEL_STRATEGY",
+      "anchors": [
+        {
+          "id": "cuda-kernel-strategy-ggml-cuda-cublas",
+          "headingKey": "cudakernelstrategyggmlcudacublas",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/CUDA_PARITY",
+      "anchors": [
+        {
+          "id": "cuda-parity",
+          "headingKey": "cudaparity",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/EMBEDDED_PROFILE",
+      "anchors": [
+        {
+          "id": "embedded-robotics-profile",
+          "headingKey": "embeddedroboticsprofile",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/FEATURE_MATRIX",
+      "anchors": [
+        {
+          "id": "feature-matrix",
+          "headingKey": "featurematrix",
+          "occurrence": 1
+        },
+        {
+          "id": "core-runtime-build-knobs",
+          "headingKey": "coreruntimebuildknobs",
+          "occurrence": 1
+        },
+        {
+          "id": "providers-backends",
+          "headingKey": "providersbackends",
+          "occurrence": 1
+        },
+        {
+          "id": "model-loading-path-memory-io",
+          "headingKey": "modelloadingpathmemoryio",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/PROFILING_TRACY",
+      "anchors": [
+        {
+          "id": "tracy-profiling",
+          "headingKey": "tracyprofiling",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/VISION_AUDIO",
+      "anchors": [
+        {
+          "id": "vision-audio-support",
+          "headingKey": "visionaudiosupport",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/AGENT_RUNTIME",
+      "anchors": [
+        {
+          "id": "native-agents",
+          "headingKey": "nativeagents",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/ASYNC_DELIVERY",
+      "anchors": [
+        {
+          "id": "async-delivery",
+          "headingKey": "asyncdelivery",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/CHUNKING",
+      "anchors": [
+        {
+          "id": "native-chunking",
+          "headingKey": "nativechunking",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/CONTINUOUS_BATCHING",
+      "anchors": [
+        {
+          "id": "continuous-batching",
+          "headingKey": "continuousbatching",
+          "occurrence": 1
+        },
+        {
+          "id": "3-feed-decode",
+          "headingKey": "3feeddecode",
+          "occurrence": 1
+        },
+        {
+          "id": "4-streaming-meta",
+          "headingKey": "4streamingmeta",
+          "occurrence": 1
+        },
+        {
+          "id": "notes-current-limitations",
+          "headingKey": "notescurrentlimitations",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/ERROR_HANDLING",
+      "anchors": [
+        {
+          "id": "error-handling",
+          "headingKey": "errorhandling",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/GENERATION_CONTROLS",
+      "anchors": [
+        {
+          "id": "generation-controls-c-abi",
+          "headingKey": "generationcontrolscabi",
+          "occurrence": 1
+        },
+        {
+          "id": "capabilities-limits",
+          "headingKey": "capabilitieslimits",
+          "occurrence": 1
+        },
+        {
+          "id": "logprobs-per-token-metadata-side-channel",
+          "headingKey": "logprobspertokenmetadatasidechannel",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/HOT_PATH_PROFILING",
+      "anchors": [
+        {
+          "id": "hot-path-profiling",
+          "headingKey": "hotpathprofiling",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/LORA_ADAPTERS",
+      "anchors": [
+        {
+          "id": "lora-adapters",
+          "headingKey": "loraadapters",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/MEMORY_INDEX",
+      "anchors": [
+        {
+          "id": "native-memory-index",
+          "headingKey": "nativememoryindex",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/MODEL_PATHS",
+      "anchors": [
+        {
+          "id": "model-paths",
+          "headingKey": "modelpaths",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/MODEL_PRESETS",
+      "anchors": [
+        {
+          "id": "model-presets",
+          "headingKey": "modelpresets",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/PROMPT_CACHE",
+      "anchors": [
+        {
+          "id": "prompt-cache-api",
+          "headingKey": "promptcacheapi",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/REMOTE_RUNTIME",
+      "anchors": [
+        {
+          "id": "remote-runtime",
+          "headingKey": "remoteruntime",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/STRUCTURED_OUTPUT",
+      "anchors": [
+        {
+          "id": "structured-output-and-tools",
+          "headingKey": "structuredoutputandtools",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/api/TOKENIZATION",
+      "anchors": [
+        {
+          "id": "tokenization-api",
+          "headingKey": "tokenizationapi",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/architecture/BACKEND_ARCHITECTURE",
+      "anchors": [
+        {
+          "id": "backend-architecture",
+          "headingKey": "backendarchitecture",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/architecture/CONCURRENCY_MODEL",
+      "anchors": [
+        {
+          "id": "concurrency-and-threading-model",
+          "headingKey": "concurrencyandthreadingmodel",
+          "occurrence": 1
+        },
+        {
+          "id": "design_1",
+          "headingKey": "design",
+          "occurrence": 2
+        },
+        {
+          "id": "memory-order-contract_1",
+          "headingKey": "memoryordercontract",
+          "occurrence": 2
+        },
+        {
+          "id": "design_2",
+          "headingKey": "design",
+          "occurrence": 3
+        },
+        {
+          "id": "memory-order-contract_2",
+          "headingKey": "memoryordercontract",
+          "occurrence": 3
+        },
+        {
+          "id": "performance-bar_1",
+          "headingKey": "performancebar",
+          "occurrence": 2
+        },
+        {
+          "id": "design_3",
+          "headingKey": "design",
+          "occurrence": 4
+        },
+        {
+          "id": "memory-order-contract_3",
+          "headingKey": "memoryordercontract",
+          "occurrence": 4
+        }
+      ]
+    },
+    {
+      "route": "docs/architecture/LOW_LEVEL_PRIMITIVES",
+      "anchors": [
+        {
+          "id": "low-level-primitives",
+          "headingKey": "lowlevelprimitives",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/architecture/MEMORY_ARCHITECTURE",
+      "anchors": [
+        {
+          "id": "memory-architecture",
+          "headingKey": "memoryarchitecture",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/architecture/RETRIEVAL_ARCHITECTURE",
+      "anchors": [
+        {
+          "id": "retrieval-architecture",
+          "headingKey": "retrievalarchitecture",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/architecture/RUNTIME_ARCHITECTURE",
+      "anchors": [
+        {
+          "id": "runtime-architecture",
+          "headingKey": "runtimearchitecture",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/embedded",
+      "anchors": [
+        {
+          "id": "embedded-and-robotics-profile-linux-edge",
+          "headingKey": "embeddedandroboticsprofilelinuxedge",
+          "occurrence": 1
+        },
+        {
+          "id": "build-run-host",
+          "headingKey": "buildrunhost",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/integration/UNREAL_57_QUICKSTART",
+      "anchors": [
+        {
+          "id": "unreal-57-quickstart",
+          "headingKey": "unreal57quickstart",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/release/ABI_MANIFEST",
+      "anchors": [
+        {
+          "id": "abi-manifest",
+          "headingKey": "abimanifest",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/release/DEPENDENCY_MANIFEST",
+      "anchors": [
+        {
+          "id": "dependency-manifest",
+          "headingKey": "dependencymanifest",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/release/RELEASE_ACCEPTANCE_MATRIX",
+      "anchors": [
+        {
+          "id": "release-acceptance-matrix",
+          "headingKey": "releaseacceptancematrix",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/release/RELEASE_NOTES_TEMPLATE",
+      "anchors": [
+        {
+          "id": "astral-release-notes",
+          "headingKey": "astralreleasenotes",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/release/THIRD_PARTY_NOTICES",
+      "anchors": [
+        {
+          "id": "third-party-notices",
+          "headingKey": "thirdpartynotices",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "docs/rules/CODING_STANDARDS",
+      "anchors": [
+        {
+          "id": "coding-standards",
+          "headingKey": "codingstandards",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "examples/unreal/AstralSample",
+      "anchors": [
+        {
+          "id": "astralsample",
+          "headingKey": "astralsample",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "plugins/unity",
+      "anchors": [
+        {
+          "id": "astral-runtime-unity-package",
+          "headingKey": "astralruntimeunitypackage",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "plugins/unity/Samples~/CharacterVariants",
+      "anchors": [
+        {
+          "id": "character-variants",
+          "headingKey": "charactervariants",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "plugins/unity/Samples~/LocalKnowledge",
+      "anchors": [
+        {
+          "id": "local-knowledge",
+          "headingKey": "localknowledge",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "plugins/unity/Samples~/MultimodalInput",
+      "anchors": [
+        {
+          "id": "multimodal-input",
+          "headingKey": "multimodalinput",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "plugins/unity/Samples~/MultipleConversations",
+      "anchors": [
+        {
+          "id": "multiple-conversations",
+          "headingKey": "multipleconversations",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "plugins/unity/Samples~/StatefulNpc",
+      "anchors": [
+        {
+          "id": "stateful-npc",
+          "headingKey": "statefulnpc",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "plugins/unity/Samples~/StreamingChat",
+      "anchors": [
+        {
+          "id": "streaming-chat",
+          "headingKey": "streamingchat",
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "route": "plugins/unreal/AstralRT",
+      "anchors": [
+        {
+          "id": "astralrt-unreal-engine-plugin",
+          "headingKey": "astralrtunrealengineplugin",
+          "occurrence": 1
+        }
+      ]
+    }
+  ]
+}

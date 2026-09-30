@@ -1,0 +1,15 @@
+Astral Runtime
+Copyright (c) 2026 Cosmin Bararu and Astral contributors.
+
+Licensed under the Apache License, Version 2.0. The full license text is in
+the repository root `LICENSE` file.
+
+This repository contains Astral source code plus third-party dependencies used
+for build, test, profiling, and engine packaging.
+
+Third-party notices are maintained in `docs/release/THIRD_PARTY_NOTICES.md`.
+Release artifacts should also include generated metadata from:
+
+```bash
+./scripts/generate_release_metadata.sh dist
+```

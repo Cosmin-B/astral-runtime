@@ -1,0 +1,265 @@
+{
+  "revision": "f2d13b77c70624ede5bc06823d4a794a4b955e10",
+  "files": [
+    {
+      "path": "BUILD.md",
+      "route": "BUILD",
+      "sha256": "66578d021216080535446361e242b493982f8fd34d9d560ec73c7a470aeeccc5"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "route": "CHANGELOG",
+      "sha256": "2347df6faa1466017c3229e048e540aca4263f300016e8976050a198042bc008"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "route": "CONTRIBUTING",
+      "sha256": "ad1be0fec67c3cff5fc4b9f952bfd41a7f958612460bf09150735fb32c8e4e57"
+    },
+    {
+      "path": "README.md",
+      "route": "",
+      "sha256": "06c07adaca7b26b287775dbae0d94041c2580de4bf700c2edc7b2e95e897fb74"
+    },
+    {
+      "path": "ROADMAP.md",
+      "route": "ROADMAP",
+      "sha256": "7a49d7d457d41c4969976e1ed39b6fbbe4f5660deb6825af553d2b1879319604"
+    },
+    {
+      "path": "SECURITY.md",
+      "route": "SECURITY",
+      "sha256": "fe7aed8c6449068cfb8fbd9c97729dbd7bd4b08c7d0e1f8d328f801312cabebb"
+    },
+    {
+      "path": "docs/ABI_VERSIONING.md",
+      "route": "docs/ABI_VERSIONING",
+      "sha256": "5de2ab7c28f0633c1d38e032bd2a4349874e01fa139fb38d759cd0961b1ae492"
+    },
+    {
+      "path": "docs/CUDA_KERNEL_STRATEGY.md",
+      "route": "docs/CUDA_KERNEL_STRATEGY",
+      "sha256": "45a76e4e1bca506be26bea0638156d896c23255714dcb4480ebd7a569f29eb49"
+    },
+    {
+      "path": "docs/CUDA_PARITY.md",
+      "route": "docs/CUDA_PARITY",
+      "sha256": "707b3b846cc72c85c2cd1bc0817b37aedb39bf2512c3c5ac631979e429ec56e2"
+    },
+    {
+      "path": "docs/EMBEDDED_PROFILE.md",
+      "route": "docs/EMBEDDED_PROFILE",
+      "sha256": "103c1f9a45c987f386f4ae76a8fac42f4a3fda62a1c5c530096f3c893d0516d6"
+    },
+    {
+      "path": "docs/FEATURE_MATRIX.md",
+      "route": "docs/FEATURE_MATRIX",
+      "sha256": "0dc2ac2360cb0087cac0488f0f1d53912b1d8c2012e2926988e5265aa4dc871c"
+    },
+    {
+      "path": "docs/PROFILING_TRACY.md",
+      "route": "docs/PROFILING_TRACY",
+      "sha256": "15e65384b77b09f42ba869620a349e433dd91e19beb545759652dabc8148b7cb"
+    },
+    {
+      "path": "docs/README.md",
+      "route": "docs",
+      "sha256": "5466a95ddfbff7cbd53741abbfad462e8128af8660d17c8093ae36debc2dbf41"
+    },
+    {
+      "path": "docs/VISION_AUDIO.md",
+      "route": "docs/VISION_AUDIO",
+      "sha256": "a667b14a8be86a85f8641eec4aecd8a81b1ac6fd76a2e09233484d58eb6de004"
+    },
+    {
+      "path": "docs/api/AGENT_RUNTIME.md",
+      "route": "docs/api/AGENT_RUNTIME",
+      "sha256": "9cb0fab81bc97cee50cf3d4fa21c9a598dd1399c0cf102295895df7c76c78c64"
+    },
+    {
+      "path": "docs/api/ASYNC_DELIVERY.md",
+      "route": "docs/api/ASYNC_DELIVERY",
+      "sha256": "24f776e8f71cb07e483f3c66ce51ba105169983609088a5824842c6e7c361629"
+    },
+    {
+      "path": "docs/api/CHUNKING.md",
+      "route": "docs/api/CHUNKING",
+      "sha256": "650369f8cad3ef294198832430b3be5839ee52b6d5d2318a3e008448509669cc"
+    },
+    {
+      "path": "docs/api/CONTINUOUS_BATCHING.md",
+      "route": "docs/api/CONTINUOUS_BATCHING",
+      "sha256": "c3fc3aeee5cbfef07870fb4c8382f37fb3947d11ec47a18c73c0f1e90e9ae2a4"
+    },
+    {
+      "path": "docs/api/ERROR_HANDLING.md",
+      "route": "docs/api/ERROR_HANDLING",
+      "sha256": "da5bea77f3b82f85170a00a8cc1b0a2ecc4c08353f6853b510bb65ca881637c1"
+    },
+    {
+      "path": "docs/api/GENERATION_CONTROLS.md",
+      "route": "docs/api/GENERATION_CONTROLS",
+      "sha256": "442b259dfbd8fda94253f1df45842f501421b4063adde30ee5742d35f063c1c1"
+    },
+    {
+      "path": "docs/api/HOT_PATH_PROFILING.md",
+      "route": "docs/api/HOT_PATH_PROFILING",
+      "sha256": "b30dc936cb8444c6a620b63b2f25ab549600f0e375434053eaf4348b88e90302"
+    },
+    {
+      "path": "docs/api/LORA_ADAPTERS.md",
+      "route": "docs/api/LORA_ADAPTERS",
+      "sha256": "648931505318de1787d5e3fbb1e8b31817ca27f84ed7c15b5243ee9d6bfdb404"
+    },
+    {
+      "path": "docs/api/MEMORY_INDEX.md",
+      "route": "docs/api/MEMORY_INDEX",
+      "sha256": "6f57d84f268cac7293d3b307b297bbbff2989f286becce721cdbb415fe90de71"
+    },
+    {
+      "path": "docs/api/MODEL_PATHS.md",
+      "route": "docs/api/MODEL_PATHS",
+      "sha256": "a428afd7a7f1a21cad3b7016483919aa0ff3d581a64ce61a68aebd6aca609835"
+    },
+    {
+      "path": "docs/api/MODEL_PRESETS.md",
+      "route": "docs/api/MODEL_PRESETS",
+      "sha256": "aa074f52e20c009787051a77cdb0f2ec6c39d6215e7b83f0f3fe5a803d876e16"
+    },
+    {
+      "path": "docs/api/PROMPT_CACHE.md",
+      "route": "docs/api/PROMPT_CACHE",
+      "sha256": "e9276a3b68e915bbf6adb2de6b59cbe096a7facc908ef5eeb90e4c94cb2fcdf3"
+    },
+    {
+      "path": "docs/api/REMOTE_RUNTIME.md",
+      "route": "docs/api/REMOTE_RUNTIME",
+      "sha256": "d8497f1756d1db1b493962d771bb2b0e4d0114eeab9967c4a2b415ac26b9c455"
+    },
+    {
+      "path": "docs/api/STRUCTURED_OUTPUT.md",
+      "route": "docs/api/STRUCTURED_OUTPUT",
+      "sha256": "9b9293c4138dcc58e7eb043074186ca8446d725d166fe3b759d8fa1fdc2615b0"
+    },
+    {
+      "path": "docs/api/TOKENIZATION.md",
+      "route": "docs/api/TOKENIZATION",
+      "sha256": "59d6918a40d9812ef96b72ffce255728b126c0dc19ff3e09e04b3fb69734539a"
+    },
+    {
+      "path": "docs/architecture/BACKEND_ARCHITECTURE.md",
+      "route": "docs/architecture/BACKEND_ARCHITECTURE",
+      "sha256": "84d998f1b9d268995b290af9c6c34d32f50338a128bbe481af5f82ed2d355416"
+    },
+    {
+      "path": "docs/architecture/CONCURRENCY_MODEL.md",
+      "route": "docs/architecture/CONCURRENCY_MODEL",
+      "sha256": "7f93a3ddc72933cbd39252d4db0c88f8d5c76baa57eeceaf6f71a6f5e51e8e82"
+    },
+    {
+      "path": "docs/architecture/LOW_LEVEL_PRIMITIVES.md",
+      "route": "docs/architecture/LOW_LEVEL_PRIMITIVES",
+      "sha256": "93252b959f2b4742e2d60d7a7533cbdd593f8c2b6630137d86381ad331f9ecb7"
+    },
+    {
+      "path": "docs/architecture/MEMORY_ARCHITECTURE.md",
+      "route": "docs/architecture/MEMORY_ARCHITECTURE",
+      "sha256": "a30fd89acfb02e9cc023415bf390499012e98e8348896912c21fdbd92016a8e0"
+    },
+    {
+      "path": "docs/architecture/RETRIEVAL_ARCHITECTURE.md",
+      "route": "docs/architecture/RETRIEVAL_ARCHITECTURE",
+      "sha256": "7881a1ffbdeeebb3bc8a9d892f5dc5b0df62b9abe5ee0559d7f809ccbd4255ae"
+    },
+    {
+      "path": "docs/architecture/RUNTIME_ARCHITECTURE.md",
+      "route": "docs/architecture/RUNTIME_ARCHITECTURE",
+      "sha256": "7bc00f2af0ed0ac296755ed38acb1aafc95fb00c303230bbf1e191a29e2c3bbd"
+    },
+    {
+      "path": "docs/embedded/README.md",
+      "route": "docs/embedded",
+      "sha256": "1d2c7e84c31d1f7e6dd7803e32178aece339e5cf55c0f53b6f55bddec6b2400a"
+    },
+    {
+      "path": "docs/integration/UNREAL_57_QUICKSTART.md",
+      "route": "docs/integration/UNREAL_57_QUICKSTART",
+      "sha256": "32e34926139f983fe65bb6db8f548641772535fbb3e46ebd0e4a5ed3f6b638e3"
+    },
+    {
+      "path": "docs/release/ABI_MANIFEST.md",
+      "route": "docs/release/ABI_MANIFEST",
+      "sha256": "fad68460bd609140c4171def23ebf9c36608a7f019fe7833518737602633b85f"
+    },
+    {
+      "path": "docs/release/DEPENDENCY_MANIFEST.md",
+      "route": "docs/release/DEPENDENCY_MANIFEST",
+      "sha256": "17fc1527e166e1a644c258f56c3b8a84ad8d548345323a90f7e731cd32b79b09"
+    },
+    {
+      "path": "docs/release/RELEASE_ACCEPTANCE_MATRIX.md",
+      "route": "docs/release/RELEASE_ACCEPTANCE_MATRIX",
+      "sha256": "d877881728eb265c0a5780ce2cb55178f872cbe6661dd2a54a17407b2667ef55"
+    },
+    {
+      "path": "docs/release/RELEASE_NOTES_TEMPLATE.md",
+      "route": "docs/release/RELEASE_NOTES_TEMPLATE",
+      "sha256": "4ed04fd4be0746a3f0e169c96f8ea62a5d365f96087d4ddc5b0b4a408a989e51"
+    },
+    {
+      "path": "docs/release/THIRD_PARTY_NOTICES.md",
+      "route": "docs/release/THIRD_PARTY_NOTICES",
+      "sha256": "a7b3f157d2bfe6696466937e04bba878a850c3d4587fab5ab088f31b13ce89c1"
+    },
+    {
+      "path": "docs/rules/CODING_STANDARDS.md",
+      "route": "docs/rules/CODING_STANDARDS",
+      "sha256": "0cbb750e575e641ee3e15e3f66fa7f6b7e8350b5edf42144a69800212c38a3df"
+    },
+    {
+      "path": "examples/unreal/AstralSample/README.md",
+      "route": "examples/unreal/AstralSample",
+      "sha256": "9971a21adfc3a03492a905c8c1b7a04c558846ad1f44924d8d231c40bc06eec3"
+    },
+    {
+      "path": "plugins/unity/README.md",
+      "route": "plugins/unity",
+      "sha256": "d30d85d26ed3a76031a5d5dd14428ee95997383196363abc325b8bc43cc313ef"
+    },
+    {
+      "path": "plugins/unity/Samples~/CharacterVariants/README.md",
+      "route": "plugins/unity/Samples~/CharacterVariants",
+      "sha256": "3e326ca3938e632f53ad7287dabadd4c168b24e17e8055ba56bc282e8bb6292e"
+    },
+    {
+      "path": "plugins/unity/Samples~/LocalKnowledge/README.md",
+      "route": "plugins/unity/Samples~/LocalKnowledge",
+      "sha256": "dc398df22831a3240dd818eec8dc3bf3c673f32338b45c2eb733d70cd528295f"
+    },
+    {
+      "path": "plugins/unity/Samples~/MultimodalInput/README.md",
+      "route": "plugins/unity/Samples~/MultimodalInput",
+      "sha256": "bcaf73d306af16831585886e7d8018f36808e0d1036fd146d9531904e3678a3e"
+    },
+    {
+      "path": "plugins/unity/Samples~/MultipleConversations/README.md",
+      "route": "plugins/unity/Samples~/MultipleConversations",
+      "sha256": "0e53feed89b09d73d98d5cb0fe6d30a84f74a48ce3d7f59bf990e552b7351d6a"
+    },
+    {
+      "path": "plugins/unity/Samples~/StatefulNpc/README.md",
+      "route": "plugins/unity/Samples~/StatefulNpc",
+      "sha256": "1ed7f2a0ff51eb7ca921fa527302ccb43be630856a8b7647ed184060804bcb32"
+    },
+    {
+      "path": "plugins/unity/Samples~/StreamingChat/README.md",
+      "route": "plugins/unity/Samples~/StreamingChat",
+      "sha256": "b35e85188e6b2b4de393bc973f53381f472ece216d6035c27158372dd10d8b9c"
+    },
+    {
+      "path": "plugins/unreal/AstralRT/README.md",
+      "route": "plugins/unreal/AstralRT",
+      "sha256": "2265e9baa6d4856dd9e90fb746454dcc46fae2bb999f3ab0f677c7773940dd76"
+    }
+  ]
+}

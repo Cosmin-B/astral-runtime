@@ -1,0 +1,113 @@
+---
+title: "CUDA parity"
+slug: docs/CUDA_PARITY
+---
+
+<a id="cuda-parity"></a>
+
+This document defines the validation checklist for Astral's CUDA build.
+
+The `cuda` provider uses the same provider operation table as the CPU path while
+llama.cpp routes eligible work through ggml-cuda (`GGML_CUDA=ON`). Always-on
+tests cover the API surface on CPU hosts. Release support also requires the real
+GPU matrix below. An unchecked item records missing release evidence. It does
+not represent a separate public API.
+
+## What “Parity” means
+
+Parity is not just “it runs”. For a given model + prompt + sampler config:
+
+- Correctness: token IDs produced are consistent (or within documented tolerances when floating-point differences exist).
+- Feature coverage: every API surface works (streaming, logprobs, grammar, KV save/load, embeddings, slots).
+- Performance: stable throughput and latency without regressions vs CPU-only for CPU workloads.
+
+## Correctness checklist
+
+**Kernel modes / backend variants**
+- [ ] Default CUDA kernels (mmq auto / cuBLAS auto) pass the CUDA parity suite.
+- [ ] Forced cuBLAS (`GGML_CUDA_FORCE_CUBLAS=ON`) passes the CUDA parity suite.
+- [ ] Forced MMQ (`GGML_CUDA_FORCE_MMQ=ON`) passes the CUDA parity suite.
+  - Rationale: ggml-cuda selects between custom MMQ kernels and cuBLAS depending on GPU/quant; we treat both as first-class supported modes and test them separately.
+  - Strategy: see `docs/CUDA_KERNEL_STRATEGY.md`.
+
+**Model load**
+- [ ] `astral_model_load()` with a `PATH` source and `backend_name="cuda"` loads successfully.
+- [ ] `gpu_layers > 0` selects CUDA backend when enabled (and falls back to CPU when not built with CUDA).
+- [ ] Multi-file GGUF splits (if supported by llama.cpp) load via PATH.
+- [ ] Memory/IO sources: document the policy clearly (embedded builds must not require filesystem syscalls).
+
+**Session + streaming**
+- [ ] `astral_session_create`, `feed`, `decode`, `stream_read`, `wait` works with CUDA offload.
+- [ ] Cancellation (`astral_session_cancel` + `wait`) behaves correctly under load.
+
+**Meta side-channel (token ids/logprobs)**
+- [ ] `astral_session_set_logprobs(1)` emits `AstralTokenMeta` events (`token_id` always valid).
+- [ ] `top_n` logprobs behaves when enabled (clamped to `ASTRAL_LOGPROBS_MAX`).
+
+**Grammar**
+- [ ] GBNF grammar: compile + apply (both session-scoped and slot-scoped variants if supported).
+- [ ] JSON schema grammar: same as above when `ASTRAL_ENABLE_JSON_SCHEMA_GRAMMAR=ON`.
+
+**KV/state**
+- [ ] `astral_session_state_save/load` round-trips and produces identical continuation tokens.
+
+**Embeddings**
+- [ ] Embeddings produce expected dimensionality and stable output shape.
+
+## End-to-end validation
+
+The `test_cuda_e2e` suite exercises the following against a real GGUF model:
+
+- Logprobs meta shape + consistency (`AstralTokenMeta.top_n`, ordering, membership)
+- GBNF grammar applied in decoding (output constrained to an allowed byte set)
+- KV save/load continuation (requires Astral wrapper state; see `session_state_*`)
+- Embeddings enqueue/collect
+
+Run it on a CUDA machine:
+
+```bash
+ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity.sh --preset dev-cuda
+```
+
+To validate kernel modes (default + cuBLAS + MMQ) in one go:
+
+```bash
+ASTRAL_TEST_CUDA_E2E=1 ASTRAL_TEST_CUDA_PARITY_INFER=1 scripts/run_cuda_parity_matrix.sh --arch 120a-real
+```
+
+**Slots / executor**
+- [ ] Slot selection works; multi-slot scheduling does not deadlock and is callback-safe.
+
+## Performance checklist
+
+- [ ] TTFT and tok/s benchmarks for representative model tiers (small, medium).
+- [ ] No pathological GPU/CPU synchronization in the decode loop.
+- [ ] Optional profiling build (`*-prof` presets) shows sensible Tracy zones for CUDA hot paths.
+
+## Testing strategy
+
+1) **Always-on smoke tests** (CPU machines, CI-friendly):
+- CUDA backend presence/absence surface behavior.
+
+2) **CUDA machine tests** (release-candidate required):
+- Run `scripts/run_cuda_parity_matrix.sh --preset-set release --arch <deployed-arch-list> --strict`
+  with `ASTRAL_TEST_CUDA_PARITY_INFER=1` and `ASTRAL_TEST_CUDA_E2E=1`.
+- This lane is required by `scripts/run_release_required_gates.sh`; the
+  CPU-only CI smoke does not replace a real CUDA runner.
+- Strict mode (`ASTRAL_TEST_CUDA_PARITY_STRICT=1`) is opt-in and checks “near parity”:
+  - Each backend’s chosen token must be within the other backend’s captured `top_n` (currently 8).
+  - Each backend’s chosen token must be within the other backend’s top-8 ranks.
+  - Comparison is done for the first generated token only (later tokens condition on different contexts after any drift).
+- For debugging exact token-id parity (expected to fail on some machines), also set `ASTRAL_TEST_CUDA_PARITY_EXACT=1`.
+
+## Reference runner
+
+Use `scripts/run_cuda_parity.sh` for one CUDA preset and
+`scripts/run_cuda_parity_matrix.sh` for the release matrix across auto, forced
+cuBLAS, and forced MMQ presets.
+
+Use `scripts/run_cuda_parity_matrix.sh --preset-set release --arch <deployed-arch-list> --print-plan`
+to inspect the release presets and required real-CUDA flags without configuring
+or building.
+
+Source: [View the pinned source](https://github.com/Cosmin-B/astral-runtime/blob/f2d13b77c70624ede5bc06823d4a794a4b955e10/docs/CUDA_PARITY.md) · [Edit this source](https://github.com/Cosmin-B/astral-runtime/edit/main/docs/CUDA_PARITY.md)

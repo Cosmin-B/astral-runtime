@@ -8,6 +8,8 @@ on:
       - "*.md"
       - "docs/**"
       - "docs-site/**"
+      - "test/docs-content-migration.test.mjs"
+      - "scripts/prepare_blume_content.mjs"
       - "scripts/build_docs_site.sh"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
@@ -26,5 +28,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install pinned documentation dependencies
+        run: npm ci --prefix docs-site
+
       - name: Build documentation
-        run: ./scripts/build_docs_site.sh
+        run: npm run build --prefix docs-site
+
+      - name: Verify public content, navigation, anchors, and examples
+        run: node --test test/docs-content-migration.test.mjs
+
+      - name: Validate documentation
+        working-directory: docs-site
+        run: |
+          npm exec -- blume validate
+          npm exec -- blume doctor

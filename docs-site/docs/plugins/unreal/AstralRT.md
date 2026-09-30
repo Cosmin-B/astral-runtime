@@ -1,0 +1,235 @@
+---
+title: "AstralRT (Unreal Engine plugin)"
+slug: plugins/unreal/AstralRT
+---
+
+<a id="astralrt-unreal-engine-plugin"></a>
+
+AstralRT wraps the C ABI with Unreal-owned objects and a bytes-first streaming
+path through `TConstArrayView<uint8>` and `TArray<uint8>`. The native runtime
+still owns inference handles and decode work. The plugin owns UObject lifetimes
+and moves Blueprint delivery onto the game thread.
+
+The checked-in automation targets UE 5.7. Compatibility runners accept UE 5.4
+through 5.7 installations. The [feature matrix](/docs/FEATURE_MATRIX)
+records the supported range for a release.
+
+## Build and package (native)
+
+This repo includes a CMake preset that packages the native static library + headers into the plugin's `ThirdParty/` layout:
+
+```bash
+cd astral-runtime
+cmake --preset unreal-plugin
+cmake --build --preset unreal-plugin -j
+```
+
+After this, the plugin will contain:
+- `AstralRT/Source/ThirdParty/AstralCore/include/astral_rt.h`
+- `AstralRT/Source/ThirdParty/AstralCore/lib/<Platform>/*`
+
+The package target checks that the staged header and native library match the
+current source header and built `astral_rt` target.
+
+For the full UE 5.7 path, including container and editor commands,
+see [UNREAL_57_QUICKSTART.md](/docs/integration/UNREAL_57_QUICKSTART).
+
+To generate a sidecar sample project outside the repo:
+
+```bash
+./scripts/create_unreal_sample_project.sh --out /tmp/AstralSample
+```
+
+The generated project includes six gameplay components:
+
+| Workflow | Component | Focus |
+| --- | --- | --- |
+| Streaming chat | `Astral Streaming Chat` | Frame-polled UTF-8 streaming, cancellation, and stats |
+| Multiple conversations | `Astral Multiple Conversations` | One executor serving independent conversation slots |
+| Stateful NPC | `Astral Stateful Npc` | Agent history, summary, memory context, and tool calls |
+| Local knowledge | `Astral Local Knowledge` | Chunking, embeddings, native indexing, search, and persistence |
+| Character variants | `Astral Character Variants` | Prompt caches, structured output, stop sequences, and adapters |
+| Multimodal input | `Astral Multimodal Input` | Texture, PCM16 audio, and multimodal embedding requests |
+
+See the [sample README](/examples/unreal/AstralSample) for
+component setup and model requirements.
+
+To build and package the sample on a machine with UE 5.7:
+
+```bash
+UNREAL_RUNUAT=/opt/Unreal-5.7/Engine/Build/BatchFiles/RunUAT.sh \
+  ./scripts/run_unreal_sample_package.sh --platform Linux
+```
+
+## Use in a UE project
+
+Copy `astral-runtime/plugins/unreal/AstralRT/` into your Unreal project:
+
+```
+<YourProject>/Plugins/AstralRT/
+```
+
+Enable the plugin and build the project. The CMake package target validates the
+staged native files. UnrealEditor Automation validates the engine-facing code.
+
+## Minimal CPU example
+
+Set `ModelPath` to a readable GGUF file. The session streams UTF-8 bytes through
+`UAstralSession::OnStreamBytesNative()`:
+
+```cpp
+// AMyAIActor.h
+#include "AstralLog.h"
+#include "AstralModel.h"
+#include "AstralSession.h"
+
+UCLASS()
+class AMyAIActor : public AActor
+{
+    GENERATED_BODY()
+
+public:
+    UPROPERTY()
+    UAstralModel* Model = nullptr;
+
+    UPROPERTY()
+    UAstralSession* Session = nullptr;
+
+    virtual void BeginPlay() override
+    {
+        Super::BeginPlay();
+
+        Model = NewObject<UAstralModel>(this);
+        FAstralModelDesc ModelDesc;
+        ModelDesc.BackendName = TEXT("cpu");
+        ModelDesc.SourceKind = EAstralModelSourceKind::Path;
+        ModelDesc.PathRoot = EAstralUnrealPathRoot::Raw;
+        ModelDesc.ModelPath = TEXT("/absolute/path/to/model.gguf");
+        if (!Model->Load(ModelDesc))
+        {
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: Model load failed"));
+            return;
+        }
+
+        Session = NewObject<UAstralSession>(this);
+        FAstralSessionDesc SessionDesc;
+        SessionDesc.MaxTokens = 64;
+        SessionDesc.Temperature = 0.0f;
+        SessionDesc.Seed = 1;
+
+        if (!Session->Create(Model, SessionDesc))
+        {
+            UE_LOG(LogAstralRT, Error, TEXT("AstralRT: Session create failed"));
+            return;
+        }
+
+        Session->OnStreamBytesNative().AddUObject(this, &AMyAIActor::OnStreamBytes);
+        Session->FeedPrompt(TEXT("hi"), true);
+        Session->Decode();
+    }
+
+    void OnStreamBytes(TConstArrayView<uint8> Bytes)
+    {
+        // Low-overhead path: keep bytes as UTF-8.
+        // This sample just logs the bytes as text.
+        FUTF8ToTCHAR Text(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), Bytes.Num());
+        UE_LOG(LogAstralRT, Log, TEXT("%.*s"), Text.Length(), Text.Get());
+    }
+};
+```
+
+For Blueprint convenience, `UAstralSession` also exposes:
+- `OnBytesReceived` (UTF-8 bytes, per tick)
+- `OnTokenReceived` (decoded text per tick, allocating an `FString` only when bound)
+
+## Remote backend
+
+Remote runtime mode uses the same `UAstralModel` and `UAstralSession` wrappers
+as local providers:
+
+```cpp
+FAstralModelDesc ModelDesc;
+ModelDesc.BackendName = TEXT("remote");
+ModelDesc.SourceKind = EAstralModelSourceKind::Path;
+ModelDesc.PathRoot = EAstralUnrealPathRoot::Raw;
+ModelDesc.ModelPath = TEXT("http://127.0.0.1:8080");
+ModelDesc.RemoteApiKey = TEXT("");
+Model->Load(ModelDesc);
+```
+
+`RemoteApiKey` is passed to native code for the load call only and is not stored
+by the Unreal wrapper after `Load` returns.
+
+## Vision and audio
+
+Media support requires a projector/encoder GGUF and a native Astral build compiled with `ASTRAL_ENABLE_MTMD=ON`. Initialize media once per model before creating sessions or embedders that will consume images or audio:
+
+```cpp
+FAstralModelMediaDesc MediaDesc;
+MediaDesc.MediaPath = TEXT("/path/to/media.gguf");
+MediaDesc.MediaPathRoot = EAstralUnrealPathRoot::Raw;
+Model->InitMedia(MediaDesc);
+```
+
+Feed media into a session prompt. `FAstralImageDesc::Pixels` and `FAstralAudioDesc::Samples` must remain valid until the feed call returns.
+
+For packaged projects, `FAstralModelDesc::PathRoot` resolves relative model
+paths under `ProjectContent`, `ProjectSaved`, or `ProjectPersistentDownload`.
+`FAstralModelMediaDesc::MediaPathRoot` applies the same rule to media projector
+paths before they cross the native ABI.
+Pak/IoStore model payloads should use `SourceKind = Memory` and fill
+`ModelBytes`, or copy the model to a managed `Saved` cache and load by path.
+The generated `AstralSample` project stages a small payload under `Content`,
+loads it through `FPaths::ProjectContentDir()`, copies it to
+`FPaths::ProjectSavedDir()`, and loads both byte arrays with
+`SourceKind = Memory` as the maintained packaged-project smoke.
+
+```cpp
+FAstralImageDesc Image;
+TArray<uint8> RgbaBytes;
+RgbaBytes.SetNumZeroed(224 * 224 * 4);
+UAstralMediaLibrary::MakeRGBA8ImageFromBytes(RgbaBytes, 224, 224, Image);
+Session->FeedImage(Image, true);
+
+FAstralAudioDesc Audio;
+TArray<uint8> Pcm16Bytes;
+Pcm16Bytes.SetNumZeroed(16000 * sizeof(int16));
+UAstralMediaLibrary::MakePCM16AudioFromBytes(Pcm16Bytes, 1, 16000, Audio);
+Session->FeedAudio(Audio, true);
+```
+
+`UAstralMediaLibrary::MakeRGBA8ImageFromTexture` copies CPU-readable
+`PF_B8G8R8A8` texture data into an RGBA8 descriptor. It returns `false` when the
+texture is compressed, GPU-only, stripped, or otherwise not readable.
+
+## Multimodal embeddings
+
+Load the model with `FAstralModelDesc::bEmbeddingsOnly = true`. Call `InitMedia` first when image or audio embeddings are used.
+
+```cpp
+UAstralEmbedder* Embedder = NewObject<UAstralEmbedder>(this);
+Embedder->Create(Model);
+
+int64 Ticket = 0;
+Embedder->EnqueueMultimodal(TEXT("describe"), Image, Audio, /*bUseImage=*/true, /*bUseAudio=*/false, Ticket);
+
+TArray<float> Vec;
+Embedder->Collect(Ticket, Vec);
+```
+
+## Notes
+
+- The module initializes Astral at startup and shuts it down on module unload.
+- Runtime allocations cross the native ABI through Unreal's `FMemory` callbacks. `IAstralRT::GetAllocatorStats()` exposes debug counters for Automation.
+- Streaming is pull-based via `astral_stream_read()` into a pre-sized `TArray<uint8>`.
+
+## Automation tests
+
+Editor-only Automation tests live under `Source/AstralRT/Private/Tests/`:
+- `AstralRT.Module.Init`
+- `AstralRT.Memory.FMemoryAllocator`
+
+Run from Unreal's Automation window or via console:
+`Automation RunTests AstralRT`
+
+Source: [View the pinned source](https://github.com/Cosmin-B/astral-runtime/blob/f2d13b77c70624ede5bc06823d4a794a4b955e10/plugins/unreal/AstralRT/README.md) · [Edit this source](https://github.com/Cosmin-B/astral-runtime/edit/main/plugins/unreal/AstralRT/README.md)

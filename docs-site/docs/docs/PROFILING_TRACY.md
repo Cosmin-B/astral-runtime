@@ -1,0 +1,100 @@
+---
+title: "Tracy profiling"
+slug: docs/PROFILING_TRACY
+---
+
+<a id="tracy-profiling"></a>
+
+Astral can be built with Tracy to capture coarse profiling zones around native runtime work with low overhead.
+
+## Setup (submodule)
+
+Tracy is integrated as an optional git submodule:
+
+```bash
+./scripts/setup_tracy_submodule.sh
+```
+
+Pinned revision:
+- `external/tracy` @ `05cceee0df3b8d7c6fa87e9638af311dbabc63cb` (`v0.13.1`)
+
+Astral tracks released Tracy tags for release builds. Move to a post-release
+commit only when a concrete profiling requirement needs it, and record that
+reason in the dependency pins before landing the submodule bump.
+
+If the submodule is not present yet, add it:
+
+```bash
+git submodule add https://github.com/wolfpld/tracy.git external/tracy
+git submodule update --init --recursive external/tracy
+```
+
+## Build presets
+
+- Dev profiling: `cmake --preset dev-prof && cmake --build --preset dev-prof -j`
+- Dev profiling (micro zones): `cmake --preset dev-prof-micro && cmake --build --preset dev-prof-micro -j`
+- Release profiling: `cmake --preset release-prof && cmake --build --preset release-prof -j`
+- Release profiling (micro zones): `cmake --preset release-prof-micro && cmake --build --preset release-prof-micro -j`
+- Unity plugin profiling: `cmake --preset unity-plugin-prof && cmake --build --preset unity-plugin-prof -j`
+- Unity plugin profiling (micro zones): `cmake --preset unity-plugin-prof-micro && cmake --build --preset unity-plugin-prof-micro -j`
+- Unreal plugin profiling: `cmake --preset unreal-plugin-prof && cmake --build --preset unreal-plugin-prof -j`
+- Unreal plugin profiling (micro zones): `cmake --preset unreal-plugin-prof-micro && cmake --build --preset unreal-plugin-prof-micro -j`
+
+Embedded presets keep Tracy disabled by default.
+
+## Runtime
+
+Profiling presets compile the Tracy client into the native library.
+
+Defaults are “product-safe”:
+- on-demand capture
+- localhost-only
+- no broadcast
+
+## What is instrumented (coarse)
+
+This integration intentionally avoids micro/per-token instrumentation for now. You should see zones like:
+- `astral.abi.tokenize`, `astral.abi.tokenize_batch`, `astral.abi.detokenize`
+- `astral.abi.prompt_cache_put_tokens`, `astral.abi.prompt_cache_get_token_view`
+- `astral.abi.chunk_ranges`, `astral.abi.memory_add_batch`, `astral.abi.memory_search`
+- `astral.abi.agent_chat_enqueue`, `astral.abi.agent_chat_stream_read`
+- `astral.abi.embed_enqueue_text`, `astral.abi.embed_collect`
+- `astral.decode_work`, `astral.decode_loop`, `astral.generation_loop`
+- `astral.session_feed`, `astral.stream_read`
+- `astral.submit_work`
+
+And plots like:
+- `astral.work_queue_depth`
+- `astral.tokens_total`, `astral.tokens_per_s`, `astral.ttft_ms`
+
+Connect using the Tracy UI to start a capture.
+
+## Quick capture workflow
+
+1) Ensure the Tracy submodule exists:
+
+```bash
+./scripts/setup_tracy_submodule.sh
+```
+
+2) Build a profiling preset and run a small workload while the Tracy UI is open:
+
+```bash
+./scripts/run_tracy_capture.sh --preset dev-prof
+```
+
+If you want higher detail (more overhead), use a micro preset:
+
+```bash
+./scripts/run_tracy_capture.sh --preset dev-prof-micro
+```
+
+## Micro instrumentation (optional)
+
+If you need much finer detail (queue ops, backend call breakdown), enable the micro zones:
+- Build presets: use `*-prof-micro` variants (or set `-DASTRAL_ENABLE_TRACY_MICRO=ON`).
+
+Notes:
+- This increases overhead and trace volume significantly; prefer coarse zones for product-like runs.
+
+Source: [View the pinned source](https://github.com/Cosmin-B/astral-runtime/blob/f2d13b77c70624ede5bc06823d4a794a4b955e10/docs/PROFILING_TRACY.md) · [Edit this source](https://github.com/Cosmin-B/astral-runtime/edit/main/docs/PROFILING_TRACY.md)
